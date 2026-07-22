@@ -1,0 +1,21 @@
+# ── Secrets / environment (NEVER commit) ─────────────────────────────
+.env
+.env.*
+*.env
+!.env.example
+
+# ── Dependencies ─────────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+
+# ── OS / editor / FUSE artifacts ─────────────────────────────────────
+.DS_Store
+.fuse_hidden*
+*.swp
+*~
+
+# ── Logs / temp / runtime ────────────────────────────────────────────
+*.log
+tmp/
+dist/
+*.pid

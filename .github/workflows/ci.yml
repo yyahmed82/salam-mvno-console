@@ -1,0 +1,27 @@
+name: console-ci
+
+on:
+  push:
+    paths:
+      - 'mvno-console/**'
+  pull_request:
+    paths:
+      - 'mvno-console/**'
+
+jobs:
+  syntax-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install server deps
+        working-directory: mvno-console/server
+        run: npm ci || npm install
+      - name: Syntax + smoke checks
+        working-directory: mvno-console/server
+        run: bash scripts/test.sh
+      # Behavioural tests use embedded-postgres and run in the local dev loop.
+      # To run them in CI, add a step that `npm i embedded-postgres` and executes
+      # the test files under server/test/ (kept out of the default job to keep CI fast).

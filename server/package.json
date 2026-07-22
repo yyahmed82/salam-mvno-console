@@ -1,0 +1,19 @@
+{
+  "name": "mvno-console-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MVNO console: metrics watcher + alert engine over the selfcare prod-replica DB",
+  "main": "src/api.js",
+  "scripts": {
+    "init": "node src/cli.js init",
+    "sync": "node src/cli.js sync",
+    "simulate": "node src/cli.js simulate",
+    "serve": "node src/api.js",
+    "test": "bash scripts/test.sh"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "nodemailer": "^6.9.14",
+    "pg": "^8.11.5"
+  }
+}

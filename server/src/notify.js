@@ -1,0 +1,108 @@
+/* Alert email notifications — mirrors the dealers ops console digest.
+ * Recipients = console_users with mail_alert=true (managed in User management).
+ * SMTP reuses the same env as OTP (SMTP_HOST/PORT/SECURE/USER/PASS/FROM).
+ * Dev (no SMTP): logs + returns the rendered HTML so it can be previewed in the UI. */
+const db = require('./db');
+
+const smtpConfigured = () => !!process.env.SMTP_HOST;   // auth is optional (local relays / Mailpit need none)
+const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const opLabel = { gt: '>', gte: '≥', lt: '<', lte: '≤', eq: '=' };
+
+function ksa(iso) {
+  try {
+    return new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Riyadh',
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+      .replace(',', '');
+  } catch (e) { return String(iso); }
+}
+function fmtVal(v, unit) {
+  if (v == null) return '—';
+  v = Number(v);
+  return (unit === 'rate' || unit === 'ratio') ? (v * 100).toFixed(1) + '%' : (Number.isInteger(v) ? v : v.toFixed(2));
+}
+
+// recipients opted into a given channel: 'mail_alert' (alerts) or 'mail_report' (reports)
+async function recipients(column = 'mail_alert') {
+  const col = column === 'mail_report' ? 'mail_report' : 'mail_alert';
+  try {
+    const r = await db.console.query(
+      `SELECT email, name FROM console_users WHERE enabled=true AND ${col}=true ORDER BY email`);
+    return r.rows;
+  } catch (e) { return []; }
+}
+
+// generic sender — returns {sent, dev, error, recipients}. Dev (no SMTP) logs + does not send.
+async function sendHtml(to, subject, html) {
+  const emails = (to || []).map(r => (typeof r === 'string' ? r : r.email));
+  const base = { recipients: emails, subject };
+  if (!emails.length) return { ...base, sent: false, reason: 'no recipients' };
+  if (!smtpConfigured()) { console.log(`[MAIL] (dev/no-SMTP) would email ${emails.length}: ${subject}`); return { ...base, sent: false, dev: true }; }
+  try {
+    const nodemailer = require('nodemailer');
+    const t = nodemailer.createTransport({
+      host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT || 587),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
+    });
+    await t.sendMail({ from: process.env.SMTP_FROM || 'Salam Digital Console <noreply@salam.sa>',
+      to: emails.join(','), subject, html });
+    return { ...base, sent: true };
+  } catch (e) { console.error('[MAIL] send failed:', e.message); return { ...base, sent: false, error: e.message }; }
+}
+
+// shared branded email shell — dark-green header + Salam logo + status pill + green divider + white body
+function shell({ title, pill, pillColor, bodyHtml }) {
+  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:auto;background:#fff">
+    <div style="background:linear-gradient(135deg,#0f5132,#0a3a24);padding:26px 28px 22px;border-radius:6px 6px 0 0">
+      <img src="https://salam.sa/epurchase/static/salam-new-logo.png" alt="salam" style="height:44px;display:block;margin-bottom:14px">
+      <div style="color:#fff;font-size:20px;font-weight:800;margin-bottom:8px">${esc(title)}</div>
+      <span style="display:inline-block;background:${pillColor};color:#fff;font-weight:800;font-size:12px;padding:4px 12px;border-radius:16px;letter-spacing:.5px">${esc(pill)}</span>
+    </div>
+    <div style="height:5px;background:#4ade80"></div>
+    <div style="padding:24px 28px">${bodyHtml}</div>
+  </div>`;
+}
+
+function buildDigest(simNow, evals) {
+  const firing = evals.filter(e => e.fired);
+  const th = 'padding:9px 12px;text-align:left;font-size:12px;color:#334155;background:#eef4f0;border-bottom:1px solid #dbe6df';
+  const td = 'padding:10px 12px;font-size:13px;border-bottom:1px solid #eef2f6;vertical-align:top';
+  const rows = evals.map(e => {
+    const status = e.fired
+      ? '<span style="color:#dc2626;font-weight:800">● FIRED</span>'
+      : '<span style="color:#16a34a;font-weight:700">✓ ok</span>';
+    const rowBg = e.fired ? 'background:#fdecec' : '';
+    const thr = `${opLabel[e.operator] || e.operator} ${fmtVal(e.threshold, e.unit)}`
+      + (e.min_sample ? ` · n≥${e.min_sample}` : '') + (e.active ? ` · ${e.active}` : '');
+    return `<tr style="${rowBg}">
+      <td style="${td}">${status}<div style="color:#94a3b8;font-size:11px;margin-top:2px">${esc(e.team || '')}</div></td>
+      <td style="${td}"><b style="color:#0f172a">${esc(e.severity)} ${esc(e.name)}</b><div style="color:#94a3b8;font-size:11px;margin-top:2px">${esc(e.metric_key)}</div></td>
+      <td style="${td};white-space:nowrap">${e.value == null ? '—' : fmtVal(e.value, e.unit)}${e.sample != null ? `<div style="color:#94a3b8;font-size:11px">sample ${e.sample}</div>` : ''}</td>
+      <td style="${td};white-space:nowrap;color:#475569">${esc(thr)}</td>
+      <td style="${td};color:#475569">${esc(e.counts || '')}</td>
+    </tr>`;
+  }).join('');
+  const body = `<div style="color:${firing.length ? '#dc2626' : '#16a34a'};font-weight:700;margin-bottom:2px">${firing.length} alert(s) firing</div>
+    <div style="color:#64748b;font-size:12px;margin-bottom:16px">At: ${ksa(simNow)} KSA · history &amp; rules in the console → Alerts</div>
+    <table style="border-collapse:collapse;width:100%;font-size:13px;border:1px solid #dbe6df">
+      <tr><th style="${th}">Status</th><th style="${th}">Rule</th><th style="${th}">Metric</th><th style="${th}">Threshold</th><th style="${th}">Counts</th></tr>
+      ${rows}
+    </table>
+    <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Digital Console · automated alert runner</div>`;
+  const html = shell({ title: 'Alerts — Digital Console',
+    pill: firing.length ? `${firing.length} FIRING` : 'ALL CLEAR',
+    pillColor: firing.length ? '#dc2626' : '#16a34a', bodyHtml: body });
+  const subject = `[Salam Ops] ${firing.length} alert(s) — ${ksa(simNow)} KSA`;
+  return { html, subject, firing: firing.length, total: evals.length };
+}
+
+async function sendAlertDigest(simNow, evals, opts = {}) {
+  const to = await recipients('mail_alert');
+  const { html, subject, firing, total } = buildDigest(simNow, evals);
+  const r = await sendHtml(to, subject, html);
+  const base = { firing, total, subject, recipients: r.recipients, previewHtml: html };
+  if (!to.length) return { ...base, sent: false, reason: 'No recipients — enable "Mail alert" for at least one user in User management.' };
+  return { ...base, sent: r.sent, dev: r.dev, error: r.error };
+}
+
+module.exports = { recipients, sendHtml, buildDigest, sendAlertDigest, smtpConfigured, esc, shell };

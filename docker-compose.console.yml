@@ -1,0 +1,47 @@
+# MVNO Console backend — runs alongside the selfcare-backend stack.
+# It reuses the SAME Postgres container (db) that holds the restored prod replica,
+# and creates a separate `mvno_console` database in it.
+#
+#   1) make sure the selfcare-backend stack is up (db has salam_development_11):
+#        (in ../selfcare-backend)  docker compose up -d db
+#   2) create the console DB once:
+#        docker compose -f docker-compose.console.yml run --rm console-init
+#   3) start the API + watcher:
+#        docker compose -f docker-compose.console.yml up console
+#      open http://localhost:4600
+#
+# Set SOURCE/CONSOLE URLs to reach the selfcare db container by name on its network.
+
+services:
+  console-init:
+    build: ./server
+    profiles: ["init"]
+    environment:
+      SOURCE_DATABASE_URL: postgres://postgres:postgres@db:5432/salam_development_11
+      CONSOLE_DATABASE_URL: postgres://postgres:postgres@db:5432/mvno_console
+    networks: [salam]
+    # create the DB if missing, init schema + seed rules, then replay history as live traffic
+    command: ["/bin/sh","-c","node src/ensureDb.js && node src/cli.js init && node src/cli.js simulate 3 56"]
+
+  console:
+    build: ./server
+    environment:
+      SOURCE_DATABASE_URL: postgres://postgres:postgres@db:5432/salam_development_11
+      CONSOLE_DATABASE_URL: postgres://postgres:postgres@db:5432/mvno_console
+      PORT: "4600"
+      STATIC_DIR: /console
+    # read-only prod-sync credential (PROD_DATABASE_URL). Loaded automatically on every `up`,
+    # so it survives rebuilds/recreates without needing the --env-file flag. File is git-ignored.
+    env_file:
+      - .env.prod-sync
+    ports:
+      - "4600:4600"
+    volumes:
+      - .:/console   # serve the static console (index.html, data*.js, alertsview.js)
+    command: ["node","src/api.js"]
+    networks: [salam]
+
+networks:
+  salam:
+    external: true
+    name: selfcare-backend_default
