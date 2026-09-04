@@ -9,7 +9,7 @@
     workbench:{workbench:true},
     // Growth was absorbed into Monitoring → Resellers. Old links keep working.
     analytics:{view:"analytics"}, growth:{view:"monitoring",monTab:"resellers"}, resellers:{view:"monitoring",monTab:"resellers"},
-    dms:{view:"dms"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, sla:{sla:true}, slo:{sla:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
+    dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, sla:{sla:true}, slo:{sla:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
     alerts:{view:"alerts"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"},journeys:{view:"explorer"}, integrations:{view:"integrations"},
     subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true},
     settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
@@ -17,7 +17,7 @@
     "settings-assist":{assistClone:true}, "settings-assist-clone":{assistClone:true},
     audit:{audit:true}, tickets:{tickets:true}
   };
-  const VIEW_HASH={monitoring:"monitoring",analytics:"analytics",dms:"dms",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
+  const VIEW_HASH={monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
   let _cur=null;
 
   /* ---- ROLE GUARD (2 Sep 2026) ---------------------------------------------------------------
@@ -25,10 +25,10 @@
    * view (page permission) it needs under the v2 model; a role without it gets a full
    * ACCESS DENIED panel — same message the API would 403 with — instead of a half-broken page.
    * The server gates the data regardless; this makes the denial clear instead of confusing. */
-  const VIEW_REQ={ monitoring:"monitoring", analytics:"analytics", dms:"dms", errors:"errors", alerts:"alerts",
+  const VIEW_REQ={ monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts",
     home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", otodocs:"explore",
     tapdocs:"explore", salamdocs:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
-  const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", errors:"Troubleshoot", alerts:"Alerts",
+  const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed / Salam Home", errors:"Troubleshoot", alerts:"Alerts",
     analytics:"Analytics / SLA", explore:"Explore", workbench:"L2 Workbench", settings:"Settings" };
   function sess(){ try{ return (window.opsSession&&window.opsSession())||{}; }catch(e){ return {}; } }
   function lacks(need){ const me=sess().me; if(!me||!Array.isArray(me.views)) return false;  // session not ready → don't block boot
@@ -108,7 +108,7 @@
       /* clickNav is a no-op when the tab is already active, so any view that only renders on a
        * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
-      const OPENER={ alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", analytics:"openAnalytics" };
+      const OPENER={ alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics" };
       const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{ window[fn](); }catch(e){} }
       // Subscriber 360 deep link: #subscriber?key=966...
       if(r.view==="sub360" && window.openSub360){ const m=/key=([^&]+)/.exec(qs||""); window.openSub360(m?decodeURIComponent(m[1]):undefined); }

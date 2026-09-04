@@ -148,7 +148,7 @@ async function buildOne(ev, simNow) {
   } catch (e) { example = { error: e.message }; }
 
   /* ---- compose the PDF -------------------------------------------------------------------- */
-  const d = pdfout.doc({ footer: `Salam Unified Console - automated alert report - generated ${ksa(simNow)} KSA` });
+  const d = pdfout.doc({ footer: `Salam Operations Console - automated alert report - generated ${ksa(simNow)} KSA` });
   const CC = d.colors;
   const sev = ev.severity || 'P3';
   const sevColor = sev === 'P1' ? CC.red : sev === 'P2' ? CC.amber : CC.muted;

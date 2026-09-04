@@ -192,7 +192,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   /* 2 Sep 2026 view split: home→'dashboard', dms→'dms' (own view), every Explore-menu entry
    * (topology/apigw/docs/journeys/integrations/sub360) → the single 'explore' view. */
   const NAV_VIEW = { home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore",
-    explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", otodocs:"explore", salamdocs:"explore", tapdocs:"explore", alerts:"alerts", errors:"errors", analytics:"analytics", sub360:"explore", settings:"settings" };
+    explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", tapdocs:"explore", alerts:"alerts", errors:"errors", analytics:"analytics", sub360:"explore", settings:"settings" };
 
   async function loadMe(){
     try { SES.me = await api("/api/me"); SES.role = SES.me.role; }

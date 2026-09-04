@@ -25,7 +25,7 @@ get() { # get <section> <KEY>
     $0==sec {on=1; next} /^### / {on=0} on && index($0, key"=")==1 {sub(key"=",""); print; exit}' | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
 }
 tunnel() { # rewrite prod hosts → local tunnel ports
-  printf '%s' "$1" | sed -e 's#172\.31\.15\.121:5432#127.0.0.1:15121#g' -e 's#172\.31\.43\.75:3306#127.0.0.1:13306#g' -e 's#172\.31\.43\.72:3306#127.0.0.1:13372#g'
+  printf '%s' "$1" | sed -e 's#172\.31\.15\.121:5432#127.0.0.1:15121#g' -e 's#172\.31\.142\.36:5434#127.0.0.1:15434#g' -e 's#172\.31\.43\.75:3306#127.0.0.1:13306#g' -e 's#172\.31\.43\.72:3306#127.0.0.1:13372#g'
 }
 
 SRC="$(tunnel "$(get console SOURCE_DATABASE_URL)")"
@@ -51,6 +51,7 @@ STATIC_DIR=..
 NODE_ENV=development
 FIXED_ENABLED=1
 PM2_NAME=salam-unified-local
+PG_APP_NAME=salam_unified_local
 CONSOLE_PUBLIC_URL=http://localhost:4700/
 
 # console's OWN db (writable) — local docker (docker-compose.unified.yml)
@@ -59,6 +60,7 @@ CONSOLE_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5700/unified_console
 SOURCE_DATABASE_URL=$SRC
 PROD_DATABASE_URL=
 SOURCE_POOL_MAX=4
+ROLLUP_BACKFILL_DAYS=7
 # Fixed / Salam Home read side (stage 1: the dealer-ops read model, still written by opsb-ingest-watch on 152)
 OPS_DATABASE_URL=$OPS
 NEXUS_DATABASE_URL=$NEXUS
@@ -75,11 +77,12 @@ STATIC_MAPS_KEY=$SMAPS
 CONSOLE_SUPER_ADMINS=$(get console CONSOLE_SUPER_ADMINS)
 ROOT_ADMINS=$(get console ROOT_ADMINS)
 CONSOLE_ADMIN_USER=$(get console CONSOLE_ADMIN_USER)
-UPLOAD_DIR=$PWD/.local-uploads
+UPLOAD_DIR="$PWD/.local-uploads"
 # SSH-based samplers/collectors are 152-only (need its keys + firewall rules) — off locally
 UILS_SAMPLE=0
 UILS_WATCH=0
 OSB_PROBE_AUTO=0
+APIGW_PROBE_AUTO=0
 DMS_JOURNEY_SYNC=0
 
 # DELIBERATELY UNSET locally (prod-only side effects): API_LOG_HOSTS, ZIPKIN_HOSTS, SN_URL, SMS_URL,

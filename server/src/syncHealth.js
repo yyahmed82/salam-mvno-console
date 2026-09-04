@@ -93,8 +93,8 @@ function buildEmail(d) {
         ${d.coverage.length ? totalRow : ''}
       </table>
       <div style="color:#94a3b8;font-size:12px;margin-top:14px">ops = orders the console watcher has already covered (created_at ≤ last sync cursor). A gap on the latest day is normal — today is partial until the watcher catches up.</div>
-      <div style="color:#94a3b8;font-size:12px;margin-top:8px">— Salam Unified Console · automated sync check</div>`;
-  const html = notify.shell({ title: 'Sync Health — Unified Console', pill: d.status,
+      <div style="color:#94a3b8;font-size:12px;margin-top:8px">— Salam Operations Console · automated sync check</div>`;
+  const html = notify.shell({ title: 'Sync Health — Operations Console', pill: d.status,
     pillColor: ok ? '#16a34a' : '#d97706', bodyHtml: body });
   const subject = `[Salam Ops] Sync health — ${d.ksaDay} — ${d.status}`;
   return { html, subject };

@@ -15,7 +15,7 @@
 
   const DICT = {
     en: {
-      "brand.sub": "DIGITAL CONSOLE",
+      "brand.sub": "OPERATIONS CONSOLE",
       "beta": "BETA",
       "group.operate": "OPERATE",
       "group.explore": "EXPLORE",
@@ -41,7 +41,7 @@
       "title.lang": "العربية",
       "title.menu": "Menu",
       "title.account": "Account / sign out",
-      "login.sub": "DIGITAL CONSOLE",
+      "login.sub": "OPERATIONS CONSOLE",
       "action.save": "Save",
       "action.cancel": "Cancel",
       "action.refresh": "Refresh",
@@ -50,7 +50,7 @@
       "common.loading": "Loading…"
     },
     ar: {
-      "brand.sub": "الكونسول الرقمي",
+      "brand.sub": "كونسول العمليات",
       "beta": "تجريبي",
       "group.operate": "التشغيل",
       "group.explore": "استكشاف",
@@ -76,7 +76,7 @@
       "title.lang": "English",
       "title.menu": "القائمة",
       "title.account": "الحساب / تسجيل الخروج",
-      "login.sub": "الكونسول الرقمي",
+      "login.sub": "كونسول العمليات",
       "action.save": "حفظ",
       "action.cancel": "إلغاء",
       "action.refresh": "تحديث",

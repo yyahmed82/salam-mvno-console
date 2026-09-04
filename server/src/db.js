@@ -23,8 +23,11 @@ const PG_UTC = { options: '-c timezone=UTC' };
  * health ping, screens-flow), and a single slow query could hold a quarter of the pool — with
  * four in flight the health check's own `SELECT 1` never got a client and reported the replica
  * DOWN. Eight is still modest against the replica's connection limit and removes that cliff. */
-const source = new Pool({ connectionString: SOURCE_URL, max: Number(process.env.SOURCE_POOL_MAX) || 8, statement_timeout: 60000, ...PG_UTC });
-const console_ = new Pool({ connectionString: CONSOLE_URL, max: 4, ...PG_UTC });
+// PG_APP_NAME tags every replica/console connection (pg_stat_activity.application_name) so the DBA can tell
+// a laptop session ('salam_unified_local') from the prod instance ('salam_unified').
+const APP_NAME = process.env.PG_APP_NAME || 'salam_unified';
+const source = new Pool({ connectionString: SOURCE_URL, max: Number(process.env.SOURCE_POOL_MAX) || 8, statement_timeout: 60000, application_name: APP_NAME, ...PG_UTC });
+const console_ = new Pool({ connectionString: CONSOLE_URL, max: 4, application_name: APP_NAME, ...PG_UTC });
 
 /* UPG payment-gateway DB — OPTIONAL third pool (read-only role `upg_console_ro`).
  * Enables end-to-end payment correlation: app payment → gateway charge → state transitions →
@@ -51,10 +54,24 @@ if (upg) upg.on('error', e => { try { console.error('[UPG pool]', e.message); } 
  * Unset = the matching Fixed feature reports "not configured"; nothing errors at boot.
  * Same guard rails as UPG: tiny pool, short statement timeout, distinct application_name so the DBA
  * can see (and kill) us in pg_stat_activity. */
-const roPool = (url, name, max = 3, timeoutMs = 15000) => url
-  ? new Pool({ connectionString: url, max, statement_timeout: timeoutMs,
-      idleTimeoutMillis: 30000, connectionTimeoutMillis: 5000, application_name: name, ...PG_UTC })
-  : null;
+/* The dealer-ops URLs are Prisma-style: `?schema=beta&connection_limit=2&pool_timeout=30&sslmode=disable`.
+ * node-pg ignores `schema` (it would silently read `public` = the PROD read model instead of the beta one),
+ * so we strip the Prisma-only params and pin search_path per connection from `schema=`. */
+const roPool = (url, name, max = 3, timeoutMs = 15000) => {
+  if (!url) return null;
+  let schema = null;
+  try {
+    const u = new URL(url);
+    schema = u.searchParams.get('schema');
+    for (const k of ['schema', 'connection_limit', 'pool_timeout', 'pgbouncer', 'connect_timeout']) u.searchParams.delete(k);
+    url = u.toString();
+  } catch (_) { /* unparsable → hand it to pg as-is */ }
+  const opts = schema ? `-c timezone=UTC -c search_path=${schema.replace(/[^a-zA-Z0-9_]/g, '')},public` : PG_UTC.options;
+  const pool = new Pool({ connectionString: url, max, statement_timeout: timeoutMs,
+    idleTimeoutMillis: 30000, connectionTimeoutMillis: 5000, application_name: name, options: opts });
+  pool.schema = schema || 'public';
+  return pool;
+};
 const ops      = roPool(process.env.OPS_DATABASE_URL      || '', 'salam_unified_ops_ro',      Number(process.env.OPS_POOL_MAX) || 3);
 const nexus    = roPool(process.env.NEXUS_DATABASE_URL    || '', 'salam_unified_nexus_ro',    2);
 const payments = roPool(process.env.PAYMENTS_DATABASE_URL || '', 'salam_unified_payments_ro', 2);

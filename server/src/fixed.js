@@ -24,19 +24,30 @@ async function status() {
         (SELECT count(*)::int FROM dealers)                               AS dealers,
         (SELECT count(*)::int FROM error_events)                          AS error_events,
         (SELECT last_ts FROM ingest_state WHERE source='replica' LIMIT 1) AS ingest_cursor,
-        current_database()                                                AS db`),
+        current_database()                                                AS db,
+        current_schema()                                                  AS schema`),
     probe(db.nexus, `SELECT current_database() AS db, now() AS server_now`),
     probe(db.payments, `SELECT current_database() AS db, now() AS server_now`),
   ]);
   return { enabled: roles.FIXED_ENABLED, views: roles.FIXED_VIEWS, ops, nexus, payments };
 }
 
-function mount(app) {
+function mount(app, { requireView, audit } = {}) {
+  const gate = requireView ? requireView('fixed') : (req, res, next) => next();
+  const f360 = require('./fixed360');
+  const wrap = fn => async (req, res) => {
+    try { res.json(await fn(req.query || {}, req)); }
+    catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  };
   // GET /api/fixed/ping — proves the stage-1 wiring (unified console → sda_ops_beta / nexus / payments_v2)
-  app.get('/api/fixed/ping', async (req, res) => {
-    try { res.json(await status()); }
-    catch (e) { res.status(500).json({ error: e.message }); }
-  });
+  app.get('/api/fixed/ping', wrap(() => status()));
+  // Phase 1 — Fixed / Salam Home dashboards over the dealer-ops read model (view: fixed)
+  app.get('/api/fixed/summary',   gate, wrap(q => f360.summary(q)));
+  app.get('/api/fixed/b2c',       gate, wrap(q => f360.b2cOverview(q)));
+  app.get('/api/fixed/attempts',  gate, wrap(async (q, req) => { const r = await f360.attempts(q);
+    if (audit && q.find) audit(req, 'fixed.search', String(q.find).slice(0, 40), { rows: r.rows.length }); return r; }));
+  app.get('/api/fixed/dealers',   gate, wrap(q => f360.dealers(q)));
+  app.get('/api/fixed/errors',    gate, wrap(q => f360.errorFeed(q)));
 }
 
 module.exports = { mount, status };

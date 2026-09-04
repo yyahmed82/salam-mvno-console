@@ -43,8 +43,9 @@ function run(script, args = []) {
   try {
     const rollups = require('./rollups');
     if (await rollups.isEmpty()) {
-      console.log('rollups empty — backfilling last 90 days (one-time)…');
-      const rb = await rollups.backfill({ days: 90 });
+      const days = Number(process.env.ROLLUP_BACKFILL_DAYS) || 90;   // local dev: 7 is plenty (tunnel is slow)
+      console.log(`rollups empty — backfilling last ${days} days (one-time)…`);
+      const rb = await rollups.backfill({ days });
       console.log(`rollups backfilled: ${rb.rows} buckets across ${rb.chunks} days through ${rb.through}`);
     } else {
       console.log('rollups present — skipping backfill.');

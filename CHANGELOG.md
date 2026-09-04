@@ -3,6 +3,21 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.2] — 2026-09-05 — Phase 1 (first cut): Fixed tab + product name
+### Added
+- **Fixed tab** (`#fixed`, view `fixed`, `fixed.js`): freshness strip (ingest cursor / watcher lag), KPIs (attempts,
+  completed, conversion, BSS orders, active dealers, avg time), outcome mix + per-day bars, by workflow, by channel,
+  Nafath outcomes, Manafith denials, regions, top dealers, error categories, Salam Home app (B2C) journeys,
+  recent attempts with find (ODB / order / service / ICCID / mobile). Channel + range filters persisted.
+- `server/src/fixed360.js` + routes `/api/fixed/{summary,b2c,attempts,dealers,errors}` — SQL ported 1:1 from
+  salam-dealer-ops (dashboards/activity/errors routers) over `sda_ops.beta`; consumer-direct e-purchase excluded by
+  default like the beta; identifiers returned as last digits only. All routes gated by `requireView('fixed')`;
+  searches audited as `fixed.search`.
+- `ROLLUP_BACKFILL_DAYS`, `PG_APP_NAME`, `APIGW_PROBE_AUTO=0` for local runs; tunnel forwards UPG :5434.
+### Changed
+- Product name is **Salam Operations Console** (header chrome, login, title, e-mails, i18n en/ar).
+- `roPool()` honours Prisma-style `?schema=` (search_path) and strips Prisma-only params — required for `sda_ops.beta`.
+
 ## [2.0.0-alpha.1] — 2026-09-05 — Unified Console, Phase 0
 The Digital Console codebase becomes the **Salam Unified Console** (Fixed + MVNO). Plan: `docs/UNIFIED-CONSOLE-CONVERGENCE-PLAN.md`.
 The frozen digital-console line is tag `v1.1.0-digital-console-freeze` / branch `release/digital-console`.

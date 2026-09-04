@@ -1088,7 +1088,7 @@ app.get('/api/dms/commission/report', async (req, res) => {
     }
 
     if (fmt === 'pdf') {
-      const d = require('./pdfout').doc({ footer: `Salam Unified Console - commission report - ${st.window.from.slice(0,10)} to ${st.window.to.slice(0,10)}` });
+      const d = require('./pdfout').doc({ footer: `Salam Operations Console - commission report - ${st.window.from.slice(0,10)} to ${st.window.to.slice(0,10)}` });
       const CC = d.colors;
       /* brand header: leaf mark + wordmark (base-14 fonts only on 152 — the wordmark IS the logo) */
       const hb = d.band(66, CC.dark);
@@ -2973,7 +2973,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // Fixed / Salam Home routes — all under /api/fixed/* (see fixed.js)
-require('./fixed').mount(app);
+require('./fixed').mount(app, { requireView, audit });
 
 app.get('/api/rules', async (req, res) => {
   const rules = (await C.query(`SELECT r.*, mc.unit, mc.higher_is_bad FROM alert_rules r

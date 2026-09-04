@@ -58,11 +58,11 @@ async function sendMail(email, code) {
     auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
   });
   await t.sendMail({
-    from: process.env.SMTP_FROM || 'Salam Unified Console <noreply@salam.sa>',
+    from: process.env.SMTP_FROM || 'Salam Operations Console <noreply@salam.sa>',
     to: email,
     subject: 'Your Salam Console sign-in code',
     text: `Your sign-in code is ${code}. It expires in ${CODE_TTL_MIN} minutes.`,
-    html: `<div style="font-family:sans-serif"><p>Your Salam Unified Console sign-in code:</p>
+    html: `<div style="font-family:sans-serif"><p>Your Salam Operations Console sign-in code:</p>
            <p style="font-size:26px;font-weight:800;letter-spacing:4px">${code}</p>
            <p style="color:#64748b">Expires in ${CODE_TTL_MIN} minutes. If you didn't request this, ignore it.</p></div>`
   });

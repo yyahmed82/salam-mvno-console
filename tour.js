@@ -16,7 +16,7 @@
 
   /* Each step: { need:'view' | fn, cap:'cap', ... }. Order = tour order after filtering. */
   const DEFS = [
-    { key:"welcome", title:"Welcome to the Salam Unified Console",
+    { key:"welcome", title:"Welcome to the Salam Operations Console",
       body(){ const m = me();
         const pages = [ hasView("dashboard")&&"<b>Dashboard</b>", hasView("monitoring")&&"<b>Monitoring</b>",
           hasView("dms")&&"<b>DMS</b>", hasView("errors")&&"<b>Troubleshoot</b>", hasView("alerts")&&"<b>Alerts</b>" ]

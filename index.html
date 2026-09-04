@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Salam · Unified Console</title>
+<title>Salam · Operations Console</title>
 <script>(function(){try{var k=localStorage.getItem('cons_theme');if(!k){var h=new Date().getHours();k=(h>=19||h<6)?'dark':'light';}document.documentElement.setAttribute('data-theme',k);var l=localStorage.getItem('cons_lang')||'en';document.documentElement.setAttribute('lang',l);document.documentElement.setAttribute('dir',l==='ar'?'rtl':'ltr');}catch(e){}})();</script>
 <style>
   :root{
@@ -885,7 +885,7 @@
     </svg>
     <span class="brand-word">salam</span>
     <span class="brand-div"></span>
-    <small class="brand-sub" data-i18n="brand.sub">DIGITAL CONSOLE</small>
+    <small class="brand-sub" data-i18n="brand.sub">OPERATIONS CONSOLE</small>
   </div>
   <span class="beta" data-i18n="beta">BETA</span>
   <button id="navBurger" title="Menu" data-i18n-title="title.menu">☰</button>
@@ -894,6 +894,7 @@
     <button class="navtab active" data-view="home"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4 20 11"/><path d="M6 10v9h12v-9"/></svg></span><span data-i18n-html="nav.home">Dashboard<small>Your home &amp; today's KPIs</small></span></button>
     <button class="navtab" data-view="monitoring"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg></span><span>Monitoring<small>Connectivity &amp; API health</small></span></button>
     <button class="navtab" data-view="dms"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V8l7-5 7 5v13"/><path d="M8 21v-6h4v6"/><path d="M17 13h4v8h-4"/></svg></span><span>DMS<small>Dealers · activity &amp; health</small></span></button>
+    <button class="navtab" data-view="fixed"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg></span><span>Fixed<small>Salam Home · FTTH &amp; 5G dealers</small></span></button>
 <!-- Growth moved into Monitoring → Resellers (one place per topic). The section element below
      is relocated into that sub-tab at runtime, so growth.js keeps rendering into #view-growth
      unchanged and every existing #growth link still resolves (router.js redirects it). -->
@@ -958,7 +959,7 @@
       </svg>
       <span class="brand-word" style="font-size:27px">salam</span>
     </span>
-    <div style="font-size:9.5px;letter-spacing:1.6px;color:var(--muted);font-weight:700;margin-top:6px" data-i18n="login.sub">DIGITAL CONSOLE</div>
+    <div style="font-size:9.5px;letter-spacing:1.6px;color:var(--muted);font-weight:700;margin-top:6px" data-i18n="login.sub">OPERATIONS CONSOLE</div>
     <h3>Sign in</h3>
     <p>Use your Salam work email. We'll email you a sign-in code. Access is role-scoped and PII is masked by default.</p>
     <!-- step 1: email -->
@@ -1070,6 +1071,7 @@
   <section id="view-oncall" class="view"></section>
   <section id="view-growth" class="view"></section>
   <section id="view-dms" class="view"></section>
+  <section id="view-fixed" class="view"></section>
   <section id="view-otodocs" class="view"></section>
   <section id="view-tapdocs" class="view"></section>
   <section id="view-salamdocs" class="view"></section>
@@ -1302,6 +1304,7 @@
 <script src="growth.js?v=20260904a"></script>
 <script src="dmsjourney.js?v=20260904a"></script>
 <script src="dms.js?v=20260904a"></script>
+<script src="fixed.js?v=20260905u"></script>
 <script src="otodocs.js?v=20260904a"></script>
 <script src="salamdocs.js?v=20260904a"></script>
 <script src="slo.js?v=20260904a"></script>

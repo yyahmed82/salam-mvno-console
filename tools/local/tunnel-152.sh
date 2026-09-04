@@ -2,6 +2,7 @@
 # SSH tunnel: laptop → 152 (passerelle) → prod data tier. Keep this running in its own terminal.
 #
 #   127.0.0.1:15121  → 172.31.15.121:5432   prod PG  (selfcare replica · mvno_console · sda_ops_beta · nexus · payments_v2)
+#   127.0.0.1:15434  → 172.31.142.36:5434   UPG / Tap gateway PG (payments)
 #   127.0.0.1:13306  → 172.31.43.75:3306    Clara MariaDB via MaxScale (DMS dealers, optional)
 #   127.0.0.1:13372  → 172.31.43.72:3306    OSB uil_logs (optional)
 #   127.0.0.1:18081  → apigw.salammobile.sa:8081  live UIL/APIGW read (optional; resolved ON 152)
@@ -12,6 +13,7 @@ set -euo pipefail
 HOST="${TUNNEL_HOST:-yosri@172.31.38.152}"
 exec ssh -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes \
   -L 127.0.0.1:15121:172.31.15.121:5432 \
+  -L 127.0.0.1:15434:172.31.142.36:5434 \
   -L 127.0.0.1:13306:172.31.43.75:3306 \
   -L 127.0.0.1:13372:172.31.43.72:3306 \
   -L 127.0.0.1:18081:apigw.salammobile.sa:8081 \
