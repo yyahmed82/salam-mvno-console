@@ -6,7 +6,7 @@
  * Deep-link actions navigate the SPA (e.g. #sub360?key=05…, #alerts).
  * Exposes window.openYusr(prefill, {send}) — used by the "Ask Yusr" hint chips.
  */
-const AB=(window.API_BASE!==undefined)?window.API_BASE:(location.pathname.startsWith('/digital-console')?'/digital-console':'');
+const AB=(window.API_BASE!==undefined)?window.API_BASE:window.CONSOLE_BASE;
 
 (function(){
   "use strict";

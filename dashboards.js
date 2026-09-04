@@ -4,7 +4,7 @@
   const $ = s => document.querySelector(s);
   const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
   const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  const API = window.API_BASE;
   const st={scope:"dealers",window:168,data:null};
   const pct=v=> v==null?"—":(v*100).toFixed(1)+"%";
   function api(p){ return (window.opsFetch||fetch)(API+p).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}); }

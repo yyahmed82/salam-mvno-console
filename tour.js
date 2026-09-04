@@ -16,7 +16,7 @@
 
   /* Each step: { need:'view' | fn, cap:'cap', ... }. Order = tour order after filtering. */
   const DEFS = [
-    { key:"welcome", title:"Welcome to the Salam Digital Console",
+    { key:"welcome", title:"Welcome to the Salam Unified Console",
       body(){ const m = me();
         const pages = [ hasView("dashboard")&&"<b>Dashboard</b>", hasView("monitoring")&&"<b>Monitoring</b>",
           hasView("dms")&&"<b>DMS</b>", hasView("errors")&&"<b>Troubleshoot</b>", hasView("alerts")&&"<b>Alerts</b>" ]
@@ -107,7 +107,7 @@
     const pv=$("#tPrev"); if(pv) pv.onclick=()=>{ i--; place(); };
   }
   function start(){ buildSteps(); i=0; ov.classList.add("show"); place(); localStorage.setItem('cons_tour_seen','1');
-    try{ const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+    try{ const API = window.API_BASE;
       fetch(API+"/api/me/tour-seen",{method:"POST",headers:{"X-Console-User":localStorage.getItem("cons_email")||""}}); }catch(e){} }
   function end(){ ov.classList.remove("show"); const hm=$("#helpMenu"); if(hm) hm.classList.remove("open"); }
 

@@ -1,4 +1,4 @@
-/* Salam DMS · MVNO Digital Console — renderers */
+/* Salam DMS · MVNO Unified Console — renderers */
 (function(){
 "use strict";
 const $ = s => document.querySelector(s);

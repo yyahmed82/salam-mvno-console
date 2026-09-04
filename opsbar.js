@@ -2,7 +2,7 @@
  * Drives Analytics & Errors via window.OPS_RANGE + the 'opsrangechange' event. */
 (function(){
   "use strict";
-  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  const API = window.API_BASE;
   const OPERATE=new Set(["analytics","alerts","errors"]);
   const PRESETS=[["Last 1h",1],["Last 6h",6],["Last 24h",24],["Last 48h",48],["Last 3d",72],["Last 7d",168],["Last 30d",720]];
   window.OPS_RANGE = window.OPS_RANGE || { key:"Last 7d", hours:168, from:null, to:null };

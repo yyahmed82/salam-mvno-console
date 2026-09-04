@@ -11,7 +11,15 @@
 set -euo pipefail
 
 HOST="${DEPLOY_HOST:-yosri@172.31.38.152}"
-APP="/apps/console"
+# Deployment target on 152 (unified console is the default for this repo):
+#   DEPLOY_TARGET=unified  → /apps/unified  · PM2 salam-unified · :4700 · https://salam.sa/unified-console/
+#   DEPLOY_TARGET=digital  → /apps/console  · PM2 salam-console · :4600 · https://salam.sa/digital-console/  (frozen line)
+TARGET="${DEPLOY_TARGET:-unified}"
+case "$TARGET" in
+  unified) APP="/apps/unified"; PM2NAME="salam-unified"; PORT=4700; URL="https://salam.sa/unified-console/";;
+  digital) APP="/apps/console"; PM2NAME="salam-console"; PORT=4600; URL="https://salam.sa/digital-console/";;
+  *) echo "✗ unknown DEPLOY_TARGET=$TARGET (unified|digital)"; exit 1;;
+esac
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"   # → mvno-console/, wherever you invoke this from
 MODE="${1:-}"
 
@@ -26,6 +34,7 @@ echo "  ✓ all JS parses"
 STAGE="$(mktemp -d /tmp/csync.XXXX)"
 mkdir -p "$STAGE/server/src" "$STAGE/server/db" "$STAGE/web"
 cp server/src/*.js            "$STAGE/server/src/"
+cp deploy152/ecosystem.prod.config.js "$STAGE/ecosystem.prod.config.js"   # unified: PORT/name come from .env
 cp server/db/*.sql            "$STAGE/server/db/"
 cp deploy152/healthcheck.cjs  "$STAGE/server/healthcheck.cjs" 2>/dev/null || true   # lives beside node_modules
 cp deploy152/postdeploy-check.cjs "$STAGE/server/postdeploy-check.cjs" 2>/dev/null || true  # needs pg + src/
@@ -70,9 +79,9 @@ RUSER="${HOST%@*}"; [ "$RUSER" = "$HOST" ] && RUSER="$(whoami)"
 scp -q /tmp/console-sync.tgz "$HOST":console-sync.tgz
 SRC="/home/$RUSER/console-sync.tgz"
 
-ssh -t "$HOST" "sudo bash -s -- $RESTART ${MODE:-none} $SRC" <<'REMOTE'
+ssh -t "$HOST" "sudo bash -s -- $RESTART ${MODE:-none} $SRC $APP $PM2NAME $PORT" <<'REMOTE'
 set -euo pipefail
-RESTART="$1"; MODE="$2"; SRC="$3"; APP=/apps/console
+RESTART="$1"; MODE="$2"; SRC="$3"; APP="$4"; PM2NAME="$5"; PORT="$6"
 # sudo strips PATH → pm2 (in /usr/local/bin) would be "command not found" and the restart
 # would silently no-op, leaving the OLD code running. Resolve it explicitly.
 export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
@@ -90,6 +99,7 @@ else
   cp -f /tmp/csync/server/package.json "$APP/server/" 2>/dev/null || true
   [ -d /tmp/csync/server/node_modules ] && { rm -rf "$APP/server/node_modules"; cp -R /tmp/csync/server/node_modules "$APP/server/"; echo "▸ node_modules replaced"; }
   cp -f /tmp/csync/web/* "$APP/web/" 2>/dev/null || true
+  [ -f /tmp/csync/ecosystem.prod.config.js ] && cp -f /tmp/csync/ecosystem.prod.config.js "$APP/ecosystem.prod.config.js"
   [ -d /tmp/csync/web/assets ] && cp -R /tmp/csync/web/assets "$APP/web/"
   cp -f /tmp/csync/server/healthcheck.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/postdeploy-check.cjs "$APP/server/" 2>/dev/null || true
@@ -113,25 +123,25 @@ rm -rf /tmp/csync "$SRC"
 if [ "$RESTART" = "1" ]; then
   echo "▸ restarting (delete+start so .env is re-read)…"
   cd "$APP"
-  OLDPID="$($PM2 pid salam-console 2>/dev/null | tr -d '[:space:]' || true)"
-  $PM2 delete salam-console >/dev/null 2>&1 || true
+  OLDPID="$($PM2 pid "$PM2NAME" 2>/dev/null | tr -d '[:space:]' || true)"
+  $PM2 delete "$PM2NAME" >/dev/null 2>&1 || true
   $PM2 start ecosystem.prod.config.js >/dev/null && $PM2 save >/dev/null
-  NEWPID="$($PM2 pid salam-console 2>/dev/null | tr -d '[:space:]' || true)"
+  NEWPID="$($PM2 pid "$PM2NAME" 2>/dev/null | tr -d '[:space:]' || true)"
   echo "▸ pid ${OLDPID:-none} → ${NEWPID:-?}"
   [ -n "$NEWPID" ] && [ "$NEWPID" != "$OLDPID" ] || { echo "✗ process did NOT restart"; exit 1; }
   # wait for the port to answer (boot does schema init + index checks first)
-  printf "▸ waiting for :4600 "
+  printf "▸ waiting for :$PORT "
   for i in $(seq 1 90); do
-    code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4600/ || true)
+    code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:$PORT/ || true)
     [ "$code" = "200" ] && { echo " ✓ UP (${i}s)"; break; }
     printf "."; sleep 2
   done
-  [ "${code:-000}" = "200" ] || { echo " ✗ still not up — last 20 log lines:"; pm2 logs salam-console --err --lines 20 --nostream; exit 1; }
+  [ "${code:-000}" = "200" ] || { echo " ✗ still not up — last 20 log lines:"; $PM2 logs "$PM2NAME" --err --lines 20 --nostream; exit 1; }
   echo "▸ boot summary:"
   grep -E "console init|source indexes|API on|PROD-SYNC|OSB fault|APIGW connectivity" "$APP/logs/console.out.log" | tail -6
 fi
 REMOTE
 
 echo
-echo "✅ deployed to $HOST"
-[ "$MODE" = "--web-only" ] && echo "   → hard-refresh https://salam.sa/digital-console/" || echo "   → https://salam.sa/digital-console/"
+echo "✅ deployed to $HOST ($TARGET → $APP, pm2 $PM2NAME, :$PORT)"
+[ "$MODE" = "--web-only" ] && echo "   → hard-refresh $URL" || echo "   → $URL"

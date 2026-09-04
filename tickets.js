@@ -10,7 +10,7 @@
 (function(){
   "use strict";
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  const API = window.API_BASE;
   const api=(p,opts)=>window.fetch(API+p,Object.assign({headers:{"Content-Type":"application/json"}},opts))
     .then(r=>{ if(!r.ok) return r.json().catch(()=>({})).then(e=>{ throw new Error(e.error||("HTTP "+r.status)); }); return r.json(); });
 

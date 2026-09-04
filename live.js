@@ -6,7 +6,7 @@
 (function(){
   "use strict";
   const $=s=>document.querySelector(s);
-  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  const API = window.API_BASE;
   const KEY="cons_live";
   let on = localStorage.getItem(KEY)!=="off";      // default ON
   let es=null, pollTimer=null, lastUpdate=0, connected=false, busy=false;

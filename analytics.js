@@ -4,7 +4,7 @@
   const $ = s => document.querySelector(s);
   const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
   const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  const API = window.API_BASE;
   const PAL=["#2563eb","#16a34a","#ea580c","#7c3aed","#0d9488","#dc2626","#d97706","#0891b2","#db2777"];
   const st={dashboards:[],dashKey:null,dashCat:"",spec:{filters:{},panels:[]},catalog:{},range:24,valCache:{},dirty:false};
   const tv=(n,fb)=>{const v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return v||fb;};

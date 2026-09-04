@@ -242,7 +242,7 @@
     if (!nodeId) { el.innerHTML = ""; return; }
     if (_liveCache[nodeId]) { el.innerHTML = liveHtml(_liveCache[nodeId]); return; }
     try {
-      const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+      const API = window.API_BASE;
       const r = await window.fetch(API + "/api/topo2/sample?node=" + encodeURIComponent(nodeId));
       const d = await r.json();
       _liveCache[nodeId] = d;

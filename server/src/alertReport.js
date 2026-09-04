@@ -20,7 +20,7 @@
 const db = require('./db');
 const pdfout = require('./pdfout');
 
-const BASE = process.env.CONSOLE_BASE_URL || 'https://salam.sa/digital-console/';
+const BASE = process.env.CONSOLE_PUBLIC_URL || process.env.CONSOLE_BASE_URL || 'https://salam.sa/unified-console/';
 const opLabel = { gt: '>', gte: '>=', lt: '<', lte: '<=', eq: '=' };
 
 const ksa = iso => { try {
@@ -148,7 +148,7 @@ async function buildOne(ev, simNow) {
   } catch (e) { example = { error: e.message }; }
 
   /* ---- compose the PDF -------------------------------------------------------------------- */
-  const d = pdfout.doc({ footer: `Salam Digital Console - automated alert report - generated ${ksa(simNow)} KSA` });
+  const d = pdfout.doc({ footer: `Salam Unified Console - automated alert report - generated ${ksa(simNow)} KSA` });
   const CC = d.colors;
   const sev = ev.severity || 'P3';
   const sevColor = sev === 'P1' ? CC.red : sev === 'P2' ? CC.amber : CC.muted;

@@ -78,7 +78,7 @@ async function sendHtml(to, subject, html, attachments) {
       tls: process.env.SMTP_TLS_REJECT_UNAUTHORIZED === 'false' ? { rejectUnauthorized: false } : undefined,
       auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
     });
-    await t.sendMail({ from: process.env.SMTP_FROM || 'Salam Digital Console <noreply@salam.sa>',
+    await t.sendMail({ from: process.env.SMTP_FROM || 'Salam Unified Console <noreply@salam.sa>',
       to: emails.join(','), subject, html,
       ...(attachments && attachments.length ? { attachments } : {}) });
     mailOk();
@@ -99,7 +99,7 @@ function shell({ title, pill, pillColor, bodyHtml }) {
   </div>`;
 }
 
-const CONSOLE_URL = process.env.CONSOLE_BASE_URL || 'https://salam.sa/digital-console/';
+const CONSOLE_URL = process.env.CONSOLE_PUBLIC_URL || process.env.CONSOLE_BASE_URL || 'https://salam.sa/unified-console/';
 
 function buildDigest(simNow, evals, reportNames = [], idByKey = {}) {
   const firing = evals.filter(e => e.fired);
@@ -143,8 +143,8 @@ function buildDigest(simNow, evals, reportNames = [], idByKey = {}) {
       <tr><th style="${th}">Status</th><th style="${th}">Rule</th><th style="${th}">Metric</th><th style="${th}">Threshold</th><th style="${th}">Counts</th><th style="${th}">Details</th></tr>
       ${rows}
     </table>
-    <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Digital Console · automated alert runner · reports attached per firing alert</div>`;
-  const html = shell({ title: 'Alerts — Digital Console',
+    <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Unified Console · automated alert runner · reports attached per firing alert</div>`;
+  const html = shell({ title: 'Alerts — Unified Console',
     pill: firing.length ? `${firing.length} FIRING` : 'ALL CLEAR',
     pillColor: firing.length ? '#dc2626' : '#16a34a', bodyHtml: body });
   const subject = `[Salam Ops] ${firing.length} alert(s) — ${ksa(simNow)} KSA`;

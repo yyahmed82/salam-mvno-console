@@ -6,7 +6,7 @@
   const $ = s => document.querySelector(s);
   const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
   const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  const API = window.API_BASE;
   let atab = (window.pf && window.pf.get('alerts_tab','open')) || "open";
   /* After a mail deep link (#alerts?id=… / ?rule=…) is handled, strip the query from the URL
    * WITHOUT firing hashchange (replaceState). Two reasons: a re-click of the SAME mail link then

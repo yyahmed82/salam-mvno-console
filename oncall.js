@@ -4,7 +4,7 @@
   "use strict";
   const $=s=>document.querySelector(s);
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  const API = window.API_BASE;
   const api=p=>window.fetch(API+p,{headers:{"Content-Type":"application/json"}}).then(r=>{ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); });
   const num=v=>v==null?"—":Number(v).toLocaleString();
   const pct=v=>v==null?"—":(v*100).toFixed(1)+"%";

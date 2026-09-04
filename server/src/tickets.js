@@ -144,7 +144,7 @@ async function sendConfirmation(email, t) {
       <tr><td style="padding:4px 14px 4px 0;color:#64748b">Raised</td><td style="padding:4px 0">${e(ksa(t.at))} KSA</td></tr>
     </table>
     <p style="font-size:13px;color:#475569;margin:0 0 6px">You'll be notified as it progresses. Keep the reference above for any follow-up.</p>
-    <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Digital Console · internal feedback</div>`;
+    <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Unified Console · internal feedback</div>`;
   const html = notify.shell({ title: `Console ticket ${t.ref}`, pill: 'UNDER EVALUATION', pillColor: '#0f5132', bodyHtml: body });
   return notify.sendHtml([email], `Console ticket ${t.ref} raised — under evaluation`, html);
 }
@@ -160,7 +160,7 @@ async function sendStatusUpdate(email, t) {
       <tr><td style="padding:4px 14px 4px 0;color:#64748b">Status</td><td style="padding:4px 0;font-weight:700">${e(label)}</td></tr>
       ${t.resolution ? `<tr><td style="padding:4px 14px 4px 0;color:#64748b">Note</td><td style="padding:4px 0">${e(t.resolution)}</td></tr>` : ''}
     </table>
-    <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Digital Console · internal feedback</div>`;
+    <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Unified Console · internal feedback</div>`;
   const html = notify.shell({ title: `Console ticket ${t.ref} — ${label}`, pill: String(label).toUpperCase(),
     pillColor: CLOSED_STATUSES.has(t.status) ? (t.status === 'rejected' ? '#b91c1c' : '#16a34a') : '#0f5132', bodyHtml: body });
   return notify.sendHtml([email], `Console ticket ${t.ref} — ${label}`, html);

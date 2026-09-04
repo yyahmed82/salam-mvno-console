@@ -1,0 +1,26 @@
+# Local Postgres for the unified console's OWN writable DB (unified_console).
+# Everything the console READS (selfcare replica, sda_ops_beta, nexus, payments_v2) stays on the prod
+# PG server 172.31.15.121 and is reached through the SSH tunnel via 152 (tools/local/tunnel-152.sh).
+#
+#   docker compose -f docker-compose.unified.yml up -d
+#   psql postgres://postgres:postgres@127.0.0.1:5700/unified_console
+services:
+  unified-db:
+    image: postgres:16
+    container_name: unified-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: unified_console
+      TZ: UTC
+      PGTZ: UTC
+    command: ["postgres", "-c", "timezone=UTC", "-c", "max_connections=60"]
+    ports: ["127.0.0.1:5700:5432"]
+    volumes: ["unified_pg:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d unified_console"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  unified_pg: {}

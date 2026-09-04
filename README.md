@@ -1,4 +1,23 @@
-# Salam DMS · MVNO Digital Console
+# Salam · Unified Console (Fixed + MVNO)
+
+**v2.x of the MVNO Digital Console codebase**, extended to cover Fixed / Salam Home (features ported from the
+Operations Console beta). Plan and phases: `docs/UNIFIED-CONSOLE-CONVERGENCE-PLAN.md`. Build notes: `CLAUDE.md`.
+
+## Run locally against prod data (through server 152)
+```bash
+bash tools/local/tunnel-152.sh                       # terminal A — SSH tunnel via 152, keep open
+docker compose -f docker-compose.unified.yml up -d   # local Postgres for the console's own DB (:5700)
+bash tools/local/env-from-152.sh                     # once — builds .env.local from the prod env files on 152
+bash tools/local/dev.sh                              # terminal B — http://localhost:4700/
+curl -s localhost:4700/api/version | jq              # pools: upg/ops/nexus/payments → true when wired
+```
+Sign in with your @salam.sa e-mail; with SMTP unset the OTP code is printed in terminal B.
+
+## Deploy
+`DEPLOY_TARGET=unified bash deploy152/deploy.sh` → https://salam.sa/unified-console/ (152 :4700, PM2 `salam-unified`).
+
+---
+## Original Digital Console notes (still valid for the MVNO side)
 
 Interactive operations console for the **selfcare-backend** (release-2.34.1), generated from full static code analysis.
 

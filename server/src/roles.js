@@ -4,11 +4,17 @@
  * Views: topology, journeys, integrations, alerts, errors, dashboards, settings, users
  * Caps:  editRules, manageSync, manageUsers, unmaskPII, export, ackErrors
  */
-const ALL_VIEWS = ['dashboard','monitoring','dms','workbench','alerts','errors','analytics','explore','settings','users'];
+/* FIXED_ENABLED=1 (unified console) exposes the Fixed / Salam Home views: fixed (dashboards), maps
+ * (dealers + QR maps), b2c (Salam Home app journeys). Off → the views do not exist anywhere in the
+ * console (nav, matrix, router), so /digital-console keeps its exact pre-unified shape. */
+const FIXED_ENABLED = /^(1|true|yes)$/i.test(String(process.env.FIXED_ENABLED || ''));
+const FIXED_VIEWS = FIXED_ENABLED ? ['fixed','maps','b2c'] : [];
+const ALL_VIEWS = ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','explore','settings','users'];
 const CAPS = ['editRules','manageSync','manageUsers','unmaskPII','export','ackErrors','useYusr','customizeDashboard'];
 // human labels for the permissions matrix UI
 const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS', workbench:'L2 Workbench', alerts:'Alerts',
-  errors:'Troubleshoot', analytics:'Analytics / SLA', explore:'Explore links', settings:'Settings', users:'User management' };
+  errors:'Troubleshoot', analytics:'Analytics / SLA', explore:'Explore links', settings:'Settings', users:'User management',
+  fixed:'Fixed / Salam Home', maps:'Dealers & QR maps', b2c:'B2C (Salam Home app)' };
 const CAP_LABELS = { editRules:'Edit rules', manageSync:'Manage sync', manageUsers:'Manage users',
   unmaskPII:'Unmask PII', export:'Export data', ackErrors:'Ack incidents',
   useYusr:'Use Yusr AI', customizeDashboard:'Customize dashboards' };
@@ -27,7 +33,7 @@ const ROLES = {
   },
   admin: {
     label: 'Admin', team: 'Digital Ops', rank: 2,
-    views: ['dashboard','monitoring','dms','workbench','alerts','errors','analytics','explore','settings'],
+    views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','explore','settings'],
     /* unmaskPII granted to admin on 21 Aug 2026 at the owner's request — per-request ACT, never a
      * mode: caller must pass unmask=1, value fetched live, every reveal audited as pii.unmask. */
     caps: { editRules:true, manageSync:true, manageUsers:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
@@ -196,4 +202,4 @@ function maskDeep(obj, allowUnmask) {
   return walk(obj);
 }
 
-module.exports = { ROLES, LEGACY_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS };
+module.exports = { ROLES, LEGACY_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS, FIXED_ENABLED, FIXED_VIEWS };

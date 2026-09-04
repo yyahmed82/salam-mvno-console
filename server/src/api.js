@@ -1088,7 +1088,7 @@ app.get('/api/dms/commission/report', async (req, res) => {
     }
 
     if (fmt === 'pdf') {
-      const d = require('./pdfout').doc({ footer: `Salam Digital Console - commission report - ${st.window.from.slice(0,10)} to ${st.window.to.slice(0,10)}` });
+      const d = require('./pdfout').doc({ footer: `Salam Unified Console - commission report - ${st.window.from.slice(0,10)} to ${st.window.to.slice(0,10)}` });
       const CC = d.colors;
       /* brand header: leaf mark + wordmark (base-14 fonts only on 152 — the wordmark IS the logo) */
       const hb = d.band(66, CC.dark);
@@ -2967,9 +2967,13 @@ app.get('/api/health', async (req, res) => {
   try {
     const b = await dataBounds();
     const r = await C.query(`SELECT count(*)::int AS rules FROM alert_rules`);
-    res.json({ ok: true, source_bounds: b, rules: r.rows[0].rules });
+    const fixed = await require('./fixed').status();   // unified: Fixed-side pools (never fatal for MVNO health)
+    res.json({ ok: true, source_bounds: b, rules: r.rows[0].rules, fixed });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
+
+// Fixed / Salam Home routes — all under /api/fixed/* (see fixed.js)
+require('./fixed').mount(app);
 
 app.get('/api/rules', async (req, res) => {
   const rules = (await C.query(`SELECT r.*, mc.unit, mc.higher_is_bad FROM alert_rules r
@@ -3695,7 +3699,10 @@ function sseBroadcast(event, payload) {
 
 /* ---- reliability ops ---- */
 app.get('/api/ready', async (req, res) => { const r = await reliability.ready(); res.status(r.ok ? 200 : 503).json(r); });
-app.get('/api/version', (req, res) => res.json(reliability.version()));
+app.get('/api/version', (req, res) => res.json({ ...reliability.version(),
+  console: 'unified', publicUrl: process.env.CONSOLE_PUBLIC_URL || null,
+  fixedEnabled: roles.FIXED_ENABLED, fixedViews: roles.FIXED_VIEWS,
+  pools: { upg: db.upgConfigured, ops: db.opsConfigured, nexus: db.nexusConfigured, payments: db.paymentsConfigured } }));
 app.get('/api/errors/log', requireCap('manageUsers'), async (req, res) => {
   try {
     const rows = (await C.query(`SELECT id, at, level, message, route, actor, ip FROM console_errors ORDER BY at DESC LIMIT 200`)).rows;

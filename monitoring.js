@@ -13,7 +13,7 @@
   "use strict";
   const $=s=>document.querySelector(s);
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  const API = window.API_BASE;
   /* A missing route returns the SPA's index.html, not JSON — and r.json() on HTML throws the
    * browser's own parser error ("The string did not match the expected pattern." in Safari),
    * which got shown to the operator as if the DATA were malformed. Read the body once as text

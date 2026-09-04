@@ -6,7 +6,7 @@
   const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   const SES = { email: localStorage.getItem("cons_email")||"", role: localStorage.getItem("cons_role")||"report_manager" };
   async function api(path){
-    const r = await fetch((window.API_BASE || (location.pathname.startsWith("/digital-console") ? "/digital-console" : "")) + path, { headers:{ "Content-Type":"application/json", "X-Console-Role":SES.role, "X-Console-User":SES.email } });
+    const r = await fetch((window.API_BASE || window.CONSOLE_BASE) + path, { headers:{ "Content-Type":"application/json", "X-Console-Role":SES.role, "X-Console-User":SES.email } });
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || ("HTTP "+r.status));
     return r.json();
   }

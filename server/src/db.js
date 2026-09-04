@@ -41,8 +41,30 @@ const upg = UPG_URL
   : null;
 if (upg) upg.on('error', e => { try { console.error('[UPG pool]', e.message); } catch (_) {} });
 
+/* ---- Fixed / Salam Home side (unified console, stage 1) — ALL READ-ONLY, ALL OPTIONAL ----
+ * OPS_DATABASE_URL      → sda_ops_beta: the Operations Console read model (dealers, order_attempts,
+ *                         api_calls, error_events, alert_rules, incident_log, ops_docs, users).
+ *                         Still written by the salam-dealer-ops watcher (opsb-ingest-watch); we only read.
+ * NEXUS_DATABASE_URL    → nexus (workflow_states / api_logs / staff): live PII unmask + spot lookups only.
+ *                         Never bulk-read from the console — that is the ingester's job (Phase 5).
+ * PAYMENTS_DATABASE_URL → payments_v2 (applications / invoices / payments) for B2C payment health.
+ * Unset = the matching Fixed feature reports "not configured"; nothing errors at boot.
+ * Same guard rails as UPG: tiny pool, short statement timeout, distinct application_name so the DBA
+ * can see (and kill) us in pg_stat_activity. */
+const roPool = (url, name, max = 3, timeoutMs = 15000) => url
+  ? new Pool({ connectionString: url, max, statement_timeout: timeoutMs,
+      idleTimeoutMillis: 30000, connectionTimeoutMillis: 5000, application_name: name, ...PG_UTC })
+  : null;
+const ops      = roPool(process.env.OPS_DATABASE_URL      || '', 'salam_unified_ops_ro',      Number(process.env.OPS_POOL_MAX) || 3);
+const nexus    = roPool(process.env.NEXUS_DATABASE_URL    || '', 'salam_unified_nexus_ro',    2);
+const payments = roPool(process.env.PAYMENTS_DATABASE_URL || '', 'salam_unified_payments_ro', 2);
+for (const [n, p] of [['OPS', ops], ['NEXUS', nexus], ['PAYMENTS', payments]])
+  if (p) p.on('error', e => { try { console.error(`[${n} pool]`, e.message); } catch (_) {} });
+
 // belt & braces: if a server/role default ever overrides the startup option, force it per-connection
 const pinUtc = pool => pool.on('connect', c => { c.query("SET TIME ZONE 'UTC'").catch(() => {}); });
-pinUtc(source); pinUtc(console_); if (upg) pinUtc(upg);
+pinUtc(source); pinUtc(console_); if (upg) pinUtc(upg); if (ops) pinUtc(ops); if (nexus) pinUtc(nexus); if (payments) pinUtc(payments);
 
-module.exports = { source, console: console_, upg, upgConfigured: !!upg, SOURCE_URL, CONSOLE_URL };
+module.exports = { source, console: console_, upg, upgConfigured: !!upg,
+  ops, opsConfigured: !!ops, nexus, nexusConfigured: !!nexus, payments, paymentsConfigured: !!payments,
+  SOURCE_URL, CONSOLE_URL };

@@ -8,8 +8,7 @@
   // robust timestamp formatter → KSA (UTC+3) — tolerates ISO strings, Dates, epoch, or junk
   const fmtTs = (v, secs) => { if(v==null||v==="") return "—"; const d=new Date(v); if(isNaN(d.getTime())) return esc(String(v));
     const s=new Date(d.getTime()+3*3600e3).toISOString().replace("T"," "); return (secs? s.slice(0,19): s.slice(0,16))+" KSA"; };
-  const API = (location.protocol==="file:") ? "http://localhost:4600"
-          : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  const API = window.API_BASE;
 window.API_BASE = API;   // one source of truth for files that fetch outside the api() helper;
   // branded loader — Salam-green hourglass (draining sand) + spinner ring
   const salamLoader = (msg) => `<div class="salam-loader">
@@ -94,7 +93,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   window.fetch = async (url, opts={})=>{
     const isApi = typeof url==="string" && url.includes("/api/");
     if(!isApi) return _fetch(url, opts);
-    // NAMESPACE GUARD — the console owns /digital-console/*, never root /api/ (which belongs to the
+    // NAMESPACE GUARD — the console owns <CONSOLE_BASE>/* (e.g. /unified-console/*), never root /api/ (which belongs to the
     // public site). Any root-relative /api/... is rewritten here exactly once, so a file that forgets
     // the prefix still routes correctly instead of hitting the website and getting an HTML 404/405.
     if(url.startsWith("/api/") && API) url = API + url;

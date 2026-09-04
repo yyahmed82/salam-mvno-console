@@ -5,7 +5,7 @@
   "use strict";
   const $=s=>document.querySelector(s);
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  const API = window.API_BASE;
   const api=(p,opts)=>fetch(API+p,Object.assign({headers:{"Content-Type":"application/json"}},opts)).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
   const isSuper=()=>{ const s=(window.opsSession&&window.opsSession())||{}; return !!(s.me && s.me.realRole==="super_admin"); };
   const catOf=d=>(window.ANA_NAV&&window.ANA_NAV.cat)?window.ANA_NAV.cat(d):(d.builtin?'Other':'Yours');

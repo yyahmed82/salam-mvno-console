@@ -3,6 +3,32 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.1] — 2026-09-05 — Unified Console, Phase 0
+The Digital Console codebase becomes the **Salam Unified Console** (Fixed + MVNO). Plan: `docs/UNIFIED-CONSOLE-CONVERGENCE-PLAN.md`.
+The frozen digital-console line is tag `v1.1.0-digital-console-freeze` / branch `release/digital-console`.
+
+### Added
+- `base.js`: single source of truth for the URL prefix (`window.CONSOLE_BASE`, `window.API_BASE`); works under
+  `/unified-console`, `/digital-console` or root (local). Replaced the hard-coded `/digital-console` in 28 files.
+- `server/src/db.js`: optional read-only pools `ops` (sda_ops_beta), `nexus`, `payments` (payments_v2) via
+  `OPS_/NEXUS_/PAYMENTS_DATABASE_URL`; distinct `application_name`s for the DBA.
+- `server/src/fixed.js` + `GET /api/fixed/ping`: Fixed-side connectivity/status probe; `/api/health` and
+  `/api/version` now report the Fixed pools, `FIXED_ENABLED`, and the public URL.
+- `roles.js`: views `fixed`, `maps`, `b2c` exist only when `FIXED_ENABLED=1` (super_admin + admin get them).
+- Local dev kit: `docker-compose.unified.yml` (local `unified_console` DB on :5700), `tools/local/tunnel-152.sh`
+  (152 as passerelle to 172.31.15.121 and friends), `tools/local/env-from-152.sh` (builds `.env.local` from the
+  two prod env files, hosts rewritten to the tunnel, prod-only side effects dropped), `tools/local/dev.sh`.
+- `deploy152/deploy.sh` `DEPLOY_TARGET=unified|digital`; `ecosystem.prod.config.js` reads `PM2_NAME`/`PORT` from `.env`.
+- `CLAUDE.md` working notes for the build sessions.
+
+### Changed
+- Product name in UI/e-mails: "Salam Unified Console"; e-mail links use `CONSOLE_PUBLIC_URL`
+  (default `https://salam.sa/unified-console/`).
+- `VERSION` 2.0.0-alpha.1; `server/package.json` renamed `unified-console-server`.
+
+## [1.1.0] — 2026-09-04
+Freeze of the Digital Console exactly as deployed on 152 (180 files changed since 1.0.0; see git history).
+
 ## [1.0.0] — 2026-07-22
 Initial import of the Salam MVNO Digital Console (NOC / ops dashboard for the MVNO).
 
