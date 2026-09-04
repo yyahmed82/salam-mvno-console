@@ -22,8 +22,35 @@ const DEFAULT_TABLES = [
   'plans', 'sellers', 'settings', 'versions', 'channels', 'plan_channels',
   'onboarding_orders', 'checkouts', 'payments',
   'activation_logs', 'eligibility_logs', 'nafath_logs', 'change_plan_logs', 'delivery_requests',
-  'seller_deductions'
+  'seller_deductions',
+  /* VAS / SERVICE LOGS (4 Sep 2026) — behind the CMS "Service Logs" page and the Sub360 VAS
+   * panel. Prod probe (salam_production) proved the CMS tabs (boosters/toogles/…) are FILTERS
+   * over ONE polymorphic table: public.service_logs (~3.76M rows). services/service_groups
+   * first (FK parents for names/groups). Initial pull via windowed backfill, incremental after. */
+  'services', 'service_groups', 'service_logs',
+  // SMS/OTP health (Monitoring ④ + Unifonic incident forensics): otps powers the sent→verified
+  // funnel (the app discards the SMS gateway response, so this is the delivery evidence);
+  // sms_vendors shows which vendor (Unifonic/Msegat) is live.
+  'otps', 'sms_vendors',
+  /* LOGIN VISIBILITY. users is the ONLY table a login writes to: AuthenticationController#create
+   * calls Trackable#update_tracked_fields! the moment the password is accepted, setting
+   * current_sign_in_at / last_sign_in_at / current_sign_in_ip / sign_in_count / platform /
+   * app_version. Without it the console cannot see that anyone logged in — the snapshot simply
+   * stops at the last full copy, which reads exactly like "sign-in tracking is broken" and cost
+   * us a wrong conclusion once. Kept LAST: the first pass is a large catch-up and must not delay
+   * the operational tables above. Credential columns are never copied — see SKIP_COLUMNS. */
+  'users'
 ];
+
+/* Columns that must NEVER be replicated, per table. The console is an ops replica: it needs to
+ * know WHEN someone signed in, never WHAT would let anyone sign in as them. password_digest and
+ * otp_secret_key are exactly that material (otp_secret_key is the TOTP seed — holding it is
+ * equivalent to being able to mint the customer's login OTP), so they are dropped at the source
+ * query and never travel over the wire. */
+const SKIP_COLUMNS = {
+  users: ['password_digest', 'otp_secret_key', 'reset_password_token', 'confirmation_token',
+    'unlock_token', 'authentication_token', 'encrypted_password']
+};
 
 const BATCH   = Number(process.env.PROD_SYNC_BATCH || 10000);
 const OVERLAP = Number(process.env.PROD_SYNC_OVERLAP_HOURS || 6);
@@ -49,7 +76,9 @@ function prodPool() {
     application_name: 'salam-console-prod-sync',
     connectionTimeoutMillis: Number(process.env.PROD_SYNC_CONNECT_TIMEOUT_MS || 8000),   // fail fast when VPN is down
     // hard read-only + timeouts on the prod side
-    options: `-c default_transaction_read_only=on -c statement_timeout=${stmtMs} -c idle_in_transaction_session_timeout=${stmtMs + 60000}`
+    // timezone=UTC is REQUIRED: the sync's cutoff compares `created_at <= now() - lag` against a
+    // `timestamp WITHOUT time zone` column, so a non-UTC session shifts the window by the offset.
+    options: `-c timezone=UTC -c default_transaction_read_only=on -c statement_timeout=${stmtMs} -c idle_in_transaction_session_timeout=${stmtMs + 60000}`
   });
 }
 
@@ -79,6 +108,27 @@ async function columns(pool, schema, table) {
      ORDER BY a.attnum`, [schema, table]);
   return r.rows;   // data_type = pg typname: 'jsonb','json','text','_text','uuid','timestamptz',...
 }
+/* Non-primary UNIQUE indexes. An UPSERT can name only ONE conflict target, so any OTHER unique
+ * index is a second way the insert can fail — and `users` has one on mobile_number. Partial
+ * indexes (indpred) and expression indexes (attnum 0) are excluded: their predicate cannot be
+ * evaluated here, so a delete built from them could remove a row that would not have collided. */
+async function uniqueKeys(pool, schema, table) {
+  const r = await pool.query(
+    /* attname::text is REQUIRED: attname is type `name`, so array_agg would return name[] (oid
+     * 1003), for which node-pg has no array parser — it hands back the literal string
+     * "{mobile_number}" and every array method on it fails. text[] parses correctly. */
+    `SELECT i.indexrelid::regclass::text AS name, array_agg(a.attname::text ORDER BY k.ord) AS cols
+       FROM pg_index i
+       JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+       JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+      WHERE i.indrelid = ($1)::regclass AND i.indisunique AND NOT i.indisprimary
+        AND i.indpred IS NULL AND i.indexprs IS NULL
+      GROUP BY i.indexrelid`, [`"${schema}"."${table}"`]);
+  // belt and braces: if any driver still hands back the literal "{a,b}", parse it here
+  const toArr = v => Array.isArray(v) ? v
+    : String(v || '').replace(/^\{|\}$/g, '').split(',').map(s => s.replace(/^"|"$/g, '')).filter(Boolean);
+  return r.rows.map(x => ({ name: x.name, cols: toArr(x.cols) })).filter(x => x.cols.length);
+}
 async function primaryKey(pool, schema, table) {
   const r = await pool.query(
     `SELECT a.attname FROM pg_index i
@@ -86,8 +136,22 @@ async function primaryKey(pool, schema, table) {
      WHERE i.indrelid = ($1)::regclass AND i.indisprimary`, [`"${schema}"."${table}"`]);
   return r.rows.map(x => x.attname);
 }
-const coerce = (val, type) => (val == null) ? null
-  : (type === 'jsonb' || type === 'json') ? (typeof val === 'string' ? val : JSON.stringify(val)) : val;
+/* JSON SAFETY. A json/jsonb column on our side is often plain text on prod (or holds '' / a
+ * non-JSON string). Passing that through raw makes Postgres reject the WHOLE batch with
+ * "invalid input syntax for type json" — one poison row then blocks the table on every tick,
+ * silently, until someone notices the data is stale. (Observed: delivery_requests froze for
+ * 18h from 2026-08-29 17:40 on exactly this.) So we guarantee valid JSON, without losing data:
+ *   ''  -> NULL          (empty string has no JSON representation)
+ *   valid JSON -> as-is  (untouched)
+ *   anything else -> encoded as a JSON string, so the original text survives and is queryable */
+const coerce = (val, type) => {
+  if (val == null) return null;
+  if (type !== 'json' && type !== 'jsonb') return val;
+  if (typeof val !== 'string') return JSON.stringify(val);
+  const s = val.trim();
+  if (s === '') return null;
+  try { JSON.parse(s); return val; } catch (_) { return JSON.stringify(val); }
+};
 
 async function getState(table) {
   const r = await db.console.query(`SELECT * FROM prod_sync_state WHERE table_name=$1`, [table]);
@@ -105,30 +169,90 @@ async function setState(table, patch) {
 }
 
 // Resolve the plan for one table: schemas (prod/local), shared columns, pk, watermark expression.
+/* AUTO-CREATE (4 Sep 2026): the engine used to require the local table to pre-exist (the
+ * original replica seed provided them) — a table newly added to DEFAULT_TABLES silently
+ * skipped 'not present locally' (the VAS service-log tables). Now the local shell is created
+ * from the PROD schema: analytics-loose types (varchars→text), pk carried over. */
+async function createLocalFromProd(prod, prodSchema, table) {
+  const pc = await columns(prod, prodSchema, table);
+  if (!pc.length) throw new Error('prod columns unreadable for ' + table);
+  const pkArr = await primaryKey(prod, prodSchema, table);
+  const T = t => {
+    const d = String(t).toLowerCase();
+    if (/bigint|bigserial/.test(d)) return 'bigint';
+    if (/int|serial/.test(d)) return 'integer';
+    if (/uuid/.test(d)) return 'uuid';
+    if (/bool/.test(d)) return 'boolean';
+    if (/timestamp/.test(d)) return 'timestamptz';
+    if (/^date$/.test(d)) return 'date';
+    if (/numeric|decimal|double|real|money/.test(d)) return 'numeric';
+    if (/jsonb?/.test(d)) return 'jsonb';
+    return 'text';
+  };
+  const defs = pc.map(c => `"${c.column_name}" ${T(c.data_type)}`);
+  if (pkArr.length === 1) defs.push(`PRIMARY KEY ("${pkArr[0]}")`);
+  await db.source.query(`CREATE TABLE IF NOT EXISTS "public"."${table}" (${defs.join(', ')})`);
+  console.log(`[PROD-SYNC] created local table public.${table} (${pc.length} cols) from prod schema`);
+}
+
 async function planTable(prod, table) {
-  const [ls, ps] = await Promise.all([resolveSchema(db.source, table), resolveSchema(prod, table)]);
-  if (!ls) return { skip: 'not present locally' };
+  let [ls, ps] = await Promise.all([resolveSchema(db.source, table), resolveSchema(prod, table)]);
   if (!ps) return { skip: 'not present on prod' };
+  if (!ls) {
+    try { await createLocalFromProd(prod, ps.table_schema, table); ls = await resolveSchema(db.source, table); }
+    catch (e) { return { skip: 'not present locally · auto-create failed: ' + e.message.slice(0, 80) }; }
+  }
+  if (!ls) return { skip: 'not present locally' };
   const localSchema = ls.table_schema, prodSchema = ps.table_schema;
-  const [lc, pc, pkArr] = await Promise.all([
-    columns(db.source, localSchema, table), columns(prod, prodSchema, table), primaryKey(db.source, localSchema, table)]);
+  /* Serialised on purpose: db.source is a max-1 pool, so firing these together makes node-pg
+   * queue them on the one client and emit the "client.query() while already executing" warning. */
+  const lc = await columns(db.source, localSchema, table);
+  const pkArr = await primaryKey(db.source, localSchema, table);
+  const uniques = await uniqueKeys(db.source, localSchema, table);
+  const pc = await columns(prod, prodSchema, table);
   if (!pkArr.length) return { skip: 'no primary key (local)' };
   const pk = pkArr[0];
   const prodCols = new Set(pc.map(c => c.column_name));
   const typeOf = Object.fromEntries(lc.map(c => [c.column_name, c.data_type]));
-  const cols = lc.map(c => c.column_name).filter(c => prodCols.has(c));   // intersection, ordered by local
+  const skip = new Set(SKIP_COLUMNS[table] || []);
+  const cols = lc.map(c => c.column_name).filter(c => prodCols.has(c) && !skip.has(c));   // intersection, ordered by local
   if (!cols.includes(pk)) return { skip: 'pk missing on prod' };
   const has = c => cols.includes(c);
   const wmExpr = has('updated_at') && has('created_at') ? `COALESCE(updated_at, created_at)`
     : has('updated_at') ? 'updated_at' : has('created_at') ? 'created_at' : null;
-  return { table, pk, cols, typeOf, wmExpr, prodSchema, localSchema };
+  // only unique keys whose columns we actually carry can be checked against the incoming rows
+  const uq = uniques.filter(u => u.cols.every(c => cols.includes(c)));
+  return { table, pk, cols, typeOf, wmExpr, prodSchema, localSchema, uniques: uq };
 }
 
-async function upsertBatch(local, schema, table, pk, cols, typeOf, rows) {
+async function upsertBatch(local, schema, table, pk, cols, typeOf, rows, uniques = []) {
   if (!rows.length) return;
   const per = Math.max(1, Math.floor(60000 / cols.length));
   for (let i = 0; i < rows.length; i += per) {
     const chunk = rows.slice(i, i + per);
+    /* RETIRE SUPERSEDED ROWS FIRST.
+     * ON CONFLICT resolves the PK and nothing else, so an incoming row carrying a NEW id whose
+     * mobile_number still belongs to an OLD local id raises
+     *   duplicate key value violates unique constraint "index_users_on_mobile_number".
+     * That is not corruption, it is the login flow: AuthenticationController#find_resource
+     * DELETES the account of a DEACTIVATED subscriber, the customer re-registers, and prod
+     * legitimately reissues the same number under a new id — while our snapshot still holds the
+     * old one. The old row is dead upstream, so drop it, scoped to the values in THIS chunk and
+     * never touching a row the batch is about to update anyway (pk <> ALL incoming ids). */
+    for (const u of uniques) {
+      const usable = chunk.filter(r => u.cols.every(c => r[c] != null && cols.includes(c)));
+      if (!usable.length) continue;
+      const p = [];
+      const tuples = usable.map(r => '(' + u.cols.map(c => {
+        p.push(coerce(r[c], typeOf[c])); return `$${p.length}::${typeOf[c] || 'text'}`;
+      }).join(',') + ')').join(',');
+      p.push(usable.map(r => String(r[pk])));
+      const del = `DELETE FROM "${schema}"."${table}"
+        WHERE (${u.cols.map(c => `"${c}"`).join(',')}) IN (${tuples})
+          AND "${pk}"::text <> ALL($${p.length}::text[])`;
+      try { await local.query(del, p); }
+      catch (e) { throw new Error(`could not retire superseded rows on unique index ${u.name} (${u.cols.join(',')}): ${e.message}`); }
+    }
     const params = [];
     const values = chunk.map(r => '(' + cols.map(c => { params.push(coerce(r[c], typeOf[c])); return '$' + params.length; }).join(',') + ')').join(',');
     const set = cols.filter(c => c !== pk).map(c => `"${c}"=EXCLUDED."${c}"`).join(',');
@@ -143,7 +267,7 @@ async function upsertBatch(local, schema, table, pk, cols, typeOf, rows) {
 async function syncTable(prod, table, { dryRun, window }) {
   const plan = await planTable(prod, table);
   if (plan.skip) return { table, rows: 0, skipped: plan.skip };
-  const { pk, cols, typeOf, wmExpr, prodSchema, localSchema } = plan;
+  const { pk, cols, typeOf, wmExpr, prodSchema, localSchema, uniques } = plan;
   if (!wmExpr) return { table, rows: 0, skipped: 'no created_at/updated_at watermark' };
   const PT = `"${prodSchema}"."${table}"`, LT = `"${localSchema}"."${table}"`;
 
@@ -169,7 +293,9 @@ async function syncTable(prod, table, { dryRun, window }) {
     const c = await prod.query(
       `SELECT count(*)::bigint n FROM ${PT} WHERE ${wmExpr} ${loOp} $1 AND ${wmExpr} ${upperOp} $2`, [lo, upper]);
     await setState(table, { last_run_at: new Date().toISOString(), last_status: windowed ? 'dry-run·window' : 'dry-run', last_error: null });
-    return { table, rows: Number(c.rows[0].n), dryRun: true, windowed };
+    // surface the extra unique keys: they are what an ON CONFLICT (pk) upsert cannot resolve
+    return { table, rows: Number(c.rows[0].n), dryRun: true, windowed,
+      uniqueKeys: (uniques || []).map(u => `${u.name} (${u.cols.join(',')})`) };
   }
 
   await setState(table, { last_run_at: new Date().toISOString(), last_status: windowed ? 'window' : 'running', last_error: null });
@@ -181,7 +307,7 @@ async function syncTable(prod, table, { dryRun, window }) {
        WHERE (${wmExpr}, ${pk}::text) > ($1, $2) AND ${wmExpr} ${upperOp} $3
        ORDER BY ${wmExpr}, ${pk}::text LIMIT $4`, [lastWm, lastId, upper, BATCH]);
     if (!q.rows.length) break;
-    await upsertBatch(db.source, localSchema, table, pk, cols, typeOf, q.rows);
+    await upsertBatch(db.source, localSchema, table, pk, cols, typeOf, q.rows, uniques);
     const last = q.rows[q.rows.length - 1];
     lastWm = last.__wm; lastId = last.__id; total += q.rows.length;
     // windowed test never advances the incremental cursor — only counts
@@ -260,7 +386,34 @@ async function ping() {
   finally { if (pool) await pool.end().catch(() => {}); }
 }
 
-module.exports = { run, probe, ping, isRunning, DEFAULT_TABLES };
+/* ON-DEMAND SINGLE-ROW REFRESH.
+ * The scheduler runs every 30 minutes, which is fine for dashboards and useless when an operator
+ * is watching one customer and asking "I just logged in — why don't I see it?". This pulls only
+ * the rows matching one indexed lookup and upserts them, using the SAME plan (skipped credential
+ * columns, unique-key retirement) as a full pass, so it can never import anything a normal sync
+ * would not. Table/column are whitelisted — never taken from the request. */
+const REFRESHABLE = { users: ['mobile_number', 'nationality_id_number', 'id'] };
+
+async function refreshWhere(table, column, values) {
+  const allowed = REFRESHABLE[table];
+  if (!allowed) throw new Error(`table not refreshable: ${table}`);
+  if (!allowed.includes(column)) throw new Error(`column not refreshable: ${column}`);
+  const vals = (Array.isArray(values) ? values : [values]).map(String).filter(Boolean).slice(0, 25);
+  if (!vals.length) return { table, rows: 0, skipped: 'no values' };
+  const prod = prodPool();
+  try {
+    const plan = await planTable(prod, table);
+    if (plan.skip) return { table, rows: 0, skipped: plan.skip };
+    const { pk, cols, typeOf, prodSchema, localSchema, uniques } = plan;
+    const sel = cols.map(c => `"${c}"`).join(',');
+    const q = await prod.query(
+      `SELECT ${sel} FROM "${prodSchema}"."${table}" WHERE "${column}"::text = ANY($1::text[]) LIMIT 50`, [vals]);
+    if (q.rows.length) await upsertBatch(db.source, localSchema, table, pk, cols, typeOf, q.rows, uniques);
+    return { table, rows: q.rows.length, matched_on: column };
+  } finally { await prod.end().catch(() => {}); }
+}
+
+module.exports = { run, probe, ping, isRunning, DEFAULT_TABLES, SKIP_COLUMNS, refreshWhere };
 
 // ---- CLI: node src/prodSync.js [--dry-run] [--tables=a,b,c] ----
 if (require.main === module) {

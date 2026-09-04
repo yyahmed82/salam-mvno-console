@@ -4,76 +4,93 @@
  * Views: topology, journeys, integrations, alerts, errors, dashboards, settings, users
  * Caps:  editRules, manageSync, manageUsers, unmaskPII, export, ackErrors
  */
-const ALL_VIEWS = ['topology','journeys','integrations','alerts','errors','analytics','settings','users'];
-const CAPS = ['editRules','manageSync','manageUsers','unmaskPII','export','ackErrors'];
+const ALL_VIEWS = ['dashboard','monitoring','dms','workbench','alerts','errors','analytics','explore','settings','users'];
+const CAPS = ['editRules','manageSync','manageUsers','unmaskPII','export','ackErrors','useYusr','customizeDashboard'];
 // human labels for the permissions matrix UI
-const VIEW_LABELS = { topology:'Topology', journeys:'Journeys', integrations:'Integrations', alerts:'Alerts',
-  errors:'Troubleshoot', analytics:'Analytics / SLA', settings:'Settings', users:'User management' };
+const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS', workbench:'L2 Workbench', alerts:'Alerts',
+  errors:'Troubleshoot', analytics:'Analytics / SLA', explore:'Explore links', settings:'Settings', users:'User management' };
 const CAP_LABELS = { editRules:'Edit rules', manageSync:'Manage sync', manageUsers:'Manage users',
-  unmaskPII:'Unmask PII', export:'Export data', ackErrors:'Ack incidents' };
+  unmaskPII:'Unmask PII', export:'Export data', ackErrors:'Ack incidents',
+  useYusr:'Use Yusr AI', customizeDashboard:'Customize dashboards' };
+/* 2 Sep 2026 view-model change: 'dashboard' and 'dms' became real gated views (dashboard used to be
+ * hardcoded-visible, dms rode on 'monitoring'); topology/journeys/integrations collapsed into one
+ * 'explore' view = the whole Explore menu (topology, API GW, docs, journeys, integrations, Sub360).
+ * LEGACY_VIEW maps keys from overrides saved before the change. */
+const LEGACY_VIEW = { topology:'explore', journeys:'explore', integrations:'explore' };
 
 const ROLES = {
   super_admin: {
     label: 'Super Admin', team: 'Digital Ops', rank: 1,
     views: ALL_VIEWS,
-    caps: { editRules:true, manageSync:true, manageUsers:true, unmaskPII:true, export:true, ackErrors:true },
-    note: 'Full control. Only role that can unmask PII (live-fetched, never stored) and manage users.'
+    caps: { editRules:true, manageSync:true, manageUsers:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    note: 'Full control. Can unmask PII (live-fetched, never stored) and manage users.'
   },
   admin: {
     label: 'Admin', team: 'Digital Ops', rank: 2,
-    views: ['topology','journeys','integrations','alerts','errors','analytics','settings'],
-    caps: { editRules:true, manageSync:true, manageUsers:false, unmaskPII:false, export:true, ackErrors:true },
-    note: 'Manages rules, sync mode and dashboards. PII stays masked; cannot manage users.'
+    views: ['dashboard','monitoring','dms','workbench','alerts','errors','analytics','explore','settings'],
+    /* unmaskPII granted to admin on 21 Aug 2026 at the owner's request — per-request ACT, never a
+     * mode: caller must pass unmask=1, value fetched live, every reveal audited as pii.unmask. */
+    caps: { editRules:true, manageSync:true, manageUsers:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    note: 'Manages rules, sync mode and dashboards. Can unmask PII on demand (audited); cannot manage users.'
   },
   report_manager: {
-    label: 'Report Manager', team: 'Sales Ops', rank: 3,
-    views: ['topology','journeys','integrations','analytics','alerts'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:false },
-    note: 'Read-only reporting & dashboards with CSV/JSON export. No rule edits, PII masked.'
+    label: 'Sales Ops', team: 'Sales Ops', rank: 3,
+    views: ['dashboard','monitoring','dms','explore'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false },
+    note: 'Sales Operations — Dashboard, Monitoring, DMS (dealers) and the Explore pages, with export. PII masked.'
   },
   errors_manager: {
     label: 'Errors Manager', team: 'OSS Ops', rank: 3,
-    views: ['topology','journeys','errors','alerts'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true },
+    views: ['dashboard','monitoring','errors','alerts','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
     note: 'Owns the Error Control Board & troubleshooting; can tune error-related alerts. PII masked.'
   },
   events_manager: {
     label: 'Events Manager', team: 'Digital Ops', rank: 3,
-    views: ['topology','journeys','integrations','alerts'],
-    caps: { editRules:true, manageSync:true, manageUsers:false, unmaskPII:false, export:false, ackErrors:false },
+    views: ['dashboard','monitoring','alerts','explore'],
+    caps: { editRules:true, manageSync:true, manageUsers:false, unmaskPII:false, export:false, ackErrors:false, useYusr:true, customizeDashboard:false },
     note: 'Owns alerts/events: defines rules and controls the sync engine. PII masked.'
   },
 
-  // ---- support escalation tiers (BSS / Digital) ----
+  // ---- support escalation tiers (BSS / Digital) — retuned 2 Sep 2026 to the agreed scope ----
   l1_bss: {
     label: 'L1 BSS', team: 'BSS Ops', rank: 5,
-    views: ['topology','journeys','integrations','alerts','errors','analytics'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true },
-    note: 'Frontline BSS support — triage & acknowledge incidents on the Troubleshoot board. PII masked.'
+    views: ['dashboard','monitoring','errors','explore'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'Frontline BSS support — Dashboard, Monitoring, Troubleshoot. PII masked.'
   },
   l2_bss: {
     label: 'L2 BSS', team: 'BSS Ops', rank: 4,
-    views: ['topology','journeys','integrations','alerts','errors','analytics'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true },
-    note: 'BSS escalation — tune alert rules and drive incident resolution. PII masked.'
+    views: ['dashboard','monitoring','errors','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'BSS escalation — same pages as L1 BSS plus alert-rule tuning. PII masked.'
   },
   l1_digital: {
     label: 'L1 Digital', team: 'Digital Ops', rank: 5,
-    views: ['topology','journeys','integrations','alerts','errors','analytics'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true },
-    note: 'Frontline Digital support — triage & acknowledge incidents. PII masked.'
+    views: ['dashboard','monitoring','dms','alerts','explore'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'Frontline Digital support — Dashboard, Monitoring, DMS, Alerts. No Troubleshoot. PII masked.'
   },
   l2_digital: {
     label: 'L2 Digital', team: 'Digital Ops', rank: 4,
-    views: ['topology','journeys','integrations','alerts','errors','analytics'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true },
-    note: 'Digital escalation — tune rules and drive incidents. PII masked.'
+    views: ['dashboard','monitoring','dms','errors','alerts','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'Digital escalation — all five operate pages. No Workbench, no SLA, no settings. PII masked.'
   },
   l3_digital: {
     label: 'L3 Digital', team: 'Digital Ops', rank: 3,
-    views: ['topology','journeys','integrations','alerts','errors','analytics','settings'],
-    caps: { editRules:true, manageSync:true, manageUsers:false, unmaskPII:true, export:true, ackErrors:true },
-    note: 'Deep Digital escalation — rule tuning, sync control, and audited PII unmask for end-to-end troubleshooting.'
+    views: ['monitoring','errors','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'Deep Digital escalation — Troubleshoot + Monitoring with audited PII unmask for end-to-end cases.'
+  },
+  call_center: {
+    label: 'Call Center', team: 'Call Center', rank: 6,
+    views: ['dashboard','explore'],
+    /* unmaskPII granted 2 Sep 2026 (Yosri): agents verify callers and must read real values in
+     * Subscriber 360. Stays a per-request ACT — every reveal writes a pii.unmask audit row naming
+     * the agent and the record; masked remains the default until the agent presses Unmask. */
+    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:true, export:false, ackErrors:false, useYusr:true, customizeDashboard:false },
+    note: 'Customer-facing agents — Dashboard and the Explore pages (incl. Subscriber 360), answer with Yusr. PII masked by default; unmask per-view, audited per agent.'
   }
 };
 
@@ -96,15 +113,45 @@ function effective(names, map) {
 
 /* Apply super-admin-editable overrides on top of the code defaults, returning a NEW role map.
  * overrides = { roleName: { views:[...], caps:{cap:bool} } }. super_admin is always full (lockout-proof). */
-function mergeOverrides(overrides) {
+function mergeOverrides(overrides, custom) {
   const ov = overrides || {};
+  // translate a saved views array that may predate the 2 Sep 2026 view split
+  const xlate = (vs) => {
+    const set = new Set();
+    for (const v of vs) { if (ALL_VIEWS.includes(v)) set.add(v); else if (LEGACY_VIEW[v]) set.add(LEGACY_VIEW[v]); }
+    // legacy overrides (any old key present) predate dashboard/dms/explore as gates:
+    // dashboard was visible to everyone, dms rode on monitoring — preserve that behavior
+    if (vs.some(v => LEGACY_VIEW[v] !== undefined)) {
+      set.add('dashboard');
+      if (set.has('monitoring')) set.add('dms');
+    }
+    return ALL_VIEWS.filter(v => set.has(v));
+  };
   const out = {};
   for (const [name, base] of Object.entries(ROLES)) {
     const r = { ...base, views: [...base.views], caps: { ...base.caps } };
     const o = ov[name];
     if (o && name !== 'super_admin') {
-      if (Array.isArray(o.views)) r.views = ALL_VIEWS.filter(v => o.views.includes(v));
+      if (Array.isArray(o.views)) r.views = xlate(o.views);
       if (o.caps) for (const c of CAPS) if (c in o.caps) r.caps[c] = !!o.caps[c];
+    }
+    out[name] = r;
+  }
+  /* custom roles (created from the matrix UI, stored in console_settings.custom_roles):
+   * { name: { label, team, views:[...], caps:{...}, note } } — sanitised here so a bad row can
+   * never grant an unknown view/cap; overrides for a custom role apply the same way. */
+  for (const [name, c] of Object.entries(custom || {})) {
+    if (ROLES[name] || !c || typeof c !== 'object') continue;   // can't shadow a built-in
+    const r = {
+      label: String(c.label || name), team: String(c.team || 'Custom'), rank: 6, custom: true,
+      views: xlate(Array.isArray(c.views) ? c.views : []),
+      caps: Object.fromEntries(CAPS.map(k => [k, !!(c.caps && c.caps[k])])),
+      note: String(c.note || 'Custom role.')
+    };
+    const o = ov[name];
+    if (o) {
+      if (Array.isArray(o.views)) r.views = xlate(o.views);
+      if (o.caps) for (const k of CAPS) if (k in o.caps) r.caps[k] = !!o.caps[k];
     }
     out[name] = r;
   }
@@ -118,7 +165,12 @@ function mergeOverrides(overrides) {
 const PII_FIELDS = new Set([
   'mobile','mobile_number','customer_mobile_number','target_mobile_number','receiver_mobile','msisdn',
   'nationality_id_number','receiver_nationality_id','person_id','PersonId','national_id','nid','id_number',
-  'email','receiver_email','customer_name','contact_name','receiver_full_name','name','identifier'
+  'email','receiver_email','customer_name','contact_name','receiver_full_name','name','identifier',
+  /* DMS (Clara) field names. `contact_number` reached the Dealer 360 card in clear while the
+   * national id beside it was starred out — the same class of gap as `recipient` vs
+   * `identifier`: the mask works by KEY NAME, so a schema that spells a phone number differently
+   * silently opts out of it. Any new source's identifier columns belong here. */
+  'contact_number','email_address','id_number','alternative_number','otp_mobile_number'
 ]);
 function maskValue(field, v) {
   if (v == null || v === '') return v;
@@ -144,4 +196,4 @@ function maskDeep(obj, allowUnmask) {
   return walk(obj);
 }
 
-module.exports = { ROLES, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS };
+module.exports = { ROLES, LEGACY_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS };

@@ -1,0 +1,1286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DMS Integration · NOC View</title>
+<style>
+  :root {
+    --bg-0: #05070d;
+    --bg-1: #0a0e1a;
+    --bg-2: #0f1525;
+    --bg-3: #161d33;
+    --panel: rgba(20, 27, 48, 0.6);
+    --panel-2: rgba(15, 21, 37, 0.85);
+    --line: rgba(120, 145, 200, 0.18);
+    --line-strong: rgba(140, 165, 220, 0.32);
+    --ink: #e7edff;
+    --muted: #8896b8;
+    --dim: #5a6889;
+
+    --hub: #00ffd5;
+    --network: #6b7fb8;
+    --external: #00b3ff;
+    --channels: #b066ff;
+    --apps: #ff4d8d;
+    --data: #4ade80;
+    --third: #ffa940;
+
+    --api: #00d9ff;
+    --sync: #b066ff;
+    --db: #4ade80;
+    --admin: #00ffd5;
+    --portal: #8b5cf6;
+    --support: #ffa940;
+    --cst: #ff4d8d;
+    --payment: #ff7849;
+    --zatca: #a3e635;
+    --net: #6b7fb8;
+
+    --shadow-glow: 0 0 30px rgba(0, 217, 255, 0.15);
+
+    /* Logo from dxp-cutover-deck-yy.html */
+    --logo-img: url("data:image/jpeg;base64,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");
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(ellipse at 20% 10%, rgba(0, 217, 255, 0.08), transparent 60%),
+      radial-gradient(ellipse at 80% 90%, rgba(176, 102, 255, 0.06), transparent 60%),
+      var(--bg-0);
+    color: var(--ink);
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(120, 145, 200, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(120, 145, 200, 0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  }
+
+  main {
+    position: relative;
+    z-index: 1;
+    width: min(1500px, calc(100vw - 32px));
+    margin: 0 auto;
+    padding: 24px 0 48px;
+  }
+
+  /* ===== Header ===== */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 18px 24px;
+    background: linear-gradient(135deg, rgba(15, 21, 37, 0.9), rgba(10, 14, 26, 0.7));
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    margin-bottom: 16px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--hub), var(--channels), var(--apps), transparent);
+    opacity: 0.6;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .brand-mark {
+    height: 48px;
+    width: 170px;
+    border-radius: 10px;
+    background-image: var(--logo-img);
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: contain;
+    filter: drop-shadow(0 0 8px rgba(0, 255, 213, 0.35));
+    flex-shrink: 0;
+  }
+  .brand-text h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    background: linear-gradient(90deg, #fff, #8896b8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .brand-text .sub {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-top: 2px;
+  }
+
+  .status-strip {
+    display: flex;
+    gap: 16px;
+    margin-left: auto;
+    align-items: center;
+  }
+  .status-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--data);
+    box-shadow: 0 0 8px var(--data);
+    animation: blink 2s ease-in-out infinite;
+  }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .status-item .val { color: var(--ink); font-weight: 700; }
+
+  /* ===== Live connectivity (fed by /api/apigw/connectivity) ===== */
+  .status-dot.ok       { background:#16a34a; box-shadow:0 0 8px #16a34a; }
+  .status-dot.degraded { background:#f59e0b; box-shadow:0 0 8px #f59e0b; }
+  .status-dot.down     { background:#dc2626; box-shadow:0 0 8px #dc2626; }
+  .node-group[data-conn="ok"] .node-bg,       .node-group[data-conn="ok"] .hub-core       { stroke:#16a34a; stroke-width:3.5px; }
+  .node-group[data-conn="degraded"] .node-bg, .node-group[data-conn="degraded"] .hub-core { stroke:#f59e0b; stroke-width:3.5px; }
+  .node-group[data-conn="down"] .node-bg,     .node-group[data-conn="down"] .hub-core     { stroke:#dc2626; stroke-width:3.5px; stroke-dasharray:5 3; }
+  #connPanel { position:absolute; left:16px; bottom:16px; z-index:20; max-width:290px;
+    background:rgba(10,14,20,.82); border:1px solid rgba(255,255,255,.12); border-radius:10px;
+    padding:10px 12px; font-size:11px; color:var(--muted); backdrop-filter:blur(6px); }
+  #connPanel h4 { margin:0 0 6px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink); }
+  #connPanel .row { display:flex; align-items:center; gap:8px; padding:2px 0; font-family:monospace; }
+  #connPanel .pip { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  #connPanel .pip.ok { background:#16a34a; }
+  #connPanel .pip.refused { background:#f59e0b; }
+  #connPanel .pip.timeout, #connPanel .pip.unreachable, #connPanel .pip.error { background:#dc2626; }
+  #connPanel .hp { color:var(--ink); }
+  #connPanel .st { margin-left:auto; opacity:.85; }
+  #connPanel .foot { margin-top:6px; padding-top:6px; border-top:1px solid rgba(255,255,255,.1); font-family:inherit; }
+
+  /* ===== Toolbar ===== */
+  .toolbar {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    position: sticky;
+    top: 12px;
+    z-index: 100;
+    backdrop-filter: blur(20px);
+  }
+  .toolbar-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-right: 8px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+  }
+  .chip:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--ink);
+    border-color: var(--line-strong);
+    transform: translateY(-1px);
+  }
+  .chip .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    box-shadow: 0 0 6px currentColor;
+  }
+  .chip.active {
+    background: rgba(0, 217, 255, 0.1);
+    color: var(--hub);
+    border-color: rgba(0, 217, 255, 0.4);
+    box-shadow: 0 0 12px rgba(0, 217, 255, 0.2);
+  }
+  .toolbar-spacer { flex: 1; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn:hover { background: rgba(255, 255, 255, 0.06); border-color: var(--hub); color: var(--hub); }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--hub), var(--external));
+    color: #001a1a;
+    border-color: transparent;
+    box-shadow: 0 0 15px rgba(0, 217, 255, 0.3);
+  }
+  .btn.primary:hover { color: #001a1a; filter: brightness(1.1); }
+
+  /* ===== Canvas ===== */
+  .canvas-wrap {
+    position: relative;
+    background:
+      radial-gradient(ellipse at center, rgba(0, 217, 255, 0.03), transparent 70%),
+      var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+  }
+
+  svg.diagram {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 800px;
+  }
+
+  /* Zones (sectors) */
+  .sector {
+    fill: none;
+    stroke: var(--line);
+    stroke-dasharray: 4 6;
+    opacity: 0.4;
+  }
+  .sector-bg {
+    opacity: 0.05;
+  }
+  .sector-label {
+    fill: currentColor;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+
+  /* Nodes */
+  .node-bg {
+    fill: var(--panel-2);
+    stroke: var(--line-strong);
+    stroke-width: 1;
+    rx: 12;
+    transition: all 0.3s ease;
+  }
+  .node-group { cursor: pointer; transition: all 0.3s ease; }
+  .node-group:hover .node-bg {
+    stroke: currentColor;
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 12px currentColor);
+  }
+  .node-group:hover { transform: translateY(-2px); }
+  .node-group.dim { opacity: 0.2; }
+  .node-group.focus .node-bg {
+    stroke: var(--hub);
+    stroke-width: 2;
+    filter: drop-shadow(0 0 20px var(--hub));
+  }
+  .node-title {
+    fill: var(--ink);
+    font-size: 12px;
+    font-weight: 700;
+    pointer-events: none;
+  }
+  .node-sub {
+    fill: var(--muted);
+    font-size: 10px;
+    font-weight: 500;
+    pointer-events: none;
+  }
+  .node-ip {
+    fill: var(--dim);
+    font-size: 9px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    pointer-events: none;
+  }
+
+  /* Hub (center) */
+  .hub-ring {
+    fill: none;
+    stroke: var(--hub);
+    opacity: 0.3;
+  }
+  .hub-ring.outer { stroke-dasharray: 2 4; animation: spin 60s linear infinite; transform-origin: center; transform-box: fill-box; }
+  .hub-ring.mid { stroke-dasharray: 6 3; animation: spin 40s linear infinite reverse; transform-origin: center; transform-box: fill-box; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .hub-core {
+    fill: url(#hub-grad);
+    stroke: var(--hub);
+    stroke-width: 1.5;
+    filter: url(#glow);
+  }
+  .hub-core-text {
+    fill: #001a1a;
+    font-weight: 900;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+  }
+  .hub-core-sub {
+    fill: rgba(0, 26, 26, 0.7);
+    font-size: 9px;
+    font-weight: 700;
+    pointer-events: none;
+  }
+
+  /* Spokes / flows */
+  .flow {
+    fill: none;
+    stroke-width: 1.5;
+    opacity: 0.75;
+    transition: all 0.3s ease;
+    filter: drop-shadow(0 0 4px currentColor);
+  }
+  .flow.thick { stroke-width: 2.2; opacity: 0.9; }
+  .flow.dashed { stroke-dasharray: 5 5; }
+  .flow.dotted { stroke-dasharray: 2 4; }
+  .flow:hover { stroke-width: 3.5; opacity: 1; }
+  .flow.dim { opacity: 0.08; filter: none; }
+  .flow.glow {
+    stroke-width: 3;
+    opacity: 1;
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+
+  .flow.api { stroke: var(--api); color: var(--api); marker-end: url(#arr-api); }
+  .flow.sync { stroke: var(--sync); color: var(--sync); marker-end: url(#arr-sync); }
+  .flow.db { stroke: var(--db); color: var(--db); marker-end: url(#arr-db); }
+  .flow.admin { stroke: var(--admin); color: var(--admin); marker-end: url(#arr-admin); }
+  .flow.portal { stroke: var(--portal); color: var(--portal); marker-end: url(#arr-portal); }
+  .flow.support { stroke: var(--support); color: var(--support); marker-end: url(#arr-support); }
+  .flow.cst { stroke: var(--cst); color: var(--cst); marker-end: url(#arr-cst); }
+  .flow.payment { stroke: var(--payment); color: var(--payment); marker-end: url(#arr-payment); }
+  .flow.zatca { stroke: var(--zatca); color: var(--zatca); marker-end: url(#arr-zatca); }
+  .flow.net { stroke: var(--net); color: var(--net); marker-end: url(#arr-net); }
+
+  .flow-label {
+    fill: var(--muted);
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    paint-order: stroke;
+    stroke: var(--bg-1);
+    stroke-width: 4;
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
+
+  /* Packets */
+  .packets { pointer-events: none; }
+  .packets.paused * { animation-play-state: paused !important; }
+  .packet {
+    filter: drop-shadow(0 0 6px currentColor);
+  }
+  .packet.api { fill: var(--api); }
+  .packet.sync { fill: var(--sync); }
+  .packet.db { fill: var(--db); }
+  .packet.admin { fill: var(--admin); }
+  .packet.portal { fill: var(--portal); }
+  .packet.support { fill: var(--support); }
+  .packet.cst { fill: var(--cst); }
+  .packet.payment { fill: var(--payment); }
+  .packet.zatca { fill: var(--zatca); }
+  .packet.net { fill: var(--net); }
+
+  /* Icon styling */
+  .icon {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.9;
+    pointer-events: none;
+  }
+
+  /* Tag pills inside nodes */
+  .tag-pill {
+    fill: rgba(0, 217, 255, 0.08);
+    stroke: rgba(0, 217, 255, 0.3);
+    rx: 4;
+  }
+  .tag-text {
+    fill: var(--hub);
+    font-size: 8px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    pointer-events: none;
+  }
+
+  /* Mini-map */
+  .minimap {
+    position: absolute;
+    bottom: 14px;
+    right: 14px;
+    width: 180px;
+    height: 130px;
+    background: rgba(5, 7, 13, 0.85);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    padding: 8px;
+    backdrop-filter: blur(10px);
+    z-index: 5;
+    transition: opacity 0.2s;
+  }
+  .minimap-label {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    font-size: 9px;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 700;
+  }
+  .minimap svg { display: block; margin-top: 12px; }
+
+  /* Legend */
+  .legend {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    background: rgba(5, 7, 13, 0.85);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    padding: 12px 14px;
+    backdrop-filter: blur(10px);
+    z-index: 5;
+    font-size: 10px;
+    max-width: 200px;
+  }
+  .legend-title {
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 700;
+    font-size: 9px;
+    margin-bottom: 8px;
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+    color: var(--muted);
+  }
+  .legend-line {
+    width: 22px;
+    height: 2px;
+    border-radius: 2px;
+    box-shadow: 0 0 6px currentColor;
+  }
+  .legend-line.dashed {
+    background-image: linear-gradient(90deg, currentColor 50%, transparent 50%);
+    background-size: 6px 2px;
+    background-color: transparent;
+  }
+
+  /* Info panel for selected node */
+  .info-panel {
+    margin-top: 16px;
+    padding: 18px 22px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    backdrop-filter: blur(20px);
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .info-panel.empty .info-content { color: var(--dim); font-style: italic; font-size: 13px; }
+  .info-icon {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    background: rgba(0, 217, 255, 0.1);
+    border: 1px solid rgba(0, 217, 255, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--hub);
+  }
+  .info-content { flex: 1; }
+  .info-name { font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+  .info-meta { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+  .info-desc { font-size: 12px; color: var(--muted); margin-top: 6px; max-width: 700px; line-height: 1.5; }
+
+  /* Stats */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .stat {
+    padding: 14px 16px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px;
+    height: 100%;
+    background: var(--hub);
+    box-shadow: 0 0 10px var(--hub);
+  }
+  .stat:nth-child(2)::before { background: var(--channels); box-shadow: 0 0 10px var(--channels); }
+  .stat:nth-child(3)::before { background: var(--apps); box-shadow: 0 0 10px var(--apps); }
+  .stat:nth-child(4)::before { background: var(--data); box-shadow: 0 0 10px var(--data); }
+  .stat-val { font-size: 24px; font-weight: 800; color: var(--ink); letter-spacing: -0.5px; }
+  .stat-val .unit { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+  .stat-lbl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 4px; font-weight: 700; }
+
+  @media (max-width: 900px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .status-strip { display: none; }
+    .legend, .minimap { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .packets, .hub-ring, .status-dot { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <!-- Header -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand-mark" role="img" aria-label="Salam"></div>
+      <div class="brand-text">
+        <h1>DMS Integration · Hub Topology</h1>
+        <div class="sub">Salam Mobile · Network Operations View</div>
+      </div>
+    </div>
+    <div class="status-strip">
+      <div class="status-item"><span class="status-dot" id="connDot"></span><span>API GW <span class="val" id="connSysVal">checking…</span></span></div>
+      <div class="status-item">Nodes reachable <span class="val" id="connNodesVal">—</span></div>
+      <div class="status-item" id="connUpdated">—</div>
+    </div>
+  </header>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat"><div class="stat-val">99.9<span class="unit">%</span></div><div class="stat-lbl">Uptime SLA</div></div>
+    <div class="stat"><div class="stat-val">7<span class="unit">channels</span></div><div class="stat-lbl">Access Points</div></div>
+    <div class="stat"><div class="stat-val">3<span class="unit">tiers</span></div><div class="stat-lbl">App Architecture</div></div>
+    <div class="stat"><div class="stat-val">3+1<span class="unit">cluster</span></div><div class="stat-lbl">DB Nodes + Proxy</div></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <span class="toolbar-label">Filter</span>
+    <button class="chip active" data-filter="all"><span class="dot" style="background: var(--hub); color: var(--hub);"></span>All</button>
+    <button class="chip" data-filter="api"><span class="dot" style="background: var(--api); color: var(--api);"></span>API</button>
+    <button class="chip" data-filter="sync"><span class="dot" style="background: var(--sync); color: var(--sync);"></span>Sync</button>
+    <button class="chip" data-filter="admin"><span class="dot" style="background: var(--admin); color: var(--admin);"></span>Admin</button>
+    <button class="chip" data-filter="portal"><span class="dot" style="background: var(--portal); color: var(--portal);"></span>Portal</button>
+    <button class="chip" data-filter="db"><span class="dot" style="background: var(--db); color: var(--db);"></span>DB</button>
+    <button class="chip" data-filter="support"><span class="dot" style="background: var(--support); color: var(--support);"></span>SMS/Email</button>
+    <button class="chip" data-filter="cst"><span class="dot" style="background: var(--cst); color: var(--cst);"></span>CST</button>
+    <button class="chip" data-filter="payment"><span class="dot" style="background: var(--payment); color: var(--payment);"></span>Pay</button>
+    <button class="chip" data-filter="zatca"><span class="dot" style="background: var(--zatca); color: var(--zatca);"></span>ZATCA</button>
+    <button class="chip" data-filter="net"><span class="dot" style="background: var(--net); color: var(--net);"></span>Net</button>
+    <div class="toolbar-spacer"></div>
+    <button class="btn" id="pauseBtn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      <span>Pause</span>
+    </button>
+    <button class="btn" id="resetBtn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      <span>Reset</span>
+    </button>
+    <button class="btn primary" onclick="window.print()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Export
+    </button>
+  </div>
+
+  <!-- Canvas -->
+  <div class="canvas-wrap">
+    <!-- Legend -->
+    <div class="legend">
+      <div class="legend-title">Flow Types</div>
+      <div class="legend-row"><span class="legend-line" style="background: var(--api); color: var(--api);"></span>API · HTTPS</div>
+      <div class="legend-row"><span class="legend-line dashed" style="color: var(--sync);"></span>Sync · Replication</div>
+      <div class="legend-row"><span class="legend-line" style="background: var(--db); color: var(--db);"></span>Database</div>
+      <div class="legend-row"><span class="legend-line dashed" style="color: var(--cst);"></span>3rd-party · Callback</div>
+      <div class="legend-row"><span class="legend-line" style="background: var(--net); color: var(--net);"></span>Network · VPN</div>
+    </div>
+
+    <!-- Mini-map -->
+    <div class="minimap">
+      <div class="minimap-label">Topology</div>
+      <svg width="164" height="110" viewBox="0 0 164 110">
+        <circle cx="82" cy="55" r="50" fill="none" stroke="rgba(0,217,255,0.3)" stroke-dasharray="2 3"/>
+        <circle cx="82" cy="55" r="30" fill="none" stroke="rgba(0,217,255,0.4)" stroke-dasharray="2 3"/>
+        <circle cx="82" cy="55" r="10" fill="var(--hub)" opacity="0.9"/>
+        <!-- Sector dots -->
+        <circle cx="22" cy="55" r="3" fill="var(--net)"/>
+        <circle cx="50" cy="20" r="3" fill="var(--external)"/>
+        <circle cx="50" cy="92" r="3" fill="var(--third)"/>
+        <circle cx="114" cy="20" r="3" fill="var(--channels)"/>
+        <circle cx="114" cy="92" r="3" fill="var(--apps)"/>
+        <circle cx="142" cy="55" r="3" fill="var(--data)"/>
+        <text x="82" y="58" text-anchor="middle" fill="#001a1a" font-size="6" font-weight="900">HUB</text>
+      </svg>
+    </div>
+
+    <!-- MAIN SVG -->
+    <svg class="diagram" viewBox="0 0 1500 920" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- Glow filter -->
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="4" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="soft-glow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="2"/>
+        </filter>
+
+        <!-- Hub gradient -->
+        <radialGradient id="hub-grad">
+          <stop offset="0%" stop-color="#00ffd5"/>
+          <stop offset="60%" stop-color="#00d9ff"/>
+          <stop offset="100%" stop-color="#0099cc"/>
+        </radialGradient>
+
+        <!-- Arrow markers -->
+        <marker id="arr-api" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#00d9ff"/></marker>
+        <marker id="arr-sync" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#b066ff"/></marker>
+        <marker id="arr-db" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4ade80"/></marker>
+        <marker id="arr-admin" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#00ffd5"/></marker>
+        <marker id="arr-portal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8b5cf6"/></marker>
+        <marker id="arr-support" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ffa940"/></marker>
+        <marker id="arr-cst" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ff4d8d"/></marker>
+        <marker id="arr-payment" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ff7849"/></marker>
+        <marker id="arr-zatca" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a3e635"/></marker>
+        <marker id="arr-net" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#6b7fb8"/></marker>
+
+        <!-- Icons -->
+        <symbol id="i-server" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="1"/><rect x="4" y="14" width="16" height="6" rx="1"/><line x1="8" y1="7" x2="8" y2="7"/><line x1="8" y1="17" x2="8" y2="17"/></symbol>
+        <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
+        <symbol id="i-lb" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="20" cy="18" r="2"/><path d="M6 6h3M6 18h3M15 6h3M15 18h3"/></symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2L3 7v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V7l-9-5z"/></symbol>
+        <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></symbol>
+        <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></symbol>
+        <symbol id="i-cart" viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l3 13h12l2-8H6"/></symbol>
+        <symbol id="i-network" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11l-5 6M12 11l5 6"/></symbol>
+        <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 7 9-7"/></symbol>
+        <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 13l9-9M16 7l3 3M14 9l3 3"/></symbol>
+        <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9c0-1 1-2 3-2s3 1 3 2-1 1.5-3 2-3 1-3 2 1 2 3 2 3-1 3-2M12 5v2M12 17v2"/></symbol>
+        <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8M8 9h2"/></symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></symbol>
+      </defs>
+
+      <!-- SECTORS -->
+      <g class="sector-bg">
+        <rect x="40" y="60" width="280" height="820" rx="14" fill="var(--net)" opacity="0.04"/>
+        <rect x="340" y="60" width="240" height="380" rx="14" fill="var(--external)" opacity="0.04"/>
+        <rect x="340" y="480" width="240" height="400" rx="14" fill="var(--third)" opacity="0.04"/>
+        <rect x="920" y="60" width="280" height="380" rx="14" fill="var(--channels)" opacity="0.04"/>
+        <rect x="920" y="480" width="280" height="400" rx="14" fill="var(--apps)" opacity="0.04"/>
+        <rect x="1220" y="60" width="240" height="820" rx="14" fill="var(--data)" opacity="0.04"/>
+      </g>
+
+      <g class="sector">
+        <rect x="40" y="60" width="280" height="820" rx="14"/>
+        <rect x="340" y="60" width="240" height="380" rx="14"/>
+        <rect x="340" y="480" width="240" height="400" rx="14"/>
+        <rect x="920" y="60" width="280" height="380" rx="14"/>
+        <rect x="920" y="480" width="280" height="400" rx="14"/>
+        <rect x="1220" y="60" width="240" height="820" rx="14"/>
+      </g>
+
+      <g>
+        <text class="sector-label" style="color: var(--net);" x="180" y="88" text-anchor="middle">Network · NetAxis</text>
+        <text class="sector-label" style="color: var(--external);" x="460" y="88" text-anchor="middle">External · Telecom</text>
+        <text class="sector-label" style="color: var(--third);" x="460" y="508" text-anchor="middle">Third-Party Services</text>
+        <text class="sector-label" style="color: var(--channels);" x="1060" y="88" text-anchor="middle">Access Channels</text>
+        <text class="sector-label" style="color: var(--apps);" x="1060" y="508" text-anchor="middle">Applications</text>
+        <text class="sector-label" style="color: var(--data);" x="1340" y="88" text-anchor="middle">Data Tier</text>
+      </g>
+
+      <!-- HUB CORE -->
+      <g transform="translate(750, 460)">
+        <circle class="hub-ring outer" r="155" stroke-width="1"/>
+        <circle class="hub-ring mid" r="110" stroke-width="1"/>
+        <circle class="hub-ring" r="80" stroke-width="0.5"/>
+
+        <g class="node-group" data-node="lb" data-name="Load Balancer" data-meta="apigw.salammobile.sa · VIP 172.31.45.1" data-desc="Front-door HTTPS ingress for every DMS request. Resolves apigw.salammobile.sa and distributes traffic to the API Gateway cluster.">
+          <circle cx="0" cy="-130" r="32" class="node-bg" style="color: var(--hub);"/>
+          <use href="#i-lb" x="-12" y="-142" width="24" height="24" class="icon" style="color: var(--hub);"/>
+          <text class="node-title" x="0" y="-95" text-anchor="middle">Load Balancer</text>
+        </g>
+
+        <g class="node-group" data-node="apigw" data-name="API Gateway" data-meta="MVNO-DIGAPI-GWP01/02 · 172.31.43.9-10, 172.31.42.23-24" data-desc="Central API routing point. Authenticates, rate-limits and dispatches every request to the right backend. Active-active across two nodes.">
+          <circle class="hub-core" r="65"/>
+          <text class="hub-core-text" x="0" y="-4" text-anchor="middle">API GATEWAY</text>
+          <text class="hub-core-sub" x="0" y="12" text-anchor="middle">CENTRAL ROUTER</text>
+          <text class="hub-core-sub" x="0" y="26" text-anchor="middle" style="font-family: monospace;">GWP01 / GWP02</text>
+        </g>
+      </g>
+
+      <!-- NETWORK SECTOR -->
+      <g class="node-group" data-node="citc" data-name="CITC NCP" data-meta="National Number Portability" data-desc="National Number Portability gateway. Outbound HTTPS over VPN.">
+        <rect class="node-bg" x="60" y="120" width="240" height="76" style="color: var(--net);"/>
+        <use href="#i-globe" x="76" y="138" width="24" height="24" class="icon" style="color: var(--net);"/>
+        <text class="node-title" x="110" y="148">CITC NCP</text>
+        <text class="node-sub" x="110" y="164">National NP gateway</text>
+        <text class="node-ip" x="76" y="184">→ HTTPS / VPN egress</text>
+      </g>
+
+      <g class="node-group" data-node="vpn" data-name="VPN / Firewall Edge" data-meta="Riyadh 217.170.62.65 · Jeddah 217.170.62.50" data-desc="VPN tunnel termination and stateful packet filtering between CITC and NetAxis.">
+        <rect class="node-bg" x="60" y="220" width="240" height="92" style="color: var(--net);"/>
+        <use href="#i-shield" x="76" y="240" width="24" height="24" class="icon" style="color: var(--net);"/>
+        <text class="node-title" x="110" y="250">VPN · Firewall Edge</text>
+        <text class="node-sub" x="110" y="266">Tunnel termination</text>
+        <text class="node-ip" x="76" y="286">RUH · 217.170.62.65</text>
+        <text class="node-ip" x="76" y="300">JED · 217.170.62.50</text>
+      </g>
+
+      <g class="node-group" data-node="netaxis" data-name="NPACT / NetAxis HA" data-meta="RUH 10.224.11.24 · JED 10.224.11.241 · OAM 10.224.3.29" data-desc="High-availability NPACT pair. Owns number portability state and pushes updates to FNR and local DB.">
+        <rect class="node-bg" x="60" y="336" width="240" height="108" style="color: var(--net);"/>
+        <use href="#i-network" x="76" y="356" width="24" height="24" class="icon" style="color: var(--net);"/>
+        <text class="node-title" x="110" y="366">NPACT · NetAxis HA</text>
+        <text class="node-sub" x="110" y="382">Active-Active pair</text>
+        <rect class="tag-pill" x="76" y="394" width="62" height="14"/>
+        <text class="tag-text" x="107" y="404" text-anchor="middle">RUH HA</text>
+        <rect class="tag-pill" x="144" y="394" width="62" height="14"/>
+        <text class="tag-text" x="175" y="404" text-anchor="middle">JED HA</text>
+        <text class="node-ip" x="76" y="428">OAM · 10.224.3.29</text>
+      </g>
+
+      <g class="node-group" data-node="localdb" data-name="Local NP Database" data-meta="PostgreSQL active pair · Riyadh + Jeddah" data-desc="Local copy of number portability records, synced from external operators and NetAxis.">
+        <rect class="node-bg" x="60" y="468" width="240" height="98" style="color: var(--data);"/>
+        <use href="#i-db" x="76" y="488" width="24" height="24" class="icon" style="color: var(--data);"/>
+        <text class="node-title" x="110" y="498">Local NP Database</text>
+        <text class="node-sub" x="110" y="514">PostgreSQL · active pair</text>
+        <rect class="tag-pill" x="76" y="528" width="50" height="14" style="fill: rgba(74,222,128,0.1); stroke: rgba(74,222,128,0.3);"/>
+        <text class="tag-text" x="101" y="538" text-anchor="middle" style="fill: var(--data);">RUH</text>
+        <rect class="tag-pill" x="132" y="528" width="50" height="14" style="fill: rgba(74,222,128,0.1); stroke: rgba(74,222,128,0.3);"/>
+        <text class="tag-text" x="157" y="538" text-anchor="middle" style="fill: var(--data);">JED</text>
+      </g>
+
+      <!-- EXTERNAL · TELECOM -->
+      <g class="node-group" data-node="np" data-name="Number Portability Operators" data-meta="STC · Mobily · Other operators" data-desc="External operator NP systems that push number-portability state into the local NP database.">
+        <rect class="node-bg" x="360" y="120" width="240" height="76" style="color: var(--external);"/>
+        <use href="#i-globe" x="376" y="138" width="24" height="24" class="icon" style="color: var(--external);"/>
+        <text class="node-title" x="410" y="148">NP Operators</text>
+        <text class="node-sub" x="410" y="164">STC · Mobily · Others</text>
+      </g>
+
+      <g class="node-group" data-node="fnr" data-name="Huawei FNR" data-meta="Fixed Number Register" data-desc="Number lifecycle: add / update / delete operations driven by NetAxis.">
+        <rect class="node-bg" x="360" y="220" width="240" height="76" style="color: var(--external);"/>
+        <use href="#i-db" x="376" y="238" width="24" height="24" class="icon" style="color: var(--external);"/>
+        <text class="node-title" x="410" y="248">Huawei FNR</text>
+        <text class="node-sub" x="410" y="264">Fixed Number Register</text>
+      </g>
+
+      <g class="node-group" data-node="hlr" data-name="Huawei HLR" data-meta="Home Location Register" data-desc="Subscriber-level provisioning store. Updated from BSS during onboarding and plan changes.">
+        <rect class="node-bg" x="360" y="320" width="240" height="76" style="color: var(--external);"/>
+        <use href="#i-server" x="376" y="338" width="24" height="24" class="icon" style="color: var(--external);"/>
+        <text class="node-title" x="410" y="348">Huawei HLR</text>
+        <text class="node-sub" x="410" y="364">Subscriber provisioning</text>
+      </g>
+
+      <g class="node-group" data-node="bss" data-name="BSS" data-meta="Business Support System" data-desc="Subscriber actions (activation, top-up, plan changes). Pushes provisioning to HLR and dispatches requests via the API Gateway.">
+        <rect class="node-bg" x="360" y="404" width="240" height="32" style="color: var(--external);"/>
+        <use href="#i-gear" x="376" y="410" width="20" height="20" class="icon" style="color: var(--external);"/>
+        <text class="node-title" x="404" y="424">BSS · Subscriber actions</text>
+      </g>
+
+      <!-- THIRD-PARTY -->
+      <g class="node-group" data-node="cst" data-name="CST · Identity Services" data-meta="Nafath · Absher · SEMATI · SIMAH · Mafafith" data-desc="Government identity, KYC and credit-check services consumed by App Backend during dealer & subscriber onboarding.">
+        <rect class="node-bg" x="360" y="540" width="240" height="76" style="color: var(--cst);"/>
+        <use href="#i-key" x="376" y="558" width="24" height="24" class="icon" style="color: var(--cst);"/>
+        <text class="node-title" x="410" y="568">CST · Identity</text>
+        <text class="node-sub" x="410" y="584">Nafath · Absher · SEMATI</text>
+        <text class="node-sub" x="410" y="600">SIMAH · Mafafith</text>
+      </g>
+
+      <g class="node-group" data-node="payment" data-name="Payment Gateways" data-meta="HyperPay · UPG" data-desc="Card and wallet payment gateways. App Backend tokenises and posts charges; gateways call back asynchronously.">
+        <rect class="node-bg" x="360" y="640" width="240" height="60" style="color: var(--payment);"/>
+        <use href="#i-coin" x="376" y="658" width="24" height="24" class="icon" style="color: var(--payment);"/>
+        <text class="node-title" x="410" y="668">Payment</text>
+        <text class="node-sub" x="410" y="684">HyperPay · UPG</text>
+      </g>
+
+      <g class="node-group" data-node="zatca" data-name="ZATCA" data-meta="VAT reporting" data-desc="Saudi tax authority. App Backend submits invoices for VAT compliance and receives signed responses.">
+        <rect class="node-bg" x="360" y="724" width="240" height="60" style="color: var(--zatca);"/>
+        <use href="#i-doc" x="376" y="742" width="24" height="24" class="icon" style="color: var(--zatca);"/>
+        <text class="node-title" x="410" y="752">ZATCA</text>
+        <text class="node-sub" x="410" y="768">VAT reporting</text>
+      </g>
+
+      <g class="node-group" data-node="messaging" data-name="Messaging" data-meta="SMTP 172.16.1.115 · Zain SMSC 10.158.5.155" data-desc="Outbound email (SMTP) and SMS (Zain SMSC) for transactional notifications and OTPs.">
+        <rect class="node-bg" x="360" y="808" width="240" height="60" style="color: var(--support);"/>
+        <use href="#i-mail" x="376" y="826" width="24" height="24" class="icon" style="color: var(--support);"/>
+        <text class="node-title" x="410" y="836">Messaging</text>
+        <text class="node-sub" x="410" y="852">SMTP · Zain SMSC</text>
+      </g>
+
+      <!-- ACCESS CHANNELS -->
+      <g class="node-group" data-node="admin" data-name="Admin Portal" data-meta="dmsadmin.salammobile.sa:3000" data-desc="Operations console for dealers, commissions, plans and offers. Only path that hits App Front tier.">
+        <rect class="node-bg" x="940" y="120" width="240" height="60" style="color: var(--admin);"/>
+        <circle cx="958" cy="150" r="9" fill="var(--admin)" opacity="0.2"/>
+        <text x="958" y="153" text-anchor="middle" fill="var(--admin)" font-size="10" font-weight="900">1</text>
+        <use href="#i-user" x="976" y="138" width="20" height="20" class="icon" style="color: var(--admin);"/>
+        <text class="node-title" x="1004" y="148" style="fill: var(--admin);">Admin Portal</text>
+        <text class="node-sub" x="1004" y="164">Dealers · commissions · plans</text>
+      </g>
+
+      <g class="node-group" data-node="magento" data-name="Magento Portal" data-meta="172.31.43.61:3000/tec_trms" data-desc="Catalog & merchandising portal. Manages prices, plans and offers in the Clara cluster.">
+        <rect class="node-bg" x="940" y="200" width="240" height="60" style="color: var(--portal);"/>
+        <circle cx="958" cy="230" r="9" fill="var(--portal)" opacity="0.2"/>
+        <text x="958" y="233" text-anchor="middle" fill="var(--portal)" font-size="10" font-weight="900">2</text>
+        <use href="#i-cart" x="976" y="218" width="20" height="20" class="icon" style="color: var(--portal);"/>
+        <text class="node-title" x="1004" y="228" style="fill: var(--portal);">Magento Portal</text>
+        <text class="node-sub" x="1004" y="244">Catalog · prices · offers</text>
+      </g>
+
+      <g class="node-group" data-node="api-ch" data-name="API Channels" data-meta="Web · Mobile · Self / Hybrid Dealers" data-desc="All public-facing API consumers. Four sub-channels share the same DMS backend.">
+        <rect class="node-bg" x="940" y="280" width="240" height="60" style="color: var(--api);"/>
+        <circle cx="958" cy="310" r="9" fill="var(--api)" opacity="0.2"/>
+        <text x="958" y="313" text-anchor="middle" fill="var(--api)" font-size="10" font-weight="900">3</text>
+        <use href="#i-globe" x="976" y="298" width="20" height="20" class="icon" style="color: var(--api);"/>
+        <text class="node-title" x="1004" y="308" style="fill: var(--api);">API Channels</text>
+        <text class="node-sub" x="1004" y="324">Digital · Self · Hybrid Dealers</text>
+      </g>
+
+      <g class="node-group" data-node="web" data-name="Web Self-Care" data-meta="my.salammobile.sa">
+        <rect class="node-bg" x="940" y="360" width="115" height="34" style="color: var(--api);" stroke-dasharray="3 3"/>
+        <use href="#i-globe" x="950" y="368" width="14" height="14" class="icon" style="color: var(--api);"/>
+        <text class="node-title" x="968" y="376" style="font-size: 10px;">Web Self-Care</text>
+        <text class="node-ip" x="968" y="388">my.salammobile.sa</text>
+      </g>
+
+      <g class="node-group" data-node="mob" data-name="Mobile Apps" data-meta="MySalam · iOS / Android">
+        <rect class="node-bg" x="1065" y="360" width="115" height="34" style="color: var(--api);" stroke-dasharray="3 3"/>
+        <use href="#i-phone" x="1075" y="368" width="14" height="14" class="icon" style="color: var(--api);"/>
+        <text class="node-title" x="1093" y="376" style="font-size: 10px;">Mobile Apps</text>
+        <text class="node-ip" x="1093" y="388">MySalam · iOS/Android</text>
+      </g>
+
+      <g class="node-group" data-node="self" data-name="Self Dealers" data-meta="self.salammobile.sa">
+        <rect class="node-bg" x="940" y="402" width="115" height="34" style="color: var(--api);" stroke-dasharray="3 3"/>
+        <use href="#i-user" x="950" y="410" width="14" height="14" class="icon" style="color: var(--api);"/>
+        <text class="node-title" x="968" y="418" style="font-size: 10px;">Self Dealers</text>
+        <text class="node-ip" x="968" y="430">self.salammobile.sa</text>
+      </g>
+
+      <g class="node-group" data-node="hyb" data-name="Hybrid Dealers" data-meta="mobile.salammobile.sa">
+        <rect class="node-bg" x="1065" y="402" width="115" height="34" style="color: var(--api);" stroke-dasharray="3 3"/>
+        <use href="#i-user" x="1075" y="410" width="14" height="14" class="icon" style="color: var(--api);"/>
+        <text class="node-title" x="1093" y="418" style="font-size: 10px;">Hybrid Dealers</text>
+        <text class="node-ip" x="1093" y="430">mobile.salammobile.sa</text>
+      </g>
+
+      <!-- APPLICATIONS -->
+      <g class="node-group" data-node="apigw-dms" data-name="APIGW (DMS Entry)" data-meta="172.31.43.61:3000" data-desc="Internal DMS API gateway. Routes admin traffic to App Front and everything else to App Backend.">
+        <rect class="node-bg" x="940" y="540" width="240" height="60" style="color: var(--api);"/>
+        <use href="#i-network" x="956" y="558" width="24" height="24" class="icon" style="color: var(--api);"/>
+        <text class="node-title" x="984" y="568">APIGW · DMS Entry</text>
+        <rect class="tag-pill" x="984" y="578" width="116" height="14"/>
+        <text class="tag-text" x="1042" y="588" text-anchor="middle">172.31.43.61:3000</text>
+      </g>
+
+      <g class="node-group" data-node="appfront" data-name="App Front" data-meta="172.31.43.11-14 · DIGPORTALP01-04" data-desc="Admin Portal UI tier. Renders the dealer/commission console only.">
+        <rect class="node-bg" x="940" y="624" width="115" height="76" style="color: var(--admin);"/>
+        <use href="#i-server" x="950" y="640" width="20" height="20" class="icon" style="color: var(--admin);"/>
+        <text class="node-title" x="978" y="650">App Front</text>
+        <text class="node-sub" x="950" y="666" style="font-size: 9px;">Admin UI tier</text>
+        <rect class="tag-pill" x="950" y="672" width="95" height="14"/>
+        <text class="tag-text" x="997" y="682" text-anchor="middle">43.11 – 43.14</text>
+      </g>
+
+      <g class="node-group" data-node="appback" data-name="App Backend" data-meta="172.31.43.136-139 · APPDIGP01-04" data-desc="The business-logic tier used by every channel. Talks to Clara DB and all third-party services.">
+        <rect class="node-bg" x="1065" y="624" width="115" height="76" style="color: var(--apps);"/>
+        <use href="#i-server" x="1075" y="640" width="20" height="20" class="icon" style="color: var(--apps);"/>
+        <text class="node-title" x="1103" y="650">App Backend</text>
+        <text class="node-sub" x="1075" y="666" style="font-size: 9px;">Business logic</text>
+        <rect class="tag-pill" x="1075" y="672" width="95" height="14" style="fill: rgba(255,77,141,0.1); stroke: rgba(255,77,141,0.3);"/>
+        <text class="tag-text" x="1122" y="682" text-anchor="middle" style="fill: var(--apps);">43.136 – 43.139</text>
+      </g>
+
+      <g class="node-group" data-node="maxscale" data-name="MaxScale Proxy" data-meta="VIP 172.31.43.75 · Nodes 43.75/.84" data-desc="DB query routing proxy in front of the Clara MySQL cluster. Read/write splitting + failover.">
+        <rect class="node-bg" x="940" y="720" width="240" height="50" style="color: var(--db);"/>
+        <use href="#i-network" x="956" y="734" width="20" height="20" class="icon" style="color: var(--db);"/>
+        <text class="node-title" x="984" y="744">MaxScale Proxy</text>
+        <text class="node-ip" x="984" y="758">VIP 172.31.43.75 · 43.75 / .84</text>
+      </g>
+
+      <g class="node-group" data-node="grafana" data-name="Grafana" data-meta="grafana.salammobile.sa:3000" data-desc="Monitoring & dashboards for all DMS application tiers.">
+        <rect class="node-bg" x="940" y="790" width="240" height="50" style="color: var(--support);"/>
+        <use href="#i-gear" x="956" y="804" width="20" height="20" class="icon" style="color: var(--support);"/>
+        <text class="node-title" x="984" y="814">Grafana · Monitoring</text>
+        <text class="node-ip" x="984" y="828">grafana.salammobile.sa:3000</text>
+      </g>
+
+      <!-- DATA TIER -->
+      <g class="node-group" data-node="clara" data-name="Clara MySQL Cluster" data-meta="DB VIP 172.16.1.115 · 3 nodes" data-desc="Primary DMS data store. 3-node MySQL cluster fronted by MaxScale. Backup planned via Commvault.">
+        <rect class="node-bg" x="1240" y="120" width="220" height="240" style="color: var(--data);"/>
+        <use href="#i-db" x="1256" y="138" width="28" height="28" class="icon" style="color: var(--data);"/>
+        <text class="node-title" x="1290" y="150">Clara MySQL Cluster</text>
+        <text class="node-sub" x="1290" y="166">Primary DMS data store</text>
+
+        <rect class="tag-pill" x="1256" y="180" width="180" height="20" style="fill: rgba(74,222,128,0.15); stroke: rgba(74,222,128,0.4);"/>
+        <text class="tag-text" x="1346" y="194" text-anchor="middle" style="fill: var(--data); font-size: 10px;">VIP · 172.16.1.115</text>
+
+        <rect class="node-bg" x="1256" y="212" width="54" height="22" style="color: var(--data);"/>
+        <text class="tag-text" x="1283" y="226" text-anchor="middle" style="fill: var(--data);">43.72</text>
+        <rect class="node-bg" x="1318" y="212" width="54" height="22" style="color: var(--data);"/>
+        <text class="tag-text" x="1345" y="226" text-anchor="middle" style="fill: var(--data);">43.73</text>
+        <rect class="node-bg" x="1380" y="212" width="54" height="22" style="color: var(--data);"/>
+        <text class="tag-text" x="1407" y="226" text-anchor="middle" style="fill: var(--data);">43.74</text>
+
+        <text class="node-sub" x="1256" y="258" style="font-size: 10px;">MaxScale proxy:</text>
+        <text class="node-ip" x="1256" y="272">VIP 172.31.43.75 · Nodes .75/.84</text>
+
+        <rect x="1256" y="290" width="190" height="22" rx="4" fill="rgba(255,169,64,0.08)" stroke="rgba(255,169,64,0.4)"/>
+        <text x="1265" y="305" fill="var(--support)" font-size="9.5" font-weight="700">⚠ Backup planned · Commvault</text>
+
+        <text class="node-sub" x="1256" y="335" style="font-size: 9px;">All DMS data lives here</text>
+      </g>
+
+      <g class="node-group" data-node="dns" data-name="DNS" data-meta="Service name resolution" data-desc="Internal DNS resolving apigw, my, self, mobile, grafana, store, ssk and related salammobile.sa records to VIPs.">
+        <rect class="node-bg" x="1240" y="400" width="220" height="160" style="color: var(--data);"/>
+        <use href="#i-globe" x="1256" y="416" width="22" height="22" class="icon" style="color: var(--data);"/>
+        <text class="node-title" x="1286" y="430">DNS Records</text>
+        <text class="node-sub" x="1286" y="446" style="font-size: 9px;">Name resolution</text>
+
+        <text class="node-ip" x="1256" y="468">apigw → 172.31.45.1</text>
+        <text class="node-ip" x="1256" y="482">my   → 172.31.45.6</text>
+        <text class="node-ip" x="1256" y="496">self  → 217.170.57.18</text>
+        <text class="node-ip" x="1256" y="510">store → 217.170.57.18</text>
+        <text class="node-ip" x="1256" y="524">ssk   → 172.31.45.13</text>
+        <text class="node-ip" x="1256" y="538">grafana → 172.31.43.175:3000</text>
+        <text class="node-ip" x="1256" y="552">+ 5 more records</text>
+      </g>
+
+      <g class="node-group" data-node="optiva" data-name="Optiva (BSS engine)" data-meta="APPBSS 172.31.42.50-52 · port 9340" data-desc="Optiva charging / BSS engine. Reached from the BSS surface.">
+        <rect class="node-bg" x="1240" y="600" width="220" height="76" style="color: var(--external);"/>
+        <use href="#i-server" x="1256" y="618" width="22" height="22" class="icon" style="color: var(--external);"/>
+        <text class="node-title" x="1286" y="630">Optiva · APPBSS</text>
+        <text class="node-sub" x="1286" y="646" style="font-size: 9px;">Charging / BSS engine</text>
+        <text class="node-ip" x="1256" y="666">172.31.42.50–52 · :9340</text>
+      </g>
+
+      <g class="node-group" data-node="sadad" data-name="SADAD Driver" data-meta="172.31.43.148 · DB 43.81 / 43.82" data-desc="SADAD payment driver application + its database partners.">
+        <rect class="node-bg" x="1240" y="716" width="220" height="76" style="color: var(--payment);"/>
+        <use href="#i-coin" x="1256" y="734" width="22" height="22" class="icon" style="color: var(--payment);"/>
+        <text class="node-title" x="1286" y="746">SADAD Driver</text>
+        <text class="node-sub" x="1286" y="762" style="font-size: 9px;">Payment driver app</text>
+        <text class="node-ip" x="1256" y="782">App 172.31.43.148 · DB .81/.82</text>
+      </g>
+
+      <!-- FLOWS -->
+      <path class="flow net" data-flow="net" data-src="citc" data-dst="vpn" d="M180 196 V220"/>
+      <path class="flow net" data-flow="net" data-src="vpn" data-dst="netaxis" d="M180 312 V336"/>
+      <path class="flow sync dashed" data-flow="sync" data-src="netaxis" data-dst="localdb" d="M180 444 V468"/>
+      <path class="flow sync dashed" data-flow="sync" data-src="np" data-dst="localdb" d="M360 158 Q310 200 300 320 Q295 460 240 478"/>
+      <path class="flow sync dashed" data-flow="sync" data-src="netaxis" data-dst="fnr" d="M300 380 Q330 350 360 258"/>
+      <path class="flow admin" data-flow="admin" data-src="bss" data-dst="hlr" d="M480 404 V396"/>
+      <path class="flow api thick" data-flow="api" data-src="netaxis" data-dst="lb" d="M300 380 Q500 380 718 330"/>
+      <path class="flow api" data-flow="api" data-src="bss" data-dst="lb" d="M600 420 Q680 400 722 348"/>
+      <path class="flow admin thick" data-flow="admin" data-src="admin" data-dst="lb" d="M940 150 Q830 180 782 322"/>
+      <path class="flow portal thick" data-flow="portal" data-src="magento" data-dst="lb" d="M940 230 Q830 240 778 332"/>
+      <path class="flow api thick" data-flow="api" data-src="api-ch" data-dst="lb" d="M940 310 Q830 320 780 340"/>
+      <path class="flow api dotted" data-flow="api" data-src="web" data-dst="api-ch" d="M997 360 V340"/>
+      <path class="flow api dotted" data-flow="api" data-src="mob" data-dst="api-ch" d="M1122 360 V340"/>
+      <path class="flow api dotted" data-flow="api" data-src="self" data-dst="api-ch" d="M997 402 V395 H1000 V340"/>
+      <path class="flow api dotted" data-flow="api" data-src="hyb" data-dst="api-ch" d="M1122 402 V395 H1120 V340"/>
+      <path class="flow api thick" data-flow="api" data-src="lb" data-dst="apigw" d="M750 362 V395"/>
+      <path class="flow api thick" data-flow="api" data-src="apigw" data-dst="apigw-dms" d="M820 478 Q900 510 940 570"/>
+      <path class="flow admin" data-flow="admin" data-src="apigw-dms" data-dst="appfront" d="M997 600 V624"/>
+      <path class="flow api" data-flow="api" data-src="apigw-dms" data-dst="appback" d="M1122 600 V624"/>
+      <path class="flow admin" data-flow="admin" data-src="appfront" data-dst="appback" d="M1055 662 H1065"/>
+      <path class="flow db thick" data-flow="db" data-src="appback" data-dst="maxscale" d="M1122 700 V720"/>
+      <path class="flow db" data-flow="db" data-src="appfront" data-dst="maxscale" d="M997 700 V720"/>
+      <path class="flow db thick" data-flow="db" data-src="maxscale" d="M1180 740 Q1230 740 1280 360"/>
+      <path class="flow cst dashed" data-flow="cst" data-src="appback" data-dst="cst" d="M1065 660 Q820 600 600 580"/>
+      <path class="flow payment dashed" data-flow="payment" data-src="appback" data-dst="payment" d="M1065 670 Q820 680 600 668"/>
+      <path class="flow zatca dashed" data-flow="zatca" data-src="appback" data-dst="zatca" d="M1065 680 Q820 760 600 752"/>
+      <path class="flow support dashed" data-flow="support" data-src="appback" data-dst="messaging" d="M1065 690 Q820 830 600 836"/>
+      <path class="flow admin dashed" data-flow="admin" data-src="bss" data-dst="optiva" d="M600 420 Q900 450 1240 632"/>
+      <path class="flow payment dashed" data-flow="payment" data-src="appback" data-dst="sadad" d="M1180 670 Q1220 720 1240 750"/>
+      <path class="flow net dotted" data-flow="net" data-src="dns" data-dst="lb" d="M1240 480 Q1000 420 782 330"/>
+
+      <!-- ANIMATED PACKETS -->
+      <g class="packets" aria-hidden="true">
+        <circle class="packet net" r="3"><animateMotion dur="2s" repeatCount="indefinite" path="M180 196 V220"/></circle>
+        <circle class="packet net" r="3"><animateMotion dur="2s" begin="0.5s" repeatCount="indefinite" path="M180 312 V336"/></circle>
+        <circle class="packet sync" r="3.5"><animateMotion dur="3s" repeatCount="indefinite" path="M180 444 V468"/></circle>
+        <circle class="packet sync" r="3"><animateMotion dur="5s" repeatCount="indefinite" path="M360 158 Q310 200 300 320 Q295 460 240 478"/></circle>
+        <circle class="packet sync" r="3"><animateMotion dur="4s" begin="0.6s" repeatCount="indefinite" path="M300 380 Q330 350 360 258"/></circle>
+        <circle class="packet admin" r="3"><animateMotion dur="2.5s" repeatCount="indefinite" path="M480 404 V396"/></circle>
+        <circle class="packet api" r="4"><animateMotion dur="3s" repeatCount="indefinite" path="M300 380 Q500 380 718 330"/></circle>
+        <circle class="packet api" r="3.5"><animateMotion dur="3s" begin="1s" repeatCount="indefinite" path="M600 420 Q680 400 722 348"/></circle>
+        <circle class="packet admin" r="4"><animateMotion dur="2.5s" repeatCount="indefinite" path="M940 150 Q830 180 782 322"/></circle>
+        <circle class="packet portal" r="4"><animateMotion dur="2.6s" begin="0.4s" repeatCount="indefinite" path="M940 230 Q830 240 778 332"/></circle>
+        <circle class="packet api" r="4.5"><animateMotion dur="2.4s" begin="0.8s" repeatCount="indefinite" path="M940 310 Q830 320 780 340"/></circle>
+        <circle class="packet api" r="2.5"><animateMotion dur="1.8s" repeatCount="indefinite" path="M997 360 V340"/></circle>
+        <circle class="packet api" r="2.5"><animateMotion dur="1.8s" begin="0.4s" repeatCount="indefinite" path="M1122 360 V340"/></circle>
+        <circle class="packet api" r="2.5"><animateMotion dur="2s" begin="0.8s" repeatCount="indefinite" path="M997 402 V395 H1000 V340"/></circle>
+        <circle class="packet api" r="2.5"><animateMotion dur="2s" begin="1.2s" repeatCount="indefinite" path="M1122 402 V395 H1120 V340"/></circle>
+        <circle class="packet api" r="5"><animateMotion dur="1.5s" repeatCount="indefinite" path="M750 362 V395"/></circle>
+        <circle class="packet api" r="4.5"><animateMotion dur="2.5s" repeatCount="indefinite" path="M820 478 Q900 510 940 570"/></circle>
+        <circle class="packet admin" r="3.5"><animateMotion dur="1.6s" repeatCount="indefinite" path="M997 600 V624"/></circle>
+        <circle class="packet api" r="4"><animateMotion dur="1.6s" begin="0.2s" repeatCount="indefinite" path="M1122 600 V624"/></circle>
+        <circle class="packet db" r="4.5"><animateMotion dur="1.8s" repeatCount="indefinite" path="M1122 700 V720"/></circle>
+        <circle class="packet db" r="3.5"><animateMotion dur="2.2s" begin="0.5s" repeatCount="indefinite" path="M997 700 V720"/></circle>
+        <circle class="packet db" r="4.5"><animateMotion dur="3s" repeatCount="indefinite" path="M1180 740 Q1230 740 1280 360"/></circle>
+        <circle class="packet cst" r="3"><animateMotion dur="3.5s" repeatCount="indefinite" path="M1065 660 Q820 600 600 580"/></circle>
+        <circle class="packet payment" r="3"><animateMotion dur="3.5s" begin="0.8s" repeatCount="indefinite" path="M1065 670 Q820 680 600 668"/></circle>
+        <circle class="packet zatca" r="3"><animateMotion dur="4s" begin="1.6s" repeatCount="indefinite" path="M1065 680 Q820 760 600 752"/></circle>
+        <circle class="packet support" r="3"><animateMotion dur="4s" begin="2.4s" repeatCount="indefinite" path="M1065 690 Q820 830 600 836"/></circle>
+        <circle class="packet admin" r="3"><animateMotion dur="4s" repeatCount="indefinite" path="M600 420 Q900 450 1240 632"/></circle>
+        <circle class="packet payment" r="3"><animateMotion dur="3s" repeatCount="indefinite" path="M1180 670 Q1220 720 1240 750"/></circle>
+        <circle class="packet net" r="2.5"><animateMotion dur="5s" repeatCount="indefinite" path="M1240 480 Q1000 420 782 330"/></circle>
+      </g>
+    </svg>
+  </div>
+
+  <!-- Info panel -->
+  <div class="info-panel empty" id="infoPanel">
+    <div class="info-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    </div>
+    <div class="info-content">Click any node to inspect its connections, IPs and role in the topology.</div>
+  </div>
+
+  <!-- Live connectivity panel (real TCP reachability from the console container) -->
+  <div id="connPanel">
+    <h4>Gateway connectivity</h4>
+    <div id="connRows"><div class="row">checking…</div></div>
+    <div class="foot" id="connFoot"></div>
+  </div>
+</main>
+
+<script>
+  const flows = document.querySelectorAll('.flow');
+  const packets = document.querySelectorAll('.packet');
+  const nodes = document.querySelectorAll('.node-group');
+  const chips = document.querySelectorAll('.chip[data-filter]');
+  const infoPanel = document.getElementById('infoPanel');
+  let selected = null;
+  let activeFilter = 'all';
+
+  function applyFilter(filter) {
+    activeFilter = filter;
+    chips.forEach(c => c.classList.toggle('active', c.dataset.filter === filter));
+    if (filter === 'all') {
+      flows.forEach(f => f.classList.remove('dim'));
+      packets.forEach(p => p.style.display = '');
+    } else {
+      flows.forEach(f => f.classList.toggle('dim', f.dataset.flow !== filter));
+      packets.forEach(p => {
+        p.style.display = p.classList.contains(filter) ? '' : 'none';
+      });
+    }
+  }
+
+  chips.forEach(c => c.addEventListener('click', () => {
+    selected = null;
+    nodes.forEach(n => { n.classList.remove('focus'); n.classList.remove('dim'); });
+    flows.forEach(f => f.classList.remove('glow'));
+    showEmptyInfo();
+    applyFilter(c.dataset.filter);
+  }));
+
+  function clearSelection() {
+    selected = null;
+    nodes.forEach(n => { n.classList.remove('focus'); n.classList.remove('dim'); });
+    flows.forEach(f => f.classList.remove('glow'));
+    if (activeFilter === 'all') flows.forEach(f => f.classList.remove('dim'));
+    showEmptyInfo();
+  }
+
+  function showEmptyInfo() {
+    infoPanel.classList.add('empty');
+    infoPanel.querySelector('.info-content').innerHTML = 'Click any node to inspect its connections, IPs and role in the topology.';
+  }
+
+  function showInfo(node) {
+    const name = node.getAttribute('data-name') || node.dataset.name || '';
+    const meta = node.getAttribute('data-meta') || node.dataset.meta || '';
+    const desc = node.getAttribute('data-desc') || node.dataset.desc || '';
+    infoPanel.classList.remove('empty');
+    infoPanel.querySelector('.info-content').innerHTML = `
+      <div class="info-name">${name}</div>
+      ${meta ? `<div class="info-meta">${meta}</div>` : ''}
+      ${desc ? `<div class="info-desc">${desc}</div>` : ''}
+    `;
+  }
+
+  nodes.forEach(node => {
+    node.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = node.getAttribute('data-node') || node.dataset.node;
+      if (selected === id) { clearSelection(); return; }
+      selected = id;
+
+      const connected = new Set([id]);
+      flows.forEach(f => {
+        const src = f.getAttribute('data-src');
+        const dst = f.getAttribute('data-dst');
+        if (src === id) connected.add(dst);
+        if (dst === id) connected.add(src);
+      });
+
+      nodes.forEach(n => {
+        const nid = n.getAttribute('data-node');
+        n.classList.toggle('focus', nid === id);
+        n.classList.toggle('dim', !connected.has(nid));
+      });
+      flows.forEach(f => {
+        const src = f.getAttribute('data-src');
+        const dst = f.getAttribute('data-dst');
+        const related = src === id || dst === id;
+        f.classList.toggle('glow', related);
+        f.classList.toggle('dim', !related);
+      });
+      showInfo(node);
+    });
+  });
+
+  document.querySelector('.canvas-wrap').addEventListener('click', e => {
+    if (e.target.tagName === 'svg' || e.target.classList.contains('sector') || e.target.classList.contains('sector-bg')) {
+      selected = null;
+      nodes.forEach(n => { n.classList.remove('focus'); n.classList.remove('dim'); });
+      flows.forEach(f => f.classList.remove('glow'));
+      showEmptyInfo();
+      applyFilter(activeFilter);
+    }
+  });
+
+  // Pause/play
+  const pauseBtn = document.getElementById('pauseBtn');
+  let paused = false;
+  pauseBtn.addEventListener('click', () => {
+    paused = !paused;
+    const svg = document.querySelector('svg.diagram');
+    if (paused) {
+      svg.pauseAnimations();
+    } else {
+      svg.unpauseAnimations();
+    }
+    pauseBtn.querySelector('span').textContent = paused ? 'Play' : 'Pause';
+    pauseBtn.querySelector('svg').innerHTML = paused
+      ? '<polygon points="6 4 20 12 6 20 6 4"/>'
+      : '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+  });
+
+  // Reset
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    clearSelection();
+    applyFilter('all');
+  });
+
+  /* ===== Live gateway connectivity ===== */
+  const SYS_LABEL = { ok: 'Online', degraded: 'Degraded', down: 'Offline' };
+  const STATE_LABEL = { ok: 'OK', refused: 'port closed', timeout: 'firewalled', unreachable: 'no route', error: 'error' };
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function paintConnectivity(d) {
+    // colour the three SVG nodes by rolled-up per-node state
+    document.querySelectorAll('.node-group[data-conn]').forEach(n => n.removeAttribute('data-conn'));
+    const ns = d.nodes || {};
+    Object.keys(ns).forEach(key => {
+      const g = document.querySelector(`.node-group[data-node="${key}"]`);
+      if (g) g.setAttribute('data-conn', ns[key].state);
+    });
+    // header strip
+    const worst = Object.values(ns).some(n => n.state === 'down') ? 'down'
+      : Object.values(ns).some(n => n.state === 'degraded') ? 'degraded' : 'ok';
+    const dot = document.getElementById('connDot');
+    dot.className = 'status-dot ' + worst;
+    document.getElementById('connSysVal').textContent = SYS_LABEL[worst] || '—';
+    const s = d.summary || {};
+    document.getElementById('connNodesVal').textContent = (s.reachable_nodes ?? '—') + ' / ' + (s.total_nodes ?? '—');
+    document.getElementById('connUpdated').textContent = 'updated ' + new Date(d.at).toLocaleTimeString();
+    // detail rows (per host:port)
+    document.getElementById('connRows').innerHTML = (d.targets || []).map(t =>
+      `<div class="row"><span class="pip ${t.state}"></span>` +
+      `<span class="hp">${esc(t.label)}</span>` +
+      `<span class="st">${esc(t.host)}:${t.port} · ${t.state === 'ok' ? t.ms + 'ms' : (STATE_LABEL[t.state] || t.state)}</span></div>`
+    ).join('');
+    document.getElementById('connFoot').textContent =
+      `${s.ok}/${s.total} endpoints reachable · green=up · amber=host up, port closed · red=firewalled`;
+  }
+
+  async function refreshConnectivity() {
+    try {
+      const r = await fetch('/api/apigw/connectivity', { headers: { 'Accept': 'application/json',
+        'X-Console-Token': (localStorage.getItem('cons_token') || '') } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      paintConnectivity(await r.json());
+    } catch (e) {
+      document.getElementById('connSysVal').textContent = 'unavailable';
+      document.getElementById('connDot').className = 'status-dot';
+      document.getElementById('connRows').innerHTML = `<div class="row">probe unavailable (${esc(e.message)})</div>`;
+    }
+  }
+  refreshConnectivity();
+  setInterval(refreshConnectivity, 30000);
+</script>
+</body>
+</html>

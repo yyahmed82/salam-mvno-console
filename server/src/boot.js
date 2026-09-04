@@ -20,10 +20,12 @@ function run(script, args = []) {
   run('ensureDb.js');
   const r = await init({ reset: false });
   console.log(`console init: ${r.metrics} metrics, ${r.rules} rules`);
-  // create created_at indexes on the replica so metric queries are fast (one-time)
-  console.log('ensuring source indexes for fast metrics…');
-  const ix = await indexSource();
-  console.log(`source indexes: ${ix.made} ok, ${ix.skipped} skipped`);
+  // Create replica indexes in the BACKGROUND (CONCURRENTLY builds can take minutes on big tables).
+  // Never block the API from starting on this — a slow/locked table used to delay boot by ~20 min.
+  console.log('ensuring source indexes for fast metrics… (background)');
+  indexSource()
+    .then(ix => console.log(`source indexes: ${ix.made} built, ${ix.already} already present, ${ix.skipped} skipped`))
+    .catch(e => console.log('source indexes: failed —', e.message));
 
   // first-run seed: replay history only if empty
   const c = db.console;
@@ -60,6 +62,9 @@ function run(script, args = []) {
 
   // warm the role-permission overrides cache
   try { await require('./rolePerms').refresh(); console.log('Role permissions loaded.'); } catch (e) { console.log('Role perms load skipped:', e.message); }
+
+  // ensure the ticket screenshot upload dir exists (UPLOAD_DIR/tickets)
+  try { const tk = require('./tickets'); tk.ensureDir(); console.log(`Ticket uploads dir: ${tk.TICKETS_DIR}`); } catch (e) { console.log('Ticket uploads dir skipped:', e.message); }
 
   // hand off to the API server — reuses the same shared pools from ./db
   require('./api.js');

@@ -1,0 +1,47 @@
+{
+  "_readme": "ONE place for every link and name used by the deck and the certificates. Fill in the teams.* URLs before the first session, then rebuild: python3 build_workshop.py && python3 build_certificates.py",
+
+  "programme": "Salam MVNO Digital Console — Operations Workshop",
+  "programme_short": "Digital Console Operations Workshop",
+  "organisation": "Salam · Digital & MVNO Operations",
+  "cohort": "Cohort 1 — 2026",
+  "hours_total": "10",
+
+  "console_url": "http://172.31.38.115/digital-console/",
+
+  "teams": {
+    "session_join_url": "PASTE_TEAMS_MEETING_JOIN_LINK",
+    "channel_url": "PASTE_TEAMS_CHANNEL_LINK",
+    "group_chat_url": "PASTE_TEAMS_GROUP_CHAT_LINK",
+    "recordings_url": "PASTE_TEAMS_RECORDINGS_FOLDER_LINK",
+    "files_url": "PASTE_TEAMS_FILES_TAB_LINK",
+    "team_name": "Salam Digital Console — Ops",
+    "channel_name": "Training & Enablement"
+  },
+
+  "quiz": {
+    "player_url": "https://kahoot.it",
+    "note": "Facilitator hosts from Kahoot; attendees join at kahoot.it with the PIN shown on screen."
+  },
+
+  "signatories": [
+    { "name": "Yosri Yahmed", "title": "Digital Console — Product & Platform Owner" },
+    { "name": "", "title": "Head of MVNO Operations" }
+  ],
+
+  "sessions": [
+    { "id": "S1", "title": "Foundations",         "modules": "M1–M5"   },
+    { "id": "S2", "title": "Troubleshooting",     "modules": "M6–M10"  },
+    { "id": "S3", "title": "Alerting & response", "modules": "M11–M15" },
+    { "id": "S4", "title": "Depth & ownership",   "modules": "M16–M20" }
+  ],
+
+  "certificate": {
+    "attendance_min_sessions": 3,
+    "completion_min_sessions": 4,
+    "completion_min_score": 70,
+    "issue_place": "Riyadh, Kingdom of Saudi Arabia",
+    "verify_note": "Verify this certificate against the issue register held by Digital & MVNO Operations.",
+    "id_prefix": "SDC"
+  }
+}

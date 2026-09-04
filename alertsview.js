@@ -6,8 +6,18 @@
   const $ = s => document.querySelector(s);
   const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
   const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const API = (location.protocol==="file:") ? "http://localhost:4600" : "";
-  let atab = "open";
+  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
+  let atab = (window.pf && window.pf.get('alerts_tab','open')) || "open";
+  /* After a mail deep link (#alerts?id=… / ?rule=…) is handled, strip the query from the URL
+   * WITHOUT firing hashchange (replaceState). Two reasons: a re-click of the SAME mail link then
+   * produces a real hash change and works again (same-hash clicks fire no event at all), and a
+   * later manual reload doesn't replay the jump. */
+  function deepLinkDone(){
+    try{ if(/[?&](id|rule)=/.test(location.hash||"")) history.replaceState(null, "", location.pathname + location.search + "#alerts"); }catch(e){}
+    // with the query gone, refresh cycles can't replay the jump — so the consumed markers can
+    // reset, which is what lets a SECOND click on the very same mail link work
+    setTimeout(()=>{ window.__alertDeepDone=""; window.__ruleDeepDone=""; window.__alertDeepTried=""; }, 0);
+  }
 
   async function api(path, opts){
     const r = await fetch(API+path, Object.assign({headers:{"Content-Type":"application/json"}}, opts));
@@ -16,8 +26,23 @@
   }
   function banner(msg){ $("#alBanner").innerHTML = msg ? `<div class="albanner">${msg}</div>` : ""; }
   const sevColor = s => ({P1:"#dc2626",P2:"#d97706",P3:"#64748b",P4:"#94a3b8"}[s]||"#64748b");
+  /* Business/Technical alert class — colors follow the errclass.js console-wide standard
+   * (business blue / technical red). No 'Mixed': every formerly-blended rule was split or
+   * reclassified (2026-08-11), so every rule is exactly one class. */
+  const CLS_STYLE = { technical:{label:"Technical",fg:"#ef4444",bg:"#fdeceb"},
+                      business: {label:"Business", fg:"#3b82f6",bg:"#e9f1fe"} };
+  const clsChip = c => { const s=CLS_STYLE[c]; return s?` <span style="display:inline-block;background:${s.bg};color:${s.fg};border-radius:4px;padding:0 6px;font-size:10.5px;font-weight:700">${s.label}</span>`:""; };
+  let CLSFILTER = { alerts:"all", rules:"all" };            // client-side class filters per tab
+  function clsBar(scope, items){
+    const cnt = c => items.filter(x=>x.alert_class===c).length;
+    const chips = [["all","All",items.length],["technical","Technical",cnt("technical")],["business","Business",cnt("business")]];
+    return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 2px 10px"><span class="rl">Class:</span>${chips.map(([v,l,n])=>`<button class="pill clsfchip${CLSFILTER[scope]===v?" active":""}" data-clsf="${v}" data-clsscope="${scope}" style="padding:3px 10px">${l} · ${n}</button>`).join("")}</div>`;
+  }
+  function wireClsBar(rerender){
+    $("#alBody").querySelectorAll("[data-clsf]").forEach(b=>b.addEventListener("click",()=>{ CLSFILTER[b.dataset.clsscope]=b.dataset.clsf; rerender(); }));
+  }
   const fmtVal = (v,unit)=> v==null?"—" : (unit==="rate"||unit==="ratio") ? (v*100).toFixed(1)+"%" : (Number.isInteger(+v)?v:(+v).toFixed(2));
-  const timeAgo = iso => { if(!iso) return "—"; const d=new Date(iso); if(isNaN(d)) return "—"; return new Date(d.getTime()+3*3600e3).toISOString().replace("T"," ").slice(0,16)+" KSA"; };
+  const timeAgo = iso => { if(!iso) return "—"; const d=new Date(iso); if(isNaN(d)) return "—"; return KT.dt(iso)+" KSA"; };
 
   async function load(){
     banner("");
@@ -39,6 +64,28 @@
       `<div class="sevcard sev-p2"><b>${sevMap.P2||0}</b><span>P2 OPEN</span></div>`+
       `<div class="sevcard sev-p3"><b>${sevMap.P3||0}</b><span>P3 OPEN</span></div>`+
       `<div class="stat"><b>${totalOpen}</b><span>TOTAL OPEN · ${health.rules} RULES</span></div>`;
+    /* MAIL DEEP LINKS must beat the REMEMBERED sub-tab. The page restores the last-used tab
+     * (pf 'alerts_tab'), so a reader whose last visit ended on "Alert rules" arrived from a
+     * mail link and saw... the rules list, because both handlers lived inside renderAlerts()
+     * which never ran. #alerts?id=N forces the OPEN list (that is where the incident row is);
+     * #alerts?rule=key opens the rule edit modal from HERE, independent of any tab. */
+    const _mid=/[?&]id=(\d+)/.exec(location.hash||"");
+    // an incident row exists on BOTH the Open-alerts and History tables — only leave a tab that
+    // has no incident table at all. Being on History must stay on History: a resolved alert
+    // only exists there.
+    if(_mid && _mid[1]!==window.__alertDeepDone && atab!=="open" && atab!=="all") atab="open";
+    const _mr=/[?&]rule=([\w.-]+)/.exec(location.hash||"");
+    if(_mr && decodeURIComponent(_mr[1])!==window.__ruleDeepDone){
+      const key=decodeURIComponent(_mr[1]); window.__ruleDeepDone=key;
+      api("/api/rules").then(data=>{
+        _catalog = data.catalog || _catalog;        // the edit modal needs the metric catalog
+        const rule=(data.rules||[]).find(r=>r.key===key);
+        if(rule) openRuleModal(rule);
+        else banner(`Rule “${esc(key)}” not found — it may have been renamed or deleted.`);
+        deepLinkDone();
+      }).catch(()=>{});
+    }
+    const _tabs=$("#alTabs"); if(_tabs) _tabs.querySelectorAll(".pill").forEach(p=>p.classList.toggle("active", p.dataset.atab===atab));
     if(atab==="rules") renderRules();
     else if(atab==="metrics") renderMetrics();
     else renderAlerts();
@@ -78,8 +125,14 @@
     const thr = thrObjs.map(t=>Number(t.value));
     const band = (opts.showBand===false) ? points.map(()=>null) : baselineBand(points, 2);  // ~2σ expected range
     const bandVals = band.filter(Boolean).flatMap(b=>[b.lo,b.hi]);
-    let lo = Math.min(...vals, ...thr, ...(bandVals.length?bandVals:[])), hi = Math.max(...vals, ...thr, ...(bandVals.length?bandVals:[]));
-    if(opts.unit==='rate'||opts.unit==='ratio'){ lo=Math.min(lo,0); hi=Math.max(hi, ...thr, Math.max(...vals)); }
+    // NEVER Math.min(...arr) here: spread passes every point as a call argument, and a 7-day
+    // range at fine buckets is tens of thousands of points → "Maximum call stack size exceeded"
+    // and the whole Metric charts tab dies. Loop-based extent has no argument limit.
+    const extent = (arrs)=>{ let l=Infinity, h=-Infinity;
+      for(const a of arrs) for(const v of a){ if(v<l) l=v; if(v>h) h=v; }
+      return [l,h]; };
+    let [lo,hi] = extent([vals, thr, bandVals]);
+    if(opts.unit==='rate'||opts.unit==='ratio'){ if(lo>0) lo=0; }
     if(hi===lo) hi=lo+1;
     const n = points.length;
     const x = i => pad + (i/(Math.max(1,n-1)))*(W-2*pad);
@@ -120,28 +173,70 @@
   const M_RANK = {P1:1,P2:2,P3:3,P4:4};
   let MFILTER = { team:"all", breachingOnly:false };
 
+  let _mLoading = false;
   async function renderMetrics(){
-    $("#alBody").innerHTML = `<div class="sub" style="padding:6px 2px">Loading metric series…</div>`;
+    // Live refresh fires this every sync tick (~5 min). Two rules keep the tab stable:
+    //  1. never stack loads — a 33-series fetch can outlive the refresh interval, and stacked
+    //     runs made the tab reset to "Loading…" forever;
+    //  2. never wipe rendered content — build off-screen, swap when ready. The spinner is only
+    //     for the very first paint, when there is nothing to keep showing.
+    if(_mLoading) return;
+    _mLoading = true;
+    /* No full-page spinner any more: _loadMetrics paints the grid from /api/rules first and fills
+       the series in afterwards, so there is never a moment with nothing on screen. */
+    if(!_mcards || !_mcards.length)
+      $("#alBody").innerHTML = `<div class="sub" style="padding:6px 2px">Building metric cards…</div>`;
+    try{ await _loadMetrics(); } finally { _mLoading = false; }
+  }
+  /* PROGRESSIVE LOAD.
+   * This used to Promise.all() one series fetch per metric (~33 of them) and paint only when the
+   * LAST one landed, so the tab sat on "Loading metric series…" for as long as the slowest query
+   * — and any one slow series held the whole page hostage.
+   * Now: the grid is built from /api/rules alone (labels, thresholds, teams, descriptions — all
+   * of which are known without touching the series) and painted immediately; the sparklines then
+   * fill in card by card. Fetches run 4 at a time rather than all at once, which also keeps the
+   * source pool from being drained by a single tab — the failure that showed the replica as DOWN
+   * earlier today. */
+  const M_CONCURRENCY = 4;
+  async function _loadMetrics(){
     const rulesData = await api("/api/rules");
     const catalog = rulesData.catalog || [];
     const rulesByMetric = {};
     (rulesData.rules||[]).forEach(r=>{ (rulesByMetric[r.metric_key] ||= []).push(r); });
     // pick a representative window per metric = smallest rule window (or 3)
     const windowFor = k => { const rs=rulesByMetric[k]; return rs&&rs.length ? Math.min(...rs.map(r=>Number(r.window_hours))) : 3; };
-    _mcards = await Promise.all(catalog.map(async m=>{
-      const w = windowFor(m.key);
-      let pts=[];
-      try { pts = (await api(`/api/metrics/series?key=${encodeURIComponent(m.key)}&window=${w}`)).points || []; } catch(e){}
+
+    // 1) skeleton — everything the rules already tell us, painted at once
+    _mcards = catalog.map(m=>{
       const rs = rulesByMetric[m.key]||[];
-      const thrObjs = rs.map(r=>({ value:Number(r.threshold), severity:r.severity, operator:r.operator }));
+      return { m, w: windowFor(m.key), pts: [], rs,
+        thrObjs: rs.map(r=>({ value:Number(r.threshold), severity:r.severity, operator:r.operator })),
+        latest: "…", nowBreached:false, breachSev:null,
+        teams: [...new Set(rs.map(r=>r.team).filter(Boolean))], pending:true };
+    });
+    paintMetrics();
+
+    // 2) fill each card in place; repaint at most ~3×/second so the page stays responsive
+    let lastPaint = 0;
+    const fill = async c => {
+      let pts=[];
+      try { pts = (await api(`/api/metrics/series?key=${encodeURIComponent(c.m.key)}&window=${c.w}`)).points || []; }
+      catch(e){ c.loadError = e.message; }
       const last = [...pts].reverse().find(p=>p.value!=null);
       const lastVal = last ? Number(last.value) : null;
-      const breachedRules = last ? rs.filter(r=> (r.operator==='lte'||r.operator==='lt') ? lastVal<=Number(r.threshold) : lastVal>=Number(r.threshold)) : [];
-      const breachSev = breachedRules.length ? breachedRules.map(r=>r.severity).sort((a,b)=>M_RANK[a]-M_RANK[b])[0] : null;
-      const teams = [...new Set(rs.map(r=>r.team).filter(Boolean))];
-      return { m, w, pts, rs, thrObjs, latest: last?fmtVal(last.value,m.unit):"—", nowBreached:breachedRules.length>0, breachSev, teams };
+      const breached = last ? c.rs.filter(r=> (r.operator==='lte'||r.operator==='lt') ? lastVal<=Number(r.threshold) : lastVal>=Number(r.threshold)) : [];
+      c.pts = pts;
+      c.latest = last ? fmtVal(last.value, c.m.unit) : (c.loadError ? "error" : "—");
+      c.nowBreached = breached.length>0;
+      c.breachSev = breached.length ? breached.map(r=>r.severity).sort((a,b)=>M_RANK[a]-M_RANK[b])[0] : null;
+      c.pending = false;
+      if(Date.now()-lastPaint > 320){ lastPaint = Date.now(); paintMetrics(); }
+    };
+    const queue = _mcards.slice();
+    await Promise.all(Array.from({length:Math.min(M_CONCURRENCY,queue.length)}, async ()=>{
+      while(queue.length){ const c=queue.shift(); if(c) await fill(c); }
     }));
-    paintMetrics();
+    paintMetrics();   // final, with everything settled
   }
 
   /* ---- L1-friendly presentation helpers (display only — no data/behaviour changes) ---- */
@@ -254,7 +349,9 @@
       const desc = (rs[0] && rs[0].description)
         ? esc(rs[0].description)
         : "No alert rule is attached to this metric yet — it is shown for context only.";
-      return `<div class="mcard ${stateCls}${rid?" mclickable":""}" ${rid?`data-mrule="${rid}" title="Click for firing history"`:""} style="border-left:5px solid ${accent};${rid?"cursor:pointer":""}">
+      /* a card whose series has not landed yet is dimmed and shows a shimmer where the sparkline
+         will be — so the grid reads as "loading", never as "this metric is empty" */
+      return `<div class="mcard ${stateCls}${rid?" mclickable":""}${c.pending?" mpending":""}" ${rid?`data-mrule="${rid}" title="Click for firing history"`:""} style="border-left:5px solid ${accent};${rid?"cursor:pointer":""}">
         <div class="mtop">${statusPill}${rid?`<span class="mhint">firing history ↗</span>`:""}</div>
         <div class="mh"><b>${esc(mlabel)}</b><span class="mval ${c.nowBreached?"breachdot":""}" ${c.nowBreached?`style="color:${sevColor(c.breachSev)}"`:""}>${esc(c.latest)}</span></div>
         ${cmp}
@@ -262,7 +359,7 @@
         ${ruleWords(c)}
         ${sparkline(c.pts, {unit:m.unit, thrObjs:c.thrObjs, w:560, h:130, lw:2, dotR:3.4})}
         <div class="mlegend">${rs.length?thrChips:""}<span><i style="border-color:#2563eb"></i>value</span><span><i style="border:none;border-top:none;background:#2563eb;opacity:.22;height:8px"></i>expected range</span>${rs.length?`<span><b style="color:#dc2626">●</b> threshold crossed</span>`:""}</div>
-        <div class="msub">${esc(m.key)} · ${c.w}h window · ${c.pts.length} pts${rs.length?` · ${rs.length} rule(s)`:""}</div>
+        <div class="msub">${esc(m.key)} · ${c.w}h window · ${c.pending?`<span style="color:var(--muted)">loading series…</span>`:(c.loadError?`<span style="color:#dc2626">series failed: ${esc(c.loadError)}</span>`:`${c.pts.length} pts`)}${rs.length?` · ${rs.length} rule(s)`:""}</div>
       </div>`;
     }).join("");
     $("#alBody").innerHTML = triageBanner() + bar + `<div class="mgrid">${cards || '<div class="okbox">No metrics match this filter.</div>'}</div>`;
@@ -281,12 +378,12 @@
 
   /* ---- Guided Response (L1) — runbook lookup + one-click actions on open alerts ---- */
   const GENERIC_RUNBOOK = "Investigate the metric in Analytics/Troubleshoot; check with the owning team; escalate per severity if it persists.";
-  let _rbMap = null, _rbPromise = null;                 // rule key -> runbook, fetched once & reused
+  let _rbMap = null, _rbPromise = null; const _trigMap = {};                 // rule key -> runbook, fetched once & reused
   function loadRunbooks(){
     if(_rbMap) return Promise.resolve(_rbMap);
     if(!_rbPromise) _rbPromise = api("/api/rules").then(d=>{
       _rbMap = {};
-      (d.rules||[]).forEach(r=>{ if(r.key && r.runbook) _rbMap[r.key]=r.runbook; });
+      (d.rules||[]).forEach(r=>{ if(r.key && r.runbook) _rbMap[r.key]=r.runbook; if(r.key && r.trigger_codes) _trigMap[r.key]=r.trigger_codes; });
       return _rbMap;
     }).catch(()=>{ _rbPromise=null; return {}; });      // degrade gracefully; retry on next open
     return _rbPromise;
@@ -304,6 +401,7 @@
         <span class="sevpill" style="background:${sevColor(a.severity)}">${esc(a.severity)}</span>
         <span class="grteam">Team: ${esc(a.team||"unassigned")}</span>
         <span class="mono" style="font-weight:400;letter-spacing:0">${esc(a.rule_key||"")}</span></div>
+      ${_trigMap[a.rule_key]?`<div class="rl" style="margin:2px 0 6px"><b>Triggered by:</b> <span class="mono" style="font-size:11px">${esc(_trigMap[a.rule_key])}</span></div>`:''}
       <div id="grsteps_${a.id}">${steps}</div>
       <div class="gract">
         ${canAck()?`<button class="pill" id="grnotify_${a.id}" style="border-left-color:#dc2626">⚡ Notify on-call</button><span class="grres" id="grnres_${a.id}"></span>`:''}
@@ -356,7 +454,9 @@
     let stats={}; try{ stats=await api("/api/incidents/stats"); }catch(e){}
     loadRunbooks();                                     // prefetch rule runbooks (cached; never blocks render)
     const data = await api("/api/alerts?status="+(atab==="all"?"all":"open"));
-    const rows = data.alerts||[];
+    const allRows = data.alerts||[];
+    // client-side class filter (chips) — server always returns everything
+    const rows = CLSFILTER.alerts==="all" ? allRows : allRows.filter(a=>a.alert_class===CLSFILTER.alerts);
     const byId = {}; rows.forEach(a=>{ byId[a.id]=a; });
     // root-cause grouping: place each correlated child directly under its provider root, and
     // count children per root so the root row can say "N correlated".
@@ -378,8 +478,11 @@
       <div class="incstat"><b>${dur(stats.mttr_sec)}</b><span>MTTR · 30d</span></div>
       <div class="incstat"><b>${stats.resolved_24h??0}</b><span>RESOLVED · 24h</span></div>
     </div>`;
-    if(!rows.length){ $("#alBody").innerHTML = strip + `<div class="okbox" style="margin-top:6px">No ${atab==="all"?"":"open "}alerts. ${atab==="open"?"All clear — or run a sync/simulate to evaluate rules against the replica.":""}</div>`; return; }
-    let h = strip + `<table class="alerts"><tr><th>SEV</th><th>INCIDENT</th><th>TEAM</th><th>OBSERVED</th><th>STATUS</th><th>OWNER</th><th>FIRST → LAST</th><th>ACTIONS</th></tr>`;
+    if(!rows.length){
+      $("#alBody").innerHTML = strip + clsBar("alerts", allRows) + `<div class="okbox" style="margin-top:6px">No ${atab==="all"?"":"open "}alerts${CLSFILTER.alerts!=="all"?" in this class":""}. ${atab==="open"&&CLSFILTER.alerts==="all"?"All clear — or run a sync/simulate to evaluate rules against the replica.":""}</div>`;
+      wireClsBar(renderAlerts); return;
+    }
+    let h = strip + clsBar("alerts", allRows) + `<table class="alerts"><tr><th>SEV</th><th>INCIDENT</th><th>TEAM</th><th>OBSERVED</th><th>STATUS</th><th>OWNER</th><th>FIRST → LAST</th><th>ACTIONS</th></tr>`;
     ordered.forEach(a=>{
       const snoozed = a.snoozed_until && new Date(a.snoozed_until)>new Date();
       const cr = a.correlation||null;
@@ -398,7 +501,7 @@
         <button class="pill" data-resolve="${a.id}" style="padding:3px 8px;border-left-color:#16a34a">Resolve</button>` : '';
       h += `<tr${isChild?' style="opacity:.62"':''}>
         <td><span class="sevpill" style="background:${sevColor(a.severity)}">${esc(a.severity)}</span></td>
-        <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b><br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span>${corrLine}</td>
+        <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span>${corrLine}</td>
         <td>${esc(a.team||"—")}</td>
         <td><b>${esc(a.message? a.message.split("observed ")[1]||"" : "")}</b><br><span class="rl">${esc(a.window_hours)}h window</span></td>
         <td>${stateTag}</td>
@@ -417,6 +520,40 @@
     body.querySelectorAll("[data-resolve]").forEach(b=>b.addEventListener("click",()=>{ if(confirm("Resolve this incident?")) incAction(b.dataset.resolve,"resolve"); }));
     body.querySelectorAll("[data-det]").forEach(b=>b.addEventListener("click",()=>toggleDetail(b.dataset.det)));
     body.querySelectorAll("[data-guide]").forEach(b=>b.addEventListener("click",()=>toggleGuide(b.dataset.guide, byId[b.dataset.guide])));
+    wireClsBar(renderAlerts);
+    /* Deep link from the alert MAIL — read ONCE per page load, then cleared, so the periodic
+     * refresh doesn't keep yanking the reader back:
+     *   #alerts?id=<alert id>  (fired rows)  → scroll to the incident, open its GUIDE (the
+     *     step-by-step runbook walker) plus the detail row — "open and start acting"
+     *   #alerts?rule=<key>     (ok rows)     → open that rule's edit popup, where the
+     *     thresholds, trigger codes and runbook live */
+    const _dm=/[?&]id=(\d+)/.exec(location.hash||"");
+    if(_dm && _dm[1]!==window.__alertDeepDone){
+      const id=_dm[1];
+      const btn=body.querySelector(`[data-det="${id}"]`);
+      if(btn){
+        window.__alertDeepDone=id; window.__alertDeepTried="";
+        toggleDetail(id);
+        const g=body.querySelector(`[data-guide="${id}"]`);
+        if(g) toggleGuide(id, byId[id]);          // open alerts get the guided runbook directly
+        const tr=btn.closest("tr");
+        tr.scrollIntoView({behavior:"smooth",block:"center"});
+        tr.style.outline="2px solid #0e9f5a"; tr.style.outlineOffset="-2px";
+        setTimeout(()=>{ tr.style.outline=""; }, 6000);
+        deepLinkDone();
+      } else if(atab==="open" && window.__alertDeepTried!==id){
+        /* not in the OPEN list — it resolved since the mail was sent. It still exists on the
+         * History table, so switch there ONCE and re-render; the id stays unconsumed so this
+         * handler runs again against the full list. */
+        window.__alertDeepTried=id; atab="all";
+        if(window.pf) window.pf.set('alerts_tab', atab);
+        load();
+      } else {
+        window.__alertDeepDone=id; window.__alertDeepTried="";
+        banner(`Alert #${esc(id)} is not in the open list or the recent history — it may be older than the current range.`);
+        deepLinkDone();
+      }
+    }
   }
   async function incAction(id, action, payload){
     try{ await api(`/api/alerts/${id}/${action}`,{method:"POST",body:JSON.stringify(payload||{})}); renderAlerts(); }
@@ -460,6 +597,43 @@
 
   let _catalog = [];
   const CHANNELS = ["any","app","web","sda","posa","partner"];
+  async function renderErrClass(){
+    const host=$("#ecSection"); if(!host) return;
+    let d; try{ d=await api("/api/errclass"); }catch(e){ host.innerHTML=`<div class="rl">${esc(e.message)}</div>`; return; }
+    const ov=d.overrides||{};
+    const chip=(c,removable,side)=>`<span class="mono" style="background:${side==='tech'?'#fdeceb':'#e9f1fe'};color:${side==='tech'?'#b91c1c':'#1d4ed8'};border-radius:6px;padding:1px 8px;margin:2px;display:inline-block">${esc(c)}${removable?` <a href="#" data-ecdel="${esc(c)}" data-ecside="${side}" style="text-decoration:none;color:inherit;font-weight:800">×</a>`:''}</span>`;
+    host.innerHTML=`<div class="apanel"><div class="ah"><b>Business / Technical code classification</b>
+        <span class="rl" style="font-weight:600;font-size:11px;color:var(--muted)">· TKT-000017 — reclassify codes without a deploy · applies to NEW events from save (history keeps its ingest class) · audited</span></div>
+      <div class="abody" style="font-size:12.5px">
+        <div style="margin-bottom:6px"><b style="color:#b91c1c">TECHNICAL codes</b> <span class="rl">(built-in: ${d.builtin_tech.map(c=>chip(c,(ov.tech_remove||[]).includes(c)?false:true,'techrm')).join('')})</span><br>
+          <span class="rl">added:</span> ${(ov.tech_add||[]).map(c=>chip(c,true,'tech')).join('')||'<span class="rl">—</span>'}
+          ${(ov.tech_remove||[]).length?`<br><span class="rl">demoted to heuristic:</span> ${(ov.tech_remove||[]).map(c=>chip(c,true,'techundo')).join('')}`:''}
+        </div>
+        <div style="margin-bottom:8px"><b style="color:#1d4ed8">BUSINESS codes</b> <span class="rl">(built-in: ${d.builtin_biz.map(c=>chip(c,false,'biz')).join('')})</span><br>
+          <span class="rl">added (these OVERRIDE technical — the TKT-17 fix):</span> ${(ov.biz_add||[]).map(c=>chip(c,true,'biz')).join('')||'<span class="rl">—</span>'}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="ecCode" placeholder="code e.g. 706 or -501" style="width:130px">
+          <button class="pill" id="ecAddBiz" style="border-left-color:#1d4ed8">→ mark BUSINESS</button>
+          <button class="pill" id="ecAddTech" style="border-left-color:#b91c1c">→ mark TECHNICAL</button>
+          <span id="ecStatus" class="rl"></span>
+        </div>
+        <div class="rl" style="margin-top:6px;color:var(--muted)">Scope: the API/replica classifier (Troubleshoot feed &amp; tiles, dashboard error KPIs, traffic ingest, alert metrics built on err_class). DMS journey codes have their own success set. To silence a specific rule instead, edit that rule.</div>
+      </div></div>`;
+    const save=async(ovNew)=>{ const st=$("#ecStatus"); if(st) st.textContent="Saving…";
+      try{ await api("/api/errclass",{method:"PUT",body:JSON.stringify({overrides:ovNew})}); if(st) st.textContent="Saved ✓ — applies to new events now"; renderErrClass(); }
+      catch(e){ if(st) st.textContent="Error: "+e.message; } };
+    const cur=()=>({ tech_add:[...(ov.tech_add||[])], biz_add:[...(ov.biz_add||[])], tech_remove:[...(ov.tech_remove||[])], biz_remove:[...(ov.biz_remove||[])] });
+    $("#ecAddBiz").onclick=()=>{ const c=$("#ecCode").value.trim(); if(!c) return; const o=cur(); if(!o.biz_add.includes(c)) o.biz_add.push(c); o.tech_add=o.tech_add.filter(x=>x!==c); save(o); };
+    $("#ecAddTech").onclick=()=>{ const c=$("#ecCode").value.trim(); if(!c) return; const o=cur(); if(!o.tech_add.includes(c)) o.tech_add.push(c); o.biz_add=o.biz_add.filter(x=>x!==c); save(o); };
+    host.querySelectorAll("[data-ecdel]").forEach(a=>a.addEventListener("click",e=>{ e.preventDefault();
+      const c=a.getAttribute("data-ecdel"), side=a.getAttribute("data-ecside"), o=cur();
+      if(side==='tech') o.tech_add=o.tech_add.filter(x=>x!==c);
+      else if(side==='biz') o.biz_add=o.biz_add.filter(x=>x!==c);
+      else if(side==='techrm'){ if(!o.tech_remove.includes(c)) o.tech_remove.push(c); }
+      else if(side==='techundo') o.tech_remove=o.tech_remove.filter(x=>x!==c);
+      save(o); }));
+  }
   async function renderRules(){
     const data = await api("/api/rules");
     const rules = data.rules||[];
@@ -470,16 +644,19 @@
     if(canEdit) h += `<button class="pill" id="newRuleBtn" style="border-left-color:var(--green)">+ New rule</button>`;
     if(canMail) h += `<button class="pill" id="mailDigestBtn" style="border-left-color:#2563eb">✉ Send email digest</button>`;
     h += `<span class="rl" style="align-self:center">Recipients = users with <b>Mail alert</b> on (Settings → User management). Digest also auto-emails when a new alert fires.</span></div>`;
-    h += `<table class="alerts"><tr><th>ON</th><th>SEV</th><th>RULE</th><th>TEAM</th><th>METRIC</th><th>CONDITION</th><th>WINDOW</th><th>ACTIVE (KSA)</th><th></th></tr>`;
-    rules.forEach(r=>{
+    h += clsBar("rules", rules);
+    const list = CLSFILTER.rules==="all" ? rules : rules.filter(r=>r.alert_class===CLSFILTER.rules);
+    h += `<table class="alerts"><tr><th>ON</th><th>SEV</th><th>RULE</th><th>TEAM</th><th>METRIC</th><th>TRIGGER CODES</th><th>CONDITION</th><th>WINDOW</th><th>ACTIVE (KSA)</th><th></th></tr>`;
+    list.forEach(r=>{
       const cond = `${r.operator} ${r.unit==='rate'||r.unit==='ratio' ? (r.threshold*100)+'%' : r.threshold}` + (r.min_sample?` · n≥${r.min_sample}`:"") + (r.channel&&r.channel!=='any'?` · ${r.channel}`:"") + (r.dim&&Object.keys(r.dim).length?` · ${Object.entries(r.dim).map(([k,v])=>k+'='+v).join(',')}`:"");
       const active = (r.active_from!=null&&r.active_to!=null) ? `${r.active_from}:00–${r.active_to}:00` : "always";
       h += `<tr class="rule-row">
         <td><label class="switch"><input type="checkbox" data-rid="${r.id}" ${r.enabled?"checked":""} ${canEdit?'':'disabled'}><span class="slider"></span></label></td>
         <td><span class="sevpill" style="background:${sevColor(r.severity)}">${esc(r.severity)}</span></td>
-        <td><b>${esc(r.name)}</b>${r.builtin?' <span class="rl" style="font-size:10px">builtin</span>':''}<br><span style="color:var(--muted);font-size:11px">${esc(r.description||"")}</span></td>
+        <td><b>${esc(r.name)}</b>${clsChip(r.alert_class)}${r.builtin?' <span class="rl" style="font-size:10px">builtin</span>':''}<br><span style="color:var(--muted);font-size:11px">${esc(r.description||"")}</span></td>
         <td>${esc(r.team||"—")}</td>
         <td class="mono">${esc(r.metric_key)}</td>
+        <td class="mono" style="font-size:10.5px;max-width:210px;white-space:normal">${r.trigger_codes?esc(r.trigger_codes):'<span class="rl">—</span>'}</td>
         <td class="mono">${esc(cond)}</td>
         <td>${esc(r.window_hours)}h</td>
         <td class="mono">${esc(active)}</td>
@@ -487,7 +664,16 @@
       </tr>`;
     });
     h += `</table>`;
+    if(!list.length) h += `<div class="okbox" style="margin-top:6px">No rules in this class.</div>`;
+    /* TKT-000017 — Business/Technical CODE CLASSIFICATION, editable without a deploy. This is the
+     * classifier every feed/tile/alert metric uses; a code moved to Business stops counting as
+     * technical from save time (history keeps its ingest-time class). */
+    if(canEdit) h += `<div id="ecSection" style="margin-top:24px"></div>`;
+    // anomaly-engine signals (seasonal baseline) — individually configurable, appended below the threshold rules
+    if(canEdit) h += `<div id="anomSection" style="margin-top:24px">${window.salamLoader?window.salamLoader("Loading anomaly signals…"):"Loading anomaly signals…"}</div>`;
     $("#alBody").innerHTML = h;
+    if(canEdit) renderErrClass();
+    wireClsBar(renderRules);
     $("#alBody").querySelectorAll("input[data-rid]").forEach(cb=>{
       cb.addEventListener("change", async ()=>{
         try{ await api("/api/rules/"+cb.dataset.rid, {method:"PATCH", body:JSON.stringify({enabled:cb.checked})}); }
@@ -499,6 +685,131 @@
     $("#alBody").querySelectorAll("[data-hist]").forEach(b=>b.addEventListener("click",()=>openHistory(b.dataset.hist, byId(b.dataset.hist))));
     const nb=$("#newRuleBtn"); if(nb) nb.addEventListener("click", ()=>openRuleModal(null));
     const mb=$("#mailDigestBtn"); if(mb) mb.addEventListener("click", ()=>sendDigest(mb));
+    if(canEdit) renderAnomalySignals();
+  }
+
+  /* ---- anomaly-engine signals: enable/disable + tune sensitivity/lookback per signal ---- */
+  async function renderAnomalySignals(){
+    const wrap = $("#anomSection"); if(!wrap) return;
+    let d; try{ d = await api("/api/anomaly/rules"); }
+    catch(e){ wrap.innerHTML = `<div class="albanner">Could not load anomaly signals: ${esc(e.message)}</div>`; return; }
+    const g = d.global||{}, sigs = d.signals||[];
+    const gnum = (id,val,step,min)=>`<input id="${id}" type="number" step="${step||'any'}" ${min!=null?`min="${min}"`:''} value="${esc(val)}" style="width:74px">`;
+    const gchk = (id,on)=>`<label class="switch"><input id="${id}" type="checkbox" ${on?'checked':''}><span class="slider"></span></label>`;
+    let h = `<h3 style="margin:0 0 2px">Anomaly detection · seasonal baseline</h3>
+      <div class="rl" style="margin-bottom:10px">These are not threshold rules — each signal is scored against its own hour-of-week norm (robust z-score). Tune sensitivity (σ), lookback and on/off per signal, or set the engine-wide defaults below. Changes apply on the next sync — no deploy needed.</div>
+      <div class="anom-global" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;background:var(--card,#0f172a11);border:1px solid #8883;border-radius:8px;padding:10px 12px;margin-bottom:12px">
+        <div><label class="rl">Engine on</label><br>${gchk('an_enabled',g.enabled)}</div>
+        <div><label class="rl">Raise incidents</label><br>${gchk('an_raise',g.raiseAlerts)}</div>
+        <div><label class="rl">Gateway drops</label><br>${gchk('an_gw',g.gatewayAlerts!==false)}</div>
+        <div><label class="rl">Sensitivity (σ)</label><br>${gnum('an_z',g.z,'0.1',1.5)}</div>
+        <div><label class="rl">Lookback (weeks)</label><br>${gnum('an_lb',g.lookbackWeeks,'1',1)}</div>
+        <div><label class="rl">Min sample</label><br>${gnum('an_min',g.minSample,'1',0)}</div>
+        <div><label class="rl">Volume floor</label><br>${gnum('an_vf',g.volFloor,'1',0)}</div>
+        <button class="pill" id="an_save" style="border-left-color:var(--green)">Save defaults</button>
+      </div>`;
+    h += `<table class="alerts"><tr><th>ON</th><th>SIGNAL</th><th>TYPE</th><th>SENSITIVITY</th><th>LOOKBACK</th><th>MIN n</th><th>VOL FLOOR</th><th>SEV CAP</th><th>SOURCE</th><th></th></tr>`;
+    sigs.forEach(s=>{
+      const e = s.eff||{}, ov = s.override||null;
+      const isVol = s.kind==='volume';
+      h += `<tr class="rule-row">
+        <td><label class="switch"><input type="checkbox" data-anon="${esc(s.sig)}" ${e.enabled?'checked':''}><span class="slider"></span></label></td>
+        <td><b class="mono">${esc(s.sig)}</b><br><span style="color:var(--muted);font-size:11px">${esc(s.label||'')}</span></td>
+        <td><span class="rl">${esc(s.type)}</span></td>
+        <td class="mono">≥ ${esc(e.z)}σ</td>
+        <td class="mono">${esc(e.lookbackWeeks)}w</td>
+        <td class="mono">${esc(e.minSample)}</td>
+        <td class="mono">${isVol?esc(e.volFloor):'—'}</td>
+        <td class="mono">${e.maxSeverity?esc(e.maxSeverity):'—'}</td>
+        <td>${ov?'<span class="clschip" style="background:#f59e0b22;color:#b45309">custom</span>':'<span class="rl">global</span>'}</td>
+        <td style="white-space:nowrap"><button class="pill" data-anedit="${esc(s.sig)}" style="padding:3px 9px">Edit</button></td>
+      </tr>`;
+    });
+    h += `</table>`;
+    wrap.innerHTML = h;
+    // global defaults save
+    $("#an_save").onclick = async ()=>{
+      const body = { enabled:$("#an_enabled").checked, raiseAlerts:$("#an_raise").checked, gatewayAlerts:$("#an_gw").checked,
+        z:Number($("#an_z").value), lookbackWeeks:Number($("#an_lb").value), minSample:Number($("#an_min").value), volFloor:Number($("#an_vf").value) };
+      $("#an_save").textContent="Saving…";
+      try{ await api("/api/anomaly/config",{method:"PUT",body:JSON.stringify(body)}); renderAnomalySignals(); }
+      catch(e){ banner("Save failed: "+e.message); $("#an_save").textContent="Save defaults"; }
+    };
+    // per-signal on/off
+    wrap.querySelectorAll("input[data-anon]").forEach(cb=>cb.addEventListener("change", async ()=>{
+      try{ await api("/api/anomaly/rules/"+encodeURIComponent(cb.dataset.anon),{method:"PATCH",body:JSON.stringify({enabled:cb.checked})}); renderAnomalySignals(); }
+      catch(e){ banner("Failed to update signal: "+e.message); cb.checked=!cb.checked; }
+    }));
+    const byS = sig => sigs.find(x=>x.sig===sig);
+    wrap.querySelectorAll("[data-anedit]").forEach(b=>b.addEventListener("click",()=>openAnomalyModal(byS(b.dataset.anedit), g)));
+  }
+
+  // plain-language description of what a given anomaly signal watches + why a deviation matters
+  function sigExplain(s){
+    const J = {
+      payment:"payment attempts", activation:"BSS activations", semati:"Semati / MSISDN provisioning calls",
+      nafath:"Nafath identity verifications", eligibility:"eligibility checks (Semati / Nafath gov)",
+      delivery:"SIM delivery requests", change_plan:"plan-change operations", onboarding:"onboarding orders",
+      checkout:"checkouts" };
+    const subject = J[s.journey] || (s.journey ? s.journey.replace(/_/g,' ') : "this journey");
+    if(s.kind==='gateway_drop') return `Watches each ${s.journey==='delivery'?'courier':'payment gateway'}'s own volume vs its hour-of-week norm. A drop means that provider is down or traffic is failing over to another — caught even when the overall total still looks healthy.`;
+    if(s.kind==='failure_rate') return `Watches the fail ÷ (ok+fail) ratio for ${subject} against its own hour-of-week norm. A spike means this step is breaking more than usual for the time of day.`;
+    return `Watches total volume of ${subject} against its hour-of-week norm. A sharp DROP usually means an upstream outage; a SPIKE can mean a retry storm.`;
+  }
+
+  function openAnomalyModal(s, g){
+    const card=$("#ruleModalCard");
+    const e = s.eff||{}, ov = s.override||{}, isVol = s.kind==='volume';
+    const has = k => ov && (k in ov);
+    // each field shows the effective value; leaving it as the global default clears the override
+    const row = (id,label,val,step,min,note)=>`<div><label>${label}</label><input id="${id}" type="number" step="${step||'any'}" ${min!=null?`min="${min}"`:''} value="${esc(val)}">${note?`<div class="rl" style="margin-top:3px;line-height:1.5">${note}</div>`:''}</div>`;
+    const sevOpts = ['','P1','P2','P3','P4'].map(x=>`<option value="${x}" ${ov.maxSeverity===x?'selected':''}>${x||'— none —'}</option>`).join("");
+    const gEcho = v => `<span style="color:var(--muted)">global <b>${esc(v)}</b></span>`;
+    card.innerHTML=`<div class="modal-head"><span class="path">Tune anomaly signal · ${esc(s.sig)}</span><span class="x" id="ruX">×</span></div>
+      <div class="modal-body">
+        <div style="background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:10px">
+          <div style="font-weight:700;font-size:12px;margin-bottom:2px">${esc(s.label||s.sig)}</div>
+          <div class="rl" style="line-height:1.55">${sigExplain(s)}</div>
+        </div>
+        <details style="margin-bottom:10px">
+          <summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--muted)">How seasonal anomaly detection works</summary>
+          <div class="rl" style="line-height:1.6;margin-top:6px">For each signal the engine learns a <b>168-bucket hour-of-week baseline</b> (one value per hour of the week, KSA) from the last few weeks, using the <b>median + MAD</b> so a few bad hours don't skew it. The current hour is scored with a robust z-score — how many σ it sits from that hour's norm. When |σ| crosses <b>Sensitivity</b>, an incident opens and flows through the normal ack / assign / on-call path. Severity auto-scales with the deviation (bigger = higher). This is not a fixed threshold — it adapts to the day/night and weekday/weekend pattern.</div>
+        </details>
+        <div class="rl" style="margin-bottom:10px">Each box is pre-filled with the <b>effective</b> value. Leave it to <b>inherit the global default</b>; type a value to <b>override just this signal</b> (the row is then marked <i>custom</i>). Changes take effect on the next sync — no deploy.</div>
+        <div class="fgrid" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          ${row('an_ez','SENSITIVITY (σ)',e.z,'0.1',1.5,`Trip threshold: fires when this hour is ≥ this many σ from the norm. <b>Higher = less sensitive</b> (only bigger deviations page); lower catches smaller ones. ${gEcho(g.z)}`)}
+          ${row('an_elb','LOOKBACK (weeks)',e.lookbackWeeks,'1',1,`Weeks of history that build the baseline. More = smoother &amp; slower to adapt; fewer = reacts faster to recent shifts. ${gEcho(g.lookbackWeeks)}`)}
+          ${row('an_emin','MIN SAMPLE',e.minSample,'1',0,`Minimum events in the hour before it scores at all — guards against false alarms on tiny samples. ${gEcho(g.minSample)}`)}
+          ${isVol?row('an_evf','VOLUME FLOOR (quiet-hours guard)',e.volFloor,'1',0,`If the hour's seasonal norm is below this many events/hr, a deviation is capped to <b>P3</b> (no page) — silences normal night-time lulls. ${gEcho(g.volFloor)}`):''}
+          <div><label>SEVERITY CAP (optional)</label><select id="an_esev">${sevOpts}</select><div class="rl" style="margin-top:3px;line-height:1.5">Severity auto-scales with σ (bigger deviation → P1). Set a ceiling so this signal <b>never pages more severe</b> than the chosen level. Leave <i>none</i> to let it scale.</div></div>
+        </div>
+        <div class="modal-foot" style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+          <span class="rl" style="margin-right:auto">On/off is set by the row toggle, not here.</span>
+          <button class="pill" id="an_reset">Reset to global</button>
+          <button class="pill" id="an_esave" style="border-left-color:var(--green)">Save override</button>
+        </div>
+      </div>`;
+    $("#ruleModal").classList.add("open");
+    $("#ruX").onclick=()=>$("#ruleModal").classList.remove("open");
+    // save: send only the fields that differ from the global default (so unchanged ones keep inheriting)
+    $("#an_esave").onclick=async()=>{
+      const patch={};
+      const diff=(id,gv)=>{ const el=$("#"+id); if(!el) return; const v=Number(el.value); if(!isNaN(v) && v!==Number(gv)) return v; return undefined; };
+      const z=diff('an_ez',g.z); if(z!==undefined) patch.z=z;
+      const lb=diff('an_elb',g.lookbackWeeks); if(lb!==undefined) patch.lookbackWeeks=lb;
+      const mn=diff('an_emin',g.minSample); if(mn!==undefined) patch.minSample=mn;
+      if(isVol){ const vf=diff('an_evf',g.volFloor); if(vf!==undefined) patch.volFloor=vf; }
+      const sev=$("#an_esev").value; patch.maxSeverity = sev||null;
+      // enabled is owned by the row toggle — not touched here
+      try{ await api("/api/anomaly/rules/"+encodeURIComponent(s.sig),{method:"PATCH",body:JSON.stringify(patch)});
+        $("#ruleModal").classList.remove("open"); renderAnomalySignals(); }
+      catch(e){ alert("Save failed: "+e.message); }
+    };
+    $("#an_reset").onclick=async()=>{
+      try{ await api("/api/anomaly/rules/"+encodeURIComponent(s.sig),{method:"PATCH",body:JSON.stringify({reset:true})});
+        $("#ruleModal").classList.remove("open"); renderAnomalySignals(); }
+      catch(e){ alert("Reset failed: "+e.message); }
+    };
   }
 
   async function sendDigest(btn){
@@ -571,6 +882,7 @@
           <div><label>ACTIVE HOURS (KSA, optional)</label><div style="display:flex;gap:6px"><input id="ru_from" type="number" placeholder="from" min="0" max="23" value="${rule&&rule.active_from!=null?rule.active_from:''}"><input id="ru_to" type="number" placeholder="to" min="0" max="23" value="${rule&&rule.active_to!=null?rule.active_to:''}"></div></div>
         </div>
         <div class="ffull"><label>DESCRIPTION</label><textarea id="ru_desc" rows="2">${esc(g('description',''))}</textarea></div>
+        <div class="ffull"><label>TRIGGER CODES <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which error codes / conditions fire this alert (shown to L2 on the incident)</span></label><input id="ru_codes" placeholder="e.g. 715, 5002 (Semati provider) · excludes 727/726 business declines" value="${esc(g('trigger_codes',''))}"></div>
         <div class="ffull"><label>RUNBOOK <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— what to do when this fires (shown on the incident)</span></label><textarea id="ru_runbook" rows="2" placeholder="e.g. Check ClearTax ZATCA queue; if backed up, page BSS on-call.">${esc(g('runbook',''))}</textarea></div>
         <div class="testbox" id="ru_testbox">Click <b>Test now</b> to evaluate this rule against the current data.</div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -581,7 +893,7 @@
     $("#ruleModal").classList.add("open");
     const gather=()=>({name:$("#ru_name").value.trim(), metric_key:$("#ru_metric").value, operator:$("#ru_op").value,
       threshold:Number($("#ru_thr").value), window_hours:Number($("#ru_win").value), min_sample:Number($("#ru_min").value),
-      severity:$("#ru_sev").value, channel:$("#ru_ch").value, team:$("#ru_team").value||null, description:$("#ru_desc").value.trim(),
+      severity:$("#ru_sev").value, channel:$("#ru_ch").value, team:$("#ru_team").value||null, description:$("#ru_desc").value.trim(), trigger_codes:$("#ru_codes").value.trim()||null,
       runbook:$("#ru_runbook").value.trim()||null,
       active_from:$("#ru_from").value!==""?Number($("#ru_from").value):null, active_to:$("#ru_to").value!==""?Number($("#ru_to").value):null});
     $("#ruX").onclick=()=>$("#ruleModal").classList.remove("open");
@@ -589,7 +901,7 @@
       const tb=$("#ru_testbox"); tb.innerHTML="Testing…";
       try{ const r=await api("/api/rules/test",{method:"POST",body:JSON.stringify(gather())});
         const val = r.value==null?"—":(r.unit==="rate"||r.unit==="ratio")?(r.value*100).toFixed(1)+"%":r.value;
-        tb.innerHTML=`Observed <b>${val}</b> (n=${r.sample}) at ${String(r.now).replace('T',' ').slice(0,16)}Z — `+
+        tb.innerHTML=`Observed <b>${val}</b> (n=${r.sample}) at ${KT.dt(r.now)}Z — `+
           (r.would_fire?`<span style="color:var(--red);font-weight:800">WOULD FIRE ✕</span>`:`<span style="color:#16a34a;font-weight:800">would not fire ✓</span>`)+
           (r.enoughSample?"":` <span style="color:var(--muted)">(below min sample)</span>`);
       }catch(e){ tb.innerHTML=`<span style="color:var(--red)">${esc(e.message)}</span>`; }
@@ -608,7 +920,7 @@
   // controls
   document.addEventListener("click", async (e)=>{
     const t = e.target.closest("[data-atab]");
-    if(t){ atab=t.dataset.atab; $("#alTabs").querySelectorAll(".pill").forEach(p=>p.classList.toggle("active",p===t)); load(); return; }
+    if(t){ atab=t.dataset.atab; if(window.pf) window.pf.set('alerts_tab',atab); $("#alTabs").querySelectorAll(".pill").forEach(p=>p.classList.toggle("active",p===t)); load(); return; }
   });
   function bind(){
     $("#alRefresh").addEventListener("click", load);
@@ -636,9 +948,20 @@
     if(av && av.classList.contains("active")) load();
   });
 
-  // lazy-load when the Alerts tab is first shown
+  /* Lazy-load when the Alerts tab is shown.
+   * This used to hang off the navtab CLICK alone, which left one dead path: router.clickNav()
+   * skips the click when the tab is ALREADY active, so arriving at #alerts by deep link, reload
+   * or back-button rendered the shell — header, tabs, range bar — and never called load(). The
+   * page looked broken while nothing had actually failed. Expose an opener the router can call
+   * and self-heal if the view is already active at boot. */
   let loaded=false;
+  function open(){ if(!loaded){ loaded=true; bind(); } load(); }
+  window.openAlerts=open;
   document.querySelectorAll(".navtab").forEach(b=>{
-    if(b.dataset.view==="alerts") b.addEventListener("click", ()=>{ if(!loaded){ loaded=true; bind(); } load(); });
+    if(b.dataset.view==="alerts") b.addEventListener("click", open);
+  });
+  document.addEventListener("consoleReady",()=>{
+    const av=document.querySelector("#view-alerts");
+    if(av && av.classList.contains("active") && !loaded) open();
   });
 })();

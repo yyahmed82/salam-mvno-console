@@ -6,7 +6,7 @@
   const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   const SES = { email: localStorage.getItem("cons_email")||"", role: localStorage.getItem("cons_role")||"report_manager" };
   async function api(path){
-    const r = await fetch(path, { headers:{ "Content-Type":"application/json", "X-Console-Role":SES.role, "X-Console-User":SES.email } });
+    const r = await fetch((window.API_BASE || (location.pathname.startsWith("/digital-console") ? "/digital-console" : "")) + path, { headers:{ "Content-Type":"application/json", "X-Console-Role":SES.role, "X-Console-User":SES.email } });
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || ("HTTP "+r.status));
     return r.json();
   }
@@ -15,7 +15,7 @@
   const money = n => Math.round(Number(n||0)).toLocaleString("en-US")+" SAR";
   const PALETTE = ["#0d9488","#2563eb","#7c3aed","#ea580c","#d97706","#0891b2","#4f46e5","#dc2626","#16a34a","#64748b"];
 
-  let days = 30;
+  let days = (window.pf && Number(window.pf.get('growth_days',30))) || 30;
 
   function bar(frac, color){
     const w = Math.max(0, Math.min(100, Math.round((frac||0)*100)));
@@ -37,6 +37,12 @@
     // the endpoint defaults to 30d; re-fetch with an explicit from when days!=30
     if(days!==30){ const to=new Date(d.now); const from=new Date(to.getTime()-days*864e5);
       try{ d=await api(`/api/growth/summary?from=${from.toISOString()}&to=${to.toISOString()}`); }catch(e){} }
+    // Apollo referrals (same window)
+    let rf=null; try{ const to=new Date(d.now); const from=new Date(to.getTime()-days*864e5);
+      rf=await api(`/api/growth/referrals?from=${from.toISOString()}&to=${to.toISOString()}`); }catch(e){}
+    // MNP port-ins by donor operator (same window)
+    let md=null; try{ const to=new Date(d.now); const from=new Date(to.getTime()-days*864e5);
+      md=await api(`/api/growth/mnp-donors?from=${from.toISOString()}&to=${to.toISOString()}`); }catch(e){}
 
     const R=d.resellers||{}, C=d.campaigns||{}, MX=d.matrix||{rows:[],cols:[],cells:[]};
     const rsc=R.scorecard||{}, csc=C.scorecard||{};
@@ -67,7 +73,7 @@
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
       <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px">
         <div style="font-weight:700;font-size:12px;margin-bottom:8px">Funnel by sales path <span class="rl">(flow_type)</span></div>
-        <table style="width:100%;border-collapse:collapse">${th([{t:"PATH"},{t:"CREATED",r:1},{t:"ACTIVATED",r:1},{t:"CONV",r:1},{t:"REVENUE",r:1}])}
+        <table style="width:100%;border-collapse:collapse">${th([{t:"PATH"},{t:"CREATED",r:1},{t:"ACTIVATED",r:1},{t:"CONV",r:1},{t:"PLAN VALUE (LIST)",r:1}])}
         ${flows.map((f,i)=>`<tr>
           <td style="padding:6px 10px"><b>${esc(f.label)}</b>${bar(f.activated/maxAct, PALETTE[i%PALETTE.length])}</td>
           <td style="padding:6px 10px;text-align:right" class="mono">${num(f.created)}</td>
@@ -77,8 +83,8 @@
       </div>
       <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px">
         <div style="font-weight:700;font-size:12px;margin-bottom:2px">Channel breakdown <span class="rl">(plan_channels: tygo / soob / …)</span></div>
-        <div class="rl" style="margin-bottom:6px;font-size:10.5px">Orders on plans each channel offers — a plan can belong to several channels.</div>
-        ${chans.length?`<table style="width:100%;border-collapse:collapse">${th([{t:"CHANNEL"},{t:"ORDERS",r:1},{t:"ACTIVATED",r:1},{t:"REVENUE",r:1}])}
+        <div class="rl" style="margin-bottom:6px;font-size:10.5px">Orders that actually came through each reseller app (external_service_name — includes test orders).</div>
+        ${chans.length?`<table style="width:100%;border-collapse:collapse">${th([{t:"CHANNEL"},{t:"ORDERS",r:1},{t:"ACTIVATED",r:1},{t:"PLAN VALUE (LIST)",r:1}])}
         ${chans.map((c,i)=>`<tr>
           <td style="padding:6px 10px"><b>${esc(c.channel)}</b>${bar(c.activated/maxChan, PALETTE[i%PALETTE.length])}</td>
           <td style="padding:6px 10px;text-align:right" class="mono">${num(c.orders)}</td>
@@ -125,9 +131,62 @@
     <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;overflow-x:auto">
       ${MX.rows.length&&MX.cols.length?matrixHtml(MX):`<div class="rl">Not enough data for the correlation matrix in this window.</div>`}
     </div>
-    <div class="rl" style="margin:8px 0 24px">Reseller = non-normal sales paths (indirect · POSA · Apollo · partner · QR). Revenue = plan price on activated orders. Data from the prod replica.</div>`;
 
-    host.querySelectorAll(".gr-range").forEach(b=>b.addEventListener("click",()=>{ days=Number(b.dataset.days); render(); }));
+    ${rf?referralsHtml(rf):''}
+    ${md?mnpHtml(md):''}
+    <div class="rl" style="margin:8px 0 24px">Reseller = non-normal sales paths (indirect · POSA · Apollo · partner · QR). Plan value = LIST plan price on activated orders (excludes discounts, fees, VAT — not collected revenue). Data from the prod replica.</div>`;
+
+    host.querySelectorAll(".gr-range").forEach(b=>b.addEventListener("click",()=>{ days=Number(b.dataset.days); if(window.pf) window.pf.set('growth_days',days); render(); }));
+  }
+
+  function referralsHtml(rf){
+    const sc=rf.scorecard||{}, refs=rf.referrers||[], list=rf.list||[], trend=rf.trend||[];
+    const num=x=>Number(x||0).toLocaleString("en-US"), pct=x=>x==null?"—":(x*100).toFixed(1)+"%", money=x=>Math.round(Number(x||0)).toLocaleString("en-US")+" SAR";
+    const maxA=Math.max(1,...refs.map(r=>r.activated)), maxT=Math.max(1,...trend.map(t=>t.orders));
+    const barCell=(frac,c)=>`<div style="height:7px;border-radius:4px;background:var(--line-soft,rgba(148,163,184,.18));margin-top:3px"><div style="height:7px;border-radius:4px;width:${Math.max(0,Math.min(100,Math.round((frac||0)*100)))}%;background:${c}"></div></div>`;
+    const leaderboard=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px">
+      <div style="font-weight:700;font-size:12px;margin-bottom:8px">Top referrers <span class="rl">(referral_code)</span></div>
+      <table style="width:100%;border-collapse:collapse">${th([{t:"CODE"},{t:"ORDERS",r:1},{t:"ACTIVATED",r:1},{t:"CONV",r:1},{t:"PLAN VALUE (LIST)",r:1}])}
+      ${refs.slice(0,12).map((r,i)=>`<tr><td style="padding:6px 10px"><b>${esc(r.referrer)}</b>${barCell(r.activated/maxA,PALETTE[i%PALETTE.length])}</td><td class="mono" style="text-align:right;padding:6px 10px">${num(r.orders)}</td><td class="mono" style="text-align:right;padding:6px 10px"><b>${num(r.activated)}</b></td><td class="mono" style="text-align:right;padding:6px 10px">${pct(r.convRate)}</td><td class="mono" style="text-align:right;padding:6px 10px">${money(r.revenue)}</td></tr>`).join("")}</table></div>`;
+    const trendBox=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px">
+      <div style="font-weight:700;font-size:12px;margin-bottom:8px">Referrals over time</div>
+      <div style="display:flex;align-items:flex-end;gap:2px;height:96px">${trend.map(t=>`<div title="${esc(t.d)}: ${t.orders} orders · ${t.activated} activated" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%"><div style="background:#0d9488;height:${Math.round(t.activated/maxT*100)}%;min-height:1px;border-radius:2px 2px 0 0"></div><div style="background:var(--line-soft,rgba(148,163,184,.28));height:${Math.round(Math.max(0,t.orders-t.activated)/maxT*100)}%"></div></div>`).join("")||'<div class="rl">No referrals in this window.</div>'}</div>
+      <div class="rl" style="margin-top:4px;font-size:10px">green = activated · grey = created not yet activated</div></div>`;
+    const listBox=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:12px">
+      <div style="font-weight:700;font-size:12px;margin-bottom:8px">Recent referrals <span class="rl">(${list.length})</span></div>
+      <table style="width:100%;border-collapse:collapse">${th([{t:"WHEN"},{t:"CODE"},{t:"PLAN"},{t:"STATUS"},{t:"ACTIVATED",r:1}])}
+      ${list.slice(0,20).map(o=>`<tr><td class="mono" style="padding:5px 10px;color:var(--muted)">${new Date(o.at).toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td><td style="padding:5px 10px"><b>${esc(o.referrer)}</b></td><td style="padding:5px 10px">${esc(o.plan)}</td><td style="padding:5px 10px"><span class="rl">${esc(o.status||'—')}</span></td><td style="text-align:right;padding:5px 10px">${o.activated?'✅':'—'}</td></tr>`).join("")}</table></div>`;
+    return `<div id="growthReferrals" style="font-weight:800;font-size:13px;color:var(--ink);margin:18px 0 8px">④ APOLLO REFERRALS <span class="rl">(referral program)</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        ${card("Active referrers",num(sc.referrers),"referral codes","#7c3aed")}
+        ${card("Referral orders",num(sc.totalOrders),"in period","#2563eb")}
+        ${card("Activations",num(sc.totalActivated),pct(sc.convRate)+" conversion","#0d9488")}
+        ${card("Plan value (list)",money(sc.revenue),"top: "+esc(sc.topReferrer||'—'),"#ea580c")}
+      </div>
+      <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:12px">${leaderboard}${trendBox}</div>${listBox}`;
+  }
+
+  function mnpHtml(md){
+    const donors=md.donors||[];
+    const maxT=Math.max(1,...donors.map(d=>d.total));
+    const rows=donors.map((d,i)=>`<tr>
+      <td style="padding:6px 10px"><b>${esc(d.operator)}</b>${bar(d.total/maxT,PALETTE[i%PALETTE.length])}</td>
+      <td class="mono" style="text-align:right;padding:6px 10px"><b>${num(d.total)}</b></td>
+      <td class="mono" style="text-align:right;padding:6px 10px">${pct(d.share)}</td>
+      <td class="mono" style="text-align:right;padding:6px 10px">${num(d.activated)}</td>
+      <td class="mono" style="text-align:right;padding:6px 10px">${pct(d.activationRate)}</td></tr>`).join("");
+    return `<div style="font-weight:800;font-size:13px;color:var(--ink);margin:18px 0 8px">⑤ MNP PORT-INS BY DONOR OPERATOR <span class="rl">(who is switching to Salam &amp; from where)</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        ${card("Total port-ins",num(md.totalPortins),`last ${days} days`,"#0d9488")}
+        ${card("Top donor",esc(md.topDonor||"—"),"most port-ins from","#2563eb")}
+        ${card("Overall activation",pct(md.overallActivationRate),"ported → line live","#7c3aed")}
+        ${card("Donor networks",num(donors.length),"with port-ins","#ea580c")}
+      </div>
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px">
+        ${donors.length?`<table style="width:100%;border-collapse:collapse">${th([{t:"DONOR OPERATOR"},{t:"PORT-INS",r:1},{t:"SHARE",r:1},{t:"ACTIVATED",r:1},{t:"ACTIVATION",r:1}])}${rows}</table>
+        <div class="rl" style="margin-top:6px;font-size:10px">Port-in = onboarding order where the customer brought their number from the listed operator. Activation = the port completed and the line went live. A low activation rate on one donor = porting friction (rejections / donor delays) worth investigating.</div>`
+        :`<div class="rl" style="padding:8px 0">No port-ins in this window.</div>`}
+      </div>`;
   }
 
   function matrixHtml(MX){
@@ -140,5 +199,9 @@
 
   // wire nav + hash
   document.querySelectorAll('.navtab').forEach(b=>{ if(b.dataset.view==="growth") b.addEventListener("click", render); });
-  window.openGrowth = ()=>{ const v=$("#view-growth"); if(v && !v.classList.contains("active")){ const t=document.querySelector('.navtab[data-view="growth"]'); if(t) t.click(); } else render(); };
+  /* Growth now lives inside Monitoring → Resellers, which owns the container and decides when it
+   * is visible. Expose the renderer so that tab can draw it directly; openGrowth keeps working
+   * for any older link by routing through Monitoring. */
+  window.renderGrowth = render;
+  window.openGrowth = ()=>{ if(window.openMonitoring) window.openMonitoring("resellers"); else render(); };
 })();

@@ -15,6 +15,10 @@
  *  - payments reported to ZATCA  ⇔  extra->>'zatca' is present.  [payment.rb#reported_to_zatca]
  */
 
+// Business/Technical split — classCaseSql is the console-wide SSOT (errclass.js); used by the
+// *_technical / *_business metric variants so alert rules can be enabled per class.
+const { classCaseSql } = require('./errclass');
+
 // Nafath terminal states (lowercased for comparison)
 const NAFATH_SUCCESS = ['completed'];
 const NAFATH_FAILED  = ['expired', 'rejected', 'failed', 'cancelled', 'denied'];
@@ -51,6 +55,20 @@ const SEM_UNAVAIL = `(COALESCE(status_code,'')='715'
    OR response::text ILIKE '%"responseCode":"715"%' OR response::text ILIKE '%not available%')`;
 const SEM_ENDPOINT = `CASE WHEN api ILIKE '%login%' THEN 'login'
                            WHEN api ILIKE '%eligib%' THEN 'eligibility' ELSE 'other' END`;
+
+/* Payment-gateway normaliser — kept identical to GW_EXPR in errors.js so the metric,
+ * the Troubleshoot feed and the gateway breakdown all bucket a transaction the same way.
+ * If you edit one, edit the other. */
+const GW_CASE = `CASE
+    WHEN lower(coalesce(vendor,'')) LIKE '%samsung%' OR lower(coalesce(payment_method,'')) LIKE '%samsung%' THEN 'Samsung Pay'
+    WHEN lower(coalesce(vendor,'')) LIKE '%merchalink%' OR lower(coalesce(vendor,'')) LIKE '%upg%' OR lower(coalesce(vendor,'')) = 'salam' THEN 'UPG'
+    WHEN lower(coalesce(vendor,'')) LIKE '%hyperpay%' THEN 'HyperPay'
+    WHEN lower(coalesce(vendor,'')) LIKE '%tap%' THEN 'Tap'
+    WHEN lower(coalesce(vendor,'')) LIKE '%tamara%' THEN 'Tamara'
+    WHEN lower(coalesce(vendor,'')) LIKE '%emkan%' THEN 'Emkan'
+    WHEN lower(coalesce(payment_method,'')) LIKE '%apple%' THEN 'Apple Pay'
+    WHEN lower(coalesce(payment_method,'')) LIKE '%stc%' THEN 'STC Pay'
+    ELSE COALESCE(NULLIF(vendor,''),'Other') END`;
 
 const METRICS = {
 
@@ -90,6 +108,42 @@ const METRICS = {
     }
   },
 
+  /* Per-gateway successful-payment volume — the zero-success watchdog metric.
+   * INC0014859 (UPG down, auto-failover to HyperPay) taught us that a *blended* fail-rate or
+   * volume metric can't see a single gateway going dark: HyperPay absorbs the traffic, so the
+   * platform totals stay healthy while UPG produces zero successes. This mirrors the ServiceNow
+   * "UPG Payment Graph – No Success" monitor and the Semati zero-success watchdog.
+   *
+   * Emits one row per gateway with value = that gateway's successful count, but sample = TOTAL
+   * successful payments across ALL gateways. Gating on the platform total (not the gateway's own
+   * count) is the whole point: the rule fires when the platform is clearly live (>= min_sample
+   * successes elsewhere) yet this gateway contributes zero — i.e. it's down and being failed over,
+   * NOT "quiet at 3am". Primary gateways are always emitted (even at zero rows) so the watchdog can
+   * actually fire on a hard zero instead of silently having no row to evaluate. */
+  gateway_success_volume: {
+    label: 'Successful payments by gateway', unit: 'count', higherIsBad: false,
+    sourceTables: 'payments',
+    async compute(src, now, w) {
+      const rows = await q(src, `
+        SELECT (${GW_CASE}) AS gw,
+               count(*) FILTER (WHERE status='success') AS ok
+        FROM payments
+        WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz
+        GROUP BY 1`, [now, w]);
+      const okByGw = new Map();
+      let total = 0;
+      for (const r of rows) { const n = Number(r.ok) || 0; okByGw.set(r.gw, n); total += n; }
+      // Always evaluate the real gateways, even when they produced zero rows in the window,
+      // so a hard-zero (the outage signature) has a row for the rule to fire on.
+      for (const gw of ['UPG', 'HyperPay', 'Tap']) if (!okByGw.has(gw)) okByGw.set(gw, 0);
+      // Per-gateway rows only — no blended {} row (payment_volume already covers the platform total,
+      // and no rule reads the blended dim here), so we write one fewer snapshot per sync tick.
+      const out = [];
+      for (const [gw, ok] of okByGw) out.push({ dim: { gateway: gw }, value: ok, sample: total });
+      return out;
+    }
+  },
+
   zatca_unreported: {
     label: 'Successful payments not reported to ZATCA', unit: 'count', higherIsBad: true,
     sourceTables: 'payments',
@@ -107,15 +161,22 @@ const METRICS = {
   /* Issue #2 — "Payment Status Mismatch": app stays 'Initiated'/'pending' while Tap shows CAPTURED.
    * The Tap→app confirmation callback failed, so money is taken but the app shows unpaid. These rows
    * are INVISIBLE to payment_fail_rate (pending is excluded from its denominator), so we count them
-   * directly: non-terminal payments older than 30 min that should already have resolved. */
+   * directly: non-terminal payments older than 30 min that should already have resolved. Counts ONLY
+   * rows with a real commit response (gateway responded) — abandonment (pending, no commit = the
+   * customer reached the page and left) is excluded, matching Payment#actual_pending? in selfcare. */
   payment_stuck_initiated: {
-    label: 'Payments stuck "Initiated" (never confirmed)', unit: 'count', higherIsBad: true,
+    label: 'Payments stuck (gateway committed, app unconfirmed)', unit: 'count', higherIsBad: true,
     sourceTables: 'payments',
     async compute(src, now, w) {
       const rows = await q(src, `
         SELECT grouping(vendor) AS gv, vendor, count(*) AS n
         FROM payments
         WHERE lower(status) IN ('pending','initiated')
+          -- genuinely stuck only: gateway committed but app never finalised. A pending row with no
+          -- commit response is the backend's "initiated" = customer reached the page and abandoned
+          -- (NORMAL, not stuck). Mirrors Payment#actual_pending? in selfcare-backend.
+          AND payment_commit_response IS NOT NULL
+          AND payment_commit_response::text NOT IN ('', '{}', 'null')
           AND created_at >= $1::timestamptz - ($2||' hours')::interval
           AND created_at <  $1::timestamptz - interval '30 minutes'
         GROUP BY GROUPING SETS ((),(vendor))`, [now, w]);
@@ -162,8 +223,15 @@ const METRICS = {
     label: 'Semati / MSISDN provisioning failure rate', unit: 'rate', higherIsBad: true,
     sourceTables: 'activation_logs',
     async compute(src, now, w) {
+      // BUSINESS refusals only (SEMATI_FAILED / MOBILE_EXISTS …): rows matching the 715
+      // "Service Not Available" or transport signatures are excluded from BOTH numerator and
+      // denominator — 715/transport now live exclusively in the technical metrics
+      // (semati_provider_error_rate / semati_transport_error_rate / semati_success_volume),
+      // so a provider outage can no longer inflate this rate. Mirrors eligibility_deny_rate.
+      const prov = `(${SEM_TRANSPORT} OR ${SEM_UNAVAIL})`;
       const rows = await q(src, `
-        SELECT count(*) FILTER (WHERE state = false) AS failed, count(*) AS total
+        SELECT count(*) FILTER (WHERE state = false AND NOT ${prov}) AS failed,
+               count(*) FILTER (WHERE NOT ${prov})                   AS total
         FROM activation_logs
         WHERE api ILIKE '%semati%'
           AND created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz`, [now, w]);
@@ -228,17 +296,21 @@ const METRICS = {
     }
   },
 
-  /* Flapping — ok→fail transitions in the window. Catches the "success + Service Not Available
-   * intermittently" pattern a flat threshold sails past. */
+  /* Flapping — ok→provider-error transitions in the window. Catches the "success + Service Not
+   * Available intermittently" pattern a flat threshold sails past. TECHNICAL by construction:
+   * only flips INTO a 715 / transport row count (a flip into a business refusal like
+   * MOBILE_EXISTS is just the chronic provisioning noise, not provider instability), so the
+   * semati_flapping rule can carry alert_class 'technical' honestly. */
   semati_flapping: {
-    label: 'Semati flapping (ok→fail transitions)', unit: 'count', higherIsBad: true,
+    label: 'Semati flapping (ok→provider-error transitions)', unit: 'count', higherIsBad: true,
     sourceTables: 'activation_logs,eligibility_logs',
     async compute(src, now, w) {
       const rows = await q(src, `
         WITH s AS (
-          SELECT state, lag(state) OVER (ORDER BY created_at) AS prev
+          SELECT (state = false AND (${SEM_TRANSPORT} OR ${SEM_UNAVAIL})) AS provfail,
+                 lag(state) OVER (ORDER BY created_at) AS prev
           FROM (${SEMATI_UNION}) u )
-        SELECT count(*) FILTER (WHERE state=false AND prev=true) AS flips, count(*) AS total FROM s`, [now, w]);
+        SELECT count(*) FILTER (WHERE provfail AND prev=true) AS flips, count(*) AS total FROM s`, [now, w]);
       return [{ dim: {}, value: Number(rows[0].flips), sample: Number(rows[0].total) }];
     }
   },
@@ -282,6 +354,195 @@ const METRICS = {
         WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz
         GROUP BY GROUPING SETS ((),(platform))`, [now, w]);
       return rows.map(r => ({ dim: Number(r.gp) === 1 ? {} : { platform: r.platform || 'unknown' }, value: rate(r.failed, r.total), sample: Number(r.total) }));
+    }
+  },
+
+  /* --- Activation failure rate split by error class (Semati excluded) ----------------------
+   * Replaces the old MIXED activation_fail_storm rule: activation_fail_rate blended BSS platform
+   * faults with Semati refusals, so no single alert_class was honest. These two variants classify
+   * each failed row via classCaseSql (errclass.js SSOT: 1500/5xx/408/715 codes, timeouts, SOAP
+   * faults, OSB-382000 → technical; well-formed refusals → business). Semati apis are EXCLUDED
+   * from numerator AND denominator — Semati has its own dedicated rule family, and its chronic
+   * ~45-55% refusal noise is exactly what forced the old rule up to 70%. Denominator is shared
+   * (all non-Semati calls), so technical + business = bss_write_fail_rate. */
+  activation_fail_rate_technical: {
+    label: 'Activation (BSS) technical-failure rate (Semati excluded)', unit: 'rate', higherIsBad: true,
+    sourceTables: 'activation_logs',
+    async compute(src, now, w) {
+      const cls = classCaseSql('status_code', `coalesce(response::text,'')`);
+      const rows = await q(src, `
+        SELECT count(*) FILTER (WHERE state IS DISTINCT FROM true AND (${cls}) = 'technical') AS failed,
+               count(*) AS total
+        FROM activation_logs
+        WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz
+          AND COALESCE(api,'') NOT ILIKE '%semati%'`, [now, w]);
+      return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
+    }
+  },
+
+  activation_fail_rate_business: {
+    label: 'Activation (BSS) business-failure rate (Semati excluded)', unit: 'rate', higherIsBad: true,
+    sourceTables: 'activation_logs',
+    async compute(src, now, w) {
+      const cls = classCaseSql('status_code', `coalesce(response::text,'')`);
+      const rows = await q(src, `
+        SELECT count(*) FILTER (WHERE state IS DISTINCT FROM true AND (${cls}) = 'business') AS failed,
+               count(*) AS total
+        FROM activation_logs
+        WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz
+          AND COALESCE(api,'') NOT ILIKE '%semati%'`, [now, w]);
+      return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
+    }
+  },
+
+  /* --- BSS-only activation health (Semati excluded) ---------------------------------------
+   * WHY THIS EXISTS (2026-08-06, BSS 1500 / firewall-upgrade incident):
+   * activation_fail_rate mixes BSS calls with Semati calls. Semati fails ~45-55% chronically, so
+   * the storm rule had to sit at 70% to avoid crying wolf — which made it blind to a real BSS
+   * degradation at 46%. Excluding Semati gives a near-zero baseline, so a modest threshold works.
+   * Semati problems are NOT lost: they fire on semati_unavailable / semati_flapping instead. */
+  bss_write_fail_rate: {
+    label: 'BSS activation failure rate (Semati excluded)', unit: 'rate', higherIsBad: true,
+    sourceTables: 'activation_logs',
+    dims: ['api'],
+    async compute(src, now, w) {
+      const rows = await q(src, `
+        SELECT grouping(api) AS ga, regexp_replace(api, '^/', '') AS api,
+               count(*) FILTER (WHERE state IS DISTINCT FROM true) AS failed, count(*) AS total
+        FROM activation_logs
+        WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz
+          AND COALESCE(api,'') NOT ILIKE '%semati%'
+        GROUP BY GROUPING SETS ((), (api))`, [now, w]);
+      return rows.map(r => ({
+        dim: Number(r.ga) === 1 ? {} : { api: r.api || 'unknown' },
+        value: rate(r.failed, r.total), sample: Number(r.total) }));
+    }
+  },
+
+  /* Absolute failure COUNT, not a rate. At 07:00 KSA the console saw n=13 activation calls — far
+   * below any sane min_sample, so every rate rule sat out the incident. A count has no denominator
+   * to be starved of: "6 BSS failures in 30 min" is a real signal at 03:00 and at 13:00 alike.
+   * sample is set to the count itself so min_sample can never gate this metric out. */
+  bss_fail_burst: {
+    label: 'BSS activation failures (count, Semati excluded)', unit: 'count', higherIsBad: true,
+    sourceTables: 'activation_logs',
+    dims: ['api'],
+    async compute(src, now, w) {
+      const rows = await q(src, `
+        SELECT grouping(api) AS ga, regexp_replace(api, '^/', '') AS api,
+               count(*) FILTER (WHERE state IS DISTINCT FROM true) AS failed
+        FROM activation_logs
+        WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz
+          AND COALESCE(api,'') NOT ILIKE '%semati%'
+        GROUP BY GROUPING SETS ((), (api))`, [now, w]);
+      return rows.map(r => {
+        const f = Number(r.failed || 0);
+        return { dim: Number(r.ga) === 1 ? {} : { api: r.api || 'unknown' }, value: f, sample: f };
+      });
+    }
+  },
+
+  /* --- BSS SOAP fault 1500 on the WRITE path (INC0016809, 2026-08-06) ----------------------
+   * IMPORTANT DISTINCTION — there are TWO different 1500s and only one of them is invisible here:
+   *
+   *   READ path   list-invoices / get-account / get-sub  → "OSB-382000 Client received SOAP Fault"
+   *               logged in logs.uil_logs (OSB layer). NOT in this replica. Needs OSB_LOG_URL.
+   *   WRITE path  createSubscriptionTransaction          → "unexpected XML tag … but found: Fault"
+   *               THIS IS IN activation_logs. We can see it. INC0016809 was this one.
+   *
+   * INC0016809: a Cyber-Security firewall upgrade (CRQ000000190352) completed 05:00 KSA broke the
+   * SOAP transport 172.20.10.194 → 172.20.8.56; BSS started returning a SOAP Fault where the
+   * createSubscriptionTransactionResponse was expected. Ticket raised 06:23. The console showed
+   * nothing, because no rule read the response code.
+   *
+   * Matched three ways because the payload shape varies (top-level key, nested, or string-encoded).
+   * Absolute COUNT, not a rate — this fault is never normal, so one is interesting and five is an
+   * incident regardless of traffic volume. */
+  bss_soap_fault: {
+    label: 'BSS SOAP faults (1500 — write path)', unit: 'count', higherIsBad: true,
+    sourceTables: 'activation_logs',
+    dims: ['api'],
+    async compute(src, now, w) {
+      const FAULT = `(
+           COALESCE(status_code,'') = '1500'
+        OR response->>'responseCode' = '1500'
+        OR response::text ILIKE '%"responseCode":"1500"%'
+        OR response::text ILIKE '%unexpected XML tag%'
+        OR response::text ILIKE '%soap/envelope}Fault%')`;
+      const rows = await q(src, `
+        SELECT grouping(api) AS ga, regexp_replace(api, '^/', '') AS api, count(*) AS n
+        FROM activation_logs
+        WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz
+          AND ${FAULT}
+        GROUP BY GROUPING SETS ((), (api))`, [now, w]);
+      if (!rows.length) return [{ dim: {}, value: 0, sample: 0 }];
+      return rows.map(r => {
+        const n = Number(r.n || 0);
+        return { dim: Number(r.ga) === 1 ? {} : { api: r.api || 'unknown' }, value: n, sample: n };
+      });
+    }
+  },
+
+  /* One BSS error code suddenly dominating is the signature of an upstream fault (a firewall change,
+   * an OSB timeout, a Siebel deploy) rather than scattered per-customer errors. Reports the SHARE
+   * held by the single most common failure code, with the code carried in the dim so the alert names
+   * it — on 06 Aug that code would have read '1500'. */
+  bss_top_error_share: {
+    label: 'BSS dominant error code share', unit: 'rate', higherIsBad: true,
+    sourceTables: 'activation_logs',
+    dims: ['code'],
+    async compute(src, now, w) {
+      const rows = await q(src, `
+        WITH f AS (
+          SELECT COALESCE(NULLIF(status_code,''), response->>'responseCode', 'unknown') AS code
+          FROM activation_logs
+          WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz
+            AND COALESCE(api,'') NOT ILIKE '%semati%'
+            AND state IS DISTINCT FROM true)
+        SELECT code, count(*) AS n, (SELECT count(*) FROM f) AS total
+        FROM f GROUP BY code ORDER BY n DESC LIMIT 1`, [now, w]);
+      if (!rows.length) return [{ dim: {}, value: null, sample: 0 }];
+      const r = rows[0], total = Number(r.total || 0), n = Number(r.n || 0);
+      // sample = the failing count, so the rule gates on "enough failures", not enough traffic
+      return [{ dim: { code: r.code }, value: rate(n, total), sample: n }];
+    }
+  },
+
+  /* --- API Gateway node reachability -------------------------------------------------------
+   * Counts gateway nodes that USED TO BE reachable and no longer are. Baseline-relative on
+   * purpose: two of the four gateway nodes (172.31.42.23/.24) have never been opened to this
+   * host, so an absolute "any node unreachable" rule would fire forever and be muted within a
+   * week. Same lesson as Semati's 55% baseline — alert on change from normal, not on a constant.
+   *
+   * Reads the CONSOLE db (apigw_probe_log), not the replica: this is our own probe's output.
+   * A node is "known good" if it answered at least once in the last 7 days. */
+  apigw_nodes_unreachable: {
+    label: 'API GW nodes unreachable (was reachable)', unit: 'count', higherIsBad: true,
+    sourceTables: 'apigw_probe_log',
+    dims: ['label'],
+    async compute(src, now, w) {
+      const db = require('./db');
+      const r = await db.console.query(`
+        WITH latest AS (
+          SELECT DISTINCT ON (host, port) host, port, label, state
+          FROM apigw_probe_log
+          WHERE probed_at >= $1::timestamptz - ($2||' hours')::interval AND probed_at < $1::timestamptz
+          ORDER BY host, port, probed_at DESC
+        ), baseline AS (
+          SELECT host, port, bool_or(state = 'ok') AS ever_ok
+          FROM apigw_probe_log
+          WHERE probed_at >= $1::timestamptz - interval '7 days' AND probed_at < $1::timestamptz
+          GROUP BY host, port
+        )
+        SELECT l.label, l.state, b.ever_ok
+        FROM latest l JOIN baseline b ON b.host = l.host AND b.port = l.port`, [now, w]);
+      const known = r.rows.filter(x => x.ever_ok);
+      if (!known.length) return [{ dim: {}, value: null, sample: 0 }];
+      const down = known.filter(x => x.state !== 'ok');
+      const out = [{ dim: {}, value: down.length, sample: known.length }];
+      // per-node rows so a rule can target one gateway, and so the alert names it
+      for (const k of known) out.push({ dim: { label: k.label }, value: k.state === 'ok' ? 0 : 1, sample: 1 });
+      return out;
     }
   },
 
@@ -355,6 +616,41 @@ const METRICS = {
     }
   },
 
+  /* Change Plan failure rate split by error class — replaces the old MIXED change_plan_fail_spike.
+   * change_plan_logs has no status_code, but final_step_message carries the real error text
+   * ("Failed, Net::ReadTimeout…", "Failed, Error 16 - Unable to update Subscription…",
+   * "Customer nationality returned empty from BSS" — change_plan_manager.rb / failure_handler.rb),
+   * so classCaseSql can split honestly: timeouts/SOAP/transport → technical; well-formed BSS/policy
+   * refusals → business. Shared denominator (status IN success,failed) so the two variants sum to
+   * change_plan_fail_rate. */
+  change_plan_fail_rate_technical: {
+    label: 'Change Plan technical-failure rate', unit: 'rate', higherIsBad: true,
+    sourceTables: 'change_plan_logs',
+    async compute(src, now, w) {
+      const cls = classCaseSql('NULL::text', `coalesce(final_step_message,'')`);
+      const rows = await q(src, `
+        SELECT count(*) FILTER (WHERE status = 2 AND (${cls}) = 'technical') AS failed,
+               count(*) FILTER (WHERE status IN (1,2)) AS total
+        FROM change_plan_logs
+        WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz`, [now, w]);
+      return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
+    }
+  },
+
+  change_plan_fail_rate_business: {
+    label: 'Change Plan business-failure rate', unit: 'rate', higherIsBad: true,
+    sourceTables: 'change_plan_logs',
+    async compute(src, now, w) {
+      const cls = classCaseSql('NULL::text', `coalesce(final_step_message,'')`);
+      const rows = await q(src, `
+        SELECT count(*) FILTER (WHERE status = 2 AND (${cls}) = 'business') AS failed,
+               count(*) FILTER (WHERE status IN (1,2)) AS total
+        FROM change_plan_logs
+        WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz`, [now, w]);
+      return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
+    }
+  },
+
   /* ---------------- DELIVERY ---------------- */
   delivery_fail_rate: {
     label: 'Delivery failure/return rate', unit: 'rate', higherIsBad: true,
@@ -386,6 +682,37 @@ const METRICS = {
     }
   },
 
+  /* Reseller courier NOT created — a PAID reseller (tygo/soob) order that required courier delivery
+   * (apollo_require_delivery not explicitly false) yet has NO delivery_requests row. Backend
+   * (commit_worker.rb) dispatches resellers through the SAME oto/tam carriers as everyone, so a
+   * missing row is a real dispatch backlog, not self-fulfilment (proven on live data 2026-08-10:
+   * 106 such orders in one day, hidden inside the old "Partner" box). `w` is the GRACE age in hours:
+   * only orders older than `w` count, so freshly-paid orders the worker hasn't processed yet don't
+   * false-alarm. Bounded to the last 24h so ancient cruft can't inflate a live outage signal. */
+  courier_backlog: {
+    label: 'Reseller courier not dispatched (paid, no delivery request)', unit: 'count', higherIsBad: true,
+    sourceTables: 'onboarding_orders,payments,delivery_requests',
+    async compute(src, now, w) {
+      const RESELLERS = ['tygo', 'soob'];
+      const rows = await q(src, `
+        SELECT count(*) AS n
+        FROM onboarding_orders oo
+        WHERE lower(coalesce(oo.external_service_name,'')) = ANY($3::text[])     -- reseller (tygo/soob)
+          AND coalesce(oo.sim_type,0) <> 1                                       -- physical SIM (not eSIM)
+          AND lower(coalesce(oo.extra->>'apollo_require_delivery','')) <> 'false' -- courier required:
+          AND lower(coalesce(oo.extra->>'apollo_require_delivery','')) <> 'f'     --   flag not explicitly
+          AND lower(coalesce(oo.extra->>'apollo_require_delivery','')) <> '0'     --   false (true/absent)
+          AND oo.created_at >= $1::timestamptz - interval '24 hours'             -- recent window only
+          AND oo.created_at <  $1::timestamptz - ($2||' hours')::interval        -- older than grace age
+          AND EXISTS (SELECT 1 FROM payments p WHERE p.payment_on_type='OnboardingOrder'
+                        AND p.payment_on_id = oo.id::text AND p.status='success') -- paid
+          AND NOT EXISTS (SELECT 1 FROM delivery_requests d
+                           WHERE d.delivery_on_id = oo.id::text)                  -- no courier row
+        `, [now, w, RESELLERS]);
+      return [{ dim: {}, value: Number(rows[0].n), sample: Number(rows[0].n) }];
+    }
+  },
+
   /* ---------------- CHANGE OWNERSHIP (checkout_type=5) ---------------- */
   // Ownership transfer = an OWNERSHIP_TRANSFER checkout (type 5) that produces a change_plan_log for
   // the new owner. Same join the Troubleshoot "Change Ownership" tile uses. status enum {0 pending,1 ok,2 fail}.
@@ -398,7 +725,47 @@ const METRICS = {
                count(*) FILTER (WHERE status IN (1,2)) AS total
         FROM change_plan_logs
         WHERE EXISTS (SELECT 1 FROM payments p JOIN checkouts c ON c.id::text = p.payment_on_id
-                       WHERE p.id::text = change_plan_logs.payment_id AND c.checkout_type = 5)
+                       WHERE p.payment_on_type = 'Checkout'
+                         AND p.id::text = change_plan_logs.payment_id AND c.checkout_type = 5)
+          AND created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz`, [now, w]);
+      return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
+    }
+  },
+
+  /* Ownership-transfer failure rate split by error class — replaces the old MIXED
+   * ownership_fail_spike. Same table + join as ownership_fail_rate (change_plan_logs scoped to
+   * checkout_type=5), same final_step_message split as the change_plan variants: the Nafath
+   * transfer_ownership refusals and BSS policy "no"s classify business; timeouts / SOAP / BSS
+   * transport faults classify technical. Two variants sum to ownership_fail_rate. */
+  ownership_fail_rate_technical: {
+    label: 'Ownership-transfer technical-failure rate', unit: 'rate', higherIsBad: true,
+    sourceTables: 'change_plan_logs',
+    async compute(src, now, w) {
+      const cls = classCaseSql('NULL::text', `coalesce(final_step_message,'')`);
+      const rows = await q(src, `
+        SELECT count(*) FILTER (WHERE status = 2 AND (${cls}) = 'technical') AS failed,
+               count(*) FILTER (WHERE status IN (1,2)) AS total
+        FROM change_plan_logs
+        WHERE EXISTS (SELECT 1 FROM payments p JOIN checkouts c ON c.id::text = p.payment_on_id
+                       WHERE p.payment_on_type = 'Checkout'
+                         AND p.id::text = change_plan_logs.payment_id AND c.checkout_type = 5)
+          AND created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz`, [now, w]);
+      return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
+    }
+  },
+
+  ownership_fail_rate_business: {
+    label: 'Ownership-transfer business-failure rate', unit: 'rate', higherIsBad: true,
+    sourceTables: 'change_plan_logs',
+    async compute(src, now, w) {
+      const cls = classCaseSql('NULL::text', `coalesce(final_step_message,'')`);
+      const rows = await q(src, `
+        SELECT count(*) FILTER (WHERE status = 2 AND (${cls}) = 'business') AS failed,
+               count(*) FILTER (WHERE status IN (1,2)) AS total
+        FROM change_plan_logs
+        WHERE EXISTS (SELECT 1 FROM payments p JOIN checkouts c ON c.id::text = p.payment_on_id
+                       WHERE p.payment_on_type = 'Checkout'
+                         AND p.id::text = change_plan_logs.payment_id AND c.checkout_type = 5)
           AND created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz`, [now, w]);
       return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
     }
@@ -414,7 +781,8 @@ const METRICS = {
         SELECT count(*) FILTER (WHERE p.status IN ('fail','failed')) AS failed,
                count(*) FILTER (WHERE p.status IN ('success','fail','failed')) AS total
         FROM payments p JOIN checkouts c ON c.id::text = p.payment_on_id
-        WHERE c.checkout_type = 6
+        WHERE p.payment_on_type = 'Checkout'   -- polymorphic: never join payment_on_id without its type
+          AND c.checkout_type = 6
           AND p.created_at >= $1::timestamptz - ($2||' hours')::interval AND p.created_at < $1::timestamptz`, [now, w]);
       return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
     }
@@ -460,11 +828,13 @@ const METRICS = {
 
   /* ---------------- DEALER / DMS ---------------- */
   dealer_activity: {
-    label: 'Dealer (DMS) completed orders', unit: 'count', higherIsBad: false,
+    label: 'Dealer (DMS) commissioned orders', unit: 'count', higherIsBad: false,
     sourceTables: 'seller_deductions',
     async compute(src, now, w) {
+      // count DISTINCT orders, not deduction rows: an order can carry multiple seller_deductions
+      // (commission retry/adjustment), which inflated the count exactly when commissioning misbehaved.
       const rows = await q(src, `
-        SELECT count(*) AS n, count(DISTINCT seller_id) AS dealers
+        SELECT count(DISTINCT onboarding_order_id) AS n, count(DISTINCT seller_id) AS dealers
         FROM seller_deductions
         WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz`, [now, w]);
       return [{ dim: {}, value: Number(rows[0].n), sample: Number(rows[0].dealers) }];
@@ -482,6 +852,146 @@ const METRICS = {
           AND EXTRACT(hour FROM created_at + interval '3 hours') >= 1
           AND EXTRACT(hour FROM created_at + interval '3 hours') < 6`, [now, w]);
       return [{ dim: {}, value: Number(rows[0].n), sample: Number(rows[0].n) }];
+    }
+  },
+
+  /* ---------------- DIGITAL API TRAFFIC (SSH collector PG · fallback grafana MySQL) --------
+   * Source dispatch lives in apiTraffic.js: with API_LOG_HOSTS set, p95Stats/techFailStats read
+   * the console-DB api_traffic_events table (filled by apiLogCollector.js over SSH, err_class
+   * precomputed); otherwise the Grafana "Digital-API traffic" MySQL DB fed by the api_logger
+   * cron parser. NOT the replica: `src`/`now` are ignored — the traffic source is
+   * LIVE-anchored (windows end at UTC now), so replay/simulate ticks read the current window.
+   * Both metrics return [] when neither source is configured or the source errors: the rule then
+   * sees "no data in window" and stays quiet — same inert-until-configured UX as the OSB watcher.
+   *
+   * THRESHOLD DESIGN (api_latency_p95): snapshots store value = p95 / effective-threshold, where
+   * the effective threshold comes from console_settings 'api_latency_thresholds'
+   * ({ globalMs, perApi:{path:ms} } — edited on the Monitoring page, manageSync + audited).
+   * That keeps the alertRunner comparator untouched: the rule is a plain 'gte 1.0' (unit ratio →
+   * renders as %, i.e. 120% = 20% over ITS OWN threshold), and each per-API dim row breaches its
+   * own override while the {} row tracks the global threshold. Row order matters: the GLOBAL row
+   * is emitted FIRST so a rule with an empty dim latches onto it (established console convention),
+   * and a '(worst)' row carries the max per-API ratio so one rule covers every override. */
+  api_latency_p95: {
+    label: 'Digital-API p95 latency vs threshold', unit: 'ratio', higherIsBad: true,
+    sourceTables: 'api_traffic_events (collector) / transaction_logs (grafana MySQL)',
+    dims: ['api'],
+    async compute(src, now, w) {
+      const at = require('./apiTraffic');
+      if (!at.configured()) return [];
+      try {
+        const th = await at.latencyThresholds();
+        const s = await at.p95Stats({ hours: Math.max(1, Math.round(w)) });
+        const rows = [];
+        if (s.global && s.global.p95 != null)
+          rows.push({ dim: {}, value: s.global.p95 / th.globalMs, sample: s.global.count });
+        let worst = null;
+        for (const r of s.byApi) {
+          if (r.p95 == null) continue;
+          const lim = th.perApi[r.api] > 0 ? th.perApi[r.api] : th.globalMs;
+          const ratio = r.p95 / lim;
+          rows.push({ dim: { api: r.api }, value: ratio, sample: r.count });
+          if (!worst || ratio > worst.value) worst = { dim: { api: '(worst)', offender: r.api }, value: ratio, sample: r.count };
+        }
+        if (worst) rows.push(worst);
+        return rows;
+      } catch (e) { console.error('api_latency_p95 skipped: ' + e.message); return []; }
+    }
+  },
+
+  /* Share of Digital-API calls failing with TECHNICAL signatures (errclass mirror on
+   * response_code + response_message: 1500/5xx/408/715, timeouts, SOAP/OSB faults, transport).
+   * Global {} row first, then per-API rows for drill-down/rule targeting. */
+  api_technical_fail_rate: {
+    label: 'Digital-API technical-failure rate', unit: 'rate', higherIsBad: true,
+    sourceTables: 'api_traffic_events (collector) / transaction_logs (grafana MySQL)',
+    dims: ['api'],
+    async compute(src, now, w) {
+      const at = require('./apiTraffic');
+      if (!at.configured()) return [];
+      try {
+        const s = await at.techFailStats({ hours: Math.max(1, Math.round(w)) });
+        const rows = [{ dim: {}, value: s.global.rate, sample: s.global.total }];
+        for (const r of s.byApi) rows.push({ dim: { api: r.api }, value: r.rate, sample: r.total });
+        return rows;
+      } catch (e) { console.error('api_technical_fail_rate skipped: ' + e.message); return []; }
+    }
+  },
+
+  /* ---- App error-log metrics (api_error_events ← api_error_logger on 17/18) --------------
+   * Counts per window, categorized via appErrCatalog (source-derived). All PROVISIONAL
+   * thresholds in seedRules — calibrate against the live baselines after a few days. */
+  app_ip_block_count: {
+    label: 'IP rate-limit blocks (-704)', unit: 'count', higherIsBad: true,
+    sourceTables: 'api_error_events (app error log)',
+    async compute(src, now, w) {
+      try { const db = require('./db');
+        const r = await db.console.query(
+          `SELECT count(*)::int n FROM api_error_events WHERE rate_limit='ip_retrial' AND ts > now() - ($1||' hours')::interval`, [Math.max(1, Math.round(w))]);
+        return [{ dim: {}, value: r.rows[0].n, sample: r.rows[0].n }];
+      } catch (e) { return []; }
+    }
+  },
+  app_crash_count: {
+    label: 'App crashes (unhandled exceptions → -501)', unit: 'count', higherIsBad: true,
+    sourceTables: 'api_error_events (app error log)',
+    async compute(src, now, w) {
+      try { const db = require('./db');
+        const r = await db.console.query(
+          `SELECT count(*)::int n FROM api_error_events WHERE error_code=-501 AND exception_class IS NOT NULL AND ts > now() - ($1||' hours')::interval`, [Math.max(1, Math.round(w))]);
+        return [{ dim: {}, value: r.rows[0].n, sample: r.rows[0].n }];
+      } catch (e) { return []; }
+    }
+  },
+  app_auth_fail_count: {
+    label: 'Auth/session failures (tokens · logins)', unit: 'count', higherIsBad: true,
+    sourceTables: 'api_error_events (app error log)',
+    async compute(src, now, w) {
+      try { const db = require('./db');
+        const r = await db.console.query(
+          `SELECT count(*)::int n FROM api_error_events WHERE error_code IN (-201,-202,-203,-204,-205,-300,-301,-612) AND ts > now() - ($1||' hours')::interval`, [Math.max(1, Math.round(w))]);
+        return [{ dim: {}, value: r.rows[0].n, sample: r.rows[0].n }];
+      } catch (e) { return []; }
+    }
+  },
+  app_backend_err_count: {
+    label: 'Backend/provider errors (Optiva · TCC · unreachable)', unit: 'count', higherIsBad: true,
+    sourceTables: 'api_error_events (app error log)',
+    async compute(src, now, w) {
+      try { const db = require('./db');
+        const r = await db.console.query(
+          `SELECT count(*)::int n FROM api_error_events WHERE (error_code IN (-500,-702,-20003) OR (error_code=-501 AND exception_class IS NULL)) AND ts > now() - ($1||' hours')::interval`, [Math.max(1, Math.round(w))]);
+        return [{ dim: {}, value: r.rows[0].n, sample: r.rows[0].n }];
+      } catch (e) { return []; }
+    }
+  },
+  /* OTP funnel (replica otps — needs 'otps' in prod-sync DEFAULT_TABLES) */
+  otp_verify_rate: {
+    label: 'OTP verify rate (sent → verified)', unit: 'rate', higherIsBad: false,
+    sourceTables: 'otps (replica)',
+    async compute(src, now, w) {
+      try {
+        const r = await src.query(
+          `SELECT count(*)::int sent, count(*) FILTER (WHERE verified)::int ok
+           FROM otps WHERE delivery_method='sms' AND created_at > now() - ($1||' hours')::interval`, [Math.max(1, Math.round(w))]);
+        const { sent, ok } = r.rows[0];
+        if (!sent) return [];
+        return [{ dim: {}, value: ok / sent, sample: sent }];
+      } catch (e) { return []; }
+    }
+  },
+  /* SMS gateway reachability (sms_probe_events ← curl from the API hosts) */
+  sms_probe_fail_count: {
+    label: 'SMS gateway probe failures (Unifonic unreachable)', unit: 'count', higherIsBad: true,
+    sourceTables: 'sms_probe_events (probe)',
+    async compute(src, now, w) {
+      try { const db = require('./db');
+        const r = await db.console.query(
+          `SELECT count(*)::int n, count(*) FILTER (WHERE http_code IS NULL)::int fails
+           FROM sms_probe_events WHERE ts > now() - ($1||' hours')::interval`, [Math.max(1, Math.round(w))]);
+        if (!r.rows[0].n) return [];   // probe not configured / no checks yet
+        return [{ dim: {}, value: r.rows[0].fails, sample: r.rows[0].n }];
+      } catch (e) { return []; }
     }
   }
 };

@@ -5,6 +5,35 @@
 const db = require('./db');
 
 const smtpConfigured = () => !!process.env.SMTP_HOST;   // auth is optional (local relays / Mailpit need none)
+
+/* Circuit breaker: if the relay rejects us (e.g. 554 Access denied because this host is not
+ * whitelisted), retrying every sync tick just floods the log with identical errors forever and
+ * delays each alert run. Open the circuit after N consecutive failures, retry occasionally, and
+ * log ONCE per state change instead of every attempt. */
+const MAIL_FAIL_OPEN_AFTER = Number(process.env.MAIL_FAIL_OPEN_AFTER || 3);
+const MAIL_RETRY_MIN = Number(process.env.MAIL_RETRY_MIN || 30);
+const mailCb = { fails: 0, openedAt: 0, lastErr: null };
+function mailBlocked() {
+  if (mailCb.fails < MAIL_FAIL_OPEN_AFTER) return false;
+  const dueIn = MAIL_RETRY_MIN * 60000 - (Date.now() - mailCb.openedAt);
+  if (dueIn <= 0) { mailCb.openedAt = Date.now(); return false; }   // let one probe through
+  return true;
+}
+function mailOk() {
+  if (mailCb.fails >= MAIL_FAIL_OPEN_AFTER) console.log('[MAIL] recovered — sending again');
+  mailCb.fails = 0; mailCb.lastErr = null;
+}
+function mailFail(msg) {
+  mailCb.fails++; mailCb.lastErr = msg;
+  if (mailCb.fails === MAIL_FAIL_OPEN_AFTER) {
+    mailCb.openedAt = Date.now();
+    console.error(`[MAIL] send failed ${mailCb.fails}x — pausing email for ${MAIL_RETRY_MIN}m. Last error: ${msg}`);
+    console.error('[MAIL] fix: whitelist this host on the SMTP relay, or set a permitted SMTP_FROM.');
+  } else if (mailCb.fails < MAIL_FAIL_OPEN_AFTER) {
+    console.error('[MAIL] send failed:', msg);
+  }
+}
+function mailStatus() { return { failures: mailCb.fails, paused: mailBlocked(), lastError: mailCb.lastErr }; }
 const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const opLabel = { gt: '>', gte: '≥', lt: '<', lte: '≤', eq: '=' };
 
@@ -32,22 +61,29 @@ async function recipients(column = 'mail_alert') {
 }
 
 // generic sender — returns {sent, dev, error, recipients}. Dev (no SMTP) logs + does not send.
-async function sendHtml(to, subject, html) {
+// `attachments` (optional) is passed straight to nodemailer: [{filename, content, contentType}].
+async function sendHtml(to, subject, html, attachments) {
   const emails = (to || []).map(r => (typeof r === 'string' ? r : r.email));
   const base = { recipients: emails, subject };
   if (!emails.length) return { ...base, sent: false, reason: 'no recipients' };
   if (!smtpConfigured()) { console.log(`[MAIL] (dev/no-SMTP) would email ${emails.length}: ${subject}`); return { ...base, sent: false, dev: true }; }
+  if (mailBlocked()) return { ...base, sent: false, error: 'email paused after repeated failures: ' + mailCb.lastErr, paused: true };
   try {
     const nodemailer = require('nodemailer');
     const t = nodemailer.createTransport({
       host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT || 587),
       secure: process.env.SMTP_SECURE === 'true',
+      // same internal-relay TLS knobs as otp.js (self-signed cert / no STARTTLS)
+      ignoreTLS: process.env.SMTP_IGNORE_TLS === 'true',
+      tls: process.env.SMTP_TLS_REJECT_UNAUTHORIZED === 'false' ? { rejectUnauthorized: false } : undefined,
       auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
     });
     await t.sendMail({ from: process.env.SMTP_FROM || 'Salam Digital Console <noreply@salam.sa>',
-      to: emails.join(','), subject, html });
+      to: emails.join(','), subject, html,
+      ...(attachments && attachments.length ? { attachments } : {}) });
+    mailOk();
     return { ...base, sent: true };
-  } catch (e) { console.error('[MAIL] send failed:', e.message); return { ...base, sent: false, error: e.message }; }
+  } catch (e) { mailFail(e.message); return { ...base, sent: false, error: e.message }; }
 }
 
 // shared branded email shell — dark-green header + Salam logo + status pill + green divider + white body
@@ -63,7 +99,9 @@ function shell({ title, pill, pillColor, bodyHtml }) {
   </div>`;
 }
 
-function buildDigest(simNow, evals) {
+const CONSOLE_URL = process.env.CONSOLE_BASE_URL || 'https://salam.sa/digital-console/';
+
+function buildDigest(simNow, evals, reportNames = [], idByKey = {}) {
   const firing = evals.filter(e => e.fired);
   const th = 'padding:9px 12px;text-align:left;font-size:12px;color:#334155;background:#eef4f0;border-bottom:1px solid #dbe6df';
   const td = 'padding:10px 12px;font-size:13px;border-bottom:1px solid #eef2f6;vertical-align:top';
@@ -80,15 +118,32 @@ function buildDigest(simNow, evals) {
       <td style="${td};white-space:nowrap">${e.value == null ? '—' : fmtVal(e.value, e.unit)}${e.sample != null ? `<div style="color:#94a3b8;font-size:11px">sample ${e.sample}</div>` : ''}</td>
       <td style="${td};white-space:nowrap;color:#475569">${esc(thr)}</td>
       <td style="${td};color:#475569">${esc(e.counts || '')}</td>
+      <td style="${td};white-space:nowrap"><a href="${CONSOLE_URL}#alerts${e.fired && idByKey[e.key] ? `?id=${idByKey[e.key]}` : `?rule=${encodeURIComponent(e.key)}`}" style="color:#0e9f5a;font-weight:700;text-decoration:none">Open ›</a></td>
     </tr>`;
   }).join('');
-  const body = `<div style="color:${firing.length ? '#dc2626' : '#16a34a'};font-weight:700;margin-bottom:2px">${firing.length} alert(s) firing</div>
-    <div style="color:#64748b;font-size:12px;margin-bottom:16px">At: ${ksa(simNow)} KSA · history &amp; rules in the console → Alerts</div>
+  /* INTRO — the resume a reader needs before the table: what fired, how bad, where the detail
+   * is. One line per firing alert (observed vs threshold + its attached report), or an all-clear. */
+  const sevCount = {};
+  firing.forEach(e => sevCount[e.severity] = (sevCount[e.severity] || 0) + 1);
+  const sevLine = Object.entries(sevCount).sort().map(([s, n]) => `${n}× ${s}`).join(' · ');
+  const intro = firing.length ? `
+    <div style="background:#fdf6ec;border:1px solid #f3d9a4;border-left:4px solid #d97706;border-radius:8px;padding:12px 16px;margin-bottom:16px">
+      <div style="font-weight:800;color:#7c2d12;font-size:13px;margin-bottom:6px">In short — ${firing.length} alert(s) need attention (${sevLine}), out of ${evals.length} rules evaluated.</div>
+      ${firing.map((e, i) => `<div style="font-size:12.5px;color:#334155;margin:3px 0">
+        <b>${esc(e.severity)}</b> · <a href="${CONSOLE_URL}#alerts${idByKey[e.key] ? `?id=${idByKey[e.key]}` : ''}" style="color:#0f172a;font-weight:700">${esc(e.name)}</a>${e.simulated ? ' <span style="color:#7c3aed;font-weight:800">(SIMULATED — test mail)</span>' : ''} — observed <b>${fmtVal(e.value, e.unit)}</b> vs threshold ${opLabel[e.operator] || e.operator} ${fmtVal(e.threshold, e.unit)} (sample ${e.sample ?? '—'}, ${e.window_hours}h)${reportNames[i] ? ` · full report attached: <span style="font-family:monospace;font-size:11px">${esc(reportNames[i])}</span>` : ''}
+      </div>`).join('')}
+      <div style="font-size:12px;color:#64748b;margin-top:8px">Each attached PDF carries the KPIs, the APIs and request/response evidence, the alert history and the step-by-step L1 action plan — read it before escalating.</div>
+    </div>` : `
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-left:4px solid #16a34a;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#14532d">
+      <b>All clear.</b> ${evals.length} rules evaluated — nothing firing. No action needed.
+    </div>`;
+  const body = `${intro}
+    <div style="color:#64748b;font-size:12px;margin-bottom:12px">At: ${ksa(simNow)} KSA · every row links to the console → <a href="${CONSOLE_URL}#alerts" style="color:#0e9f5a">Alerts</a> for acknowledge / history / rules</div>
     <table style="border-collapse:collapse;width:100%;font-size:13px;border:1px solid #dbe6df">
-      <tr><th style="${th}">Status</th><th style="${th}">Rule</th><th style="${th}">Metric</th><th style="${th}">Threshold</th><th style="${th}">Counts</th></tr>
+      <tr><th style="${th}">Status</th><th style="${th}">Rule</th><th style="${th}">Metric</th><th style="${th}">Threshold</th><th style="${th}">Counts</th><th style="${th}">Details</th></tr>
       ${rows}
     </table>
-    <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Digital Console · automated alert runner</div>`;
+    <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Digital Console · automated alert runner · reports attached per firing alert</div>`;
   const html = shell({ title: 'Alerts — Digital Console',
     pill: firing.length ? `${firing.length} FIRING` : 'ALL CLEAR',
     pillColor: firing.length ? '#dc2626' : '#16a34a', bodyHtml: body });
@@ -97,12 +152,31 @@ function buildDigest(simNow, evals) {
 }
 
 async function sendAlertDigest(simNow, evals, opts = {}) {
-  const to = await recipients('mail_alert');
-  const { html, subject, firing, total } = buildDigest(simNow, evals);
-  const r = await sendHtml(to, subject, html);
-  const base = { firing, total, subject, recipients: r.recipients, previewHtml: html };
+  /* opts.to (string | string[]) overrides the recipient list — the TEST path: simulate a firing
+   * rule and mail only yourself, never the whole distribution. Subject gets a [TEST] prefix so a
+   * forwarded copy can never be mistaken for a live alert. */
+  const to = opts.to
+    ? (Array.isArray(opts.to) ? opts.to : [opts.to]).map(e => ({ email: String(e) }))
+    : await recipients('mail_alert');
+  /* per-alert PDF reports — best-effort and NEVER blocking: a broken report must not stop the
+   * mail, and a storm is capped inside buildFiredReports. */
+  let reports = { attachments: [], notes: [] };
+  try { reports = await require('./alertReport').buildFiredReports(simNow, evals); }
+  catch (e) { reports = { attachments: [], notes: ['report generation failed: ' + e.message] }; }
+  /* open-alert ids so every fired row/intro line deep-links to ITS incident (#alerts?id=N) */
+  let idByKey = {};
+  try {
+    const r = await db.console.query(`SELECT rule_key, max(id) AS id FROM alerts WHERE status='open' GROUP BY 1`);
+    r.rows.forEach(x => { idByKey[x.rule_key] = x.id; });
+  } catch (e) { idByKey = {}; }
+  let { html, subject, firing, total } = buildDigest(simNow, evals, reports.attachments.map(a => a.filename), idByKey);
+  if (opts.to) subject = '[TEST] ' + subject;
+  const r = await sendHtml(to, subject, html, reports.attachments);
+  const base = { firing, total, subject, recipients: r.recipients, previewHtml: html,
+    attachments: reports.attachments.map(a => ({ filename: a.filename, bytes: a.content.length })),
+    reportNotes: reports.notes };
   if (!to.length) return { ...base, sent: false, reason: 'No recipients — enable "Mail alert" for at least one user in User management.' };
   return { ...base, sent: r.sent, dev: r.dev, error: r.error };
 }
 
-module.exports = { recipients, sendHtml, buildDigest, sendAlertDigest, smtpConfigured, esc, shell };
+module.exports = { recipients, sendHtml, buildDigest, sendAlertDigest, smtpConfigured, mailStatus, esc, shell };

@@ -8,7 +8,7 @@ const ENUM_LABELS = {
   sim_type: { 0: 'Physical SIM', 1: 'eSIM' },
   number_order_type: { 0: 'New SIM', 1: 'MNP port-in' },
   flow_type: { 0: 'normal', 1: 'indirect', 2: 'posa', 3: 'apollo', 4: 'ownership transfer', 5: 'partner', 6: 'visitor / Hajj', 7: 'qr posa' },
-  checkout_type: { 1: 'data_sim', 2: 'change_plan', 3: 'sim_replacement', 4: 'saleor', 5: 'ownership_transfer', 6: 'renewal', 7: 'advanced_postpaid' },
+  checkout_type: { 0: 'normal', 1: 'data_sim', 2: 'change_plan', 3: 'sim_replacement', 4: 'saleor', 5: 'ownership_transfer', 6: 'renewal', 7: 'advanced_postpaid' },
   card_type: { 0: 'Apple Pay', 1: 'Credit card', 2: 'mada', 3: 'Amex', 4: 'STC', 5: 'Tasheel', 30: 'Other', 60: 'N/A' }
 };
 async function labelValues(dim, vals) {
@@ -60,7 +60,7 @@ async function decorateCodeKeys(items) {
 const SIM_TYPE = `CASE sim_type WHEN 1 THEN 'eSIM' ELSE 'Physical' END`;
 const NUM_ORDER = `CASE number_order_type WHEN 1 THEN 'MNP' ELSE 'New SIM' END`;
 const FLOW_TYPE = `CASE flow_type WHEN 0 THEN 'normal' WHEN 1 THEN 'indirect' WHEN 2 THEN 'posa' WHEN 3 THEN 'apollo' WHEN 4 THEN 'ownership' WHEN 5 THEN 'partner' WHEN 6 THEN 'visitor' WHEN 7 THEN 'qr_posa' END`;
-const CHECKOUT_TYPE = `CASE checkout_type WHEN 1 THEN 'data_sim' WHEN 2 THEN 'change_plan' WHEN 3 THEN 'sim_replacement' WHEN 4 THEN 'saleor' WHEN 5 THEN 'ownership_transfer' WHEN 6 THEN 'renewal' WHEN 7 THEN 'advanced_postpaid' ELSE 'other' END`;
+const CHECKOUT_TYPE = `CASE checkout_type WHEN 0 THEN 'normal' WHEN 1 THEN 'data_sim' WHEN 2 THEN 'change_plan' WHEN 3 THEN 'sim_replacement' WHEN 4 THEN 'saleor' WHEN 5 THEN 'ownership_transfer' WHEN 6 THEN 'renewal' WHEN 7 THEN 'advanced_postpaid' ELSE 'other' END`;
 
 // Derived decline reason for stats + troubleshooting. Explicit fail_reason (hyperpay/tap) wins; UPG/salam
 // leave it blank and put the real code+message in payment_commit_response.gateway.response — pull
@@ -169,6 +169,31 @@ const DATASETS = {
     dims: { from_plan: `coalesce(from_plan,'—')`, to_plan: `coalesce(to_plan,'—')` },
     filters: { status: { col: 'status' } },
     tableCols: ['id::text AS id', 'mobile_number', 'from_plan', 'to_plan', 'status', 'created_at']
+  },
+
+  /* Dealer (DMS) commissioning. Until now seller_deductions was reachable ONLY through the
+   * dealer_activity alert metric — a number that could page you but never be charted. This makes
+   * it a first-class dataset: the Analytics builder, the preset boards and the Dashboard
+   * Customize list all pick it up automatically.
+   * orders = count(DISTINCT onboarding_order_id), never count(*): one order can carry several
+   * deduction rows (commission retries/adjustments), and row-counting inflates exactly when
+   * commissioning misbehaves — same lesson as plan_channels. Amounts are halalas → /100 for SAR. */
+  dealers: {
+    label: 'Dealers (DMS)', table: 'seller_deductions', timeCol: 'created_at',
+    metrics: {
+      orders: { label: 'Commissioned orders', expr: 'count(DISTINCT onboarding_order_id)' },
+      dealers: { label: 'Active dealers', expr: 'count(DISTINCT seller_id)' },
+      commission: { label: 'Commission (SAR)', expr: 'coalesce(sum(amount),0)' },   // amount is a FLOAT already in SAR (schema.rb:852) — NOT halalas
+      deductions: { label: 'Deduction rows', expr: 'count(*)' }
+    },
+    dims: {
+      dealer: `(SELECT coalesce(nullif(trim(concat(s.first_name,' ',s.last_name)),''), s.username, seller_deductions.seller_id::text)
+                  FROM sellers s WHERE s.id = seller_deductions.seller_id)`,
+      dealer_group: `(SELECT coalesce(nullif(s."group",''),'—') FROM sellers s WHERE s.id = seller_deductions.seller_id)`
+    },
+    filters: { seller: { col: 'seller_id' } },
+    tableCols: ['id::text AS id', 'seller_id::text AS seller_id', 'onboarding_order_id::text AS order_id',
+                'amount AS amount_sar', 'created_at']
   }
 };
 

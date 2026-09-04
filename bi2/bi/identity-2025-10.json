@@ -1,0 +1,193 @@
+{
+ "month": "2025-10",
+ "window": [
+  "2025-10-01",
+  "2025-11-01"
+ ],
+ "basis": "account membership (users/guests) — NOT session state",
+ "rows": [
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "failed",
+   "n": 6209,
+   "sar": "534478.439999067"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "never_attempted",
+   "n": 29092,
+   "sar": "2508356.07000332"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "stuck_callback",
+   "n": 78,
+   "sar": "7235.06"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "success",
+   "n": 32529,
+   "sar": "2628158.29999044"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "failed",
+   "n": 19661,
+   "sar": "1718020.28998914"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "never_attempted",
+   "n": 94025,
+   "sar": "8231026.19235502"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "refunded",
+   "n": 4,
+   "sar": "602.03"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "stuck_callback",
+   "n": 356,
+   "sar": "32416.3"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "success",
+   "n": 114271,
+   "sar": "9486370.85994808"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_mobile_recorded",
+   "outcome": "never_attempted",
+   "n": 14,
+   "sar": "1200"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "failed",
+   "n": 1473,
+   "sar": "123123.500000914"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "never_attempted",
+   "n": 7422,
+   "sar": "627793.009986565"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "stuck_callback",
+   "n": 21,
+   "sar": "1861.92"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "success",
+   "n": 7988,
+   "sar": "638223.379999997"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "failed",
+   "n": 2262,
+   "sar": "246699.459999997"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "never_attempted",
+   "n": 5573,
+   "sar": "612889.01"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "stuck_callback",
+   "n": 14,
+   "sar": "1177.57"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "success",
+   "n": 10268,
+   "sar": "1103412.70000007"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "failed",
+   "n": 6531,
+   "sar": "733198.700000013"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "never_attempted",
+   "n": 17560,
+   "sar": "1929406.36999997"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "stuck_callback",
+   "n": 80,
+   "sar": "10464.31"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "success",
+   "n": 36218,
+   "sar": "3984228.79000111"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "failed",
+   "n": 979,
+   "sar": "117140.58"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "never_attempted",
+   "n": 3176,
+   "sar": "383997.809999994"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "stuck_callback",
+   "n": 15,
+   "sar": "2048.69"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "success",
+   "n": 5657,
+   "sar": "628541.849999996"
+  }
+ ],
+ "elapsed_ms": 10950
+}

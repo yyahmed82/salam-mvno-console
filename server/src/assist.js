@@ -23,6 +23,7 @@ const db = require('./db');
 const roles = require('./roles');
 const settings = require('./settings');
 const subscriber = require('./subscriber');
+const errors = require('./errors');
 
 const C = db.console;
 
@@ -31,7 +32,7 @@ const DEFAULTS = {
   // host.docker.internal reaches the host's Ollama from inside the console container
   ollamaUrl: process.env.OLLAMA_URL || 'http://host.docker.internal:11434',
   model: process.env.OLLAMA_MODEL || 'llama3.1',
-  timeoutMs: 45000
+  timeoutMs: 75000            // CPU-only inference on 152: prompt-eval + 220 tokens needs headroom
 };
 
 async function getConfig() {
@@ -41,7 +42,7 @@ async function getConfig() {
 async function setConfig(patch) {
   const cur = await getConfig();
   const next = { ...cur, ...(patch || {}) };
-  next.timeoutMs = Math.min(120000, Math.max(5000, Number(next.timeoutMs) || 45000));
+  next.timeoutMs = Math.min(120000, Math.max(5000, Number(next.timeoutMs) || 75000));
   if (!next.ollamaUrl) next.ollamaUrl = DEFAULTS.ollamaUrl;
   if (!next.model) next.model = DEFAULTS.model;
   await settings.setSetting('assist', next);
@@ -54,7 +55,23 @@ async function setConfig(patch) {
 const KB_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', '..');
 // ONLY troubleshooting runbooks. Dev/project docs (FEATURE_PARITY, README) are deliberately
 // excluded — their "Still open" feature lists were being confused with open incidents.
-const KB_FILES = ['OPS_RUNBOOK.md', 'UPG_PAYMENT_MONITORING.md'];
+const KB_FILES = ['OPS_RUNBOOK.md', 'UPG_PAYMENT_MONITORING.md', 'INTEGRATIONS.md',
+  'OTO_API_DOCS.md',      // full imported OTO courier docs (tools/import-oto-docs.js)
+  'SALAM_API_DOCS.md',    // selfcare/Apollo API docs from the app repo (tools/import-salam-api-docs.js)
+  'TAP_API_DOCS.md'];     // Tap/UPG payment-gateway docs (tools/import-tap-docs.js)
+
+// split a doc's text on markdown headings into heading-scoped chunks (shared by files + uploads)
+function chunkText(txt, docLabel) {
+  const chunks = [];
+  const parts = String(txt || '').split(/\n(?=#{1,3} )/);
+  for (const p of parts) {
+    const body = p.trim();
+    if (body.length < 40) continue;
+    const title = (body.match(/^#{1,3} (.+)/) || [])[1] || docLabel;
+    chunks.push({ doc: docLabel, title, text: body.slice(0, 2400) });
+  }
+  return chunks;
+}
 
 let kbCache = null, kbLoadedAt = 0;
 function loadKb() {
@@ -63,17 +80,28 @@ function loadKb() {
   for (const f of KB_FILES) {
     let txt = '';
     try { txt = fs.readFileSync(path.join(KB_DIR, f), 'utf8'); } catch (e) { continue; }
-    // split on headings; keep the heading with its body
-    const parts = txt.split(/\n(?=#{1,3} )/);
-    for (const p of parts) {
-      const body = p.trim();
-      if (body.length < 40) continue;
-      const title = (body.match(/^#{1,3} (.+)/) || [])[1] || f;
-      chunks.push({ doc: f, title, text: body.slice(0, 2400) });
-    }
+    chunks.push(...chunkText(txt, f));
   }
   kbCache = chunks; kbLoadedAt = Date.now();
   return chunks;
+}
+
+// Uploaded L2-Workbench docs (console_docs). SHARED docs with extracted text become Yusr-answerable
+// KB chunks, on the SAME 5-min cache cadence as the file-based runbooks. Loaded async (DB) and merged
+// into searchKb; ensureDocChunks() is awaited once at the top of chat() so a request sees fresh docs.
+let docChunks = [], docLoadedAt = 0;
+async function ensureDocChunks() {
+  if (docChunks.length && Date.now() - docLoadedAt < 5 * 60_000) return docChunks;
+  try {
+    const r = await C.query(
+      `SELECT id, title, text_content FROM console_docs
+        WHERE shared = true AND text_content IS NOT NULL AND length(text_content) > 40
+        ORDER BY at DESC LIMIT 200`);
+    const chunks = [];
+    for (const row of r.rows) chunks.push(...chunkText(row.text_content, 'doc: ' + row.title));
+    docChunks = chunks; docLoadedAt = Date.now();
+  } catch (e) { /* keep the previous cache on error */ }
+  return docChunks;
 }
 
 const STOP = new Set(['the','a','an','is','are','was','were','to','of','in','on','for','and','or','what','how','why','do','does','did','can','i','we','it','this','that','with','my','me','please','about']);
@@ -83,7 +111,8 @@ function terms(q) {
 function searchKb(q, limit = 3) {
   const ts = terms(q);
   if (!ts.length) return [];
-  return loadKb()
+  // file-based runbooks + shared uploaded docs (docChunks refreshed by ensureDocChunks in chat())
+  return loadKb().concat(docChunks)
     .map(c => {
       const hay = (c.title + '\n' + c.text).toLowerCase();
       let score = 0;
@@ -93,6 +122,44 @@ function searchKb(q, limit = 3) {
     .filter(c => c.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
+}
+
+/* ------------------------------ case memory ------------------------------ */
+// PII scrub for anything persisted to assist_cases: MSISDNs and National/Iqama IDs are masked
+// IN THE TEXT (maskDeep only handles known keys on objects, not substrings inside free text).
+function scrubPII(s) {
+  return String(s || '')
+    .replace(/(?:\+?966|0)5\d{8}/g, m => m.slice(0, 4) + '******')
+    .replace(/(?<![0-9])[12]\d{9}(?![0-9])/g, m => m[0] + '*********');
+}
+// Save a resolved case (👍 path). Dedupes on the scrubbed problem text; repeat saves upvote instead.
+async function saveCase({ question, reply, intent, actor }) {
+  const problem = scrubPII(question).slice(0, 1200);
+  const resolution = scrubPII(reply).slice(0, 3000);
+  if (problem.length < 10 || resolution.length < 20) return;      // nothing worth learning
+  const crypto = require('crypto');
+  const hash = crypto.createHash('sha256').update(problem.toLowerCase()).digest('hex');
+  const title = problem.slice(0, 90);
+  await C.query(
+    `INSERT INTO assist_cases (problem_hash, title, problem, resolution, tags, source, actor)
+       VALUES ($1,$2,$3,$4,$5,'thumbs_up',$6)
+     ON CONFLICT (problem_hash) DO UPDATE
+       SET helpful_votes = assist_cases.helpful_votes + 1, resolution = EXCLUDED.resolution, at = now()`,
+    [hash, title, problem, resolution, intent || null, actor || null]);
+}
+// Retrieve past resolved cases like KB chunks: keyword-scored, best votes win ties.
+async function searchCases(q, limit = 3) {
+  const ts = terms(q);
+  if (!ts.length) return [];
+  try {
+    const r = await C.query(
+      `SELECT title, problem, resolution, tags, helpful_votes
+         FROM assist_cases
+        WHERE problem ~* $1 OR resolution ~* $1 OR coalesce(tags,'') ~* $1
+        ORDER BY helpful_votes DESC, at DESC LIMIT $2`,
+      ['(' + ts.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', limit]);
+    return r.rows;
+  } catch (e) { return []; }
 }
 
 async function searchErrorCodes(q, limit = 5) {
@@ -123,28 +190,166 @@ function extractIdentifier(q) {
 
 const ALERT_WORDS = /\b(alerts?|incidents?|outages?|down|broken|p1|p2|p3|slo|breach(es|ed)?|firing|what'?s (wrong|broken)|health)\b/i;
 const SMALL_TALK = /^\s*(hi|hello|hey|salam|salaam|assalam.*|thanks?|thank you|shukran|good (morning|evening|afternoon)|bye|ok|okay)\s*[!.؟?]*\s*$/i;
-// Yusr's remit: CUSTOMER journeys, troubleshooting, request/response details. A knowledge
-// question must touch one of these topics; anything else is out of scope.
-const CUSTOMER_TOPICS = /\b(subscriber|customer|msisdn|journey|order|onboarding|activat|esim|e-sim|sim|iccid|mnp|port|payment|upg|tap|refund|charge|bill|otp|nafath|semati|citc|eligib|kyc|error|fail|stuck|pending|timeout|retry|troubleshoot|apollo|posa|checkout|plan|line|number|delivery|webhook|callback|request|response|trace|api)\b/i;
+// Yusr's remit: CUSTOMER journeys, troubleshooting, integrations, request/response details. A
+// knowledge question must touch one of these topics; anything else is out of scope. Includes the
+// integration/system names shown on the Integrations page (its own "Ask Yusr" chip sends
+// "Explain the integration …" — 'integration' being absent here made the page's own button get
+// refused as out-of-scope), plus common Arabic terms so call-center agents can ask in Arabic.
+const CUSTOMER_TOPICS = /\b(subscriber|customer|msisdn|journey|order|onboarding|activat|esim|e-sim|sim|iccid|mnp|port|payment|upg|tap|refund|charge|bill|otp|nafath|semati|citc|eligib|kyc|error|fail|stuck|pending|timeout|retry|troubleshoot|apollo|posa|checkout|plan|line|number|delivery|webhook|callback|request|response|trace|api|integrations?|oracle|bss|absher|tcc|hyperpay|tamara|merchalink|salampay|worker|queue|sidekiq|courier|oto|smsa|barq|imile|saleor|zatca|unifonic)\b/i
+  , CUSTOMER_TOPICS_AR = /(مشترك|عميل|رقم|طلب|تفعيل|شريحة|دفع|فاتورة|مبلغ|استرجاع|خطأ|فشل|معلق|مشكلة|توصيل|نفاذ|أهلية|باقة|تكامل)/;
+
+/* PAYMENT IDENTIFIERS — an agent pastes one of these and expects the whole story:
+ *   pay_dn5b55j98i3w  UPG payment id      chg_LV03G13…  Tap charge id
+ *   umoxmoh2zt4l      our payment reference (= the gateway invoice id)
+ *   a payment UUID from the console
+ * A bare lowercase token is only treated as a reference when the sentence is about payments —
+ * otherwise "activation" or a plan name would be mistaken for one. */
+const PAY_PREFIXED = /\b((?:pay|chg|tok|cus|inv)_[A-Za-z0-9]{6,40})\b/;
+const PAY_UUID = /\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i;
+const PAY_REF = /\b([a-z0-9]{10,16})\b/;
+const PAY_WORDS = /\b(payment|pay|charge|charged|recharge|top-?up|invoice|bill|refund|declin|upg|tap|mada|visa|apple\s*pay|stc\s*pay|transaction|reference)\b/i;
+function extractPaymentKey(q) {
+  const s = String(q || '');
+  const m1 = s.match(PAY_PREFIXED); if (m1) return { key: m1[1], kind: 'gateway_id' };
+  if (!PAY_WORDS.test(s)) return null;                 // don't guess without payment context
+  const m2 = s.match(PAY_UUID); if (m2) return { key: m2[1], kind: 'payment_uuid' };
+  const m3 = s.match(PAY_REF);
+  if (m3 && /[0-9]/.test(m3[1]) && /[a-z]/.test(m3[1])) return { key: m3[1], kind: 'reference' };
+  return null;
+}
+
+/* "SMS details 966510124924", "did he get the otp", "رسالة" … — an SMS question about a specific
+ * customer, which needs the OTP history rather than the generic subscriber summary. */
+const SMS_WORDS = /\b(sms|otp|message|messages|text|code|رسالة|رسائل|كود)\b/i;
+function isSmsAsk(q) { return SMS_WORDS.test(String(q || '')) && !!extractIdentifier(q); }
 
 function detectIntent(q) {
   if (SMALL_TALK.test(q)) return 'smalltalk';
+  // a payment identifier beats a subscriber lookup: the agent asked about THAT payment
+  if (extractPaymentKey(q) && !extractIdentifier(q)) return 'payment';
+  if (isSmsAsk(q)) return 'sms';
   if (extractIdentifier(q)) return 'customer';
   if (ALERT_WORDS.test(q)) return 'alerts';
-  if (CUSTOMER_TOPICS.test(q)) return 'knowledge';
+  if (CUSTOMER_TOPICS.test(q) || CUSTOMER_TOPICS_AR.test(q)) return 'knowledge';
   return 'out_of_scope';
+}
+
+/* Everything the console's payment drill knows, assembled for the model: our record, every
+ * gateway attempt on the reference, the raw charge object, and the OFFICIAL Tap code. */
+async function paymentContext(q, allowUnmask) {
+  const found = extractPaymentKey(q);
+  if (!found) return null;
+  const k = found.key;
+  const tap = require('./tapCodes');
+  const out = { key: k, kind: found.kind, found: false };
+  try {
+    // our record — by reference, by gateway payment id, or by console uuid
+    const r = await db.source.query(
+      `SELECT id::text, created_at, updated_at, status, amount, vendor, platform, payment_on_type,
+              payment_reference_id, fail_reason, customer_mobile_number,
+              payment_commit_response#>>'{data,source}' rail,
+              payment_commit_response#>>'{data,method}' method,
+              payment_commit_response#>>'{data,id}' gw_payment_id,
+              payment_commit_response#>>'{data,status}' gw_status
+         FROM payments
+        WHERE payment_reference_id = $1
+           OR payment_commit_response#>>'{data,id}' = $1
+           ${/^[0-9a-f-]{36}$/i.test(k) ? 'OR id = $1::uuid' : ''}
+        ORDER BY created_at DESC LIMIT 1`, [k]);
+    if (r.rows.length) { out.found = true; out.payment = r.rows[0]; }
+  } catch (e) { out.appError = e.message; }
+
+  const ref = (out.payment && out.payment.payment_reference_id) || (found.kind === 'reference' ? k : null);
+  const upg = require('./upgLink');
+  if (ref && upg.configured()) {
+    try {
+      const g = await upg.rowsForRefs([ref]);
+      const rows = (g && g.byRef && g.byRef.get) ? (g.byRef.get(ref) || []) : [];
+      out.upg_attempts = rows.map(x => ({
+        when: x.created_at, status: x.status, rail: x.source, method: x.method || x.pay_method,
+        amount_sar: x.amount == null ? null : Number(x.amount) / 100,
+        acquirer_message: x.bank_message || x.gw_msg || null, code: x.gw_code || null,
+        charge_id: x.transaction_id
+      }));
+      out.found = out.found || out.upg_attempts.length > 0;
+      // official meaning + class for the final answer
+      const last = out.upg_attempts[out.upg_attempts.length - 1];
+      if (last) {
+        const code = (last.code && tap.describe(last.code)) ? last.code : tap.codeFor(last.acquirer_message || '');
+        const d = code ? tap.describe(code) : null;
+        if (d) out.tap_code = { code: d.code, official_message: d.message, class: d.cls };
+        out.money_taken = ['PAID', 'CAPTURED', 'AUTHORIZED'].includes(String(last.status || '').toUpperCase());
+        out.attempts = out.upg_attempts.length;
+      }
+    } catch (e) { out.upgError = e.message; }
+    try {
+      const pl = await upg.payloadForRef(ref, { limit: 2 });
+      if (pl && pl.rows && pl.rows.length) {
+        const P = pl.rows[pl.rows.length - 1].gateway_payload || {};
+        const dig = (o, path) => path.split('.').reduce((a, kk) => (a == null ? a : a[kk]), o);
+        out.charge_object = {
+          charge_id: P.id, status: P.status,
+          response_code: dig(P, 'gateway.response.code'), response_message: dig(P, 'gateway.response.message'),
+          payment_method: dig(P, 'source.payment_method'), channel: dig(P, 'source.channel'),
+          amount: P.amount, currency: P.currency, receipt: dig(P, 'receipt.id'),
+          webhook_status: dig(P, 'post.status')
+        };
+      }
+    } catch (_) { /* payload is a bonus */ }
+  } else if (!upg.configured()) out.upgError = 'UPG not configured';
+  return roles.maskDeep(out, allowUnmask);
 }
 
 /* ------------------------------ context gathering ------------------------------ */
 async function customerContext(q, allowUnmask) {
   const key = extractIdentifier(q);
   if (!key) return null;
+  const __t0 = Date.now();
   const raw = await subscriber.profile({ key });
-  if (!raw.found) return { key, found: false };
-  // mask FIRST (while everything is still structured), THEN build/stringify the pack —
-  // otherwise PII inside request/response traces would escape maskDeep as strings
+
+  // Format-agnostic identifiers. Mobiles are stored inconsistently (onboarding_orders 05…, payments
+  // 9665…), and extractIdentifier normalises to 05…, so match failures on the last-9 significant
+  // digits (works for 05…, 9665…, +966…). NID = a 10-digit ID key or the profile's national id.
+  const qDigits = String(q || '').replace(/\D/g, '');
+  const keyDigits = String(key || '').replace(/\D/g, '');
+  const lineMobile = raw.lines && raw.lines[0] && raw.lines[0].mobile_number ? String(raw.lines[0].mobile_number).replace(/\D/g, '') : '';
+  const last9 = (lineMobile || qDigits || keyDigits).slice(-9);
+  const mobileForTickets = (raw.lines && raw.lines[0] && raw.lines[0].mobile_number) || qDigits || keyDigits || null;
+  const nid = (raw.identity && (raw.identity.nid || raw.identity.national_id || raw.identity.nationality_id_number || raw.identity.id)) || (/^[12]\d{9}$/.test(keyDigits) ? keyDigits : null);
+
+  // Cross-source signals — gathered REGARDLESS of whether an onboarding profile exists, so existing
+  // subscribers (upgrade / recharge, with no onboarding order) still surface their failures + tickets.
+  let recent_failures = [], cst_tickets = [], cst_configured = false;
+  try {
+    if (last9 && last9.length >= 7) {
+      // 14-day scan — catches recent CST-age cases (~2 weeks) while staying ~2s; wider windows get slow.
+      const rf = await errors.feed({ now: new Date().toISOString(), windowHours: 336, q: last9, limit: 20 });
+      recent_failures = roles.maskDeep((rf || []).map(r => ({ category: r.category, when: r.when, detail: r.detail, gateway: r.gw || null })), allowUnmask);
+    }
+  } catch (e) {}
+  try {
+    const sn = require('./servicenow');
+    if (sn.snConfigured()) {
+      cst_configured = true;
+      const t = await sn.ticketsForSubscriber({ mobile: mobileForTickets, nid });
+      cst_tickets = roles.maskDeep((t.tickets || []).slice(0, 6).map(x => ({
+        number: x.number, title: x.short_description, priority: x.priority, state: x.state,
+        opened_at: x.opened_at, group: x.group, link: x.link
+      })), allowUnmask);
+    }
+  } catch (e) {}
+
+  if (!raw.found) {
+    // No onboarding profile — but if the number shows up in failures or CST tickets it IS a real
+    // (existing) subscriber; return a lightweight pack so Yusr helps instead of saying "not found".
+    if (recent_failures.length || cst_tickets.length) {
+      return { key, found: true, existing_no_onboarding: true, identity: null, lines: [], stage_summary: {}, recent_events: [], recent_failures, cst_tickets, cst_configured };
+    }
+    return { key, found: false };
+  }
+
+  // mask FIRST (while structured), THEN build the pack — so PII inside traces can't escape maskDeep
   const p = roles.maskDeep(raw, allowUnmask);
-  // keep the pack small: identity, lines, per-stage summary, last 12 events
   const pack = {
     key, found: true,
     identity: p.identity,
@@ -157,33 +362,70 @@ async function customerContext(q, allowUnmask) {
     recent_events: (p.events || []).slice(-12).map(e => ({
       at: e.at, source: e.source, step: e.step || e.kind, ok: e.ok,
       detail: e.detail || null, endpoint: e.endpoint || null,
-      // full request/response traces, truncated so the prompt stays small
       request: e.request ? JSON.stringify(e.request).slice(0, 400) : null,
       response: e.response ? JSON.stringify(e.response).slice(0, 500) : null,
       ms: e.ms != null ? e.ms : null, status: e.status != null ? e.status : null
-    }))
+    })),
+    recent_failures, cst_tickets, cst_configured
   };
   return pack;   // already masked above
 }
 
 async function alertsContext() {
   try {
+    // trigger_codes joined in so Yusr can answer "why did <rule> fire?" with the exact codes
+    // that define it (L2 transparency request TKT-000002), plus the runbook first step.
     const open = (await C.query(
-      `SELECT id, name, severity, team, metric_key, observed_value, threshold, operator,
-              fired_at, message
-         FROM alerts WHERE status='open' ORDER BY severity, fired_at DESC LIMIT 15`)).rows;
+      `SELECT a.id, a.name, a.severity, a.team, a.metric_key, a.observed_value, a.threshold, a.operator,
+              a.fired_at, a.message, a.rule_key, r.trigger_codes, r.alert_class, r.description
+         FROM alerts a LEFT JOIN alert_rules r ON r.key = a.rule_key
+        WHERE a.status='open' ORDER BY a.severity, a.fired_at DESC LIMIT 15`)).rows;
     const counts = (await C.query(
       `SELECT severity, count(*)::int AS n FROM alerts WHERE status='open' GROUP BY severity`)).rows;
     return { open_count: open.length, by_severity: counts, incidents: open };
   } catch (e) { return { error: e.message }; }
 }
 
+/* Rule lookup — "why did semati_flapping fire?" / "what triggers api_latency_breach?".
+ * Deterministic: definition + trigger codes + recent firing history, straight from the DB. */
+async function ruleContext(q) {
+  try {
+    // anomaly signals (anomaly:<journey>:<kind> or "onboarding.volume") live in the anomaly
+    // engine config, not alert_rules — answer them from sigCfg with the seasonal-baseline story.
+    const am = /\b(?:anomaly[:.])?([a-z_]+)[:.](volume|failure_rate)\b/i.exec(q || '');
+    if (am) {
+      const anomaly = require('./anomaly');
+      const cfg = await anomaly.getConfig();
+      const sig = `${am[1].toLowerCase()}.${am[2].toLowerCase()}`;
+      const eff = anomaly.sigCfg(cfg, sig);
+      return { anomaly_signal: { sig, eff, engine: { z: cfg.z, volFloor: cfg.volFloor, lookbackWeeks: cfg.lookbackWeeks, raiseAlerts: cfg.raiseAlerts } } };
+    }
+    const m = /\b([a-z][a-z0-9]*(?:_[a-z0-9]+){1,5})\b/gi;
+    const words = String(q || '').match(m) || [];
+    const cands = [...new Set(words.map(w => w.toLowerCase()))].filter(w => w.includes('_'));
+    if (!cands.length) return null;
+    const r = (await C.query(
+      `SELECT key, name, severity, team, alert_class, metric_key, operator, threshold, window_hours,
+              min_sample, enabled, trigger_codes, description, runbook
+         FROM alert_rules WHERE key = ANY($1::text[]) LIMIT 1`, [cands])).rows[0];
+    if (!r) return null;
+    const hist = (await C.query(
+      `SELECT count(*)::int AS fires, sum(breach_count)::int AS breaches, max(fired_at) AS last_fired,
+              count(*) FILTER (WHERE status='open')::int AS open_now
+         FROM alerts WHERE rule_key=$1 AND fired_at > now() - interval '14 days'`, [r.key])).rows[0];
+    return { rule: r, last_14_days: hist };
+  } catch (e) { return null; }
+}
+
 /* ------------------------------ Ollama ------------------------------ */
 async function ollamaChat({ cfg, system, history, user }) {
   const url = cfg.ollamaUrl.replace(/\/+$/, '') + '/api/chat';
   const messages = [{ role: 'system', content: system }];
-  for (const h of (history || []).slice(-8)) {
-    if (h && h.role && h.content) messages.push({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content).slice(0, 2000) });
+  /* History is the quietest way to blow the prompt budget: 8 turns × 2000 chars ≈ 4k tokens,
+   * and on CPU inference prompt-eval dominates the response time. Four short turns keep the
+   * conversation coherent for a fraction of the cost. */
+  for (const h of (history || []).slice(-3)) {
+    if (h && h.role && h.content) messages.push({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content).slice(0, 500) });
   }
   messages.push({ role: 'user', content: user });
   const ctl = new AbortController();
@@ -192,7 +434,14 @@ async function ollamaChat({ cfg, system, history, user }) {
     const r = await fetch(url, {
       method: 'POST', signal: ctl.signal,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: cfg.model, messages, stream: false, options: { temperature: 0.2, num_predict: 600 } })
+      /* Tuned 17 Aug 2026 against measured behaviour on 152 (CPU-only, 8 cores, no GPU):
+       *   • keep_alive '30m' — /api/ps showed NO resident model, so every idle gap cost a
+       *     ~4s reload from disk. Sporadic L2 use = almost every question paid it.
+       *   • num_predict 220 — generation measured at ~18 tok/s, so 600 tokens = up to 33s on
+       *     its own and blew the 45s timeout. L2 answers are short; 220 is ample.
+       *   • num_ctx 4096 — bounds prompt-eval cost for the context block we send. */
+      body: JSON.stringify({ model: cfg.model, messages, stream: false, keep_alive: '30m',
+        options: { temperature: 0.2, num_predict: 220, num_ctx: 4096 } })
     });
     if (!r.ok) throw new Error('Ollama HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
     const j = await r.json();
@@ -225,24 +474,80 @@ SCOPE — you ONLY handle:
 1. Customer journeys: onboarding orders, activation, eSIM/physical SIM, MNP port-in, eligibility (Semati + Nafath/CITC), payments (UPG/Tap), OTP, delivery.
 2. Troubleshooting a specific subscriber: failed steps, errors, stuck orders, and the request/response details of each integration call.
 3. Live incidents from the alerts data ONLY.
-Anything else (project features, console development, documentation status, general questions) → reply exactly: "That's outside my scope — I only help with customer journeys and troubleshooting. Ask me about a subscriber, a failed step, or an open incident."
+4. Explaining the platform's external integrations, webhooks and workers (Oracle BSS, Nafath, Semati, payments gateways, couriers …) FROM the INTEGRATIONS runbook sections in the context.
+5. Error-case analysis: when the user gives a trace id / request id (the "Device ID" shown in the app's error dialog), CONTEXT contains case_analysis with the matching backend error events.
+IF case_analysis IS PRESENT IN CONTEXT, NEVER refuse — this is always in scope. Answer with: what happened (known_case.title + explanation if present, else the exception/message), how many occurrences and when (first/last), the failing endpoint and code frame, and the recommended action (known_case.action). If case_analysis.found is false, say no stored events matched and suggest checking the id or the api hosts' logs.
+6. Partner and platform API DOCUMENTATION that has been imported into the knowledge base: Tap / UPG (the payment gateway — charges, refunds, tokens, webhooks, response codes, STC Pay / Apple Pay / mada / KNET rails), OTO and the other couriers, and the Salam selfcare API. Answering "what does this gateway code mean", "how does this endpoint work", "what does the webhook send" IS in scope.
+7. A SPECIFIC PAYMENT: the agent pastes a payment reference (e.g. umoxmoh2zt4l), a gateway id (pay_… / chg_…) or a payment uuid. CONTEXT.payment then holds our record, every gateway attempt on that reference, the raw charge object and the official Tap code. NEVER ask the agent to supply data — it is already there. Answer with: what the customer tried (amount, rail, app), what the gateway answered (official code + message), whether MONEY WAS TAKEN (money_taken), how many attempts, and the next action. If payment.found is false, say the reference is not in our data and suggest checking it or searching Subscriber 360.
+8. SMS / OTP HISTORY for one customer: the agent asks "SMS details 9665…", "did he receive the OTP", "رسائل". CONTEXT.sms then holds every OTP message the platform recorded for that number — when it was sent, the message type, the template text, whether the customer entered the code and how long it took. Answer from it directly. Three things must be stated correctly and never blurred:
+  · ONLY OTP messages exist as records. Order, delivery and campaign SMS are sent fire-and-forget with no row written — if asked about those, say the platform keeps no record rather than implying none were sent.
+  · A message type shown as "not recorded" is NOT a fault: the type lives in the app cache for 10 minutes only, so anything older simply cannot be identified. Where type_source is "inferred", say it was deduced from surrounding activity, not recorded.
+  · NEVER reveal or guess a verification code. The code is deliberately absent from the context.
+  A number that received 3+ OTPs in a short span usually means NON-DELIVERY (the customer kept requesting a new code because none arrived), not that they mistyped.
+IF THE CONTEXT CONTAINS kb SECTIONS THAT ANSWER THE QUESTION, NEVER REFUSE — answer from them and cite the doc section. Refusing while quoting sources is always wrong.
+Anything else (project features, console development, documentation status, general questions) → reply exactly: "That's outside my scope — I only help with customer journeys, integrations and troubleshooting. Ask me about a subscriber, a failed step, an integration, or an open incident."
 Rules:
 - Answer ONLY from the CONTEXT provided. If the context doesn't contain the answer, say so and suggest where to look in the console.
 - "Open incidents" means the open_alerts data — NEVER lists found in runbook text. If open_alerts is present and empty, say there are no open incidents.
+- Each incident carries trigger_codes (which error codes/conditions define that alert) and alert_class (business = the API answered "no" · technical = the platform failed to answer). When asked why an alert fired or what it means, QUOTE the trigger_codes verbatim and state the class. If trigger_codes is empty, say it is not documented yet rather than guessing codes.
 - Masked values like 05*****290 are intentional PII masking — never try to guess them.
 - When a subscriber has failed steps, explain the most likely cause in plain words, quote the relevant response/error from the trace, and give the next troubleshooting step.
+- The customer pack includes 'recent_failures' — a scan of THIS subscriber's failed / stuck payments, activation, eligibility, delivery, etc. over recent months. If it is non-empty, ALWAYS surface it (category · date · reason, most recent first) and explain the likely cause. NEVER answer "no incidents" / "all clear" for a subscriber whose recent_failures is non-empty. A subscriber's recent_failures are SEPARATE from open metric incidents (open_alerts) — a subscriber can have real failures while there are zero open incidents; state both correctly and don't conflate them.
+- The customer pack may include 'cst_tickets' — CST / ServiceNow incidents that name THIS subscriber (number, priority, state, title). If present, ALWAYS cite them prominently by number + state (e.g. "Open CST ticket INC0014074 (P2) — login issue"). These are authoritative support tickets; they, recent_failures, and open metric incidents are three different things — report each accurately.
+- If the pack has existing_no_onboarding=true, this is an EXISTING subscriber (recharge / plan upgrade / etc.) with no onboarding order in the console's data. Say so briefly, then report recent_failures and cst_tickets. Do NOT reply "subscriber not found".
 - Eligibility means Semati + Nafath (CITC) checks. Payments use UPG/Tap; payment status 'fail' means failed.
+- TWO DIFFERENT CODE SPACES SHARE THE SAME NUMBERS — never mix them:
+  · Tap / UPG gateway codes are POSITIVE 3-digit (000 Captured, 301 Abandoned, 401 Failed, 505 Declined Insufficient Funds, 506 Declined Transaction Type Not Supported, 801 Timed Out) and 4-digit bad-request codes (1xxx/2xxx). They come from the payment gateway; context provides them as tap_codes / TAP_API_DOCS.
+  · Salam app error codes are NEGATIVE (-506 PLAN_OPTION_NO_UPDATE, -704 rate limit, -501 …) and come from our own backend.
+  If the question mentions Tap, UPG, gateway, charge, refund, card, mada, STC Pay or Apple Pay → use the Tap table. If it mentions our app, a screen, a subscriber or a trace id → use the Salam catalog. If it is genuinely ambiguous (a bare number), give BOTH in two labelled lines and ask which system they mean.
+- Tap's own taxonomy is useful when triaging: 401/408/513/801 are platform faults (technical); 4xx card problems, 5xx declines and 7xx restrictions are customer/bank outcomes (business); 402/403/506 and the 11xx family mean WE sent something the gateway rejected or a switch is disabled (configuration — fixable by engineering, not by the customer).
+- 'past_cases' are problems THIS TEAM already solved (saved from 👍-rated answers; identifiers masked). If one matches the current question, follow and cite its resolution ("we solved a similar case: …") — it reflects proven local practice. Ignore cases that don't actually match.
 - Keep answers under 150 words. Use short bullet lines when listing steps.`;
 
-function fallbackAnswer(intent, ctx) {
-  if (intent === 'smalltalk') return 'أهلاً! I\'m Yusr — I can look up a subscriber (send an MSISDN like 05xxxxxxxx or a National ID), check open incidents, or search the runbooks. How can I help?';
+function fallbackAnswer(intent, ctx, hint) {
+  if (intent === 'smalltalk') return 'أهلاً! I\'m Yusr — I can look up a subscriber (send an MSISDN like 05xxxxxxxx or a National ID), search a log reference ID on the DMS nodes, check open incidents, or search the runbooks. How can I help?';
   if (intent === 'customer') {
     if (!ctx.customer || ctx.customer.found === false) return 'I could not find a subscriber for that number/ID. Double-check the MSISDN (05xxxxxxxx) or National ID and try again.';
     const c = ctx.customer;
     const lines = (c.lines || []).map(l => `• ${l.mobile || '—'} — ${l.plan || 'no plan'} — state: ${l.state || l.status || '—'} (${l.sim || ''} ${l.line_type || ''})`).join('\n');
-    const fails = (c.recent_events || []).filter(e => e.ok === false);
-    const failTxt = fails.length ? `\nRecent failures:\n` + fails.slice(-3).map(e => `• ${e.source}${e.step ? ' / ' + e.step : ''}: ${e.error || 'failed'}`).join('\n') : '\nNo recent failed steps.';
-    return `Subscriber found.\n${lines}${failTxt}\n(LLM offline — showing raw profile. Open Subscriber 360 for the full timeline.)`;
+    const rf = c.recent_failures || [];
+    const stepFails = (c.recent_events || []).filter(e => e.ok === false);
+    let failTxt;
+    if (rf.length) failTxt = `\n⚠ ${rf.length} recent failure(s) for this subscriber:\n` + rf.slice(0, 5).map(e => `• ${e.category} · ${String(e.when || '').slice(0, 10)} · ${e.detail || 'failed'}`).join('\n');
+    else if (stepFails.length) failTxt = `\nRecent failed steps:\n` + stepFails.slice(-3).map(e => `• ${e.source}${e.step ? ' / ' + e.step : ''}: ${e.error || 'failed'}`).join('\n');
+    else failTxt = `\nNo recent failures found for this subscriber.`;
+    const tix = c.cst_tickets || [];
+    const tixTxt = tix.length
+      ? `\nCST tickets:\n` + tix.slice(0, 4).map(t => `• ${t.number}${t.priority ? ` (${t.priority})` : ''} — ${t.title || ''} [${t.state || ''}]`).join('\n')
+      : (c.cst_configured === false ? '' : '\nNo linked CST tickets.');
+    const note = c.existing_no_onboarding ? ' (existing subscriber — no onboarding order in the console)' : '';
+    return `Subscriber found${note}.\n${lines}${failTxt}${tixTxt}\n(LLM offline — showing raw profile. Open Subscriber 360 for the full timeline.)`;
+  }
+  /* SMS answers must survive the LLM being offline — this is a support question asked under
+   * time pressure, and the facts are already assembled. */
+  if (intent === 'sms') {
+    const s = ctx.sms;
+    if (!s || !(s.messages || []).length) return 'No OTP messages are recorded for that number or ID. Note that only OTP messages are stored — order, delivery and campaign SMS are sent without any record being written.';
+    const T = s.totals || {};
+    const L = [`SMS history for ${s.msisdn} — ${T.total} OTP message(s): ${T.verified} verified, ${T.expired} never entered${T.avg_verify_sec != null ? `, average ${T.avg_verify_sec}s to enter the code` : ''}.`];
+    s.messages.slice(0, 6).forEach(m => L.push(
+      `• ${String(m.sent).replace('T', ' ').slice(0, 16)} — ${m.type} — ${m.outcome}${m.seconds_to_enter != null ? ` (${m.seconds_to_enter}s)` : ''}`));
+    if (s.messages.some(m => m.type === 'not recorded')) L.push('Message types shown as "not recorded" are older than 10 minutes — the type is kept in the app cache for that long only.');
+    L.push('(Verification codes are never shown.)');
+    return L.join('\n');
+  }
+  if (intent === 'payment') {
+    const p = ctx.payment;
+    if (!p || !p.found) return `I could not find a payment for "${(p && p.key) || 'that reference'}". Check the reference, or open Subscriber 360 and use the payments tab.`;
+    const r = p.payment || {};
+    const last = (p.upg_attempts || [])[(p.upg_attempts || []).length - 1];
+    const L = [];
+    L.push(`Payment ${r.payment_reference_id || p.key} — ${r.status || '?'} · ${r.amount != null ? r.amount + ' SAR' : ''} · ${r.rail || r.method || ''} · ${r.platform || ''}`.trim());
+    if (last) L.push(`Gateway: ${last.status} — ${last.acquirer_message || '(no acquirer message)'}${last.code ? ' (code ' + last.code + ')' : ''}`);
+    if (p.tap_code) L.push(`Official meaning: ${p.tap_code.code} · ${p.tap_code.official_message} → ${p.tap_code.class}`);
+    if (p.attempts) L.push(`Attempts at the gateway: ${p.attempts}`);
+    L.push(p.money_taken ? '⚠ The gateway shows the money WAS captured — reconcile with the app record.' : 'No money was taken.');
+    return L.join('\n') + '\n(LLM offline — raw payment facts.)';
   }
   if (intent === 'alerts') {
     const a = ctx.alerts || {};
@@ -252,13 +557,19 @@ function fallbackAnswer(intent, ctx) {
   }
   const kb = ctx.kb || [];
   if (!kb.length) return 'I could not find anything in the runbooks for that. Try rephrasing, or check the Ops Runbook / error-codes catalog in the console.';
-  return 'LLM offline — closest runbook sections:\n' + kb.map(k => `• ${k.doc} › ${k.title}`).join('\n');
+  // knowledge answers are the ones most hurt by a missing LLM — show the sections we WOULD have
+  // summarised, the reason it failed, and a first line of the best section so the answer is not empty
+  const top = kb[0];
+  return `I found the answer in the docs but could not summarise it — ${hint || 'the language model is offline'}.\n\n` +
+    (top ? `From ${top.doc} › ${top.title}:\n${String(top.text || '').split('\n').filter(Boolean).slice(0, 6).join('\n').slice(0, 700)}\n\n` : '') +
+    'Other matching sections:\n' + kb.slice(top ? 1 : 0).map(k => `• ${k.doc} › ${k.title}`).join('\n');
 }
 
 function suggestionsFor(intent, ctx) {
   if (intent === 'customer' && ctx.customer && ctx.customer.found) {
     return ['Why did the last step fail?', 'Show payment history', 'Is this subscriber eligible?'];
   }
+  if (intent === 'payment') return ['What does that gateway code mean?', 'Did the customer retry?', 'Was the money taken?'];
   if (intent === 'alerts') return ['Which incident is most severe?', 'What is the runbook for payment stuck?', 'Show SLO status'];
   if (intent === 'smalltalk') return ['Check subscriber 05… ', 'What incidents are open?', 'How do I handle a stuck UPG payment?'];
   return ['What incidents are open?', 'How do I handle a stuck UPG payment?', 'Why would eligibility fail?'];
@@ -268,6 +579,17 @@ function actionsFor(intent, ctx) {
   const acts = [];
   if (intent === 'customer' && ctx.customer && ctx.customer.found && ctx.customerKey) {
     acts.push({ label: 'Open Subscriber 360', href: '#sub360?key=' + encodeURIComponent(ctx.customerKey) });
+  }
+  if (intent === 'payment' && ctx.payment && ctx.payment.found) acts.push({ label: 'Open payments dashboard', href: '#dashboard' });
+  /* TKT-000008: "while searching on SMS, add link after results" — every SMS/OTP answer carries
+   * deep links to the full views. Key = what the agent typed (customerKey) first — a MASKED
+   * msisdn must never round-trip through a link (house PII law); raw ctx.sms.msisdn only as
+   * fallback (it came from the agent's own query). */
+  if (intent === 'sms' && ctx.sms && (ctx.sms.messages || []).length) {
+    const k = ctx.customerKey || ctx.sms.msisdn;
+    if (k && !String(k).includes('*'))
+      acts.push({ label: '✉ Full SMS details — Subscriber 360', href: '#sub360?key=' + encodeURIComponent(k) });
+    acts.push({ label: 'SMS gateways health', href: '#monitoring?tab=sms' });
   }
   if (intent === 'alerts') acts.push({ label: 'Open Alerts board', href: '#alerts' });
   if (intent === 'knowledge') acts.push({ label: 'Error Control Board', href: '#errors' });
@@ -281,30 +603,328 @@ async function chat({ message, history, allowUnmask }) {
   if (!q) return { error: 'empty message' };
   if (!cfg.enabled) return { error: 'Assist is disabled in Settings.' };
 
-  const intent = detectIntent(q);
+  await ensureDocChunks();   // refresh uploaded-doc KB chunks (5-min cache) before any searchKb below
+
+  let intent = detectIntent(q);
   const ctx = {};
 
-  // out-of-scope questions never reach the LLM
+  /* CHECKOUT / GATEWAY-REF lookup (Yosri, 2 Sep): "checkout 2wk2wrk2" (the CMS admin Order ID),
+   * a bare checkout uuid, or a gateway reference (chg_…/pay_…/UPG invoice id) → the FULL picture,
+   * deterministically: checkout state, every payment attempt with its gateway ref, and where to
+   * drill next. Masked like everything else. */
+  /* DMS LOG-REFERENCE search (Phase 2, 3 Sep) — GUIDED, STATELESS flow: the suggestion chips
+   * carry the full next command, so no conversation state is needed.
+   *   1. "search a log reference" (chip / bare keyword, no id) → ask for the reference
+   *   2. a BARE 16-hex message → ask for the DATE, chips = ready-made full commands
+   *   3. "logref <id> [date|current only]" → run the search (quick mode: UIL-first,
+   *      first-match-per-node early exit — chat wants the verdict, the drawer has the full view) */
+  try {
+    const glg = require('./dmsLogGrep');
+    const ksaDay = off => new Date(Date.now() + 3 * 3600e3 - off * 864e5).toISOString().slice(0, 10);
+    const qt = String(q || '').trim();
+    if (glg.configured() && /\blog\s*ref/i.test(qt) && !/[0-9a-f]{16}|[0-9a-f-]{36}/i.test(qt)) {
+      return { intent: 'logref', reply:
+        'Paste the **log reference ID** — the 16-character code from the customer\'s error dialog / ticket '
+        + '(e.g. `91d51389c6ffd37e`), or a UIL transaction UUID. I\'ll search the DMS application nodes for it.',
+        suggestions: [], actions: [] };
+    }
+    if (glg.configured() && /^[0-9a-f]{16}$/i.test(qt)) {
+      const id = qt.toLowerCase();
+      return { intent: 'logref', reply:
+        `Got it — \`${id}\`. **When was the request?** Current logs cover only the last few hours; `
+        + `for anything older I deep-search that day's rotated logs (~1–2 min, retention ≈ 7 days). Pick one:`,
+        suggestions: [`logref ${id} ${ksaDay(0)}`, `logref ${id} ${ksaDay(1)}`, `logref ${id} current only`,
+                      `logref ${id} ${ksaDay(2)}`], actions: [] };
+    }
+    const lrm = /\blog\s*ref(?:erence)?(?:\s*id)?[\s:#=]*([0-9a-f]{16}|[0-9a-f-]{36})\b/i.exec(q || '');
+    if (lrm && glg.configured()) {
+      let dm = /\b(20\d\d-\d\d-\d\d)\b/.exec(q || '');
+      if (!dm && /\btoday\b/i.test(q)) dm = [null, ksaDay(0)];
+      if (!dm && /\byesterday\b/i.test(q)) dm = [null, ksaDay(1)];
+      const r = await glg.search(lrm[1], { date: dm ? dm[1] : null, quick: true });
+      if (!r.ok) return { intent: 'logref', reply: `Log-reference search: ${r.error}`, suggestions: [], actions: [] };
+      let reply, sugs = ['Open Troubleshoot'];
+      if (!r.total_hits) {
+        reply = `**Log reference \`${r.ref}\`** — no match in the ${r.date ? `current logs + rotated files of ${r.date}` : 'current logs'} on the DMS nodes.\n` +
+          (r.date ? 'Retention is ~7 days — if the request is older, the log is gone; correlate via the customer timeline instead.'
+                  : 'Current logs cover only the last few hours — pick the request date for a deep search:');
+        if (!r.date) sugs = [`logref ${r.ref} ${ksaDay(0)}`, `logref ${r.ref} ${ksaDay(1)}`, `logref ${r.ref} ${ksaDay(2)}`];
+        else sugs = [];
+      } else {
+        const hop = (r.hops || []).find(h => h.kind === 'uil-call') || (r.hops || [])[0] || {};
+        const files = r.hosts.flatMap(h2 => (h2.files || []).map(f => `${h2.host.split('.').pop()}·${f.service}`));
+        reply = `**Log reference \`${r.ref}\`**${r.cached ? ' ⚡(cached)' : ''} — FOUND: ${r.total_hits} line(s) in ${files.join(', ')}\n` +
+          (hop.url ? `Call: \`${String(hop.url).replace(/^https?:\/\/[^/]+/, '')}\` → **${hop.response_code || hop.status || '?'}${hop.response_message ? ' ' + hop.response_message : ''}** in ${hop.ms || '?'} ms\n` : '') +
+          ((r.uil_transaction_ids || []).length ? `UIL transaction id: \`${r.uil_transaction_ids[0]}\` (paste in Troubleshoot search for the gateway ⇄ uil_logs tiers)\n` : '') +
+          `Full hop table + raw lines: search the reference in Subscriber 360 / Troubleshoot and use the ⛏ DMS logs panel.`;
+      }
+      if (r.errors) reply += `\n⚠ ${r.errors.join(' · ')}`;
+      return { intent: 'logref', reply, suggestions: sugs, actions: [] };
+    }
+  } catch (e) { /* fall through */ }
+
+  try {
+    const ckm = /\bcheckout[\s:#=]*([a-z0-9-]{6,36})\b/i.exec(q || '');
+    const gwm = /\b((?:chg|pay)_[\w]{6,40})\b/i.exec(q || '');
+    const d8 = s2 => String(s2 || '').replace('T', ' ').slice(0, 16);
+    const mask = v => { const t = String(v || ''); return t.length > 3 ? '*'.repeat(Math.max(3, t.length - 3)) + t.slice(-3) : t; };
+    const payLine = p2 => `· ${d8(p2.created_at)} · ${p2.amount} SAR · **${p2.status}** · ${p2.vendor || '—'}/${p2.payment_method || '—'}` +
+      ` · gw ref \`${p2.payment_reference_id || '—'}\`${p2.fail_reason ? ` · ${String(p2.fail_reason).slice(0, 60)}` : ''}`;
+    if (ckm) {
+      const ck = await require('./checkoutLookup').checkoutFull(ckm[1]);
+      if (ck.found) {
+        const c = ck.checkout;
+        let reply = `**Checkout \`${c.code}\`** — ${c.type} · state **${c.state}** · paid **${c.paid ? 'YES' : 'NO'}** · completed **${c.completed ? 'YES' : 'NO'}**\n` +
+          `Created ${d8(c.created_at)}${c.completed_at ? ` · completed ${d8(c.completed_at)}` : ''} · customer ${mask(c.mobile_number) || '—'}` +
+          `${c.for ? ` · for ${c.for}` : ''}${c.items_summary.length ? `\nItems: ${c.items_summary.join(' · ')}` : ''}\n\n` +
+          `**Payment attempts (${ck.payments.length})**\n` +
+          (ck.payments.length ? ck.payments.map(payLine).join('\n') : '· none — the customer never reached the gateway') +
+          `\n\nDrill: Subscriber 360 → search the customer, or paste a gw ref here for the Tap/UPG side. CMS: ${c.admin_url}`;
+        return { intent: 'checkout', reply, suggestions: ['Open Subscriber 360', c.mobile_number ? 'Full timeline for this customer' : 'Search by order id'],
+                 actions: [] };
+      }
+      return { intent: 'checkout', reply: `No checkout matches \`${ckm[1]}\` — check the Order ID column in the CMS admin (proxy.salammobile.sa/admin/checkouts).`, suggestions: [], actions: [] };
+    }
+    if (gwm) {
+      const g = await require('./checkoutLookup').byGatewayRef(gwm[1]);
+      if (g.found) {
+        let reply = `**Gateway reference \`${gwm[1]}\`** — ${g.payments.length} app payment row(s)\n` +
+          g.payments.map(payLine).join('\n') +
+          (g.parent ? `\n\nBelongs to checkout \`${g.parent.code}\` (${g.parent.type} · ${g.parent.state} · paid ${g.parent.paid ? 'YES' : 'NO'}) · ${g.parent.admin_url}` : '') +
+          `\n\nThe gateway-side story (bank message, retries, webhooks) is one click away: Troubleshoot → Customer payments → ⇄ UPG, or the payment row in Subscriber 360.`;
+        return { intent: 'checkout', reply, suggestions: ['Open Subscriber 360', 'Open Troubleshoot'], actions: [] };
+      }
+    }
+  } catch (e) { /* fall through to normal handling */ }
+
+  // Case analyzer: a 32-hex trace id or UUID in the question (the "Device ID" from the app's
+  // error dialog, or a request_id) → inject the full diagnosis so Yusr answers the case directly.
+  try {
+    const tm = /\b([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i.exec(q || '')
+      // transaction ids too — "txn 175544…" / "transaction id: …" joins app ⇄ APIGW ⇄ uil_logs
+      || /(?:txn|transaction(?:\s*id)?)[\s:#=]*([\w.-]{6,64})/i.exec(q || '');
+    if (tm) {
+      const tc = await require('./traceCase').analyze(tm[1]);
+      // Deterministic reply — the analysis is fully structured, so the LLM adds nothing here
+      // (and the local 8B model tends to fall back to its "out of scope" canned line anyway).
+      if (tc && tc.found) {
+        const kb = tc.known_case;
+        const d8 = s => String(s || '').replace('T', ' ').slice(0, 16);
+        let reply = '';
+        if (kb) reply += `**${kb.title}** · ${kb.classification}\n${kb.explanation}\n\n**Action:** ${kb.action}\n\n`;
+        reply += `**Case ${tc.id.slice(0, 12)}…** — ${tc.occurrences} occurrence(s), first ${d8(tc.first_seen)} → last ${d8(tc.last_seen)} (UTC)` +
+          `${tc.platform ? ` · ${tc.platform}${tc.app_version ? ' v' + tc.app_version : ''}` : ''}\n` +
+          `Exception: ${(tc.exception_classes || []).join(', ') || '—'} · code(s) ${(tc.error_codes || []).join(', ')}\n` +
+          `Endpoint: ${(tc.endpoints || []).join(' · ')}\n` +
+          (tc.frames && tc.frames[0] ? `Code frame: ${tc.frames[0]}\n` : '') +
+          (tc.sample_message ? `Message: ${tc.sample_message}` : '');
+        if (tc.ip_block) {                       // -704: the full block story, settings-aware
+          const b = tc.ip_block;
+          reply += `\n\n**IP BLOCK DETAIL** (live settings: limit ${b.settings.ip_request_rate_limit} · session ${b.settings.ip_session_time}s · elapse ${b.settings.ip_elapse_time}s — ${b.settings.source})\n` +
+            `Why blocked: **${b.condition}**\n${b.detail}\n` +
+            (b.last_allowed_at ? `Last request that PASSED the gate: ${d8(b.last_allowed_at)} (outcome ${b.last_allowed_outcome})\n` : '') +
+            `Block active since: ${d8(b.first_block_at)} · blocked attempts recorded: ${b.blocked_attempts}\n` +
+            (b.auto_unblock_human ? `Auto-unblock: **${b.auto_unblock_human}**\n` : '') +
+            (b.unblock_now ? `Unblock NOW: ${b.unblock_now}` : '');
+        }
+        if (tc.gateway) {                        // per-tier view of the same transaction
+          const g = tc.gateway;
+          if ((g.app || []).length) {
+            reply += `\n\n**APP CALL (Digital API)**\n` + g.app.slice(0, 4).map(a =>
+              `${String(a.ts).replace('T', ' ').slice(0, 19)} · ${a.path} → code ${a.response_code || '—'}` +
+              `${a.duration_ms != null ? ` · ${a.duration_ms}ms` : ''}${a.response_message ? ` · ${String(a.response_message).slice(0, 90)}` : ''}`).join('\n');
+          }
+          if ((g.gateway && g.gateway.spans || []).length) {
+            const sp = g.gateway.spans;
+            reply += `\n\n**GATEWAY HOPS (APIGW)** — ${g.gateway.hops} hop(s), total ${g.gateway.total_ms}ms · ${g.gateway.source}\n` +
+              sp.slice(0, 8).map(s =>
+                `+${s.offset_ms}ms ${s.service}${s.kind ? ' [' + s.kind + ']' : ''} ${s.method || ''} ${s.path || ''} → ` +
+                `${s.err ? 'ERROR ' + s.err : (s.status || 'ok')} · ${s.ms}ms`).join('\n') +
+              (sp.length > 8 ? `\n… ${sp.length - 8} more hop(s) — open the Case analyzer for the full waterfall` : '');
+          }
+          if (g.uil && g.uil.ok && (g.uil.rows || []).length) {
+            reply += `\n\n**UIL/OSB LOG** — ${g.uil.rows.length} row(s) with request/response payloads (open the Case analyzer to read them).`;
+          }
+        }
+        return { intent: 'case', reply: reply.trim(),
+          suggestions: ['Open Troubleshoot → Case analyzer for the full entry list', 'Raise a ticket with the customer screenshot attached'],
+          actions: [], sources: [{ type: 'case_analysis', id: tc.id }], degraded: false };
+      }
+      if (tc && (tc.note || tc.error)) {
+        return { intent: 'case',
+          reply: `No stored backend events match ${tm[1].slice(0, 16)}… — ${tc.note || tc.error}\nDouble-check the id (it is the "Device ID" shown in the app's error dialog), or the event may predate the log history.`,
+          suggestions: ['Paste the full error-dialog text — I extract the id automatically'], actions: [], sources: [], degraded: false };
+      }
+    }
+  } catch (e) {}
+
+  // Alert-rule lookup — "why did semati_flapping fire?" / "what triggers api_latency_breach?"
+  // Deterministic: definition, TRIGGER CODES (L2 transparency), tuning and 14-day firing history.
+  try {
+    const looksLikeRule = /_/.test(q || '') || /\b(?:anomaly[:.])?[a-z_]+[:.](?:volume|failure_rate)\b/i.test(q || '');
+    if (looksLikeRule && /\b(why|what|when|trigger|fire[sd]?|firing|define[sd]?|definition|condition|mean|كيف|لماذا)\b/i.test(q || '')) {
+      const rc = await ruleContext(q);
+      if (rc && rc.anomaly_signal) {
+        const a = rc.anomaly_signal, e = a.eff, g = a.engine;
+        const kind = a.sig.endsWith('.volume') ? 'total volume' : 'failure rate';
+        const reply = `**Anomaly signal \`${a.sig}\`** — seasonal baseline, not a fixed threshold.\n\n` +
+          `**Fires when:** this journey's ${kind} for the current hour deviates ≥ **${e.z}σ** from its own ` +
+          `hour-of-week norm (median + MAD over ${e.lookbackWeeks} weeks, KSA). No error codes involved — ` +
+          `it is a traffic/ratio signal, so a sharp DROP usually means an upstream outage and a SPIKE can mean a retry storm.\n` +
+          `**Guards:** min sample ${e.minSample}` + (a.sig.endsWith('.volume') ? ` · volume floor ${e.volFloor}/hr (below that a deviation is capped to P3)` : '') +
+          (e.maxSeverity ? ` · severity capped at ${e.maxSeverity}` : '') +
+          ` · ${e.enabled ? 'enabled' : '**disabled**'}${e.hasOverride ? ' · custom override' : ' · inheriting engine defaults'}.\n` +
+          `**Engine defaults:** ${g.z}σ · floor ${g.volFloor} · ${g.lookbackWeeks}w lookback · incidents ${g.raiseAlerts ? 'ON' : 'OFF'}.\n\n` +
+          `Tune it in Alerts → Rules → Anomaly detection → Edit \`${a.sig}\`.`;
+        return { intent: 'rule', reply, suggestions: ['What incidents are open?', 'Open Alerts → Rules → Anomaly detection'],
+          actions: [{ label: 'Open Alerts board', href: '#alerts' }], sources: [{ type: 'anomaly_signal', sig: a.sig }], degraded: false };
+      }
+      if (rc && rc.rule) {
+        const r = rc.rule, h = rc.last_14_days || {};
+        const d8 = x => String(x instanceof Date ? x.toISOString() : x || '').replace('T', ' ').slice(0, 16);
+        const OPS = { gte: '≥', gt: '>', lte: '≤', lt: '<', eq: '=' };
+        const unitVal = (r.metric_key || '').includes('rate') || Number(r.threshold) <= 1
+          ? `${r.threshold}` : `${r.threshold}`;
+        let reply = `**${r.name}** \`${r.key}\`${r.enabled ? '' : ' · **DISABLED**'}\n` +
+          `Severity ${r.severity} · ${r.alert_class || '—'} class · team ${r.team || '—'}\n\n` +
+          `**Fires when:** \`${r.metric_key}\` ${OPS[r.operator] || r.operator} ${unitVal} over ${r.window_hours}h` +
+          (r.min_sample ? ` (min sample ${r.min_sample})` : '') + `\n`;
+        if (r.trigger_codes) reply += `**Triggered by:** ${r.trigger_codes}\n`;
+        else reply += `**Triggered by:** _not documented yet — add it in Alerts → Rules → Edit → Trigger codes._\n`;
+        if (r.description) reply += `\n${r.description}\n`;
+        reply += `\n**Last 14 days:** ${h.fires || 0} fire(s)` +
+          (h.breaches ? ` · ${h.breaches.toLocaleString()} breach evaluations` : '') +
+          (h.last_fired ? ` · last ${d8(h.last_fired)} UTC` : '') +
+          (h.open_now ? ` · **${h.open_now} open now**` : '') + '.';
+        if (h.fires && h.breaches && h.breaches / h.fires > 40)
+          reply += `\n⚠ ${Math.round(h.breaches / h.fires)} breaches per fire — this rule describes a persistent condition rather than an incident; it is a tuning candidate.`;
+        if (r.runbook) reply += `\n\n**Runbook:** ${String(r.runbook).slice(0, 400)}`;
+        return { intent: 'rule', reply,
+          suggestions: ['What incidents are open?', 'Open Alerts → Rules to edit this rule'],
+          actions: [{ label: 'Open Alerts board', href: '#alerts' }], sources: [{ type: 'alert_rule', key: r.key }], degraded: false };
+      }
+    }
+  } catch (e) {}
+
+  // App error-code lookup — "what is error -113?" / "خطأ -704" → deterministic answer from the
+  // source-derived catalog (appErrCatalog) + live occurrence counts from api_error_events.
+  try {
+    const em = /(?:error|code|err|خطأ)\s*[:#]?\s*(-?\d{3,5})\b/i.exec(q || '');
+    if (em) {
+      const code = -Math.abs(Number(em[1]));   // catalog codes are negative; accept "704" or "-704"
+      const cat = require('./appErrCatalog');
+      const d = cat.describe(code) || cat.describe(Number(em[1]));
+      if (d) {
+        let counts = null;
+        try { counts = (await db.console.query(
+          `SELECT count(*) FILTER (WHERE ts > now() - interval '24 hours')::int AS d1,
+                  count(*) FILTER (WHERE ts > now() - interval '7 days')::int AS d7,
+                  max(ts) AS last FROM api_error_events WHERE error_code = $1`, [d.code])).rows[0]; } catch (e) {}
+        const d8 = x => String(x instanceof Date ? x.toISOString() : x || '').replace('T', ' ').slice(0, 16);
+        let reply = `**Error ${d.code} · ${d.constant}** — category: ${d.category_label} (${d.class})\n` +
+          (d.message ? `Meaning: ${d.message}\n` : '') +
+          `${d.category_desc}\n`;
+        if (counts) reply += `Live occurrences: ${counts.d1.toLocaleString()} in 24h · ${counts.d7.toLocaleString()} in 7d` +
+          (counts.last ? ` · last seen ${d8(counts.last)} UTC` : ' · none recorded') + `.`;
+        return { intent: 'error_code', reply: reply.trim(),
+          suggestions: ['Monitoring → ③ App errors for the category breakdown', `Paste a trace id for a specific customer case`],
+          actions: [], sources: [{ type: 'app_err_catalog', code: d.code }], degraded: false };
+      }
+    }
+  } catch (e) {}
+
+  // OTP / SMS delivery health — deterministic answer from the otps funnel (same reasoning as the
+  // Unifonic incident forensics: the app discards the gateway response, so sent→verified rate IS
+  // the delivery evidence). Answers "are OTPs failing?", "since when?", "is it still happening?".
+  try {
+    if (/\b(otp|sms|unifonic|رمز التحقق)\b/i.test(q || '') && /\b(fail|delay|deliver|issue|problem|health|slow|receiv|not work|status|today|now|مشكل|تأخير)\b/i.test(q || '')) {
+      const hrs = (await db.source.query(
+        `SELECT date_trunc('hour', created_at) AS h, count(*)::int AS sent,
+                count(*) FILTER (WHERE verified)::int AS ok
+         FROM otps WHERE delivery_method='sms' AND created_at > now() - interval '72 hours'
+         GROUP BY 1 ORDER BY 1`)).rows;
+      if (hrs.length >= 6) {
+        const rate = r => r.sent ? (100 * r.ok / r.sent) : null;
+        const meaningful = hrs.filter(r => r.sent >= 15);
+        const rates = meaningful.map(rate).filter(x => x != null).sort((a, b) => a - b);
+        const median = rates.length ? rates[Math.floor(rates.length / 2)] : null;
+        const thr = median != null ? Math.max(20, median - 15) : 40;   // degraded = 15pts under median
+        const bad = meaningful.filter(r => rate(r) < thr);
+        const last3 = meaningful.slice(-3);
+        const lastRate = last3.length ? Math.round(last3.reduce((a, r) => a + rate(r), 0) / last3.length) : null;
+        const d8 = x => String(x instanceof Date ? x.toISOString() : x).replace('T', ' ').slice(0, 16);
+        const lost = bad.reduce((a, r) => a + Math.max(0, Math.round(r.sent * ((median - rate(r)) / 100))), 0);
+        let reply = `**OTP delivery health (last 72h, from the otps funnel)**\n` +
+          `Baseline verify-rate (median): ${median != null ? Math.round(median) + '%' : '—'} · degraded threshold <${Math.round(thr)}%\n`;
+        if (bad.length) {
+          reply += `Degraded hours: ${bad.length} — first ${d8(bad[0].h)}, last ${d8(bad[bad.length - 1].h)} (UTC)\n` +
+            `Estimated impacted OTPs in degraded hours: ~${lost.toLocaleString()}\n`;
+        } else reply += `No degraded hours detected in the window.\n`;
+        reply += `Current status (last ~3h): ${lastRate != null ? lastRate + '%' : 'low volume'} — ` +
+          (lastRate == null ? 'not enough traffic to judge.' : lastRate < thr ? '**still degraded now.**' : 'back at baseline.') +
+          `\nNote: replica freshness depends on prod-sync — check "oldest prod-sync" in the console header.`;
+        return { intent: 'sms_health', reply,
+          suggestions: ['Per-operator split: run the prefix breakdown in Troubleshoot'],
+          actions: [{ label: 'Open Monitoring → SMS gateways', href: '#monitoring?tab=sms' }],   // TKT-000008
+          sources: [{ type: 'otp_funnel', hours: hrs.length }], degraded: false };
+      }
+    }
+  } catch (e) {}
+
+  // Before refusing, probe the knowledge base + error-code catalog: if the question actually matches
+  // runbook/integration content the keyword regex didn't anticipate, answer it as knowledge instead
+  // of refusing (the regex is a gate for obvious off-topic, not a whitelist of phrasing).
+  if (intent === 'payment') {
+    ctx.payment = await paymentContext(q, allowUnmask);
+    // a reference nobody recognises is still worth a KB answer rather than a dead end
+    if (!ctx.payment || !ctx.payment.found) { ctx.kb = searchKb(q, 2); }
+  }
+  /* SMS history for one customer. Trimmed to the newest 12 messages and to the fields that
+   * answer the question actually being asked ("did the code go out, did they enter it") —
+   * the full bodies would blow the context window for no gain. The verification code is not
+   * in the payload at all, so the model cannot leak what it never receives. */
+  if (intent === 'sms') {
+    try {
+      const s = await require('./smsTrace').search(q, { limit: 24 });
+      ctx.sms = {
+        msisdn: s.msisdn, totals: s.totals, notes: s.notes,
+        messages: (s.rows || []).slice(0, 12).map(r => ({
+          sent: r.sent_at, outcome: r.status, type: r.message_type || 'not recorded',
+          type_source: r.type_source, seconds_to_enter: r.time_to_verify_sec,
+          recipient: r.recipient_mobile, body: r.body_en ? String(r.body_en).slice(0, 180) : null
+        }))
+      };
+      if (!ctx.sms.messages.length) ctx.kb = searchKb(q, 2);
+    } catch (e) { ctx.smsError = e.message; }
+  }
   if (intent === 'out_of_scope') {
-    return { intent, reply: "That's outside my scope — I only help with customer journeys and troubleshooting. Ask me about a subscriber (MSISDN / National ID), a failed step, a payment, or an open incident.",
+    const kbProbe = searchKb(q, 3);
+    const ecProbe = await searchErrorCodes(q, 5);
+    if (kbProbe.length || ecProbe.length) { intent = 'knowledge'; ctx.kb = kbProbe; ctx.errorCodes = ecProbe; }
+  }
+  // still nothing relevant → never reaches the LLM
+  if (intent === 'out_of_scope') {
+    return { intent, reply: "That's outside my scope — I only help with customer journeys, integrations and troubleshooting. Ask me about a subscriber (MSISDN / National ID), a failed step, a payment, an integration, or an open incident.",
       suggestions: ['Check subscriber 05…', 'What incidents are open?', 'How do I handle a stuck UPG payment?'],
       actions: [], sources: [], degraded: false };
   }
 
   if (intent === 'customer') {
     ctx.customerKey = extractIdentifier(q);
-    ctx.customer = await customerContext(q, allowUnmask);
+    { const __tc=Date.now(); ctx.customer = await customerContext(q, allowUnmask); ctx.__packMs = Date.now()-__tc; }
     ctx.kb = searchKb(q, 2);
+    ctx.cases = await searchCases(q, 3);        // team's past resolved cases — "learning from use"
   } else if (intent === 'alerts') {
     // alerts questions are answered from live alert data ONLY — no runbook text,
     // so the model can't confuse doc sections with real incidents
     ctx.alerts = await alertsContext();
   } else if (intent === 'knowledge') {
-    ctx.kb = searchKb(q, 3);
-    ctx.errorCodes = await searchErrorCodes(q, 5);
+    if (!ctx.kb) { ctx.kb = searchKb(q, 3); ctx.errorCodes = await searchErrorCodes(q, 5); }
+    ctx.cases = await searchCases(q, 3);
   }
 
   const sources = []
+    .concat(ctx.payment && ctx.payment.found ? [{ type: 'payment', ref: ctx.payment.payment ? ctx.payment.payment.payment_reference_id : ctx.payment.key }] : [])
     .concat((ctx.kb || []).map(k => ({ type: 'runbook', doc: k.doc, section: k.title })))
     .concat(ctx.customer && ctx.customer.found ? [{ type: 'subscriber', key: ctx.customerKey }] : [])
     .concat(ctx.alerts ? [{ type: 'alerts', open: ctx.alerts.open_count }] : [])
@@ -316,26 +936,73 @@ async function chat({ message, history, allowUnmask }) {
   }
 
   const contextBlock = JSON.stringify({
+    payment: ctx.payment || undefined,
+    sms: ctx.sms || undefined,
     customer: ctx.customer || undefined,
     open_alerts: ctx.alerts || undefined,
-    runbook_sections: (ctx.kb || []).map(k => ({ doc: k.doc, title: k.title, content: k.text })),
-    error_codes: ctx.errorCodes && ctx.errorCodes.length ? ctx.errorCodes : undefined
-  }, null, 1).slice(0, 12000);
+    // imported partner docs (Tap/OTO) have long sections — send a trimmed slice: enough to
+    // answer from, small enough to keep prompt-eval inside the timeout on CPU inference
+    runbook_sections: (ctx.kb || []).slice(0, 2).map(k => ({ doc: k.doc, title: k.title, content: String(k.text || '').slice(0, 900) })),
+    error_codes: ctx.errorCodes && ctx.errorCodes.length ? ctx.errorCodes : undefined,
+    past_cases: (ctx.cases || []).length ? ctx.cases.map(c => ({ problem: c.problem, resolution: c.resolution, votes: c.helpful_votes })) : undefined
+  }, null, 1).slice(0, 3500);   // CPU inference: this is the only non-cacheable part of the prompt — every char here is paid on every question
 
-  let reply = null, degraded = false, llmError = null;
+  let reply = null, degraded = false, llmError = null, llmHint = null;
+  const promptChars = SYSTEM_BASE.length + contextBlock.length +
+    (history || []).slice(-3).reduce((a, h) => a + Math.min(500, String((h && h.content) || '').length), 0);
+  const tLlm0 = Date.now();
   try {
     reply = await ollamaChat({
       cfg,
-      system: SYSTEM_BASE + '\n\nCONTEXT:\n' + contextBlock,
-      history, user: q
+      /* PROMPT-CACHE LAYOUT (measured p95 66s on CPU came from re-evaluating ~4k tokens/question):
+       * system stays CONSTANT so Ollama's prefix cache keeps its ~2k tokens hot between requests;
+       * the per-question context rides in the user turn instead. Same information, same model
+       * behaviour — but only the new tokens get evaluated. */
+      system: SYSTEM_BASE,
+      history, user: 'CONTEXT (live data for this question):\n' + contextBlock + '\n\nQUESTION: ' + q
     });
     if (!reply) throw new Error('empty LLM reply');
   } catch (e) {
     degraded = true; llmError = e.name === 'AbortError' ? 'timeout' : e.message;
-    reply = fallbackAnswer(intent, ctx);
+    // The rule-based answer alone leaves the user guessing. Probe the model host once (5s) and
+    // say WHY it is offline plus what to do — a support agent should never have to read logs.
+    try {
+      const p = await ping();
+      if (p.ok && p.modelAvailable === false)
+        llmHint = `model "${(await getConfig()).model}" is not installed on the LLM host (available: ${(p.models || []).join(', ') || 'none'})`;
+      else if (p.ok && llmError === 'timeout')
+        llmHint = 'the model host answered but generation exceeded the timeout — it is probably loading the model or under load; retry in a moment';
+      else if (!p.ok)
+        llmHint = `cannot reach the model host at ${p.url} (${p.error})`;
+    } catch (_) { /* diagnosis is best-effort */ }
+    reply = fallbackAnswer(intent, ctx, llmHint);
   }
 
-  return { intent, reply, suggestions: suggestionsFor(intent, ctx), actions: actionsFor(intent, ctx), sources, degraded, llmError };
+  return { intent, reply, suggestions: suggestionsFor(intent, ctx), actions: actionsFor(intent, ctx), sources, degraded, llmError, llmHint, prompt_chars: promptChars,
+    t_llm_ms: Date.now() - tLlm0, t_pack_ms: ctx.__packMs || null };
 }
 
-module.exports = { chat, ping, getConfig, setConfig, DEFAULTS };
+/* Warm-up: load the model into RAM at boot and re-touch it periodically, so the model is
+ * resident before the first L2 question rather than after it. Cheap (1 token), best-effort. */
+async function warm() {
+  try {
+    const cfg = await getConfig();
+    if (!cfg.enabled) return;
+    await fetch(String(cfg.ollamaUrl).replace(/\/$/, '') + '/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      /* Send the REAL system prompt: the point of warming is not just keeping the model in RAM
+       * but keeping the evaluated SYSTEM_BASE prefix in the slot cache. The old bare-'ok' warm
+       * EVICTED that cache every 20 minutes, forcing full re-evaluation on the next question. */
+      body: JSON.stringify({ model: cfg.model, keep_alive: '30m', stream: false,
+        messages: [{ role: 'system', content: SYSTEM_BASE }, { role: 'user', content: 'ok' }],
+        options: { num_predict: 1, num_ctx: 4096, temperature: 0.2 } })
+    });
+  } catch (e) { /* best effort */ }
+}
+function startWarm() {
+  setTimeout(warm, 15000);                       // shortly after boot
+  const t = setInterval(warm, 20 * 60 * 1000);   // before the 30m keep_alive lapses
+  if (t.unref) t.unref();
+}
+
+module.exports = { chat, ping, getConfig, setConfig, DEFAULTS, saveCase, scrubPII, searchKb, loadKb, ensureDocChunks, warm, startWarm };

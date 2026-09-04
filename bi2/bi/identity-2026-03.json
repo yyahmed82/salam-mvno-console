@@ -1,0 +1,186 @@
+{
+ "month": "2026-03",
+ "window": [
+  "2026-03-01",
+  "2026-04-01"
+ ],
+ "basis": "account membership (users/guests) — NOT session state",
+ "rows": [
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "failed",
+   "n": 6569,
+   "sar": "554781.689999681"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "never_attempted",
+   "n": 25837,
+   "sar": "2176165.36000054"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "stuck_callback",
+   "n": 38,
+   "sar": "2997.61"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "success",
+   "n": 35492,
+   "sar": "2877721.20000825"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "failed",
+   "n": 22952,
+   "sar": "1992894.639984"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "never_attempted",
+   "n": 87680,
+   "sar": "7527380.220038"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "stuck_callback",
+   "n": 97,
+   "sar": "8558.74000000001"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "success",
+   "n": 122598,
+   "sar": "10201995.3699898"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_mobile_recorded",
+   "outcome": "never_attempted",
+   "n": 62,
+   "sar": "5090"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "failed",
+   "n": 505,
+   "sar": "40431.64"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "never_attempted",
+   "n": 1870,
+   "sar": "155472.769999998"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "stuck_callback",
+   "n": 2,
+   "sar": "135.68"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "success",
+   "n": 1664,
+   "sar": "121502.669999999"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "failed",
+   "n": 1994,
+   "sar": "294602.619999998"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "never_attempted",
+   "n": 4538,
+   "sar": "708826.935000009"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "stuck_callback",
+   "n": 9,
+   "sar": "1961.78"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "success",
+   "n": 9333,
+   "sar": "1186570.63000006"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "failed",
+   "n": 6706,
+   "sar": "928617.820000026"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "never_attempted",
+   "n": 16279,
+   "sar": "2160322.69999995"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "stuck_callback",
+   "n": 32,
+   "sar": "4566.82"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "success",
+   "n": 36487,
+   "sar": "4403259.93000038"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "failed",
+   "n": 262,
+   "sar": "39125.0699999999"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "never_attempted",
+   "n": 881,
+   "sar": "131089.57"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "stuck_callback",
+   "n": 2,
+   "sar": "375.08"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "success",
+   "n": 1458,
+   "sar": "176361.72"
+  }
+ ],
+ "elapsed_ms": 10118
+}

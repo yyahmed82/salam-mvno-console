@@ -1,0 +1,4 @@
+certificate_id,name,email,role,grade,sessions_attended,score,issued,programme,cohort,notes
+SDC-2026-56F3-0E9F,Example Attendee One,someone@salam.sa,L1 Support,Completion,4,88,2026-08-05,Salam MVNO Digital Console — Operations Workshop,Cohort 1 — 2026,
+SDC-2026-C1E1-CBA6,Example Attendee Two,another@salam.sa,L2 Digital,Attendance,3,74,2026-08-05,Salam MVNO Digital Console — Operations Workshop,Cohort 1 — 2026,missed session 4
+SDC-2026-8D67-BFC5,Example Attendee Three,third@salam.sa,Salam Ops,Attendance,4,62,2026-08-05,Salam MVNO Digital Console — Operations Workshop,Cohort 1 — 2026,

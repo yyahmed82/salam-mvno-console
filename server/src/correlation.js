@@ -13,28 +13,36 @@
  */
 
 // Provider-level roots, most-authoritative first (used to pick the parent label).
-const ROOTS = ['citc_upstream_down', 'semati_hard_down', 'semati_provider_down'];
+// citc_upstream_down_technical replaced the retired citc_upstream_down composite (2026-08-11
+// mixed-rule split): only the Semati/technical half stays a root — the Nafath/business half
+// (citc_upstream_down_business) must not suppress Semati-family children.
+const ROOTS = ['citc_upstream_down_technical', 'semati_hard_down', 'semati_provider_down'];
 
 // child rule key -> the root rule keys that, when open, explain/suppress it
 const SUPPRESSED_BY = {
   // same metric as a Semati root, just a lower threshold / different dim
-  semati_provider_degraded: ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down'],
-  semati_login_down:        ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down'],
+  semati_provider_degraded: ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down_technical'],
+  semati_login_down:        ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down_technical'],
   // eligibility-endpoint-scoped signal (where INC0012977 surfaced) — same outage
-  semati_eligibility_down:  ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down'],
+  semati_eligibility_down:  ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down_technical'],
   // provider-family sub-signals (transport / intermittent / latency) of the same outage
-  semati_transport_errors:  ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down'],
-  semati_flapping:          ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down'],
-  semati_timeouts:          ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down'],
+  semati_transport_errors:  ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down_technical'],
+  semati_flapping:          ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down_technical'],
+  semati_timeouts:          ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down_technical'],
   // MSISDN provisioning fails because the provider is down
-  semati_fail_storm:        ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down'],
-  semati_fail_spike:        ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down'],
+  semati_fail_storm:        ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down_technical'],
+  semati_fail_spike:        ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down_technical'],
 };
 
 // Softer link: page normally, but tag as "possibly related" (could be independent, e.g. a real BSS fault).
 const RELATED_TO = {
-  activation_fail_storm: ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down'],
-  eligibility_deny_spike: ['citc_upstream_down'],
+  // both halves of the old mixed activation_fail_storm: activation fails downstream of Semati
+  activation_fail_storm_technical: ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down_technical'],
+  activation_fail_storm_business:  ['semati_provider_down', 'semati_hard_down', 'citc_upstream_down_technical'],
+  // the Nafath half of the old composite: tag it under the Semati half when both are open,
+  // so the "shared TCC/CITC upstream" story is still told as one incident (it still pages).
+  citc_upstream_down_business: ['citc_upstream_down_technical', 'semati_provider_down', 'semati_hard_down'],
+  eligibility_deny_spike: ['citc_upstream_down_technical'],
 };
 
 // journeys a provider root blocks — shown on the incident so L1 sees blast radius at a glance
@@ -42,7 +50,8 @@ const RELATED_TO = {
 const IMPACT = {
   semati_provider_down: ['Activation', 'MNP', 'Eligibility', 'Change Plan', 'SIM Swap'],
   semati_hard_down:     ['Activation', 'MNP', 'Eligibility', 'Change Plan', 'SIM Swap'],
-  citc_upstream_down:   ['Activation', 'MNP', 'Eligibility', 'Change Plan', 'SIM Swap', 'Identity (Nafath)'],
+  citc_upstream_down_technical: ['Activation', 'MNP', 'Eligibility', 'Change Plan', 'SIM Swap'],
+  citc_upstream_down_business:  ['Identity (Nafath)', 'Onboarding'],
 };
 function impactOf(key) { return IMPACT[key] || null; }
 

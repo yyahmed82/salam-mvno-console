@@ -1,0 +1,789 @@
+{
+ "month": "2026-02",
+ "window": [
+  "2026-02-01",
+  "2026-03-01"
+ ],
+ "funnel": {
+  "total": 397609,
+  "success": 209594,
+  "failed": 41280,
+  "stuck_callback": 212,
+  "never_attempted": 144879,
+  "success_sar": "18874284.0000118",
+  "failed_sar": "4054489.53998147"
+ },
+ "journey": [
+  {
+   "journey": "1_2_order_type_unknown",
+   "identity": "order_anonymoususer",
+   "outcome": "never_attempted",
+   "n": 1,
+   "sar": "0"
+  },
+  {
+   "journey": "1_new_sim",
+   "identity": "order_anonymoususer",
+   "outcome": "failed",
+   "n": 552,
+   "sar": "215716.44"
+  },
+  {
+   "journey": "1_new_sim",
+   "identity": "order_anonymoususer",
+   "outcome": "never_attempted",
+   "n": 1293,
+   "sar": "539424.329999991"
+  },
+  {
+   "journey": "1_new_sim",
+   "identity": "order_anonymoususer",
+   "outcome": "refunded",
+   "n": 223,
+   "sar": "25583.4"
+  },
+  {
+   "journey": "1_new_sim",
+   "identity": "order_anonymoususer",
+   "outcome": "stuck_callback",
+   "n": 3,
+   "sar": "257.04"
+  },
+  {
+   "journey": "1_new_sim",
+   "identity": "order_anonymoususer",
+   "outcome": "success",
+   "n": 7050,
+   "sar": "781939.940000076"
+  },
+  {
+   "journey": "2_mnp",
+   "identity": "order_anonymoususer",
+   "outcome": "failed",
+   "n": 241,
+   "sar": "31236.86"
+  },
+  {
+   "journey": "2_mnp",
+   "identity": "order_anonymoususer",
+   "outcome": "never_attempted",
+   "n": 683,
+   "sar": "97817.5699999998"
+  },
+  {
+   "journey": "2_mnp",
+   "identity": "order_anonymoususer",
+   "outcome": "refunded",
+   "n": 526,
+   "sar": "54518.2900000001"
+  },
+  {
+   "journey": "2_mnp",
+   "identity": "order_anonymoususer",
+   "outcome": "stuck_callback",
+   "n": 2,
+   "sar": "199.53"
+  },
+  {
+   "journey": "2_mnp",
+   "identity": "order_anonymoususer",
+   "outcome": "success",
+   "n": 4080,
+   "sar": "428558.089999978"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_other_number",
+   "outcome": "never_attempted",
+   "n": 1,
+   "sar": "100"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_other_number",
+   "outcome": "success",
+   "n": 2,
+   "sar": "150"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_self_number",
+   "outcome": "failed",
+   "n": 28196,
+   "sar": "2440412.65998158"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_self_number",
+   "outcome": "never_attempted",
+   "n": 101062,
+   "sar": "8721868.53998373"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_self_number",
+   "outcome": "refunded",
+   "n": 2,
+   "sar": "120"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_self_number",
+   "outcome": "stuck_callback",
+   "n": 122,
+   "sar": "10955.52"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_self_number",
+   "outcome": "success",
+   "n": 142629,
+   "sar": "11789762.0600056"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_unknown",
+   "outcome": "never_attempted",
+   "n": 41,
+   "sar": "2840"
+  },
+  {
+   "journey": "4_invoice",
+   "identity": "proxy_self_number",
+   "outcome": "failed",
+   "n": 7537,
+   "sar": "910316.600000038"
+  },
+  {
+   "journey": "4_invoice",
+   "identity": "proxy_self_number",
+   "outcome": "never_attempted",
+   "n": 16279,
+   "sar": "1919550.89999994"
+  },
+  {
+   "journey": "4_invoice",
+   "identity": "proxy_self_number",
+   "outcome": "stuck_callback",
+   "n": 36,
+   "sar": "5434.76"
+  },
+  {
+   "journey": "4_invoice",
+   "identity": "proxy_self_number",
+   "outcome": "success",
+   "n": 37458,
+   "sar": "4200710.98999992"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_anonymoususer",
+   "outcome": "failed",
+   "n": 660,
+   "sar": "57208.9"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_anonymoususer",
+   "outcome": "never_attempted",
+   "n": 1237,
+   "sar": "106262.529999998"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_anonymoususer",
+   "outcome": "refunded",
+   "n": 9,
+   "sar": "350.68"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_anonymoususer",
+   "outcome": "stuck_callback",
+   "n": 4,
+   "sar": "285.79"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_anonymoususer",
+   "outcome": "success",
+   "n": 2810,
+   "sar": "248683.549999992"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_deleteduser",
+   "outcome": "failed",
+   "n": 42,
+   "sar": "3891.53"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_deleteduser",
+   "outcome": "never_attempted",
+   "n": 236,
+   "sar": "25131.35"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_deleteduser",
+   "outcome": "refunded",
+   "n": 10,
+   "sar": "951.61"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_deleteduser",
+   "outcome": "stuck_callback",
+   "n": 2,
+   "sar": "171.36"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_deleteduser",
+   "outcome": "success",
+   "n": 91,
+   "sar": "7404.77000000001"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_guest",
+   "outcome": "failed",
+   "n": 1033,
+   "sar": "105808.159999999"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_guest",
+   "outcome": "never_attempted",
+   "n": 7388,
+   "sar": "751261.850000022"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_guest",
+   "outcome": "refunded",
+   "n": 207,
+   "sar": "23268.09"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_guest",
+   "outcome": "stuck_callback",
+   "n": 9,
+   "sar": "1494.44"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_guest",
+   "outcome": "success",
+   "n": 3323,
+   "sar": "325355.989999986"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_user",
+   "outcome": "failed",
+   "n": 3010,
+   "sar": "288591.229999993"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_user",
+   "outcome": "never_attempted",
+   "n": 16608,
+   "sar": "1690532.7"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_user",
+   "outcome": "refunded",
+   "n": 667,
+   "sar": "78504.7899999999"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_user",
+   "outcome": "stuck_callback",
+   "n": 34,
+   "sar": "3571.81"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_user",
+   "outcome": "success",
+   "n": 12107,
+   "sar": "1084650.9300001"
+  },
+  {
+   "journey": "other",
+   "identity": "proxy_self_number",
+   "outcome": "failed",
+   "n": 9,
+   "sar": "1307.16"
+  },
+  {
+   "journey": "other",
+   "identity": "proxy_self_number",
+   "outcome": "never_attempted",
+   "n": 50,
+   "sar": "7993.68"
+  },
+  {
+   "journey": "other",
+   "identity": "proxy_self_number",
+   "outcome": "success",
+   "n": 44,
+   "sar": "7067.68"
+  }
+ ],
+ "reasons": [
+  {
+   "journey": "3_recharge",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 28095,
+   "sar": "2432397.88000019"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 7534,
+   "sar": "910059.590000033"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 4743,
+   "sar": "455288.219999976"
+  },
+  {
+   "journey": "1_new_sim",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 552,
+   "sar": "215716.44"
+  },
+  {
+   "journey": "2_mnp",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 241,
+   "sar": "31236.86"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (invalid configuration data)",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 37,
+   "sar": "3093.68997955322"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "The authentication is cancelled or abandoned",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 13,
+   "sar": "970"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 10,
+   "sar": "586.569999694824"
+  },
+  {
+   "journey": "other",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 9,
+   "sar": "1307.16"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (invalid configuration data)",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 9,
+   "sar": "798.589997253418"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 8,
+   "sar": "827.030006408691"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "The authentication is cancelled or abandoned",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 6,
+   "sar": "391.36"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "STC Pay",
+   "n": 3,
+   "sar": "250.68"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "risk management transaction timeout",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 3,
+   "sar": "193.18"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "transaction declined (invalid configuration data)",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 3,
+   "sar": "257.01"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "risk management transaction timeout",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 2,
+   "sar": "150"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 2,
+   "sar": "197.23"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (invalid configuration data)",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 2,
+   "sar": "163.85"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 2,
+   "sar": "43"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Authentication failed due to suspected fraud",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "57.5"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (format error)",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 1,
+   "sar": "113.849998474121"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Technical Error in 3D system",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 1,
+   "sar": "64.4"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "mada",
+   "n": 1,
+   "sar": "97.75"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "transaction declined (invalid configuration data)",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "113.85"
+  }
+ ],
+ "byVendor": [
+  {
+   "vendor": "salam",
+   "outcome": "success",
+   "n": 199519,
+   "sar": "17818309.5499951"
+  },
+  {
+   "vendor": "salam",
+   "outcome": "never_attempted",
+   "n": 144711,
+   "sar": "13848359.6500029"
+  },
+  {
+   "vendor": "salam",
+   "outcome": "failed",
+   "n": 41178,
+   "sar": "4046354.58000008"
+  },
+  {
+   "vendor": "apollo",
+   "outcome": "success",
+   "n": 9700,
+   "sar": "1023118.36999995"
+  },
+  {
+   "vendor": "salam",
+   "outcome": "refunded",
+   "n": 1016,
+   "sar": "118225.46"
+  },
+  {
+   "vendor": "apollo",
+   "outcome": "refunded",
+   "n": 628,
+   "sar": "65071.4000000001"
+  },
+  {
+   "vendor": "hyperpay",
+   "outcome": "success",
+   "n": 375,
+   "sar": "32856.0800196839"
+  },
+  {
+   "vendor": "salam",
+   "outcome": "stuck_callback",
+   "n": 212,
+   "sar": "22370.25"
+  },
+  {
+   "vendor": "hyperpay",
+   "outcome": "never_attempted",
+   "n": 168,
+   "sar": "14423.7999914551"
+  },
+  {
+   "vendor": "hyperpay",
+   "outcome": "failed",
+   "n": 102,
+   "sar": "8134.95998138428"
+  }
+ ],
+ "byRail": [
+  {
+   "rail": "Credit card",
+   "outcome": "never_attempted",
+   "n": 144729
+  },
+  {
+   "rail": "mada",
+   "outcome": "success",
+   "n": 86686
+  },
+  {
+   "rail": "Credit card",
+   "outcome": "success",
+   "n": 86579
+  },
+  {
+   "rail": "Credit card",
+   "outcome": "failed",
+   "n": 41188
+  },
+  {
+   "rail": "STC Pay",
+   "outcome": "success",
+   "n": 26584
+  },
+  {
+   "rail": "N/A",
+   "outcome": "success",
+   "n": 9700
+  },
+  {
+   "rail": "N/A",
+   "outcome": "refunded",
+   "n": 628
+  },
+  {
+   "rail": "Credit card",
+   "outcome": "refunded",
+   "n": 596
+  },
+  {
+   "rail": "mada",
+   "outcome": "refunded",
+   "n": 297
+  },
+  {
+   "rail": "Credit card",
+   "outcome": "stuck_callback",
+   "n": 212
+  },
+  {
+   "rail": "STC Pay",
+   "outcome": "refunded",
+   "n": 123
+  },
+  {
+   "rail": "Apple Pay",
+   "outcome": "never_attempted",
+   "n": 83
+  },
+  {
+   "rail": "mada",
+   "outcome": "never_attempted",
+   "n": 53
+  },
+  {
+   "rail": "Other",
+   "outcome": "success",
+   "n": 45
+  },
+  {
+   "rail": "STC Pay",
+   "outcome": "failed",
+   "n": 45
+  },
+  {
+   "rail": "mada",
+   "outcome": "failed",
+   "n": 29
+  },
+  {
+   "rail": "Apple Pay",
+   "outcome": "failed",
+   "n": 18
+  },
+  {
+   "rail": "STC Pay",
+   "outcome": "never_attempted",
+   "n": 13
+  },
+  {
+   "rail": "Amex",
+   "outcome": "never_attempted",
+   "n": 1
+  }
+ ],
+ "byPlatform": [
+  {
+   "platform": "android",
+   "outcome": "success",
+   "n": 100845
+  },
+  {
+   "platform": "android",
+   "outcome": "never_attempted",
+   "n": 96621
+  },
+  {
+   "platform": "ios",
+   "outcome": "success",
+   "n": 82419
+  },
+  {
+   "platform": "ios",
+   "outcome": "never_attempted",
+   "n": 41665
+  },
+  {
+   "platform": "android",
+   "outcome": "failed",
+   "n": 26379
+  },
+  {
+   "platform": "web",
+   "outcome": "success",
+   "n": 16630
+  },
+  {
+   "platform": "ios",
+   "outcome": "failed",
+   "n": 11210
+  },
+  {
+   "platform": "other",
+   "outcome": "success",
+   "n": 9700
+  },
+  {
+   "platform": "web",
+   "outcome": "never_attempted",
+   "n": 6593
+  },
+  {
+   "platform": "web",
+   "outcome": "failed",
+   "n": 3691
+  },
+  {
+   "platform": "ios",
+   "outcome": "refunded",
+   "n": 676
+  },
+  {
+   "platform": "other",
+   "outcome": "refunded",
+   "n": 628
+  },
+  {
+   "platform": "android",
+   "outcome": "refunded",
+   "n": 275
+  },
+  {
+   "platform": "ios",
+   "outcome": "stuck_callback",
+   "n": 92
+  },
+  {
+   "platform": "android",
+   "outcome": "stuck_callback",
+   "n": 67
+  },
+  {
+   "platform": "web",
+   "outcome": "refunded",
+   "n": 65
+  },
+  {
+   "platform": "web",
+   "outcome": "stuck_callback",
+   "n": 53
+  }
+ ],
+ "elapsed_ms": 16860
+}

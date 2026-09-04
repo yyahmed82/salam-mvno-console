@@ -27,7 +27,24 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_delivery_requests_receiver_mobile
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_payments_customer_mobile
   ON payments (customer_mobile_number);
 
+-- Activation + eligibility lookups (added 17 Aug 2026 — the timeline now queries BOTH by
+-- onboarding_order_id AND by msisdn, because BSS activation rows often carry a NULL order id.
+-- The trgm GIN indexes serve ILIKE only; equality needs these B-trees.)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_activation_logs_msisdn
+  ON activation_logs (msisdn);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_activation_logs_order
+  ON activation_logs (onboarding_order_id) WHERE onboarding_order_id IS NOT NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_eligibility_logs_msisdn
+  ON eligibility_logs (msisdn);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_eligibility_logs_order
+  ON eligibility_logs (onboarding_order_id) WHERE onboarding_order_id IS NOT NULL;
+
+-- OTP journey steps (timeline queries otp_for = ANY(mobile variants); the trgm GIN serves ILIKE only)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_otps_otp_for
+  ON otps (otp_for);
+
 -- Verify afterwards:
 --   SELECT indexname FROM pg_indexes
---   WHERE tablename IN ('nafath_logs','change_plan_logs','delivery_requests','payments')
+--   WHERE tablename IN ('nafath_logs','change_plan_logs','delivery_requests','payments',
+--                       'activation_logs','eligibility_logs','otps')
 --     AND indexname LIKE 'idx_%';

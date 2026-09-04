@@ -119,3 +119,95 @@ Each issue = **the alert that fires → where to look → first response → who
 - **Correlation hints** on charts ("payment fail ↑ when UPG dropped").
 
 *Thresholds current as of 2026-07-13 (baseline+headroom tuning). Revisit after observing a week of live data.*
+
+## 7. Monitoring page (connectivity strip + Digital-API traffic)
+
+The **Monitoring** tab (after Dashboard, `#monitoring`) has two blocks:
+
+1. **Connectivity & health strip** — one card per console dependency, checked live in parallel:
+   Console API, Replica DB (+ prod-sync age), Console DB, Yusr LLM (Ollama), OSB MySQL (uil_logs),
+   API GW nodes (TCP probe), ServiceNow, and the API-traffic DB. Green = OK, amber = degraded,
+   red = down, **grey = not configured** (set the matching env var — see deploy152/env.template).
+
+2. **API health** — mirrors the ops Grafana "Digital-API traffic" dashboard by reading its source
+   directly (MySQL `grafana`.`transaction_logs` on 172.31.43.175, fed every 5 min from
+   api_logger.production.log). Gauges (total/success/failure), response-code distribution,
+   AVG/MAX duration trend, top-20 slow calls, and a per-API table with the errclass
+   business-vs-technical failure split and p95 latency. Enable with `API_TRAFFIC_URL`
+   (read-only MySQL account); the page shows a friendly "not configured" card until then.
+
+**Latency alerting:** the panel at the bottom sets a GLOBAL p95 threshold (ms) plus per-API
+overrides (saved in console_settings `api_latency_thresholds`, Manage-sync capability, audited).
+The `api_latency_p95` metric stores **p95 ÷ threshold**, so the rules stay simple ratios:
+`api_latency_breach` (P2 at 100%), `api_latency_storm` (P1 at 200%), `api_latency_per_api`
+(P2 — worst single API vs its own override). `api_technical_fail_rate` alerts
+(`api_technical_fail_spike` 10% / `api_technical_fail_storm` 25%, both class technical) fire on
+1500/5xx/408/timeout/SOAP-fault signatures at the API surface. All thresholds are PROVISIONAL —
+calibrate against a week of live data. When `API_TRAFFIC_URL` is absent these metrics emit no
+rows, so the rules sit silently on "no data in window".
+
+---
+
+## Login & session — what the platform actually records
+
+Read from the app source (`selfcare-backend`), not inferred from data:
+`app/controllers/api/v1/users/authentication_controller.rb`, `app/models/user.rb`,
+`app/models/concerns/trackable.rb`, `config/initializers/api_guard.rb`,
+`app/services/optiva/account.rb`.
+
+### The flow, step by step
+
+| # | Step | Endpoint | What it writes |
+|---|------|----------|----------------|
+| ① | Profile check | `users/sign_in` → `find_resource` | nothing. Calls Optiva `get_subscription_profile`. DEACTIVATED → **-512** (and the app row is deleted), PENDING → **-513**, lookup raises → **-112** |
+| ② | Password | same request | nothing. Wrong password / no account → **-300** |
+| ③ | Plan check | same request | nothing. No current plan → **-705** |
+| ④ | **Sign-in tracking** | same request | **the only DB write in the whole login**: `users.current_sign_in_at`, `last_sign_in_at`, `current_sign_in_ip`, `last_sign_in_ip`, `sign_in_count + 1`, `platform`, `app_version`, `os_version` |
+| ⑤ | OTP sent | same request, if `Current.new_registration && Setting.login_otp` | **nothing in the database.** `has_one_time_password(length: 4, interval: 5.minutes)` — the code is a **TOTP** derived from `users.otp_secret_key`. SMS goes out through `Notifier::SmsWorker` (Sidekiq, fire-and-forget). If the flag is off, a token is issued immediately and there is no OTP step at all |
+| ⑥ | OTP verify | `users/verify` | **nothing at all** — not even tracked fields. `authenticate_otp(code, drift: 180)`; wrong/expired → **-103**. On success the access token is issued. **This is the real "logged in" moment** |
+| ⑦ | Balance | `POST /bss/account/execute-account-blnc-query` | `uil_logs`. First authenticated call the app makes after login |
+
+### Three consequences that trip people up
+
+1. **`current_sign_in_at` means "password accepted", not "logged in."** It is written at ④,
+   before the OTP is even sent. A customer who abandons at the OTP screen still gets a fresh
+   timestamp and `sign_in_count + 1`.
+2. **The login OTP is never stored.** It is a TOTP. Finding no row in `otps` for a login proves
+   nothing — that table serves registration, change-plan and other stored-OTP flows.
+3. **"Logged in right now" is not a fact the platform holds.** `api_guard` is configured
+   `token_validity = 1.year`, there is no session table, and nothing is written on logout. Once
+   issued, a token is simply valid for a year. Only *last authentication* and *last activity*
+   are answerable.
+
+### Where to look in the console
+
+- **Monitoring ③ → Login funnel** — password → OTP verify → balance, from `api_traffic_events`,
+  with the failure codes per step and the **OTP abandonment** (accepted passwords minus OTP
+  submissions). This is the only measurement of that drop-off, because step ⑥ writes nothing.
+- **Monitoring ③ → Who was blocked?** — enter an MSISDN or national ID: last authentication per
+  line, device, sign-in IP, plus the rate-limiter verdict for those IPs.
+- API: `GET /api/login/funnel?hours=24` · `GET /api/login/state?q=<msisdn|nid>`.
+
+### Replica caveat (this cost us a wrong conclusion once)
+
+`users` is the only table a login writes to. Until 21 Aug 2026 it was **not** in
+`prodSync.DEFAULT_TABLES`, so its sign-in columns were frozen at the last full copy — which reads
+exactly like "Devise trackable is broken platform-wide". It was not: the app writes on every
+accepted password; the write simply never reached the replica. `users` is now synced, with
+`password_digest` and `otp_secret_key` excluded at the source query (`prodSync.SKIP_COLUMNS`) —
+the console needs to know *when* someone signed in, never *what* would let anyone sign in as them.
+Always read the "Data feed" line in the login card before drawing conclusions from a stale
+timestamp.
+
+### Login error codes (`app/controllers/concerns/error_codes.rb`)
+
+| Code | Constant | Step | Meaning |
+|------|----------|------|---------|
+| -300 | INVALID_LOGIN_CREDENTIALS | password | wrong password, or no app account for that number |
+| -103 | INVALID_OTP | otp | wrong or expired code (5-min TOTP window, ±180 s drift) |
+| -112 | INVALID_MOBILE_NUMBER | profile | malformed number **or** the Optiva lookup raised — a BSS fault surfaces as this code |
+| -512 | ACCOUNT_SUSPENDED | profile | Optiva state DEACTIVATED |
+| -513 | ACCOUNT_PENDING | profile | Optiva state PENDING — activation unfinished |
+| -705 | PLAN_NOT_REGISTERED | plan | password correct but no current plan |
+| -102 | INVALID_CUSTOMER_INFO | save | the user row failed to save after the Optiva sync |
+| -704 | IP_RETRIES_EXCEEDED | limiter | blocked by IpRetrial before any login logic ran |

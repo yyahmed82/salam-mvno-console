@@ -1,0 +1,193 @@
+{
+ "month": "2026-02",
+ "window": [
+  "2026-02-01",
+  "2026-03-01"
+ ],
+ "basis": "account membership (users/guests) — NOT session state",
+ "rows": [
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "failed",
+   "n": 6001,
+   "sar": "516277.239977701"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "never_attempted",
+   "n": 22152,
+   "sar": "1895020.98999777"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "stuck_callback",
+   "n": 35,
+   "sar": "3108.02"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "guest_record_only",
+   "outcome": "success",
+   "n": 30814,
+   "sar": "2514080.38001247"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "failed",
+   "n": 21371,
+   "sar": "1854638.25000357"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "never_attempted",
+   "n": 75990,
+   "sar": "6585513.84999046"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "stuck_callback",
+   "n": 82,
+   "sar": "7334.12000000001"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "has_user_account",
+   "outcome": "success",
+   "n": 108704,
+   "sar": "9045379.72000063"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_mobile_recorded",
+   "outcome": "never_attempted",
+   "n": 41,
+   "sar": "2840"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "failed",
+   "n": 824,
+   "sar": "69497.1699999999"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "never_attempted",
+   "n": 2921,
+   "sar": "241433.699999997"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "refunded",
+   "n": 2,
+   "sar": "120"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "stuck_callback",
+   "n": 5,
+   "sar": "513.38"
+  },
+  {
+   "journey": "3_recharge",
+   "account_status": "no_record",
+   "outcome": "success",
+   "n": 3113,
+   "sar": "230451.95999847"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "failed",
+   "n": 1766,
+   "sar": "208883.710000002"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "never_attempted",
+   "n": 3437,
+   "sar": "405196.929999994"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "stuck_callback",
+   "n": 11,
+   "sar": "1575.36"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "guest_record_only",
+   "outcome": "success",
+   "n": 7287,
+   "sar": "795421.540000036"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "failed",
+   "n": 5354,
+   "sar": "644023.900000002"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "never_attempted",
+   "n": 11834,
+   "sar": "1389993.49"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "stuck_callback",
+   "n": 23,
+   "sar": "3385.4"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "has_user_account",
+   "outcome": "success",
+   "n": 28334,
+   "sar": "3190677.14999991"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "failed",
+   "n": 417,
+   "sar": "57408.9899999998"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "never_attempted",
+   "n": 1008,
+   "sar": "124360.48"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "stuck_callback",
+   "n": 2,
+   "sar": "474"
+  },
+  {
+   "journey": "4_invoice",
+   "account_status": "no_record",
+   "outcome": "success",
+   "n": 1837,
+   "sar": "214612.300000002"
+  }
+ ],
+ "elapsed_ms": 6762
+}

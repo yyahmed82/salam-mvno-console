@@ -5,7 +5,7 @@
   "use strict";
   const $=s=>document.querySelector(s);
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const API=(location.protocol==="file:")?"http://localhost:4600":"";
+  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
   const api=(p,opts)=>window.fetch(API+p,Object.assign({headers:{"Content-Type":"application/json"}},opts)).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
   const SES=()=>(window.opsSession?window.opsSession():{});
   const isSuper=()=>{ const s=SES(); return !!(s.me&&s.me.realRole==="super_admin"); };
@@ -28,16 +28,44 @@
         const dis = r.locked || !edit;
         return `<td class="rm-cell"><input type="checkbox" data-role="${r.name}" data-grp="${c.grp}" data-key="${c.key}" ${on?"checked":""} ${dis?"disabled":""}></td>`;
       }).join("");
-      return `<tr class="${r.locked?'rm-locked':''}"><td class="rm-role"><b>${esc(r.label)}</b><small>${esc(r.team)}</small>${r.locked?'<span class="rm-lock">🔒 full</span>':''}</td>${cells}</tr>`;
+      const del = (r.custom&&edit)?` <button class="rm-del" data-del="${r.name}" title="Delete this custom role (only when no user holds it)">✕</button>`:"";
+      return `<tr class="${r.locked?'rm-locked':''}"><td class="rm-role"><b>${esc(r.label)}</b>${r.custom?'<span class="rm-lock" style="background:var(--tint-amber);color:var(--tint-amber-fg)">custom</span>':''}${del}<small>${esc(r.team)}</small>${r.locked?'<span class="rm-lock">🔒 full</span>':''}</td>${cells}</tr>`;
     }).join("");
     host.innerHTML=`<div class="rm-wrap"><table class="rm-tbl">${head}${rows}</table></div>`+
       (edit?`<div class="rm-actions"><button class="pill" id="rmSave" style="border-left-color:var(--green)">Save permissions</button>
+        <button class="pill" id="rmAdd" style="border-left-color:var(--blue,#2b7bb9)">＋ Add role</button>
         <button class="pill" id="rmReset" style="border-left-color:var(--muted)">Reset to defaults</button>
-        <span id="rmStatus" class="rl"></span></div>`
+        <span id="rmStatus" class="rl"></span></div>
+      <div id="rmAddForm" style="display:none;margin-top:10px;padding:12px 14px;background:var(--panel2,#f4f8f6);border-radius:10px;max-width:640px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+          <label style="font-size:11px;font-weight:700">NAME (slug)<br><input id="rmNewName" placeholder="e.g. finance_ops" style="width:150px"></label>
+          <label style="font-size:11px;font-weight:700">LABEL<br><input id="rmNewLabel" placeholder="Finance Ops" style="width:150px"></label>
+          <label style="font-size:11px;font-weight:700">TEAM<br><input id="rmNewTeam" placeholder="Finance" style="width:110px"></label>
+          <label style="font-size:11px;font-weight:700">START FROM<br><select id="rmNewClone" style="width:150px"></select></label>
+          <button class="pill" id="rmAddGo" style="border-left-color:var(--green)">Create</button>
+        </div>
+        <div class="rl" style="margin-top:6px">The new role starts as a copy of the chosen role (never with user management), then tune its checkboxes above and Save.</div>
+      </div>`
         :`<div class="rl" style="margin-top:8px">Read-only — only a Super Admin can change permissions.</div>`);
     if(edit){
       $("#rmSave").addEventListener("click",save);
-      $("#rmReset").addEventListener("click",()=>{ if(confirm("Reset ALL roles to their built-in defaults?")) save(true); });
+      $("#rmReset").addEventListener("click",()=>{ if(confirm("Reset ALL roles to their built-in defaults? Custom roles keep existing but lose their overrides.")) save(true); });
+      $("#rmAdd").addEventListener("click",()=>{ const f=$("#rmAddForm"); const show=f.style.display==="none";
+        f.style.display=show?"":"none";
+        if(show){ const sel=$("#rmNewClone");
+          sel.innerHTML=DATA.roles.filter(r=>!r.locked).map(r=>`<option value="${r.name}" ${r.name==="call_center"?"selected":""}>${esc(r.label)}</option>`).join(""); } });
+      const go=$("#rmAddGo"); if(go) go.addEventListener("click",async()=>{
+        const st=$("#rmStatus"); if(st) st.textContent="Creating…";
+        try{ DATA=await api("/api/roles",{method:"POST",body:JSON.stringify({
+            name:$("#rmNewName").value, label:$("#rmNewLabel").value, team:$("#rmNewTeam").value, clone_from:$("#rmNewClone").value })});
+          if(st) st.textContent="Role created ✓ — tune its row and Save"; render();
+        }catch(e){ if(st) st.textContent="Error: "+e.message; } });
+      document.querySelectorAll("#rolesMatrix .rm-del").forEach(b=>b.addEventListener("click",async()=>{
+        if(!confirm(`Delete custom role '${b.dataset.del}'? Only possible when no user holds it.`)) return;
+        const st=$("#rmStatus"); if(st) st.textContent="Deleting…";
+        try{ DATA=await api("/api/roles/"+encodeURIComponent(b.dataset.del),{method:"DELETE"});
+          if(st) st.textContent="Role deleted ✓"; render();
+        }catch(e){ if(st) st.textContent="Error: "+e.message; } }));
     }
   }
 

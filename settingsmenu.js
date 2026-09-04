@@ -28,8 +28,14 @@
     const hm=document.getElementById("helpMenu"); if(hm) hm.classList.remove("open");
     const tb=document.getElementById("tourBtn"); if(tb) tb.classList.remove("on");
     menu.classList.contains("open")?closeMenu():menu.classList.add("open"); });
-  menu.querySelectorAll("[data-seg]").forEach(b=>b.addEventListener("click", ()=>{ window.openSettings(b.dataset.seg); closeMenu(); }));
+  menu.querySelectorAll("[data-seg]").forEach(b=>b.addEventListener("click", ()=>{
+    // Notify + Yusr use standalone replacement views (their legacy in-settings segments are retired)
+    if(b.dataset.seg==="notify" && window.openNotifyClone){ window.openNotifyClone(); closeMenu(); return; }
+    if(b.dataset.seg==="assist" && window.openAssistClone){ window.openAssistClone(); closeMenu(); return; }
+    window.openSettings(b.dataset.seg); closeMenu(); }));
   const auditItem=menu.querySelector("[data-audit]"); if(auditItem) auditItem.addEventListener("click", ()=>{ if(window.openAudit) window.openAudit(); closeMenu(); });
+  const wb=menu.querySelector("[data-workbench]"); if(wb) wb.addEventListener("click", ()=>{ if(window.openWorkbench) window.openWorkbench(); closeMenu(); });
+  const sla=menu.querySelector("[data-sla]"); if(sla) sla.addEventListener("click", ()=>{ if(window.openSla) window.openSla(); closeMenu(); });
   document.addEventListener("click", e=>{ if(!e.target.closest(".setwrap")) closeMenu(); });
   document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeMenu(); });
   // leaving settings via a nav tab clears the gear highlight

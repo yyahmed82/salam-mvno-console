@@ -11,6 +11,8 @@
     --ink:#1a2b3c; --ink-soft:#334155; --muted:#64748b; --line:#e2e8f0; --line-soft:#eef2f6;
     --bg:#f6f8fa; --card:#ffffff; --card2:#f8fafc;
     --blue:#2563eb; --orange:#ea580c; --purple:#7c3aed; --red:#dc2626; --teal:#0d9488; --amber:#d97706;
+    /* error-class standard (errclass.js — matches the Grafana dealer dashboards): success/business/technical */
+    --ok:#10b981; --ok-bg:#e7f8ef; --err-biz:#3b82f6; --err-biz-bg:#e9f1fe; --err-tec:#ef4444; --err-tec-bg:#fdeceb;
     --shadow:0 8px 24px rgba(15,23,42,.09); --shadow-lg:0 20px 60px rgba(15,23,42,.30);
     /* tint surfaces (auto-derived so they adapt to theme) */
     --tint-blue:#eef2ff; --tint-blue-fg:#3730a3;
@@ -74,7 +76,15 @@
   .panel h2{font-size:17px;margin-bottom:2px}
   .panel .sub{color:var(--muted);font-size:12.5px}
   .pills{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px}
-  .pill{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:7px 13px 7px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--ink);border-left:3px solid var(--pc,#cbd5e1);display:inline-flex;align-items:center}
+  .pill{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:7px 13px 7px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--ink);border-left:3px solid var(--pc,#cbd5e1);display:inline-flex;align-items:center;transition:background .15s,box-shadow .15s}
+  .pill:hover{background:var(--card2,rgba(148,163,184,.14));box-shadow:0 1px 3px rgba(2,6,23,.08)}
+  /* .btn had NO styles at all — every "primary" action rendered as the browser-default gray
+     button (flagged 31 Aug). Now a proper primary: Salam green, clear affordance. */
+  .btn{border:1px solid #0b8a4e;background:linear-gradient(180deg,#12b76a,#0e9f5a);color:#fff;border-radius:10px;padding:7px 16px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 1px 2.5px rgba(2,6,23,.22);display:inline-flex;align-items:center;gap:5px;transition:filter .15s,transform .06s,box-shadow .15s}
+  .btn:hover{filter:brightness(1.07);box-shadow:0 2px 6px rgba(2,6,23,.25)}
+  .btn:active{transform:translateY(1px)}
+  .btn:disabled{opacity:.55;cursor:default;filter:grayscale(.3)}
+  .btn:focus-visible,.pill:focus-visible{outline:2px solid #0e9f5a;outline-offset:2px}
   .pill .tag{font-size:8.5px;color:var(--muted);font-weight:700;margin-left:6px;letter-spacing:.5px;background:var(--bg);padding:2px 5px;border-radius:5px}
   .pill.active{background:var(--pc,var(--green));border-color:var(--pc,var(--green));color:#fff}
   .pill.active .tag{color:#fff;background:rgba(255,255,255,.22)}
@@ -291,6 +301,17 @@
   .blocklink{background:none;border:none;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer;padding:0}
   .blocklink.unblock{color:#0e9f5a}
   [data-theme="dark"] .tagchip.on{color:#fff}
+  /* 360 quick-access pill — deliberately the ONLY red element in the header: the customer
+     workstation must be findable in one glance by call center */
+  .nav360{background:#dc2626;color:#fff;border:1.5px solid #dc2626;border-radius:999px;
+    padding:5px 14px 5px 11px;font-weight:800;letter-spacing:.6px;font-size:13px;
+    display:inline-flex;align-items:center;gap:6px;margin:0 8px 0 2px;cursor:pointer;
+    box-shadow:0 1px 5px rgba(220,38,38,.35);transition:background .15s, box-shadow .15s, transform .1s}
+  .nav360:hover{background:#b91c1c;transform:translateY(-1px)}
+  .nav360.active{background:#7f1d1d;border-color:#991b1b;box-shadow:0 0 0 3px rgba(220,38,38,.28)}
+  .nav360 .n360-ic{font-size:11px;line-height:1}
+  @media (max-width:1100px){.nav360 .n360-txt{display:none}.nav360{padding:5px 10px}}
+
   /* global OPERATE control bar */
   #opsBar{display:none;align-items:center;gap:10px;padding:8px 24px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:55px;z-index:40}
   #opsBar.show{display:flex}
@@ -431,7 +452,16 @@
   .home-greet h1{font-size:22px;font-weight:800;color:var(--ink);margin:0}
   .home-greet p{font-size:13px;color:var(--muted);margin:4px 0 0}
   .home-greet .wave{font-size:22px}
-  .home-bar{display:flex;align-items:center;gap:10px;margin:14px 0 12px;flex-wrap:wrap}
+  /* STICKY RANGE BAR — the dashboard is long and the range presets lived only at the top, so
+   * switching 3h→12h meant scroll-up, click, scroll-back-down. The bar now sticks right under
+   * the header (55px) while #view-home scrolls; .stuck (toggled in home.js) paints it opaque
+   * with a shadow so it reads as a floating toolbar instead of text colliding with content.
+   * z-index 30 keeps it under #opsBar (40) and the header (50). */
+  .home-bar{display:flex;align-items:center;gap:10px;margin:14px 0 12px;flex-wrap:wrap;
+    position:sticky;top:55px;z-index:30;padding:8px 12px;margin-left:-12px;margin-right:-12px;
+    border-radius:12px;transition:box-shadow .15s, background .15s}
+  .home-bar.stuck{background:var(--card);box-shadow:0 6px 18px rgba(15,23,42,.14);
+    border:1px solid var(--line)}
   .home-bar-lbl{font-size:11px;letter-spacing:1px;font-weight:800;color:var(--muted)}
   .home-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:8px}
   .home-kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
@@ -603,7 +633,8 @@
   .rm-col span{display:inline-block;writing-mode:vertical-rl;transform:rotate(180deg);font-size:10.5px;font-weight:700;letter-spacing:.3px;white-space:nowrap;color:var(--ink)}
   .rm-cell input{width:16px;height:16px;cursor:pointer;accent-color:var(--green)}
   .rm-locked{background:var(--tint-green)}
-  .rm-lock{display:inline-block;margin-left:6px;font-size:9.5px;font-weight:800;color:var(--tint-green-fg)}
+  .rm-lock{display:inline-block;margin-left:6px;font-size:9.5px;font-weight:800;color:var(--tint-green-fg);background:var(--tint-green);border-radius:6px;padding:1px 6px}
+  .rm-del{margin-left:6px;border:0;background:transparent;color:var(--red,#dc2626);cursor:pointer;font-size:12px;font-weight:800}
   .rm-actions{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
   html[dir=rtl] .rm-tbl th.rm-role,html[dir=rtl] .rm-tbl td.rm-role{text-align:right;left:auto;right:0}
   html[dir=rtl] .rm-lock{margin-left:0;margin-right:6px}
@@ -740,7 +771,37 @@
   .mtriage.t-p3{background:var(--card2);border-color:#64748b;color:var(--ink)}
   .mgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:6px}
   @media (max-width:1020px){.mgrid{grid-template-columns:1fr}}
-  .mcard{border:1px solid var(--line);border-radius:14px;padding:14px 16px 12px;background:var(--card)}
+  /* Troubleshoot action header — three labelled lookups on an equal-width grid.
+     auto-fit + minmax means they sit side by side when there is room and reflow to 2-up or 1-up
+     when there is not, so no control is ever orphaned on a line of its own. */
+  .errtools{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:10px 12px;margin-top:14px}
+  .etgroup{min-width:0}
+  .etgroup>label{display:block;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:0 0 5px 2px}
+  .etfield{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden;
+           transition:border-color .15s ease,box-shadow .15s ease}
+  .etfield:hover{border-color:var(--muted)}
+  .etfield:focus-within{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15)}
+  .etfield.etf-purple:focus-within{border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.15)}
+  .etfield.etf-green:focus-within{border-color:#0e9f5a;box-shadow:0 0 0 3px rgba(14,159,90,.15)}
+  .etfield input{flex:1 1 auto;min-width:0;border:0;outline:none;background:transparent;color:inherit;
+                 font:inherit;font-size:12.5px;padding:9px 11px}
+  .etfield input::placeholder{color:var(--muted);opacity:.85}
+  .etfield button{flex:0 0 auto;border:0;border-left:1px solid var(--line);background:transparent;color:var(--ink);
+                  font:inherit;font-size:11.5px;font-weight:800;letter-spacing:.02em;padding:0 14px;cursor:pointer;
+                  transition:background .15s ease,color .15s ease}
+  .etfield.etf-purple button{color:#7c3aed}
+  .etfield.etf-green button{color:#0e9f5a}
+  .etfield.etf-purple button:hover{background:rgba(124,58,237,.10)}
+  .etfield.etf-green button:hover{background:rgba(14,159,90,.10)}
+  .etfield button:active{transform:translateY(1px)}
+  .ethint{display:block;font-size:9.5px;color:var(--muted);margin:4px 0 0 3px;line-height:1.35}
+  .mcard{border:1px solid var(--line);border-radius:14px;padding:14px 16px 12px;background:var(--card);transition:opacity .25s ease}
+  /* card drawn from the rules, series still in flight — dimmed with a slow pulse so the grid
+     reads as "loading", never as "this metric has no data" */
+  .mcard.mpending{opacity:.5;animation:mcardPulse 1.5s ease-in-out infinite}
+  .mcard.mpending svg{opacity:.35}
+  @keyframes mcardPulse{0%,100%{opacity:.5}50%{opacity:.78}}
+  @media (prefers-reduced-motion:reduce){.mcard.mpending{animation:none}}
   .mcard.mclickable:hover{border-color:var(--blue);box-shadow:0 2px 12px rgba(0,0,0,.08)}
   .mcard.mstate-p1{background:var(--tint-red);border-color:#dc2626}
   .mcard.mstate-p2{background:var(--tint-amber);border-color:var(--amber)}
@@ -811,6 +872,7 @@
     html[dir=rtl] nav{right:auto;left:-300px;border-left:0;border-right:1px solid var(--line);transition:left .22s;margin-right:0}
     html[dir=rtl] nav.open{left:0;right:auto}
   }
+
 </style>
 </head>
 <body>
@@ -830,22 +892,28 @@
   <nav>
     <span class="navgroup" data-i18n="group.operate">OPERATE</span>
     <button class="navtab active" data-view="home"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4 20 11"/><path d="M6 10v9h12v-9"/></svg></span><span data-i18n-html="nav.home">Dashboard<small>Your home &amp; today's KPIs</small></span></button>
-    <button class="navtab" data-view="analytics"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 20v-8M12 20V5M19 20v-5"/></svg></span><span data-i18n-html="nav.analytics">Analytics<small>Charts &amp; dashboards</small></span></button>
-    <button class="navtab" data-view="growth"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"/><path d="M17 7h4v4"/></svg></span><span>Growth<small>Resellers &amp; campaigns</small></span></button>
+    <button class="navtab" data-view="monitoring"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg></span><span>Monitoring<small>Connectivity &amp; API health</small></span></button>
+    <button class="navtab" data-view="dms"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V8l7-5 7 5v13"/><path d="M8 21v-6h4v6"/><path d="M17 13h4v8h-4"/></svg></span><span>DMS<small>Dealers · activity &amp; health</small></span></button>
+<!-- Growth moved into Monitoring → Resellers (one place per topic). The section element below
+     is relocated into that sub-tab at runtime, so growth.js keeps rendering into #view-growth
+     unchanged and every existing #growth link still resolves (router.js redirects it). -->
     <button class="navtab" data-view="errors"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-6 4 12 2-6h5"/></svg></span><span data-i18n-html="nav.errors">Troubleshoot<small>Live failures &amp; timelines</small></span></button>
     <button class="navtab" data-view="alerts"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 18a2 2 0 0 0 4 0"/></svg></span><span data-i18n-html="nav.alerts">Alerts<small>Rules &amp; notifications</small></span></button>
-    <button class="navtab" data-view="slo"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/></svg></span><span data-i18n-html="nav.slo">SLA<small>Targets &amp; vendor health</small></span></button>
   </nav>
   <div class="setwrap">
     <button id="settingsBtn" title="Settings — user management &amp; sync engine" data-i18n-title="title.settings">⚙</button>
     <div class="helpmenu" id="settingsMenu">
       <div class="hm-group" data-i18n="group.settings">SETTINGS</div>
       <button class="hm-tour" data-seg="users"><span class="hm-ic">◱</span><span data-i18n-html="menu.users">User management<small>Create users · roles · access</small></span></button>
+      <button class="navtab hm-nav" data-view="analytics"><span class="num">▥</span><span data-i18n-html="nav.analytics">Analytics<small>Charts &amp; dashboards</small></span></button>
+      <button class="hm-tour" data-workbench="1" id="workbenchMenuItem" style="display:none"><span class="hm-ic">▥</span><span>L2 Workbench<small>Activity · replay · tests · docs</small></span></button>
       <button class="hm-tour" data-seg="sync"><span class="hm-ic">⟳</span><span data-i18n-html="menu.sync">Sync engine<small>Watcher mode &amp; change log</small></span></button>
       <button class="hm-tour" data-seg="notify"><span class="hm-ic">◧</span><span data-i18n-html="menu.notify">Notifications &amp; escalation<small>Slack / Teams &amp; on-call ladder</small></span></button>
       <button class="hm-tour" data-seg="assist"><span class="hm-ic">✦</span><span data-i18n-html="menu.assist">Yusr — AI assistant<small>يُسر · Ollama URL &amp; model</small></span></button>
       <button class="hm-tour" data-seg="nav"><span class="hm-ic">▤</span><span data-i18n-html="menu.nav">Navigation &amp; tabs<small>Reorder · show / hide tabs</small></span></button>
+      <button class="hm-tour" data-tickets="1" id="ticketsMenuItem" style="display:none"><span class="hm-ic">▦</span><span data-i18n-html="menu.tickets">Tickets &amp; feedback<small>User suggestions &amp; issues · status board</small></span></button>
       <button class="hm-tour" data-audit="1" id="auditMenuItem" style="display:none"><span class="hm-ic">◈</span><span data-i18n-html="menu.audit">Audit log<small>Who did what · sign-ins &amp; trace access</small></span></button>
+      <button class="hm-tour" data-sla="1" id="slaMenuItem" style="display:none"><span class="hm-ic">◎</span><span>SLA<small>Targets &amp; vendor health</small></span></button>
     </div>
   </div>
   <div class="helpwrap">
@@ -854,13 +922,27 @@
       <div class="hm-group" data-i18n="group.guide">GUIDE</div>
       <button class="hm-tour" id="hmTour"><span class="hm-ic">▶</span><span data-i18n-html="menu.tour">Guided tour<small>Replay the 60-second walkthrough</small></span></button>
       <div class="hm-group" data-i18n="group.explore">EXPLORE</div>
-      <button class="navtab hm-nav active" data-view="topology"><span class="num">◱</span><span data-i18n-html="nav.topology">Topology<small>The full system map</small></span></button>
+      <!-- old static topology page hidden 31 Aug 2026 (kept routable for old deep links);
+           the source-linked map is now THE Topology entry -->
+      <button class="navtab hm-nav active" data-view="topology" style="display:none"><span class="num">◱</span><span data-i18n-html="nav.topology">Topology<small>The full system map</small></span></button>
+      <button class="navtab hm-nav" data-view="topology2"><span class="num">◈</span><span>Topology <small>Source-linked map · API docs · code refs</small></span></button>
+      <button class="navtab hm-nav" data-view="apigw"><span class="num">⬡</span><span>API Gateway<small>Full HLD — DMS integration &amp; infra topology (IPs) · live</small></span></button>
+      <button class="navtab hm-nav" data-view="otodocs"><span class="num">⌘</span><span>OTO Courier API<small>Full imported reference · linked from journeys</small></span></button>
+      <button class="navtab hm-nav" data-view="tapdocs"><span class="num">₮</span><span>Tap / UPG API<small>Payment-gateway reference · response codes · webhooks</small></span></button>
+      <button class="navtab hm-nav" data-view="salamdocs"><span class="num">◫</span><span>Salam API docs<small>Selfcare/Apollo API reference (from the app repo)</small></span></button>
       <button class="navtab hm-nav" data-view="explorer"><span class="num">↦</span><span data-i18n-html="nav.journeys">Journeys<small>Every journey, step by step</small></span></button>
       <button class="navtab hm-nav" data-view="integrations"><span class="num">⋈</span><span data-i18n-html="nav.integrations">Integrations<small>Catalogue &amp; workers</small></span></button>
       <button class="navtab hm-nav" data-view="sub360"><span class="num">◉</span><span data-i18n-html="nav.sub360">Subscriber 360<small>Unified profile by MSISDN / NID</small></span></button>
       <button class="hm-tour" id="hmOncall"><span class="hm-ic">◔</span><span>On-call view<small>Mobile incident snapshot</small></span></button>
+      <div class="hm-group" data-i18n="group.feedback">FEEDBACK</div>
+      <button class="hm-tour" id="hmRaiseTicket"><span class="hm-ic">✎</span><span data-i18n-html="menu.raiseTicket">Raise a ticket<small>Suggest an improvement or report an issue</small></span></button>
     </div>
   </div>
+  <!-- 360 quick-access (3 Sep 2026): Subscriber 360 is the call-center workstation — one loud,
+       always-visible entry instead of digging through the ? menu. Active state synced on hash. -->
+  <button id="nav360" class="nav360" title="Subscriber 360 — one customer, everything: identity, live BSS, payments, journey">
+    <span class="n360-ic">◉</span><span class="n360-txt">360</span>
+  </button>
   <button id="liveBtn" class="livepill" title="Live updates"></button>
   <button id="langToggle" title="العربية">ع</button>
   <button id="themeToggle" title="Toggle light / dark" data-i18n-title="title.theme">☾</button>
@@ -930,8 +1012,67 @@
     <div id="homeDash" class="agrid"></div>
   </section>
 
+  <section id="view-monitoring" class="view">
+    <div class="panel">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><h2>Monitoring</h2><div class="sub">Every dependency, in the order a request travels them — gateway → access → payments → SMS → delivery → resellers · <span id="monNow">—</span></div></div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="pill" id="monRefresh" style="border-left-color:var(--blue)">↻ Refresh</button>
+        </div>
+      </div>
+      <!-- Status strip is PINNED: it is the "what is red right now" glance, so it must not sit
+           behind a tab. Everything below it is split into sub-tabs (monitoring.js TABS). -->
+      <div id="monHealth" style="margin-top:12px"></div>
+      <!-- PAGE-WIDE time/date filter — at the top where people look for it, not buried inside
+           the API-traffic panel (feedback 26 Aug: "where is the time-date filter?") -->
+      <div id="monRange" style="margin-top:10px"></div>
+      <nav id="monTabs" aria-label="Monitoring sections"></nav>
+      <div id="monPanes">
+        <div class="monpane" data-pane="gateway">
+          <div id="monApigw"></div>
+          <div id="monTraffic" style="margin-top:16px"></div>
+          <!-- Dealer /api/uil/ traffic — moved here from the DMS page 31 Aug 2026 per DMS L2
+               (Waleed): UIL is APIGW territory, not DMS. Rendered by dms.js renderDealerGw(). -->
+          <div id="monDealerGw" style="margin-top:16px"></div>
+          <!-- Phase 3 (3 Sep 2026): DMS services · UIL live-log rollups (uilSampler) -->
+          <div id="monUil" style="margin-top:16px"></div>
+          <!-- OSB · Oracle bus (archive-fed; day-1 lag once the SFTP feed is daily) -->
+          <div id="monOsbArch" style="margin-top:16px"></div>
+        </div>
+        <div class="monpane" data-pane="access"><div id="monAppErrors"></div></div>
+        <div class="monpane" data-pane="payments"><div id="monPayments"></div></div>
+        <div class="monpane" data-pane="sms"><div id="monSms"></div></div>
+        <div class="monpane" data-pane="delivery"><div id="monDelivery"></div></div>
+        <div class="monpane" data-pane="resellers"><div id="monResellers"></div></div>
+        <div class="monpane" data-pane="ai"><div id="monAi"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-workbench" class="view">
+    <div class="panel">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><h2>L2 Workbench</h2><div class="sub">L2 follow-up hub — per-user activity, incident replay, test / what-if runner, and the docs library that feeds Yusr · <span id="wbNow">—</span></div></div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="pill" id="wbRefresh" style="border-left-color:var(--blue)">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="segsel" id="wbTabs" style="margin-top:12px">
+        <button data-t="activity" class="on">① Activity</button>
+        <button data-t="replay">② Incident replay</button>
+        <button data-t="test">③ Test / what-if</button>
+        <button data-t="docs">④ Docs hub</button>
+      </div>
+      <div id="wbBody" style="margin-top:14px"></div>
+    </div>
+  </section>
+
   <section id="view-oncall" class="view"></section>
   <section id="view-growth" class="view"></section>
+  <section id="view-dms" class="view"></section>
+  <section id="view-otodocs" class="view"></section>
+  <section id="view-tapdocs" class="view"></section>
+  <section id="view-salamdocs" class="view"></section>
 
   <section id="view-topology" class="view">
     <div class="topo-stats">
@@ -950,6 +1091,8 @@
       </div>
     </div>
   </section>
+
+  <section id="view-topology2" class="view"></section>
 
   <section id="view-explorer" class="view">
     <div class="panel">
@@ -989,9 +1132,39 @@
     <div class="panel">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div><h2>Troubleshoot · Error Control Board</h2><div class="sub">Live failures grouped by category &amp; owner team · search by mobile / ICCID / order · <span id="errNow">—</span></div></div>
+        <!-- Export is a PAGE action (downloads the feed you are looking at), not a search — it
+             belongs beside the title, not in the middle of three lookup boxes. -->
         <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-          <input class="jsearch" id="errSearch" placeholder="Search mobile / order / ICCID / national ID…" style="flex:0 0 300px">
           <button class="pill" id="errExport" style="border-left-color:var(--teal)">⤓ Export</button>
+        </div>
+      </div>
+      <!-- THREE DIFFERENT LOOKUPS, not one toolbar.
+           Previously these were three identical-looking inputs and three buttons in a flex row:
+           you could not tell which button belonged to which box, and the row overflowed or left
+           Export orphaned on its own line. Each lookup is now one bordered control (input joined
+           to its own action) under a label saying what it finds, laid out on an equal-width grid
+           that wraps without orphans. -->
+      <div class="errtools">
+        <div class="etgroup">
+          <label for="errSearch">① Filter the board</label>
+          <div class="etfield"><input id="errSearch" placeholder="Mobile · order · ICCID · national ID"></div>
+          <span class="ethint">narrows the failures below as you type</span>
+        </div>
+        <div class="etgroup">
+          <label for="caseTrace">② Analyze one case</label>
+          <div class="etfield etf-purple">
+            <input id="caseTrace" placeholder="Trace or Device ID from the app error">
+            <button id="caseGo" title="Diagnose this trace end to end">Analyze</button>
+          </div>
+          <span class="ethint">the “Device ID” shown in the customer’s error dialog</span>
+        </div>
+        <div class="etgroup">
+          <label for="custMsisdn">③ Customer payments</label>
+          <div class="etfield etf-green">
+            <input id="custMsisdn" placeholder="MSISDN · customer ID · service no.">
+            <button id="custGo" title="All transactions for this number, end to end — app side + gateway (⇄ UPG) per payment">Open</button>
+          </div>
+          <span class="ethint">every transaction, app side ⇄ gateway</span>
         </div>
       </div>
       <div id="errRange" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:12px"></div>
@@ -1062,6 +1235,17 @@
   <section id="view-slo" class="view"></section>
 
   <section id="view-sub360" class="view"></section>
+  <section id="view-apigw" class="view">
+    <div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px">
+      <div><div style="font-size:18px;font-weight:800">API Gateway · DMS Integration Topology</div>
+        <div class="rl">Live infrastructure map — API GW cluster, app tiers, data tier &amp; 3rd-party integrations, with hosts/IPs. Source: DMS HLD.</div></div>
+      <a href="apigw.html" target="_blank" rel="noopener" class="pill" style="margin-left:auto;text-decoration:none">Open full ↗</a>
+    </div>
+    <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#05070d">
+      <iframe src="apigw.html" title="DMS API Gateway topology" loading="lazy" style="width:100%;height:calc(100vh - 220px);min-height:760px;border:0;display:block"></iframe>
+    </div>
+  </section>
+
 
   <section id="view-audit" class="view"></section>
 
@@ -1093,34 +1277,50 @@
 <div id="ruleModal" class="modal-overlay"><div class="modal-card" id="ruleModalCard" style="max-width:560px"></div></div>
 <div id="panelModal" class="modal-overlay"><div class="modal-card" id="panelModalCard" style="max-width:720px"></div></div>
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
-<script src="data.js"></script>
-<script src="data2.js"></script>
-<script src="samples.js"></script>
-<script src="samples2.js"></script>
-<script src="apidocs.js"></script>
-<script src="app.js"></script>
-<script src="uinav.js"></script>
-<script src="alertsview.js"></script>
-<script src="ops.js"></script>
-<script src="opsbar.js"></script>
-<script src="analytics.js"></script>
-<script src="home.js"></script>
-<script src="growth.js"></script>
-<script src="slo.js"></script>
-<script src="audit.js"></script>
-<script src="notifycfg.js"></script>
-<script src="sub360.js"></script>
-<script src="rolesmatrix.js"></script>
-<script src="i18n.js"></script>
-<script src="settingsmenu.js"></script>
-<script src="tour.js"></script>
-<script src="helpmenu.js"></script>
-<script src="assist.js"></script>
-<script src="assistcfg.js"></script>
-<script src="navcfg.js"></script>
-<script src="theme.js"></script>
-<script src="router.js"></script>
-<script src="live.js"></script>
-<script src="oncall.js"></script>
+<script src="ksatime.js?v=20260904a"></script>
+<script src="data.js?v=20260904a"></script>
+<script src="data2.js?v=20260904a"></script>
+<script src="samples.js?v=20260904a"></script>
+<script src="samples2.js?v=20260904a"></script>
+<script src="apidocs.js?v=20260904a"></script>
+<script src="xlsxout.js?v=20260904a"></script>
+<script src="persist.js?v=20260904a"></script>
+<script src="app.js?v=20260904a"></script>
+<script src="uinav.js?v=20260904a"></script>
+<script src="alertsview.js?v=20260904a"></script>
+<script src="ops.js?v=20260904a"></script>
+<script src="opsbar.js?v=20260904a"></script>
+<script src="analytics.js?v=20260904a"></script>
+<script src="topo2data.js?v=20260904a"></script>
+<script src="topology2.js?v=20260904a"></script>
+<script src="tapdocs.js?v=20260904a"></script>
+<script src="screensflow.js?v=20260904a"></script>
+<script src="home.js?v=20260904a"></script>
+<script src="monitoring.js?v=20260904a"></script>
+<script src="workbench.js?v=20260904a"></script>
+<script src="growth.js?v=20260904a"></script>
+<script src="dmsjourney.js?v=20260904a"></script>
+<script src="dms.js?v=20260904a"></script>
+<script src="otodocs.js?v=20260904a"></script>
+<script src="salamdocs.js?v=20260904a"></script>
+<script src="slo.js?v=20260904a"></script>
+<script src="audit.js?v=20260904a"></script>
+<script src="notifycfg.js?v=20260904a"></script>
+<script src="notifyclone.js?v=20260904a"></script>
+<script src="sub360.js?v=20260904b"></script>
+<script src="rolesmatrix.js?v=20260904a"></script>
+<script src="i18n.js?v=20260904a"></script>
+<script src="settingsmenu.js?v=20260904a"></script>
+<script src="tour.js?v=20260904a"></script>
+<script src="helpmenu.js?v=20260904a"></script>
+<script src="assist.js?v=20260904a"></script>
+<script src="assistcfg.js?v=20260904a"></script>
+<script src="assistclone.js?v=20260904a"></script>
+<script src="navcfg.js?v=20260904a"></script>
+<script src="tickets.js?v=20260904a"></script>
+<script src="theme.js?v=20260904a"></script>
+<script src="router.js?v=20260904a"></script>
+<script src="live.js?v=20260904a"></script>
+<script src="oncall.js?v=20260904a"></script>
 </body>
 </html>

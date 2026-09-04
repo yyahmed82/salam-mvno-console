@@ -102,6 +102,38 @@ async function relatedTickets(alert) {
   return { configured: true, journey, window: { from: sinceIso, lookbackHours: LOOKBACK_H }, count: scored.length, tickets: scored };
 }
 
+/* Tickets that mention a specific SUBSCRIBER (MSISDN / National ID) anywhere in the incident text —
+ * so Yusr / Subscriber-360 can show "this number has open CST ticket INC0014074 / EC0000449232".
+ * READ-ONLY. Matches the identifier (full + last-9 of the mobile, and the NID) in short_description
+ * OR description; most-recently-updated first; bounded. Returns { configured, tickets }. */
+async function ticketsForSubscriber({ mobile, nid } = {}) {
+  if (!snConfigured()) return { configured: false, tickets: [] };
+  const terms = new Set();
+  if (mobile) { const m = String(mobile).replace(/\D/g, ''); if (m.length >= 7) { terms.add(m); if (m.length > 9) terms.add(m.slice(-9)); } }
+  if (nid) { const d = String(nid).replace(/\D/g, ''); if (d.length >= 8) terms.add(d); }
+  if (!terms.size) return { configured: true, tickets: [] };
+  const base = process.env.SN_URL.replace(/\/+$/, '');
+  const fields = 'number,sys_id,short_description,priority,state,opened_at,sys_updated_on,assignment_group,category,caller_id';
+  const likeParts = [];
+  for (const t of terms) { likeParts.push(`short_descriptionLIKE${t}`); likeParts.push(`descriptionLIKE${t}`); }
+  const q = likeParts.join('^OR') + '^ORDERBYDESCsys_updated_on';
+  const url = `${base}/api/now/table/incident?sysparm_query=${encodeURIComponent(q)}&sysparm_display_value=true&sysparm_limit=10&sysparm_fields=${fields}`;
+  const ac = new AbortController(); const to = setTimeout(() => ac.abort(), 12000);
+  try {
+    const r = await fetch(url, { headers: { Accept: 'application/json', Authorization: authHeader() }, signal: ac.signal });
+    if (!r.ok) throw new Error(`ServiceNow HTTP ${r.status}`);
+    const j = await r.json();
+    const tickets = (j.result || []).map(x => ({
+      number: x.number, sys_id: x.sys_id, short_description: x.short_description,
+      priority: x.priority, state: x.state, opened_at: x.opened_at, updated: x.sys_updated_on,
+      group: x.assignment_group && x.assignment_group.display_value ? x.assignment_group.display_value : x.assignment_group,
+      link: deepLink(x.sys_id)
+    }));
+    return { configured: true, count: tickets.length, tickets };
+  } catch (e) { return { configured: true, error: e.message, tickets: [] }; }
+  finally { clearTimeout(to); }
+}
+
 // connectivity/auth check for the settings page
 async function ping() {
   if (!snConfigured()) return { configured: false };
@@ -109,4 +141,4 @@ async function ping() {
   catch (e) { return { configured: true, ok: false, error: e.message }; }
 }
 
-module.exports = { snConfigured, relatedTickets, ping, deriveJourney, deepLink, JOURNEY_KEYWORDS, SN_GROUP };
+module.exports = { snConfigured, relatedTickets, ticketsForSubscriber, ping, deriveJourney, deepLink, JOURNEY_KEYWORDS, SN_GROUP };

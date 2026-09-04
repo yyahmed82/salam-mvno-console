@@ -6,7 +6,7 @@
 (function(){
   "use strict";
   const $=s=>document.querySelector(s);
-  const API=(location.protocol==="file:")?"http://localhost:4600":"";
+  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
   const KEY="cons_live";
   let on = localStorage.getItem(KEY)!=="off";      // default ON
   let es=null, pollTimer=null, lastUpdate=0, connected=false, busy=false;
@@ -15,8 +15,8 @@
   function fmtAgo(){
     if(!lastUpdate) return "live";
     const s=Math.round((Date.now()-lastUpdate)/1000);
-    if(s<60) return "updated "+s+"s ago";
-    const m=Math.round(s/60); return "updated "+m+"m ago";
+    if(s<60) return s+"s ago";
+    const m=Math.round(s/60); return m+"m ago";
   }
   function paint(){
     if(!pill) return;
@@ -29,19 +29,26 @@
   }
   setInterval(paint, 15000);   // keep the "updated Xs ago" label ticking
 
-  // re-render whichever view is active, in place (debounced against bursts)
+  // re-render whichever view is active, in place (debounced + throttled against bursts so a
+  // fast/replay sync stream can't pile up re-renders and eventually choke a long-lived tab)
+  let lastRefresh=0;
   function refreshActive(){
     if(!on || document.hidden || busy) return;
-    busy=true;
+    const t=Date.now();
+    if(t-lastRefresh < 8000){ lastUpdate=t; paint(); return; }   // coalesce bursts → at most one re-render / 8s
+    lastRefresh=t; busy=true;
     try{ document.dispatchEvent(new CustomEvent("opsdatarefresh")); }catch(e){}
-    lastUpdate=Date.now(); paint();
+    lastUpdate=t; paint();
     setTimeout(()=>{ busy=false; }, 1500);
   }
 
   function connect(){
     if(!on || es || typeof EventSource==="undefined"){ if(on&&typeof EventSource==="undefined") startPoll(); return; }
     try{
-      es=new EventSource(API+"/api/stream");
+      // EventSource can't send X-Console-Token, so the stream authenticates via ?token=
+      // (accepted server-side for this one path only). Without it: endless 401s in the console.
+      const _tok=localStorage.getItem('cons_token')||"";
+      es=new EventSource(API+"/api/stream"+(_tok?("?token="+encodeURIComponent(_tok)):""));
       es.addEventListener("hello",()=>{ connected=true; paint(); });
       es.addEventListener("refreshed",()=>{ connected=true; refreshActive(); });
       es.addEventListener("ping",()=>{ connected=true; });

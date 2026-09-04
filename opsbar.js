@@ -2,7 +2,7 @@
  * Drives Analytics & Errors via window.OPS_RANGE + the 'opsrangechange' event. */
 (function(){
   "use strict";
-  const API=(location.protocol==="file:")?"http://localhost:4600":"";
+  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
   const OPERATE=new Set(["analytics","alerts","errors"]);
   const PRESETS=[["Last 1h",1],["Last 6h",6],["Last 24h",24],["Last 48h",48],["Last 3d",72],["Last 7d",168],["Last 30d",720]];
   window.OPS_RANGE = window.OPS_RANGE || { key:"Last 7d", hours:168, from:null, to:null };
@@ -18,7 +18,7 @@
 
   const $=s=>document.querySelector(s);
   const iso=d=>new Date(d).toISOString();
-  const fmt=d=>new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  const fmt=d=>KT.md(d).slice(0,6);
   const fmtT=d=>new Date(d).toLocaleString("en-US",{timeZone:"Asia/Riyadh",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 
   function resolvedTo(){ return window.OPS_RANGE.to || boardNow || new Date().toISOString(); }
@@ -53,6 +53,10 @@
   document.addEventListener("click",e=>{ if(!e.target.closest("#rangeBtn")) closeMenu(); });
 
   function emit(){ document.dispatchEvent(new CustomEvent("opsrangechange",{detail:window.OPS_RANGE})); }
+  // keep the RANGE chip in sync when OPS_RANGE is changed PROGRAMMATICALLY (e.g. a dashboard KPI
+  // drill-down into Troubleshoot sets the period via applyErrTarget). Without this the chip kept
+  // showing its stale default while the board below already used the new window.
+  document.addEventListener("opsrangechange", ()=>{ try{ renderLabel(); if($("#rangeMenu")&&$("#rangeMenu").classList.contains("open")) buildMenu(); }catch(e){} });
 
   // ---- LIVE pill ----
   async function pollSync(){
@@ -81,7 +85,7 @@
   const gear=document.getElementById("settingsBtn"); if(gear) gear.addEventListener("click",()=>setTimeout(sync,0));
 
   // ---- init ----
-  async function fetchNow(){ try{ boardNow=(await fetch(API+"/api/now",{headers:hdrs()}).then(r=>r.json())).now; }catch(e){ boardNow=new Date().toISOString(); } renderLabel(); }
+  async function fetchNow(){ try{ boardNow=(await fetch(API+"/api/now",{headers:hdrs()}).then(r=>r.json())).now; }catch(e){ boardNow=new Date().toISOString(); } window.__opsBoardNow=boardNow; renderLabel(); }
   fetchNow(); pollSync(); renderLabel(); sync();
   setInterval(pollSync, 8000);
   setInterval(fetchNow, 60000);

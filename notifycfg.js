@@ -4,7 +4,7 @@
   "use strict";
   const $=s=>document.querySelector(s);
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
-  const API=(location.protocol==="file:")?"http://localhost:4600":"";
+  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
   const api=(p,opts)=>window.fetch(API+p,Object.assign({headers:{"Content-Type":"application/json"}},opts)).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
   const SEVS=["P1","P2","P3"];
   const TIERS=[["l1_bss","L1 BSS"],["l2_bss","L2 BSS"],["l1_digital","L1 Digital"],["l2_digital","L2 Digital"],["l3_digital","L3 Digital"]];
@@ -37,18 +37,25 @@
         <label class="nc-row"><span>Console URL <small class="rl">(for deep links in messages)</small></span>
           <input type="text" id="ncBase" placeholder="https://console.salam.sa" value="${esc(c.baseUrl||"")}"></label>
       </div>
-      <h4 style="margin:18px 0 4px">WhatsApp group <span class="rl" style="font-weight:400">— Meta Cloud API (Official Business Account)</span></h4>
-      <div class="sub" style="margin-bottom:10px">Posts to one WhatsApp group via the Groups API. Group max is 8 members; business-initiated messages may require an approved template. ${c.whatsappConfigured?'<b style="color:#16a34a">Configured ✓</b>':''}</div>
+      <h4 style="margin:18px 0 4px">WhatsApp <span class="rl" style="font-weight:400">— Meta Cloud API · 1:1 fan-out to on-call numbers</span></h4>
+      <div class="sub" style="margin-bottom:10px">Sends each alert individually to every recipient (the Cloud API doesn't support groups). For proactive alerts, set an <b>approved template name</b>; without one, messages only deliver inside a 24-hour customer-initiated window. ${c.whatsappConfigured?'<b style="color:#16a34a">Configured ✓</b>':''}</div>
       <div class="nc-form">
         <label class="nc-row"><span>Phone-number ID</span>
           <input type="text" id="ncWaPhone" placeholder="1029384756…" value="${esc(c.waPhoneId||"")}"></label>
         <label class="nc-row"><span>Access token</span>
           <input type="password" id="ncWaToken" placeholder="${c.waTokenSet?'•••••• (stored — leave blank to keep)':'EAAG… permanent token'}"></label>
-        <label class="nc-row"><span>Group ID</span>
-          <input type="text" id="ncWaGroup" placeholder="1203630XXXXXXXXXX@g.us" value="${esc(c.waGroupId||"")}"></label>
+        <label class="nc-row"><span>Recipients</span>
+          <input type="text" id="ncWaTo" placeholder="9665xxxxxxxx, 9665yyyyyyyy (E.164, no +)" value="${esc(c.waTo||"")}"></label>
+        <label class="nc-row"><span>Template name</span>
+          <input type="text" id="ncWaTpl" placeholder="incident_alert (approved in Meta)" value="${esc(c.waTemplate||"")}"></label>
+        <label class="nc-row"><span>Template language</span>
+          <input type="text" id="ncWaTplLang" placeholder="en" value="${esc(c.waTemplateLang||"en")}"></label>
         <label class="nc-row"><span>API version</span>
           <input type="text" id="ncWaVer" placeholder="v21.0" value="${esc(c.waApiVersion||"v21.0")}"></label>
+        <label class="nc-row"><span>API base (relay)</span>
+          <input type="text" id="ncWaBase" placeholder="empty = graph.facebook.com directly · or http://172.31.38.115:8089" value="${esc(c.waBaseUrl||"")}"></label>
       </div>
+      <div class="sub" style="margin-top:-4px;margin-bottom:8px">152 has no direct internet — point <b>API base</b> at the nginx relay on the reverse proxy (115), which forwards only to graph.facebook.com and only from this host. Env <code>WA_BASE_URL</code> overrides this field.</div>
       <h4 style="margin:18px 0 4px">SMS <span class="rl" style="font-weight:400">— Unifonic (credentials in server env; secret)</span></h4>
       <div class="sub" style="margin-bottom:10px">Text the on-call number for high-severity incidents. Provider URL / AppSid / sender live in the server env (<code>SMS_*</code>) — here you control the toggle, recipients and severity. ${c.smsConfigured?'<b style="color:#16a34a">Provider configured ✓</b>':'<b style="color:#dc2626">Provider env not set</b>'}</div>
       <div class="nc-form">
@@ -125,7 +132,7 @@
       try{ CH=await api("/api/chatops",{method:"PUT",body:JSON.stringify({
         enabled:$("#ncEnabled").checked, slackUrl:$("#ncSlack").value.trim(), teamsUrl:$("#ncTeams").value.trim(),
         minSeverity:$("#ncMin").value, baseUrl:$("#ncBase").value.trim(),
-        waPhoneId:$("#ncWaPhone").value.trim(), waToken:$("#ncWaToken").value.trim(), waGroupId:$("#ncWaGroup").value.trim(), waApiVersion:$("#ncWaVer").value.trim(),
+        waPhoneId:$("#ncWaPhone").value.trim(), waToken:$("#ncWaToken").value.trim(), waTo:$("#ncWaTo").value.trim(), waTemplate:$("#ncWaTpl").value.trim(), waTemplateLang:$("#ncWaTplLang").value.trim()||"en", waApiVersion:$("#ncWaVer").value.trim(), waBaseUrl:$("#ncWaBase").value.trim(),
         smsEnabled:$("#ncSmsEnabled").checked, smsTo:$("#ncSmsTo").value.trim(), smsMinSeverity:$("#ncSmsMin").value})});
         st.textContent=`Saved · Slack ${CH.slackConfigured?"✓":"—"} · Teams ${CH.teamsConfigured?"✓":"—"} · WhatsApp ${CH.whatsappConfigured?"✓":"—"} · SMS ${CH.smsConfigured?(CH.smsEnabled?"on":"off"):"env✗"}`;
       }catch(e){ st.textContent="Error: "+e.message; }

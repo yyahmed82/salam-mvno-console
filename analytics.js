@@ -4,7 +4,7 @@
   const $ = s => document.querySelector(s);
   const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
   const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const API=(location.protocol==="file:")?"http://localhost:4600":"";
+  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
   const PAL=["#2563eb","#16a34a","#ea580c","#7c3aed","#0d9488","#dc2626","#d97706","#0891b2","#db2777"];
   const st={dashboards:[],dashKey:null,dashCat:"",spec:{filters:{},panels:[]},catalog:{},range:24,valCache:{},dirty:false};
   const tv=(n,fb)=>{const v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return v||fb;};
@@ -118,9 +118,16 @@
       xlabels+=`<span style="left:${p}%">${esc(lbl)}</span>`; });
     // interactive-hover payload: per-bucket value of every VISIBLE series (drives the guide line + tooltip)
     const attrEsc=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+    // Per-series index (timestamp → point) built ONCE. Replaces an O(points²·series) find() that
+    // constructed a Date on every comparison — the main-thread freeze ("Page Unresponsive") on long
+    // ranges (30d ≈ 720 buckets/series). Now the hover payload is O(points·series).
+    const sidx=all.map(s=>{ const m=new Map(); (s.points||[]).forEach(pp=>{ if(pp.v!=null) m.set(+new Date(pp.t), pp); }); return m; });
+    // Keep the embedded hover JSON small on long ranges (it's re-parsed on every mousemove): stride to ≤360 buckets.
+    const inDom=dataT.filter(t=>t>=t0&&t<=t1);
+    const hvStride=Math.max(1, Math.ceil(inDom.length/360));
     const hvB=[];
-    dataT.forEach(t=>{ if(t<t0||t>t1) return; const e=[];
-      all.forEach((s,idx)=>{ if(hidden.has(s.key)) return; const p=s.points.find(pp=>+new Date(pp.t)===t && pp.v!=null); if(!p) return;
+    inDom.forEach((t,ti)=>{ if(ti%hvStride!==0) return; const e=[];
+      all.forEach((s,idx)=>{ if(hidden.has(s.key)) return; const p=sidx[idx].get(t); if(!p) return;
         e.push({l:s.label||s.key, c:colorOf(idx), cy:+y(p.v).toFixed(1), v:res.rate?(p.v*100).toFixed(1)+'%':grp(p.v)}); });
       if(e.length) hvB.push({cx:+x(t).toFixed(1), tl:`${ksaMD(t)} ${ksaHM(t)} KSA`, e}); });
     const hvPayload=attrEsc(JSON.stringify({W,H,buckets:hvB}));
@@ -261,7 +268,7 @@
   async function openDeclined(reason, win){
     const ov=document.getElementById('txnDrawer'); if(!ov) return; ov.classList.add('open');
     const body=document.getElementById('txnDrawerBody');
-    const ksa=iso=>{ const d=new Date(new Date(iso).getTime()+3*3600e3); return d.toISOString().replace('T',' ').slice(5,16); };
+    const ksa=iso=>KT.md(iso);
     const label=(!reason||reason==='—')?'Unknown / not returned':reason;
     body.innerHTML=`<div class="drawer-hd"><b>Declined payments</b><span class="x" id="dwXd">×</span></div><div class="tl"><div class="sub" style="padding:16px 18px">Loading declined payments…</div></div>`;
     document.getElementById('dwXd').onclick=()=>ov.classList.remove('open');
@@ -561,12 +568,23 @@
     const spec = d.spec||{filters:{},panels:[]};
     const redraw=()=>window.anaRenderDashboard(container, dashKey, range);
     container.innerHTML="";
-    (spec.panels||[]).forEach((panel,idx)=>{
+    const panels=spec.panels||[];
+    const yield_=()=>new Promise(r=>requestAnimationFrame(()=>r()));
+    // 1) Lay out every panel shell WITH a loader immediately, so the grid appears at once (no blank freeze).
+    const bodies=panels.map((panel,idx)=>{
       const p=el("div","apanel"); p.style.gridColumn=`span ${Math.min(12,Math.max(2,panel.w||6))}`;
-      p.innerHTML=`<div class="ah"><b>${titleHTML(panel, range&&range.hours)}</b><div class="atools"><button data-edit="${idx}" title="Edit chart">✎</button><button data-del="${idx}" title="Remove">✕</button></div></div><div class="abody"></div>`;
+      p.innerHTML=`<div class="ah"><b>${titleHTML(panel, range&&range.hours)}</b><div class="atools"><button data-edit="${idx}" title="Edit chart">✎</button><button data-del="${idx}" title="Remove">✕</button></div></div><div class="abody">${window.salamLoader?window.salamLoader("Loading…"):'<div class="sub">Loading…</div>'}</div>`;
       container.appendChild(p);
-      renderPanel(panel, p.querySelector(".abody"), range, spec.filters||{});
+      return p.querySelector(".abody");
     });
+    // 2) Fetch panels in PARALLEL (fast), each filling its own shell as it resolves — panel-by-panel,
+    //    never a blank frozen page. A yield after each render lets the browser paint between commits
+    //    so the tab never trips the "unresponsive" watchdog.
+    await Promise.all(panels.map(async (panel,idx)=>{
+      try{ await renderPanel(panel, bodies[idx], range, spec.filters||{}); }
+      catch(e){ bodies[idx].innerHTML=`<div class="albanner">${esc(e.message||e)}</div>`; }
+      await yield_();
+    }));
     // per-chart edit/remove → saves to the user's personal copy of THIS board, then redraws
     container.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>openEditor(Number(b.dataset.edit),{spec,dashKey,onApplied:redraw})));
     container.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",async()=>{ spec.panels.splice(Number(b.dataset.del),1); await savePersonal(dashKey,spec); redraw(); }));

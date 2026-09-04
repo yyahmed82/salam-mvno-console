@@ -7,6 +7,18 @@ const P = (title, viz, dataset, metric, x = {}) => ({
 });
 
 const DASHBOARDS = [
+  // 0 — Dealers (DMS): first-class view of the commissioning feed. Built after INC0017182,
+  // where a routine dealer report cost a P4 ticket and 1.5 days of L2 time.
+  { key: 'dealers_dms', name: 'Dealers (DMS)', builtin: true, spec: { filters: {}, panels: [
+    P('Commissioned orders', 'stat', 'dealers', 'orders', { w: 3 }),
+    P('Active dealers', 'stat', 'dealers', 'dealers', { w: 3 }),
+    P('Commission paid (SAR)', 'stat', 'dealers', 'commission', { w: 3 }),
+    P('Deduction rows', 'stat', 'dealers', 'deductions', { w: 3 }),
+    P('Commissioned orders over time', 'line', 'dealers', 'orders', { bucket: 'hour', w: 8, markDrops: true }),
+    P('Top dealers by orders', 'donut', 'dealers', 'orders', { groupBy: 'dealer', w: 4 }),
+    P('Commission (SAR) over time', 'line', 'dealers', 'commission', { bucket: 'hour', w: 6 }),
+    P('Commission by dealer group', 'pie', 'dealers', 'commission', { groupBy: 'dealer_group', w: 6 })
+  ] } },
   // 1 — Overview
   { key: 'overview', name: 'Overview', builtin: true, spec: { filters: {}, panels: [
     P('Orders (24h)', 'stat', 'onboarding', 'count', { w: 3 }),

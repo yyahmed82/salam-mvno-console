@@ -1,0 +1,4 @@
+name,email,role,s1,s2,s3,s4,quiz_score,notes
+Example Attendee One,someone@salam.sa,L1 Support,Y,Y,Y,Y,88,
+Example Attendee Two,another@salam.sa,L2 Digital,Y,Y,Y,N,74,missed session 4
+Example Attendee Three,third@salam.sa,Salam Ops,Y,Y,Y,Y,62,

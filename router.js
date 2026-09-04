@@ -5,30 +5,121 @@
   "use strict";
   const ROUTES={
     "":{home:true}, dashboard:{home:true}, home:{home:true},
-    analytics:{view:"analytics"}, growth:{view:"growth"}, sla:{view:"slo"}, slo:{view:"slo"}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
-    alerts:{view:"alerts"}, topology:{view:"topology"}, journeys:{view:"explorer"}, integrations:{view:"integrations"},
+    monitoring:{view:"monitoring"},
+    workbench:{workbench:true},
+    // Growth was absorbed into Monitoring → Resellers. Old links keep working.
+    analytics:{view:"analytics"}, growth:{view:"monitoring",monTab:"resellers"}, resellers:{view:"monitoring",monTab:"resellers"},
+    dms:{view:"dms"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, sla:{sla:true}, slo:{sla:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
+    alerts:{view:"alerts"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"},journeys:{view:"explorer"}, integrations:{view:"integrations"},
     subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true},
-    settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"}, "settings-notify":{settings:"notify"},
-    audit:{audit:true}
+    settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
+    "settings-notify":{notifyClone:true}, "settings-notify-clone":{notifyClone:true},
+    "settings-assist":{assistClone:true}, "settings-assist-clone":{assistClone:true},
+    audit:{audit:true}, tickets:{tickets:true}
   };
-  const VIEW_HASH={analytics:"analytics",growth:"growth",slo:"sla",errors:"troubleshoot",alerts:"alerts",topology:"topology",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
+  const VIEW_HASH={monitoring:"monitoring",analytics:"analytics",dms:"dms",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
   let _cur=null;
 
+  /* ---- ROLE GUARD (2 Sep 2026) ---------------------------------------------------------------
+   * Hiding tabs is cosmetic; a deep link still routed anywhere. Every route now declares the
+   * view (page permission) it needs under the v2 model; a role without it gets a full
+   * ACCESS DENIED panel — same message the API would 403 with — instead of a half-broken page.
+   * The server gates the data regardless; this makes the denial clear instead of confusing. */
+  const VIEW_REQ={ monitoring:"monitoring", analytics:"analytics", dms:"dms", errors:"errors", alerts:"alerts",
+    home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", otodocs:"explore",
+    tapdocs:"explore", salamdocs:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
+  const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", errors:"Troubleshoot", alerts:"Alerts",
+    analytics:"Analytics / SLA", explore:"Explore", workbench:"L2 Workbench", settings:"Settings" };
+  function sess(){ try{ return (window.opsSession&&window.opsSession())||{}; }catch(e){ return {}; } }
+  function lacks(need){ const me=sess().me; if(!me||!Array.isArray(me.views)) return false;  // session not ready → don't block boot
+    return !me.views.includes(need); }
+  function neededFor(r){
+    if(r.view) return VIEW_REQ[r.view]||null;
+    if(r.home) return "dashboard";
+    if(r.workbench) return "workbench";
+    if(r.settings) return "settings";
+    if(r.oncall) return (lacks("errors")&&lacks("alerts")) ? "errors" : null;   // on-call = incident roles
+    return null;   // audit/sla/tickets/assist have their own root/cap gates below
+  }
+  function showDenied(need){
+    let d=document.getElementById("accessDenied");
+    if(!d){ d=document.createElement("div"); d.id="accessDenied";
+      d.style.cssText="position:fixed;inset:0;top:64px;z-index:900;background:var(--bg,#f6f8f7);display:flex;align-items:center;justify-content:center";
+      document.body.appendChild(d); }
+    const me=sess().me||{}; const role=String(me.role||"your role").replace(/_/g," ");
+    d.innerHTML=`<div style="text-align:center;max-width:440px;padding:32px;background:var(--panel,#fff);border:1px solid var(--line,#e5e9e7);border-radius:14px">
+      <div style="font-size:34px">🔒</div>
+      <h3 style="margin:10px 0 6px">Access denied</h3>
+      <p style="color:var(--muted,#64748b);font-size:13.5px;line-height:1.55">The <b>${PAGE_NAME[need]||need}</b> page is not included in the <b>${role}</b> role.
+      If you need it, ask a Super Admin to grant it in Settings → Roles &amp; permissions.</p>
+      <button class="pill" id="adHome" style="border-left-color:var(--green,#0e9f5a);margin-top:8px">Go to my home page</button></div>`;
+    d.style.display="flex";
+    const b=d.querySelector("#adHome"); if(b) b.onclick=()=>{ hideDenied();
+      const first=document.querySelector(".navtab:not(.hidden)"); if(first){ first.click(); setHash(VIEW_HASH[first.dataset.view]||first.dataset.view||"dashboard"); } };
+    window.audit && window.audit("ACCESS_DENIED", "#"+(_cur||"")+" needs "+need);
+  }
+  function hideDenied(){ const d=document.getElementById("accessDenied"); if(d) d.style.display="none"; }
+
   function clickNav(view){ const b=document.querySelector(`.navtab[data-view="${view}"]`); if(!b) return; if(!b.classList.contains("active")) b.click(); }
+  // per-segment renderers that normally run on menu-button click — the router must call them too,
+  // or a direct deep link (#settings-assist etc.) opens an empty segment
+  const SEG_RENDER={assist:"renderAssistCfg",notify:"renderNotifyCfg",nav:"renderNavCfg"};
   function apply(){
     const h=(location.hash||"").replace(/^#/,"");
     const [base,qs]=h.split("?");
-    const r=ROUTES[base]||ROUTES[""];
+    // navigating anywhere closes floating overlays — a doc link clicked from the timeline
+    // drawer must land on a CLEAN page, not render underneath the still-open drawer/modal
+    const dr=document.getElementById("txnDrawer"); if(dr) dr.classList.remove("open");
+    const pm=document.getElementById("panelModal"); if(pm) pm.classList.remove("open");
+    // generic settings deep links: any #settings-<segment> routes to that segment (the explicit
+    // table only knew users/sync/notify, so #settings-assist etc. silently fell back to home)
+    let r=ROUTES[base];
+    if(!r && /^settings-[a-z0-9_-]+$/.test(base)) r={settings:base.slice(9)};
+    if(!r) r=ROUTES[""];
     _cur=h;
+    // hidden root tier: #audit + #settings-assist deep links bounce home for excluded sessions
+    // (me.root===false only when ROOT_ADMINS is configured server-side; the API 403s regardless)
+    const notRoot=()=>{ const s=(window.opsSession&&window.opsSession())||{}; return s.me && s.me.root===false; };
+    if((r.audit||r.assistClone||r.sla) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash("dashboard"); return; }
+    // role guard — before any renderer runs (the API 403s regardless; this makes it CLEAR)
+    hideDenied();
+    const need=neededFor(r);
+    if(need && lacks(need)){ showDenied(need); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (denied)"); return; }
     if(r.home){ window.opsGoHome && window.opsGoHome(); }
+    else if(r.workbench){ window.openWorkbench && window.openWorkbench(); }
+    else if(r.sla){ window.openSla && window.openSla(); }
+    else if(r.notifyClone){ window.openNotifyClone && window.openNotifyClone(); }
+    else if(r.assistClone){ window.openAssistClone && window.openAssistClone(); }
     else if(r.oncall){ window.openOncall && window.openOncall(); }
-    else if(r.settings){ window.openSettings && window.openSettings(r.settings); if(r.settings==="notify" && window.renderNotifyCfg) window.renderNotifyCfg(); }
+    else if(r.settings){ window.openSettings && window.openSettings(r.settings);
+      const fn=SEG_RENDER[r.settings]; if(fn && window[fn]) window[fn](); }
     else if(r.audit){ if(window.openAudit) window.openAudit(); else window.opsGoHome && window.opsGoHome(); }
-    else if(r.view){ clickNav(r.view);
+    else if(r.tickets){ if(window.openTicketsBoard) window.openTicketsBoard(); else window.opsGoHome && window.opsGoHome(); }
+    else if(r.view){
+      /* Monitoring sub-tab deep link: #monitoring?tab=payments (and the #growth redirect).
+       * Set BEFORE the nav click so the tab opens directly on the requested section instead of
+       * drawing the default one first and visibly jumping. */
+      if(r.view==="monitoring"){
+        const m=/(?:^|&)tab=([a-z]+)/.exec(qs||"");
+        const tab=r.monTab||(m?m[1]:null);
+        if(tab && window.openMonitoring){ window.openMonitoring(tab); window.audit && window.audit("VIEW_PAGE","#monitoring?tab="+tab); return; }
+      }
+      clickNav(r.view);
+      /* clickNav is a no-op when the tab is already active, so any view that only renders on a
+       * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
+       * the openers are all idempotent. */
+      const OPENER={ alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", analytics:"openAnalytics" };
+      const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{ window[fn](); }catch(e){} }
       // Subscriber 360 deep link: #subscriber?key=966...
       if(r.view==="sub360" && window.openSub360){ const m=/key=([^&]+)/.exec(qs||""); window.openSub360(m?decodeURIComponent(m[1]):undefined); }
-      // Troubleshoot per-category deep link: #troubleshoot?cat=semati
-      if(r.view==="errors" && window.opsSelectErrorCategory){ const m=/cat=([^&]+)/.exec(qs||""); if(m) window.opsSelectErrorCategory(decodeURIComponent(m[1])); }
+      // Troubleshoot deep link: #troubleshoot?from=..&to=..&cls=technical&cat=semati
+      // carries the dashboard period + class + category so a shared/refreshed link matches the drill-down
+      if(r.view==="errors"){
+        const g=k=>{ const m=new RegExp("(?:^|&)"+k+"=([^&]+)").exec(qs||""); return m?decodeURIComponent(m[1]):undefined; };
+        const from=g("from"), to=g("to"), cls=g("cls"), cat=g("cat");
+        if(window.opsApplyErrTarget && (from||to||cls!==undefined||cat!==undefined)) window.opsApplyErrTarget({from,to,cls,cat});
+        else if(cat!==undefined && window.opsSelectErrorCategory) window.opsSelectErrorCategory(cat);
+      }
     }
     window.audit && window.audit("VIEW_PAGE", "#"+(base||"dashboard"));
   }
@@ -40,8 +131,22 @@
   const logo=document.querySelector(".logo"); if(logo) logo.addEventListener("click",()=>setHash("dashboard"));
   document.querySelectorAll("#settingsMenu [data-seg]").forEach(b=>b.addEventListener("click",()=>setHash("settings-"+b.dataset.seg)));
   const auditItem=document.querySelector("#settingsMenu [data-audit]"); if(auditItem) auditItem.addEventListener("click",()=>setHash("audit"));
+  const ticketsItem=document.querySelector("#settingsMenu [data-tickets]"); if(ticketsItem) ticketsItem.addEventListener("click",()=>setHash("tickets"));
+  const wbItem=document.querySelector("#settingsMenu [data-workbench]"); if(wbItem) wbItem.addEventListener("click",()=>setHash("workbench"));
+  const slaItem=document.querySelector("#settingsMenu [data-sla]"); if(slaItem) slaItem.addEventListener("click",()=>setHash("sla"));
 
   window.addEventListener("hashchange",apply);
-  // apply the initial URL once the session is ready (so a shared link opens the right page)
-  document.addEventListener("consoleReady",()=>{ if(location.hash) apply(); else { _cur="dashboard"; window.audit && window.audit("VIEW_PAGE","#dashboard"); } });
+  // Apply the initial URL once the session is ready (so a shared/deep link opens the right page).
+  // Deferred to the next tick so the boot's default-view (dashboard) activation can't override a
+  // direct load of #settings-*, #alerts, #troubleshoot?cat=…, etc.
+  let _booted=false;
+  function bootRoute(){
+    if(_booted) return; _booted=true;
+    if(location.hash) setTimeout(apply, 0);
+    else { _cur="dashboard"; window.audit && window.audit("VIEW_PAGE","#dashboard"); }
+  }
+  document.addEventListener("consoleReady", bootRoute);
+  // router.js loads near the end of the page; if the session became ready before this listener
+  // was registered, the consoleReady event was already missed — self-heal by routing now.
+  if(window.__consoleReady) bootRoute();
 })();

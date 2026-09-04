@@ -1,0 +1,1435 @@
+{
+ "month": "2025-09",
+ "window": [
+  "2025-09-01",
+  "2025-10-01"
+ ],
+ "funnel": {
+  "total": 495625,
+  "success": 233661,
+  "failed": 62502,
+  "stuck_callback": 317,
+  "never_attempted": 196501,
+  "success_sar": "23867584.6849129",
+  "failed_sar": "10966841.4699986"
+ },
+ "journey": [
+  {
+   "journey": "1_new_sim",
+   "identity": "order_anonymoususer",
+   "outcome": "failed",
+   "n": 637,
+   "sar": "126093.28"
+  },
+  {
+   "journey": "1_new_sim",
+   "identity": "order_anonymoususer",
+   "outcome": "never_attempted",
+   "n": 1530,
+   "sar": "357381.949999994"
+  },
+  {
+   "journey": "1_new_sim",
+   "identity": "order_anonymoususer",
+   "outcome": "refunded",
+   "n": 398,
+   "sar": "39278.0000000001"
+  },
+  {
+   "journey": "1_new_sim",
+   "identity": "order_anonymoususer",
+   "outcome": "stuck_callback",
+   "n": 7,
+   "sar": "1356.43"
+  },
+  {
+   "journey": "1_new_sim",
+   "identity": "order_anonymoususer",
+   "outcome": "success",
+   "n": 11449,
+   "sar": "1112304.35000018"
+  },
+  {
+   "journey": "2_mnp",
+   "identity": "order_anonymoususer",
+   "outcome": "failed",
+   "n": 310,
+   "sar": "41379.2299999999"
+  },
+  {
+   "journey": "2_mnp",
+   "identity": "order_anonymoususer",
+   "outcome": "never_attempted",
+   "n": 912,
+   "sar": "120162.2"
+  },
+  {
+   "journey": "2_mnp",
+   "identity": "order_anonymoususer",
+   "outcome": "refunded",
+   "n": 1034,
+   "sar": "97032.259999998"
+  },
+  {
+   "journey": "2_mnp",
+   "identity": "order_anonymoususer",
+   "outcome": "stuck_callback",
+   "n": 4,
+   "sar": "596.85"
+  },
+  {
+   "journey": "2_mnp",
+   "identity": "order_anonymoususer",
+   "outcome": "success",
+   "n": 6544,
+   "sar": "625276.200000016"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_other_number",
+   "outcome": "success",
+   "n": 1,
+   "sar": "50"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_self_number",
+   "outcome": "failed",
+   "n": 41271,
+   "sar": "3548647.88999855"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_self_number",
+   "outcome": "never_attempted",
+   "n": 132144,
+   "sar": "11526311.2000599"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_self_number",
+   "outcome": "stuck_callback",
+   "n": 203,
+   "sar": "16679.16"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_self_number",
+   "outcome": "success",
+   "n": 145996,
+   "sar": "12126114.0699122"
+  },
+  {
+   "journey": "3_recharge",
+   "identity": "proxy_unknown",
+   "outcome": "never_attempted",
+   "n": 16,
+   "sar": "1700"
+  },
+  {
+   "journey": "4_invoice",
+   "identity": "proxy_self_number",
+   "outcome": "failed",
+   "n": 13369,
+   "sar": "1500601.17"
+  },
+  {
+   "journey": "4_invoice",
+   "identity": "proxy_self_number",
+   "outcome": "never_attempted",
+   "n": 27775,
+   "sar": "3050866.20000031"
+  },
+  {
+   "journey": "4_invoice",
+   "identity": "proxy_self_number",
+   "outcome": "stuck_callback",
+   "n": 44,
+   "sar": "6186.8"
+  },
+  {
+   "journey": "4_invoice",
+   "identity": "proxy_self_number",
+   "outcome": "success",
+   "n": 48561,
+   "sar": "5295617.75499982"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_anonymoususer",
+   "outcome": "failed",
+   "n": 1414,
+   "sar": "4281429.85000006"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_anonymoususer",
+   "outcome": "never_attempted",
+   "n": 3723,
+   "sar": "11985205.1199998"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_anonymoususer",
+   "outcome": "refunded",
+   "n": 23,
+   "sar": "74135.74"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_anonymoususer",
+   "outcome": "stuck_callback",
+   "n": 11,
+   "sar": "19907.73"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_anonymoususer",
+   "outcome": "success",
+   "n": 2962,
+   "sar": "2716956.03000007"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_deleteduser",
+   "outcome": "failed",
+   "n": 114,
+   "sar": "16996.45"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_deleteduser",
+   "outcome": "never_attempted",
+   "n": 532,
+   "sar": "176087.89"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_deleteduser",
+   "outcome": "refunded",
+   "n": 39,
+   "sar": "5219.35"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_deleteduser",
+   "outcome": "stuck_callback",
+   "n": 2,
+   "sar": "171.36"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_deleteduser",
+   "outcome": "success",
+   "n": 196,
+   "sar": "17563.95"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_guest",
+   "outcome": "failed",
+   "n": 1358,
+   "sar": "330145.959999996"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_guest",
+   "outcome": "never_attempted",
+   "n": 8394,
+   "sar": "1607669.92000002"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_guest",
+   "outcome": "refunded",
+   "n": 216,
+   "sar": "29507.47"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_guest",
+   "outcome": "stuck_callback",
+   "n": 17,
+   "sar": "1767.51"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_guest",
+   "outcome": "success",
+   "n": 4281,
+   "sar": "440889.939999977"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_unknown",
+   "outcome": "failed",
+   "n": 2,
+   "sar": "15398"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_user",
+   "outcome": "failed",
+   "n": 4016,
+   "sar": "1104897.76000003"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_user",
+   "outcome": "never_attempted",
+   "n": 21382,
+   "sar": "6540621.21999879"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_user",
+   "outcome": "refunded",
+   "n": 934,
+   "sar": "104288.8"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_user",
+   "outcome": "stuck_callback",
+   "n": 29,
+   "sar": "2841.53"
+  },
+  {
+   "journey": "5_checkout",
+   "identity": "checkout_user",
+   "outcome": "success",
+   "n": 13620,
+   "sar": "1526778.93000002"
+  },
+  {
+   "journey": "other",
+   "identity": "proxy_self_number",
+   "outcome": "failed",
+   "n": 11,
+   "sar": "1251.88"
+  },
+  {
+   "journey": "other",
+   "identity": "proxy_self_number",
+   "outcome": "never_attempted",
+   "n": 93,
+   "sar": "13114.52"
+  },
+  {
+   "journey": "other",
+   "identity": "proxy_self_number",
+   "outcome": "success",
+   "n": 51,
+   "sar": "6033.46"
+  }
+ ],
+ "reasons": [
+  {
+   "journey": "3_recharge",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 38647,
+   "sar": "3330912.32000109"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 12258,
+   "sar": "1378832.61000002"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 6310,
+   "sar": "4223946.16000034"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "mada",
+   "n": 1942,
+   "sar": "160873.859999997"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "mada",
+   "n": 888,
+   "sar": "95944.6999999995"
+  },
+  {
+   "journey": "1_new_sim",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 598,
+   "sar": "121247.4"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "STC Pay",
+   "n": 394,
+   "sar": "32076.96"
+  },
+  {
+   "journey": "2_mnp",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 300,
+   "sar": "40341.3399999999"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "(no message)",
+   "vendor": "tamara",
+   "rail": "Credit card",
+   "n": 278,
+   "sar": "1436710.61"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "mada",
+   "n": 218,
+   "sar": "21125.82"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "STC Pay",
+   "n": 138,
+   "sar": "15163.17"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 53,
+   "sar": "4501.88999969482"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "STC Pay",
+   "n": 52,
+   "sar": "4799.54"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "The authentication is cancelled or abandoned",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 41,
+   "sar": "3489.19000030517"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Previously pending transaction timed out",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 32,
+   "sar": "2564.08999847412"
+  },
+  {
+   "journey": "1_new_sim",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "mada",
+   "n": 27,
+   "sar": "2785.63"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 24,
+   "sar": "2220.53999908447"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 20,
+   "sar": "3337.24"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "risk management transaction timeout",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 19,
+   "sar": "1937.62000152588"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 13,
+   "sar": "1287.45"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "The authentication is cancelled or abandoned",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 12,
+   "sar": "1325.02"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 12,
+   "sar": "1525.06"
+  },
+  {
+   "journey": "1_new_sim",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "STC Pay",
+   "n": 12,
+   "sar": "2060.25"
+  },
+  {
+   "journey": "other",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 10,
+   "sar": "1153.35"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "The authentication is cancelled or abandoned",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 9,
+   "sar": "810.89"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 8,
+   "sar": "662.909996032715"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Previously pending transaction timed out",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 8,
+   "sar": "729"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 8,
+   "sar": "597.32"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (format error)",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 8,
+   "sar": "381.360000305176"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "The authentication is cancelled or abandoned",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 8,
+   "sar": "968.82"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 8,
+   "sar": "20004.52"
+  },
+  {
+   "journey": "2_mnp",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "mada",
+   "n": 7,
+   "sar": "724.51"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Cancelled by user",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 7,
+   "sar": "594.36"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 7,
+   "sar": "10213.08"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "risk management transaction timeout",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 6,
+   "sar": "643.1"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 6,
+   "sar": "705.53"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 6,
+   "sar": "449.060000305176"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "invalid Request Message. The request contains structural errors",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 5,
+   "sar": "392.72"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Not found",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 5,
+   "sar": "442.72"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 5,
+   "sar": "29211.43"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "risk management transaction timeout",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 5,
+   "sar": "594.36"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (invalid card)",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 4,
+   "sar": "342.72"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (format error)",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 4,
+   "sar": "140"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "The authentication is cancelled or abandoned",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 3,
+   "sar": "318.78"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "Not found",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 3,
+   "sar": "244.25"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Not authenticated because the issuer is rejecting authentication",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 3,
+   "sar": "271.360000610352"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "risk management transaction timeout",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 3,
+   "sar": "247.44"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Previously pending transaction timed out",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 3,
+   "sar": "259.85"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "Internal server error",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 3,
+   "sar": "562.71"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 2,
+   "sar": "229.22"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 2,
+   "sar": "213.85"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (format error)",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 2,
+   "sar": "40"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (invalid card)",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 2,
+   "sar": "285.68"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "Cancelled by user",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 2,
+   "sar": "158.75"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "Previously pending transaction timed out",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 2,
+   "sar": "206"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 2,
+   "sar": "257.03"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 2,
+   "sar": "170.78"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Cancelled by user",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 2,
+   "sar": "200"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "bin blacklisted",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 2,
+   "sar": "185.68"
+  },
+  {
+   "journey": "2_mnp",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "STC Pay",
+   "n": 2,
+   "sar": "199.53"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "Previously pending transaction timed out",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 2,
+   "sar": "199.53"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "bin blacklisted",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "85.68"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Cancelled by user",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "100"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "The authentication is cancelled or abandoned",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "87.26"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined (invalid card)",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 1,
+   "sar": "85.6800003051758"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "Other",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "transaction declined by authorization system",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "126.5"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "invalid cc number/brand combination",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "29.9"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "transaction declined (format error)",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "transaction declined (format error)",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "85.68"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "transaction declined (invalid card)",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "71.35"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "transaction declined (invalid card)",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "Cancelled by user",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "126.5"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "Cancelled by user",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "connector/acquirer currently down",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 1,
+   "sar": "126.5"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "invalid Request Message. The request contains structural errors",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "transaction declined (format error)",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 1,
+   "sar": "85.68"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Authentication failed due to suspected fraud",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "85.6800003051758"
+  },
+  {
+   "journey": "2_mnp",
+   "reason": "The authentication is cancelled or abandoned",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "invalid Request Message. The request contains structural errors",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "100"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "Previously pending transaction timed out",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "Previously pending transaction timed out",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "invalid Request Message. The request contains structural errors",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 1,
+   "sar": "85.6800003051758"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "risk management transaction timeout",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "risk management transaction timeout",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 1,
+   "sar": "85.68"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "risk management transaction timeout",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "The authentication is cancelled or abandoned",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "85.68"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "transaction declined for unknown reason",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "85.68"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "transaction declined (format error)",
+   "vendor": "hyperpay",
+   "rail": "STC Pay",
+   "n": 1,
+   "sar": "85.68"
+  },
+  {
+   "journey": "5_checkout",
+   "reason": "transaction declined (amount exceeds credit)",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Declined, Card Issuer",
+   "vendor": "tap",
+   "rail": "Apple Pay",
+   "n": 1,
+   "sar": "100"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "Internal server error",
+   "vendor": "salam",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "85.68"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "connector/acquirer currently down",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 1,
+   "sar": "105.8"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "connector/acquirer currently down",
+   "vendor": "hyperpay",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "126.5"
+  },
+  {
+   "journey": "3_recharge",
+   "reason": "connector/acquirer currently down",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 1,
+   "sar": "85.68"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "Declined, Authentication Failed",
+   "vendor": "tap",
+   "rail": "Credit card",
+   "n": 1,
+   "sar": "141.35"
+  },
+  {
+   "journey": "other",
+   "reason": "(no message)",
+   "vendor": "salam",
+   "rail": "mada",
+   "n": 1,
+   "sar": "98.53"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "card expired",
+   "vendor": "hyperpay",
+   "rail": "Apple Pay",
+   "n": 1,
+   "sar": "113.85"
+  },
+  {
+   "journey": "4_invoice",
+   "reason": "Cancelled by user",
+   "vendor": "hyperpay",
+   "rail": "mada",
+   "n": 1,
+   "sar": "86.25"
+  }
+ ],
+ "byVendor": [
+  {
+   "vendor": "salam",
+   "outcome": "success",
+   "n": 215929,
+   "sar": "21935957.8249883"
+  },
+  {
+   "vendor": "salam",
+   "outcome": "never_attempted",
+   "n": 193332,
+   "sar": "23148537.2899879"
+  },
+  {
+   "vendor": "salam",
+   "outcome": "failed",
+   "n": 61817,
+   "sar": "9433734.89000208"
+  },
+  {
+   "vendor": "apollo",
+   "outcome": "success",
+   "n": 16071,
+   "sar": "1510202.16999991"
+  },
+  {
+   "vendor": "tamara",
+   "outcome": "never_attempted",
+   "n": 2307,
+   "sar": "12105969.91"
+  },
+  {
+   "vendor": "hyperpay",
+   "outcome": "success",
+   "n": 1573,
+   "sar": "142156.799926147"
+  },
+  {
+   "vendor": "apollo",
+   "outcome": "refunded",
+   "n": 1335,
+   "sar": "124520.62"
+  },
+  {
+   "vendor": "salam",
+   "outcome": "refunded",
+   "n": 1300,
+   "sar": "224044.55"
+  },
+  {
+   "vendor": "hyperpay",
+   "outcome": "never_attempted",
+   "n": 862,
+   "sar": "124613.020072632"
+  },
+  {
+   "vendor": "hyperpay",
+   "outcome": "failed",
+   "n": 405,
+   "sar": "96154.6199972534"
+  },
+  {
+   "vendor": "salam",
+   "outcome": "stuck_callback",
+   "n": 314,
+   "sar": "49259.67"
+  },
+  {
+   "vendor": "tamara",
+   "outcome": "failed",
+   "n": 278,
+   "sar": "1436710.61"
+  },
+  {
+   "vendor": "tamara",
+   "outcome": "success",
+   "n": 52,
+   "sar": "276533.97"
+  },
+  {
+   "vendor": "tap",
+   "outcome": "success",
+   "n": 36,
+   "sar": "2733.92"
+  },
+  {
+   "vendor": "hyperpay",
+   "outcome": "refunded",
+   "n": 9,
+   "sar": "896.45"
+  },
+  {
+   "vendor": "tap",
+   "outcome": "failed",
+   "n": 2,
+   "sar": "241.35"
+  },
+  {
+   "vendor": "tap",
+   "outcome": "stuck_callback",
+   "n": 2,
+   "sar": "227.7"
+  },
+  {
+   "vendor": "hyperpay",
+   "outcome": "stuck_callback",
+   "n": 1,
+   "sar": "20"
+  }
+ ],
+ "byRail": [
+  {
+   "rail": "Credit card",
+   "outcome": "never_attempted",
+   "n": 195816
+  },
+  {
+   "rail": "mada",
+   "outcome": "success",
+   "n": 98159
+  },
+  {
+   "rail": "Credit card",
+   "outcome": "success",
+   "n": 89941
+  },
+  {
+   "rail": "Credit card",
+   "outcome": "failed",
+   "n": 58491
+  },
+  {
+   "rail": "STC Pay",
+   "outcome": "success",
+   "n": 29387
+  },
+  {
+   "rail": "N/A",
+   "outcome": "success",
+   "n": 16123
+  },
+  {
+   "rail": "mada",
+   "outcome": "failed",
+   "n": 3249
+  },
+  {
+   "rail": "N/A",
+   "outcome": "refunded",
+   "n": 1335
+  },
+  {
+   "rail": "STC Pay",
+   "outcome": "failed",
+   "n": 659
+  },
+  {
+   "rail": "mada",
+   "outcome": "refunded",
+   "n": 647
+  },
+  {
+   "rail": "Credit card",
+   "outcome": "refunded",
+   "n": 445
+  },
+  {
+   "rail": "Apple Pay",
+   "outcome": "never_attempted",
+   "n": 340
+  },
+  {
+   "rail": "Credit card",
+   "outcome": "stuck_callback",
+   "n": 314
+  },
+  {
+   "rail": "mada",
+   "outcome": "never_attempted",
+   "n": 241
+  },
+  {
+   "rail": "STC Pay",
+   "outcome": "refunded",
+   "n": 217
+  },
+  {
+   "rail": "Apple Pay",
+   "outcome": "failed",
+   "n": 102
+  },
+  {
+   "rail": "STC Pay",
+   "outcome": "never_attempted",
+   "n": 98
+  },
+  {
+   "rail": "Other",
+   "outcome": "success",
+   "n": 46
+  },
+  {
+   "rail": "Amex",
+   "outcome": "never_attempted",
+   "n": 6
+  },
+  {
+   "rail": "Apple Pay",
+   "outcome": "success",
+   "n": 5
+  },
+  {
+   "rail": "mada",
+   "outcome": "stuck_callback",
+   "n": 2
+  },
+  {
+   "rail": "Apple Pay",
+   "outcome": "stuck_callback",
+   "n": 1
+  },
+  {
+   "rail": "Other",
+   "outcome": "failed",
+   "n": 1
+  }
+ ],
+ "byPlatform": [
+  {
+   "platform": "android",
+   "outcome": "never_attempted",
+   "n": 132359
+  },
+  {
+   "platform": "android",
+   "outcome": "success",
+   "n": 111615
+  },
+  {
+   "platform": "ios",
+   "outcome": "success",
+   "n": 86379
+  },
+  {
+   "platform": "ios",
+   "outcome": "never_attempted",
+   "n": 51126
+  },
+  {
+   "platform": "android",
+   "outcome": "failed",
+   "n": 41758
+  },
+  {
+   "platform": "web",
+   "outcome": "success",
+   "n": 19596
+  },
+  {
+   "platform": "other",
+   "outcome": "success",
+   "n": 16071
+  },
+  {
+   "platform": "ios",
+   "outcome": "failed",
+   "n": 13836
+  },
+  {
+   "platform": "web",
+   "outcome": "never_attempted",
+   "n": 13016
+  },
+  {
+   "platform": "web",
+   "outcome": "failed",
+   "n": 6908
+  },
+  {
+   "platform": "other",
+   "outcome": "refunded",
+   "n": 1335
+  },
+  {
+   "platform": "android",
+   "outcome": "refunded",
+   "n": 785
+  },
+  {
+   "platform": "ios",
+   "outcome": "refunded",
+   "n": 463
+  },
+  {
+   "platform": "android",
+   "outcome": "stuck_callback",
+   "n": 184
+  },
+  {
+   "platform": "ios",
+   "outcome": "stuck_callback",
+   "n": 73
+  },
+  {
+   "platform": "web",
+   "outcome": "refunded",
+   "n": 61
+  },
+  {
+   "platform": "web",
+   "outcome": "stuck_callback",
+   "n": 60
+  }
+ ],
+ "elapsed_ms": 24217
+}

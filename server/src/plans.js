@@ -8,7 +8,10 @@ let _cache = null, _ts = 0;
 const TTL = 5 * 60 * 1000;
 
 function nameOf(title) {
-  const t = title || {};
+  let t = title || {};
+  // jsonb normally arrives parsed, but if a driver/config ever returns it as a JSON string, parse it
+  // so plan names still resolve (otherwise 'string'.en === undefined → every label degrades to a raw id)
+  if (typeof t === 'string') { try { t = JSON.parse(t); } catch (_) { t = {}; } }
   const en = t.en || t.EN || t.english || '';
   const ar = t.ar || t.AR || t.arabic || '';
   return { en, ar };

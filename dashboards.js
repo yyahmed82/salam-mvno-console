@@ -4,7 +4,7 @@
   const $ = s => document.querySelector(s);
   const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
   const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const API=(location.protocol==="file:")?"http://localhost:4600":"";
+  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
   const st={scope:"dealers",window:168,data:null};
   const pct=v=> v==null?"—":(v*100).toFixed(1)+"%";
   function api(p){ return (window.opsFetch||fetch)(API+p).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}); }
@@ -47,7 +47,7 @@
     let d;
     try{ d=await api(`/api/dashboard/${st.scope}?window=${st.window}`); st.data=d; }
     catch(e){ body.innerHTML=`<div class="albanner">Dashboards need the console API. ${esc(e.message)}</div>`; return; }
-    $("#dashNow").textContent = d.now? ("as of "+new Date(new Date(d.now).getTime()+3*3600e3).toISOString().replace('T',' ').slice(0,16)+" KSA") : "real-time";
+    $("#dashNow").textContent = d.now? ("as of "+KT.dt(d.now)+" KSA") : "real-time";
     if(st.scope==="dealers"){
       const k=d.kpis||{};
       body.innerHTML =

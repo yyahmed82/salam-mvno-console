@@ -4,7 +4,7 @@
  * it in Settings → Navigation; everyone else just reads the shared layout. */
 (function(){
   "use strict";
-  const API=(location.protocol==="file:")?"http://localhost:4600":"";
+  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
   window.UI_NAV = window.UI_NAV || {};
   let p=null;
   window.loadUiNav=function(force){

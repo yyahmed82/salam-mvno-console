@@ -81,6 +81,7 @@ ALTER TABLE alerts ADD COLUMN IF NOT EXISTS opened_wall   timestamptz NOT NULL D
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS esc_level     integer NOT NULL DEFAULT 0;   -- tiers already paged
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS esc_last_at   timestamptz;
 ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS runbook   text;   -- what to do when this fires (text or URL)
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS alert_class text; -- technical | business (errclass.js split; 'mixed' retired 2026-08-11)
 
 -- incident discussion thread
 CREATE TABLE IF NOT EXISTS incident_comments (
@@ -255,3 +256,307 @@ CREATE TABLE IF NOT EXISTS error_codes (
   area       text,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Server-side login sessions (token auth). The token itself is never stored — only its SHA-256.
+CREATE TABLE IF NOT EXISTS console_sessions (
+  token_hash text PRIMARY KEY,
+  email      text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_seen  timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_email ON console_sessions (email);
+
+-- Yusr feedback loop: one row per 👍/👎 on a reply. Question/reply text is NOT stored here
+-- (PII governance — same rule as the audit trail); only the verdict + dimensions for the KPIs.
+CREATE TABLE IF NOT EXISTS assist_feedback (
+  id       bigserial PRIMARY KEY,
+  actor    text,
+  intent   text,
+  degraded boolean,
+  helpful  boolean NOT NULL,
+  at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_assist_feedback_at ON assist_feedback (at DESC);
+
+-- Yusr case memory: PII-SCRUBBED problem→resolution pairs saved on 👍 (or manually). Retrieved
+-- like runbook chunks for future similar questions — this is how Yusr "learns from use" without
+-- touching model weights. problem_hash dedupes repeat saves; helpful_votes ranks retrieval.
+CREATE TABLE IF NOT EXISTS assist_cases (
+  id            bigserial PRIMARY KEY,
+  problem_hash  text UNIQUE NOT NULL,
+  title         text NOT NULL,
+  problem       text NOT NULL,
+  resolution    text NOT NULL,
+  tags          text,
+  source        text NOT NULL DEFAULT 'thumbs_up',
+  actor         text,
+  helpful_votes int NOT NULL DEFAULT 1,
+  at            timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_assist_cases_at ON assist_cases (at DESC);
+
+-- Digital-API traffic events, one row per API call, pulled over SSH from the api hosts'
+-- api_logger.production.log by apiLogCollector.js (COLLECTOR mode — replaces the Grafana MySQL
+-- read path when API_LOG_HOSTS is set; MySQL stays available as fallback). err_class is the
+-- errclass.classifyClass() verdict computed at ingest ('success' | 'business' | 'technical').
+-- RETENTION: the collector purges rows older than 7 days on every cycle — this table is a
+-- rolling operational window, not an archive.
+CREATE TABLE IF NOT EXISTS api_traffic_events (
+  id               bigserial PRIMARY KEY,
+  ts               timestamptz NOT NULL,      -- response-header Date (UTC)
+  host             text NOT NULL,             -- which api host the line came from (17 / 18)
+  path             text NOT NULL,             -- request.path
+  transaction_id   text,
+  response_code    text,
+  response_message text,                      -- MSISDN/NID digit-runs masked BEFORE storage
+  duration_ms      integer,
+  err_class        text                       -- success | business | technical (errclass.js)
+);
+CREATE INDEX IF NOT EXISTS idx_api_traffic_events_ts ON api_traffic_events (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_api_traffic_events_path_ts ON api_traffic_events (path, ts);
+-- per-transaction lookup (apigwTrace end-to-end correlation: app ⇄ gateway ⇄ uil_logs)
+CREATE INDEX IF NOT EXISTS idx_api_traffic_events_txn ON api_traffic_events (transaction_id)
+  WHERE transaction_id IS NOT NULL;
+
+-- API-Gateway TCP reachability, one row per target per probe. Persisted (rather than kept in
+-- memory) so reachability becomes a normal METRIC: charts, history, replay, and the existing rule
+-- engine's ack/snooze/escalation all work on it for free.
+CREATE TABLE IF NOT EXISTS apigw_probe_log (
+  id        bigserial PRIMARY KEY,
+  probed_at timestamptz NOT NULL DEFAULT now(),
+  node      text NOT NULL,
+  label     text NOT NULL,
+  host      text NOT NULL,
+  port      integer NOT NULL,
+  state     text NOT NULL,            -- ok | refused | timeout | error
+  ms        integer
+);
+CREATE INDEX IF NOT EXISTS idx_apigw_probe_time ON apigw_probe_log (probed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_apigw_probe_target ON apigw_probe_log (host, port, probed_at DESC);
+
+-- Internal console tickets / feedback. Any authed console user raises a suggestion (enhancement) or
+-- a problem (issue), optionally with screenshot(s) + a description. Screenshots are stored ON DISK
+-- under UPLOAD_DIR/tickets (default /apps/console/uploads/tickets) — the DB keeps metadata only.
+-- Board (manageUsers cap) drives status: open | under_evaluation | in_progress | closed | rejected.
+-- Descriptions are the user's OWN report — deliberately NOT PII-masked (the board is admin-only).
+CREATE TABLE IF NOT EXISTS console_tickets (
+  id          bigserial PRIMARY KEY,
+  ref         text UNIQUE NOT NULL,               -- human reference, e.g. TKT-000123
+  kind        text NOT NULL DEFAULT 'issue',      -- enhancement | issue
+  title       text NOT NULL,
+  description text,
+  status      text NOT NULL DEFAULT 'open',       -- open | under_evaluation | in_progress | closed | rejected
+  priority    text NOT NULL DEFAULT 'normal',     -- low | normal | high | urgent
+  created_by  text,
+  evaluator   text,                               -- admin who last worked the ticket
+  resolution  text,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  closed_at   timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_console_tickets_status ON console_tickets (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_console_tickets_creator ON console_tickets (created_by, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_console_tickets_created ON console_tickets (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS console_ticket_files (
+  id         bigserial PRIMARY KEY,
+  ticket_id  bigint NOT NULL REFERENCES console_tickets(id) ON DELETE CASCADE,
+  filename   text NOT NULL,                       -- original client name (display only — NEVER used as a path)
+  path       text NOT NULL,                       -- absolute path on disk under UPLOAD_DIR/tickets
+  mime       text NOT NULL,
+  size       integer NOT NULL DEFAULT 0,
+  at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_console_ticket_files_ticket ON console_ticket_files (ticket_id, at);
+
+CREATE TABLE IF NOT EXISTS console_ticket_comments (
+  id         bigserial PRIMARY KEY,
+  ticket_id  bigint NOT NULL REFERENCES console_tickets(id) ON DELETE CASCADE,
+  author     text,
+  body       text NOT NULL,
+  at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_console_ticket_comments_ticket ON console_ticket_comments (ticket_id, at);
+
+-- L2 Workbench · Docs hub. L2 uploads .md/.txt/.pdf runbooks; files live ON DISK under
+-- UPLOAD_DIR/docs (default /apps/console/uploads/docs) — the DB keeps metadata + extracted text.
+-- text_content is the parsed plain text: raw for .md/.txt; for .pdf it is filled via `pdftotext`
+-- when present on PATH, else left NULL and marked "extraction pending" (NO new npm deps).
+-- shared=true docs are additionally ingested by Yusr's KB (assist.js loadKb) as searchable chunks,
+-- so an uploaded runbook becomes Yusr-answerable. Descriptions/content are the uploader's OWN
+-- material — the section is L2+/admin only, so this text is deliberately NOT PII-masked.
+CREATE TABLE IF NOT EXISTS console_docs (
+  id           bigserial PRIMARY KEY,
+  title        text NOT NULL,
+  filename     text NOT NULL,                       -- original client name (display only — NEVER a path)
+  path         text NOT NULL,                       -- absolute path on disk under UPLOAD_DIR/docs
+  mime         text NOT NULL,
+  size         integer NOT NULL DEFAULT 0,
+  text_content text,                                -- parsed plain text (NULL = pdf extraction pending)
+  uploaded_by  text,
+  at           timestamptz NOT NULL DEFAULT now(),
+  shared       boolean NOT NULL DEFAULT true        -- shared → ingested into Yusr's KB
+);
+CREATE INDEX IF NOT EXISTS idx_console_docs_at ON console_docs (at DESC);
+CREATE INDEX IF NOT EXISTS idx_console_docs_uploader ON console_docs (uploaded_by, at DESC);
+
+-- App error-log events (api_error_logger.production.log on the API hosts, pulled by
+-- apiErrLogCollector over the same SSH channel as api_traffic_events). Powers the
+-- Monitoring "App errors / rate limiting" panel: -704 = IpRetrial IP_RETRIES_EXCEEDED.
+CREATE TABLE IF NOT EXISTS api_error_events (
+  id           bigserial PRIMARY KEY,
+  ts           timestamptz NOT NULL,
+  host         text NOT NULL,
+  level        text,
+  error_code   integer,
+  http_status  integer,
+  source       text,
+  controller   text,
+  action       text,
+  platform     text,
+  app_version  text,
+  ip_address   text,
+  user_type    text,
+  rate_limit   text,               -- context.rate_limit (e.g. 'ip_retrial')
+  retry_count  integer,            -- context.retry_count at block time
+  action_name  text,               -- context.action_name (voucher / validate_details…)
+  message      text,
+  request_id   text
+);
+CREATE INDEX IF NOT EXISTS idx_api_error_events_ts   ON api_error_events (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_api_error_events_code ON api_error_events (error_code, ts);
+
+-- SMS gateway reachability probe (curl executed FROM the API hosts over the collector's SSH
+-- channel — the app's own vantage point; 152 itself has no internet). Powers Monitoring ④.
+CREATE TABLE IF NOT EXISTS sms_probe_events (
+  id        bigserial PRIMARY KEY,
+  ts        timestamptz NOT NULL DEFAULT now(),
+  host      text NOT NULL,            -- API host the curl ran from
+  target    text NOT NULL,            -- probed URL
+  http_code integer,                  -- NULL = transport failure (timeout/DNS/conn refused)
+  ms        integer,
+  error     text
+);
+CREATE INDEX IF NOT EXISTS idx_sms_probe_events_ts ON sms_probe_events (ts DESC);
+
+-- Case-analyzer columns on the app-error events (trace_id = what the mobile app shows as
+-- "Device ID" in its error dialog — the join key for CCO escalations)
+ALTER TABLE api_error_events ADD COLUMN IF NOT EXISTS trace_id text;
+ALTER TABLE api_error_events ADD COLUMN IF NOT EXISTS device_id text;
+ALTER TABLE api_error_events ADD COLUMN IF NOT EXISTS exception_class text;
+ALTER TABLE api_error_events ADD COLUMN IF NOT EXISTS frame text;
+CREATE INDEX IF NOT EXISTS idx_api_error_events_trace ON api_error_events (trace_id);
+-- the case analyzer queries trace_id OR request_id OR device_id — all three need indexes for a
+-- BitmapOr, one missing = sequential scan of the whole table on every Analyze click
+CREATE INDEX IF NOT EXISTS idx_api_error_events_req ON api_error_events (request_id)
+  WHERE request_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_api_error_events_dev ON api_error_events (device_id)
+  WHERE device_id IS NOT NULL;
+
+-- Alert transparency (L2 request TKT-000002): which error codes / conditions trigger a rule.
+-- Free text, shown on the Rules table, the rule editor and the alert detail.
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS trigger_codes text;
+
+-- ── APIGW distributed traces (Zipkin on MVNO-DIGAPI-GWP01/02) ─────────────────────────────
+-- The gateways run Spring Cloud Sleuth → Zipkin 2.23.2 with IN-MEMORY storage: ~4,100 spans/min
+-- (~250k/hour) and a hard ceiling around 500k spans, measured as ~1–3h of retention. Traces
+-- therefore VANISH unless pulled. 6M spans/day is far too much to keep raw, so the collector:
+--   • ALWAYS writes per-minute aggregates (below) — cheap, permanent, powers panels + alerts
+--   • writes FULL spans only for outliers (error tag or slow) — what L2 actually opens
+-- Aggregate grain: minute × host × service × normalised path (numeric/uuid segments → :id).
+CREATE TABLE IF NOT EXISTS apigw_trace_stats (
+  bucket      timestamptz NOT NULL,        -- minute bucket (UTC)
+  host        text NOT NULL,               -- gateway that served it
+  service     text NOT NULL,               -- localEndpoint.serviceName
+  path        text NOT NULL,               -- normalised http.path ('-' when absent)
+  method      text,
+  calls       integer NOT NULL,
+  errors      integer NOT NULL DEFAULT 0,  -- error tag or http.status_code >= 400
+  ms_p50      integer,
+  ms_p95      integer,
+  ms_p99      integer,
+  ms_max      integer,
+  ms_sum      bigint,
+  PRIMARY KEY (bucket, host, service, path, method)
+);
+CREATE INDEX IF NOT EXISTS idx_apigw_stats_bucket ON apigw_trace_stats (bucket DESC);
+CREATE INDEX IF NOT EXISTS idx_apigw_stats_path   ON apigw_trace_stats (path, bucket DESC);
+
+-- Outlier spans kept in full for drill-down (join key to the app side: uil_transaction_id).
+CREATE TABLE IF NOT EXISTS apigw_slow_spans (
+  id           bigserial PRIMARY KEY,
+  ts           timestamptz NOT NULL,
+  host         text NOT NULL,
+  trace_id     text NOT NULL,
+  span_id      text,
+  parent_id    text,
+  service      text,
+  kind         text,                       -- SERVER / CLIENT / CONSUMER / PRODUCER
+  name         text,
+  path         text,
+  method       text,
+  status_code  text,
+  duration_ms  integer,
+  remote_ip    text,
+  remote_service text,
+  error        text,
+  uil_transaction_id text,                 -- ties APIGW ⇄ uil_logs (OSB/BSS read path)
+  tags         jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_apigw_spans_ts    ON apigw_slow_spans (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_apigw_spans_trace ON apigw_slow_spans (trace_id);
+CREATE INDEX IF NOT EXISTS idx_apigw_spans_uil   ON apigw_slow_spans (uil_transaction_id);
+
+-- ===== DMS JOURNEYS (31 Aug 2026) — dealer journey KPIs distilled from Clara dms_audit_logs =====
+-- Same philosophy as apigw_trace_stats: aggregate per hour forever (tiny), keep FULL rows only
+-- for notable events (failures), masked at ingest. Fed by dmsJourneys.js via id-watermark pulls
+-- (never a time scan on the 365M-row tables — id is the PK, always indexed).
+CREATE TABLE IF NOT EXISTS dms_journey_stats (
+  bucket      timestamptz NOT NULL,          -- hour bucket (UTC)
+  journey     text NOT NULL,                 -- registry key (activation, mnp, sim_swap, …)
+  calls       integer NOT NULL DEFAULT 0,
+  errors      integer NOT NULL DEFAULT 0,    -- conservative: response code looks 4xx/5xx/ERR
+  dealers     integer NOT NULL DEFAULT 0,    -- distinct channel users seen in the bucket
+  codes       jsonb,                         -- {"200":123,"E102":4,…} top response codes
+  PRIMARY KEY (bucket, journey)
+);
+CREATE INDEX IF NOT EXISTS idx_dmsj_stats_bucket ON dms_journey_stats (bucket DESC);
+
+CREATE TABLE IF NOT EXISTS dms_journey_state (
+  journey     text PRIMARY KEY,
+  last_id     bigint NOT NULL DEFAULT 0,     -- watermark on the source table's PK
+  src         text,                          -- schema.table actually resolved
+  rows_done   bigint NOT NULL DEFAULT 0,
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  note        text                           -- last error / resolution info, human-readable
+);
+
+CREATE TABLE IF NOT EXISTS dms_journey_events (   -- recent failures, PII masked at ingest
+  id          bigserial PRIMARY KEY,
+  journey     text NOT NULL,
+  src_id      bigint,
+  at          timestamptz,
+  dealer      text,
+  msisdn      text,                          -- masked
+  customer    text,                          -- masked national id
+  code        text,
+  message     text,
+  ref         text,                          -- logs_reference_id — cross-journey correlation key
+  api         text
+);
+CREATE INDEX IF NOT EXISTS idx_dmsj_events ON dms_journey_events (journey, at DESC);
+CREATE INDEX IF NOT EXISTS idx_dmsj_events_ref ON dms_journey_events (ref);
+
+-- 31 Aug 2026 (evening): two more dimensions per bucket, captured at sync time — which APIs and
+-- which dealers were behind each hour. jsonb like codes; idempotent ALTERs (schema.sql re-runs at boot).
+ALTER TABLE dms_journey_stats ADD COLUMN IF NOT EXISTS apis jsonb;
+ALTER TABLE dms_journey_stats ADD COLUMN IF NOT EXISTS top_dealers jsonb;
+
+-- LIVE CUSTOMER VIEW snapshot cache (Sub360 · 2 Sep 2026). jsonb is TOAST-compressed by PG.
+-- Also created at runtime by liveBss.ensure() so a deploy without db-init still works.
+CREATE TABLE IF NOT EXISTS live_snapshots (
+  id bigserial PRIMARY KEY, cust text NOT NULL, panel text NOT NULL,
+  taken_at timestamptz NOT NULL DEFAULT now(), ms integer, http integer, ok boolean,
+  endpoint text, request jsonb, response jsonb);
+CREATE INDEX IF NOT EXISTS idx_live_snap ON live_snapshots (cust, panel, taken_at DESC);

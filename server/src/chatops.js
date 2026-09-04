@@ -17,8 +17,16 @@ const SEV_EMOJI = { P1: '🔴', P2: '🟠', P3: '🔵', P4: '⚪' };
 
 const sms = require('./sms');
 const DEFAULTS = { enabled: false, slackUrl: '', teamsUrl: '', minSeverity: 'P2', baseUrl: '',
-  // WhatsApp via Meta Cloud API Groups messaging (Official Business Account)
-  waPhoneId: '', waToken: '', waGroupId: '', waApiVersion: 'v21.0',
+  // WhatsApp via Meta Cloud API — 1:1 fan-out to on-call numbers (groups aren't supported by the
+  // standard API). waTo = comma/space-separated recipients (E.164, no '+'). For business-initiated
+  // (proactive) alerts, set waTemplate to an APPROVED template name; else free text (24h session only).
+  waPhoneId: '', waToken: '', waTo: '', waTemplate: '', waTemplateLang: 'en', waApiVersion: 'v21.0',
+  // waBaseUrl: where the Cloud API is reached. Default = Meta directly. 152 has no internet, so
+  // in production this points at the RELAY on the reverse proxy (115), which forwards the exact
+  // same paths to graph.facebook.com — e.g. http://172.31.38.115/warelay. Env WA_BASE_URL wins
+  // over the stored setting so ops can repoint without a UI change.
+  waBaseUrl: '',
+  waGroupId: '',   // legacy (unused) — groups aren't supported by the Cloud API
   // SMS via Unifonic — creds in ENV; here only the toggle, recipients, and severity gate (P1 by default)
   smsEnabled: false, smsTo: '', smsMinSeverity: 'P1' };
 
@@ -127,9 +135,29 @@ function whatsappText(alert, { baseUrl, kind = 'opened', mention } = {}) {
   if (link) lines.push(link);
   return lines.join('\n');
 }
-function whatsappPayload(alert, opts, groupId) {
-  return { messaging_product: 'whatsapp', recipient_type: 'group', to: groupId,
-    type: 'text', text: { preview_url: false, body: whatsappText(alert, opts) } };
+// Body variables for the approved template (order must match the template you submit to Meta):
+//   {{1}} severity · {{2}} incident name · {{3}} observed value · {{4}} owning team · {{5}} link
+function waTemplateParams(alert, opts) {
+  const sev = alert.severity || 'P?';
+  const name = String(alert.name || alert.metric_key || 'incident').replace(/\s+/g, ' ').trim();
+  const observed = alert.observed_value != null
+    ? fmtVal(alert.observed_value, alert.unit) + (alert.sample != null ? ` (n=${alert.sample})` : '')
+    : '—';
+  const team = alert.team || 'Digital Ops';
+  const link = incidentLink(opts && opts.baseUrl, alert) || 'console';
+  // template params must be single-line and non-empty
+  return [sev, name, observed, team, link].map(t => (String(t).replace(/[\r\n]+/g, ' ').trim() || '—'));
+}
+// 1:1 message to one recipient. Uses the approved template when configured (required for proactive
+// business-initiated sends); otherwise plain text (only delivers inside a 24h customer-initiated window).
+function whatsappPayload(alert, opts, to, cfg) {
+  cfg = cfg || {};
+  if (cfg.waTemplate) {
+    return { messaging_product: 'whatsapp', to, type: 'template',
+      template: { name: cfg.waTemplate, language: { code: cfg.waTemplateLang || 'en' },
+        components: [{ type: 'body', parameters: waTemplateParams(alert, opts).map(text => ({ type: 'text', text })) }] } };
+  }
+  return { messaging_product: 'whatsapp', to, type: 'text', text: { preview_url: false, body: whatsappText(alert, opts) } };
 }
 
 async function postJson(url, body, headers) {
@@ -148,29 +176,40 @@ async function notifyIncident(alert, opts = {}) {
   const kind = opts.kind || 'opened';
   const out = { skipped: false, channels: [], slackPreview: null, teamsPreview: null };
 
-  if (!cfg.enabled && kind !== 'test') { out.skipped = 'chatops disabled'; return out; }
+  const popts = { baseUrl: cfg.baseUrl, kind, mention: opts.mention };
+  const slack = slackPayload(alert, popts);
+  const teams = teamsPayload(alert, popts);
+  out.slackPreview = slack; out.teamsPreview = teams;
+  const waRecipients = String(cfg.waTo || '').split(/[,\s]+/).map(s => s.trim().replace(/^\+/, '')).filter(Boolean);
+  if (cfg.waPhoneId && waRecipients.length) out.whatsappPreview = whatsappText(alert, popts);
+
+  // Master switch: when off, dispatch NOTHING — this applies to tests too, so a test mirrors real
+  // behaviour (no surprise sends to channels you've turned off). Previews above are still returned
+  // so you can inspect message formatting without sending.
+  if (!cfg.enabled) { out.skipped = 'chatops disabled'; return out; }
   // policy-driven escalations (force) and tests bypass the minSeverity gate
   if (kind !== 'test' && !opts.force) {
     const need = SEV_RANK[cfg.minSeverity] || 2;
     if ((SEV_RANK[alert.severity] || 9) > need) { out.skipped = `below minSeverity (${cfg.minSeverity})`; return out; }
   }
-  const popts = { baseUrl: cfg.baseUrl, kind, mention: opts.mention };
-  const slack = slackPayload(alert, popts);
-  const teams = teamsPayload(alert, popts);
-  out.slackPreview = slack; out.teamsPreview = teams;
 
   for (const [name, url, body] of [['slack', cfg.slackUrl, slack], ['teams', cfg.teamsUrl, teams]]) {
     if (!url) continue;
     try { await postJson(url, body); out.channels.push({ name, sent: true }); }
     catch (e) { out.channels.push({ name, sent: false, error: e.message }); }
   }
-  // WhatsApp group via Meta Cloud API (needs phone-number ID + token + group ID)
-  const waReady = cfg.waPhoneId && cfg.waToken && cfg.waGroupId;
-  if (cfg.waPhoneId && cfg.waGroupId) out.whatsappPreview = whatsappText(alert, popts);
+  // WhatsApp via Meta Cloud API — 1:1 fan-out to each on-call number (groups aren't supported by the API).
+  const waReady = cfg.waPhoneId && cfg.waToken && waRecipients.length > 0;
   if (waReady) {
-    const url = `https://graph.facebook.com/${cfg.waApiVersion || 'v21.0'}/${cfg.waPhoneId}/messages`;
-    try { await postJson(url, whatsappPayload(alert, popts, cfg.waGroupId), { Authorization: `Bearer ${cfg.waToken}` }); out.channels.push({ name: 'whatsapp', sent: true }); }
-    catch (e) { out.channels.push({ name: 'whatsapp', sent: false, error: e.message }); }
+    const waBase = (process.env.WA_BASE_URL || cfg.waBaseUrl || 'https://graph.facebook.com').replace(/\/+$/, '');
+    const url = `${waBase}/${cfg.waApiVersion || 'v21.0'}/${cfg.waPhoneId}/messages`;
+    let sent = 0, failed = 0, lastErr = null;
+    for (const to of waRecipients) {
+      try { await postJson(url, whatsappPayload(alert, popts, to, cfg), { Authorization: `Bearer ${cfg.waToken}` }); sent++; }
+      catch (e) { failed++; lastErr = e.message; }
+    }
+    out.channels.push({ name: 'whatsapp', sent: sent > 0, count: sent, recipients: waRecipients.length,
+      ...(failed ? { failed, error: lastErr } : {}), ...(cfg.waTemplate ? {} : { note: 'free-text (no template) — delivers only within a 24h session' }) });
   }
   // SMS via Unifonic — high-severity only (smsMinSeverity, default P1), to the on-call number(s)
   const smsGate = kind === 'test' || (SEV_RANK[alert.severity] || 9) <= (SEV_RANK[cfg.smsMinSeverity] || 1);

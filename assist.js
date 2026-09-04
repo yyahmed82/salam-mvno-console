@@ -1,10 +1,13 @@
 /* Yusr (يُسر) — floating AI assistant widget (bottom-right, every page).
+
  * "Yusr" = ease: the fast track for L1 / call-center to any answer in the console.
  * Backend: POST /api/assist/chat (local Ollama; degrades to rule-based answers).
  * Auth headers are injected globally by ops.js's fetch wrapper.
  * Deep-link actions navigate the SPA (e.g. #sub360?key=05…, #alerts).
  * Exposes window.openYusr(prefill, {send}) — used by the "Ask Yusr" hint chips.
  */
+const AB=(window.API_BASE!==undefined)?window.API_BASE:(location.pathname.startsWith('/digital-console')?'/digital-console':'');
+
 (function(){
   "use strict";
 
@@ -22,7 +25,6 @@
   .as-head .mark{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;flex:0 0 36px}
   .as-head .t{font-weight:800;font-size:15px}
   .as-head .t .ar{font-weight:700;opacity:.9;margin-inline-start:4px;font-family:'Noto Kufi Arabic','Geeza Pro',Tahoma,sans-serif}
-  .yusr-hint b{color:var(--green-dark)}
   .as-head .s{font-size:11px;opacity:.85;display:flex;align-items:center;gap:5px}
   .as-head .s .dot{width:7px;height:7px;border-radius:50%;background:#7CFC9A;display:inline-block}
   .as-head .x{margin-inline-start:auto;background:none;border:none;color:#fff;font-size:20px;cursor:pointer;line-height:1}
@@ -98,7 +100,7 @@
     const el=document.createElement('div'); el.className='as-msg user'; el.textContent=text;
     body.appendChild(el); body.scrollTop=body.scrollHeight;
   }
-  function addBot(r){
+  function addBot(r, askedQ){
     const el=document.createElement('div'); el.className='as-msg bot';
     let html = `<div class="who">Yusr · يُسر</div><div>${md(r.reply||'')}</div>`;
     if (r.sources && r.sources.length){
@@ -108,17 +110,35 @@
     if (r.actions && r.actions.length){
       html += `<div class="as-acts">` + r.actions.map(a=>`<a href="${esc(a.href)}">${esc(a.label)}</a>`).join('') + `</div>`;
     }
-    if (r.degraded) html += `<div class="deg">⚠ LLM offline (${esc(r.llmError||'unreachable')}) — showing data-only answer.</div>`;
+    if (r.degraded) html += `<div class="deg">⚠ Answer built from data only — ${esc(r.llmHint || r.llmError || 'the language model is unreachable')}.</div>`;
+    // feedback: 👍 also saves the (PII-scrubbed) Q→A pair into Yusr's case memory server-side
+    if (r.intent && askedQ) html += `<div class="as-fb" style="margin-top:6px;display:flex;gap:6px;align-items:center">
+      <button data-fb="1" title="Helpful — Yusr will remember this solution" style="border:1px solid var(--line);background:none;border-radius:7px;padding:2px 8px;cursor:pointer;font-size:13px">👍</button>
+      <button data-fb="0" title="Not helpful" style="border:1px solid var(--line);background:none;border-radius:7px;padding:2px 8px;cursor:pointer;font-size:13px">👎</button></div>`;
     el.innerHTML = html;
     body.appendChild(el); body.scrollTop=body.scrollHeight;
     // clicking a deep link should also close the panel so the agent sees the page
     el.querySelectorAll('.as-acts a').forEach(a=>a.addEventListener('click', ()=>toggle(false)));
+    const fb=el.querySelector('.as-fb');
+    if(fb) fb.querySelectorAll('button').forEach(b=>b.addEventListener('click', async ()=>{
+      const helpful=b.dataset.fb==='1';
+      fb.innerHTML=`<span style="font-size:11px;color:var(--muted)">Sending…</span>`;
+      try{
+        const resp=await fetch(AB+'/api/assist/feedback',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({helpful,intent:r.intent,degraded:!!r.degraded,question:askedQ,reply:r.reply||''})});
+        const j=await resp.json().catch(()=>({}));
+        fb.innerHTML=`<span style="font-size:11px;color:var(--muted)">${helpful?(j.learned?'Thanks — saved to Yusr’s case memory ✓':'Thanks ✓'):'Thanks — noted ✓'}</span>`;
+      }catch(_){ fb.innerHTML=`<span style="font-size:11px;color:var(--muted)">Could not send feedback</span>`; }
+    }));
   }
   function setSugs(list){
     sugsEl.innerHTML='';
     (list||[]).forEach(s=>{
       const b=document.createElement('button'); b.textContent=s;
-      b.addEventListener('click', ()=>{ input.value=s; ask(); });
+      // chips ending in "…" are templates (e.g. "Check subscriber 05…") — prefill for the agent to
+      // complete instead of sending an incomplete question that would just get refused
+      const tpl=/…\s*$|\.\.\.\s*$/.test(s);
+      b.addEventListener('click', ()=>{ if(tpl){ input.value=s.replace(/…\s*$|\.\.\.\s*$/,' '); input.focus(); } else { input.value=s; ask(); } });
       sugsEl.appendChild(b);
     });
   }
@@ -135,20 +155,36 @@
     history.push({role:'user',content:q});
     busy=true; send.disabled=true; typing(true);
     try{
-      const r=await fetch('/api/assist/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+      const r=await fetch(AB+'/api/assist/chat',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({message:q,history:history.slice(0,-1).slice(-6)})});
-      const j=await r.json();
+      // Parse defensively: a gateway timeout (nginx 502/504 while the LLM is thinking) returns an
+      // HTML error page — r.json() on it threw "Unexpected token '<'". Read text, try JSON, and
+      // give an honest, actionable message instead of a parser error.
+      const raw=await r.text(); let j=null; try{ j=JSON.parse(raw); }catch(_){}
       typing(false);
-      if(!r.ok){ addBot({reply:'⚠ '+(j.error||('HTTP '+r.status))}); }
-      else{ addBot(j); setSugs(j.suggestions); history.push({role:'assistant',content:j.reply||''}); }
+      if(!j){
+        const gw = r.status===502||r.status===504||/<html/i.test(raw);
+        addBot({reply: gw
+          ? '⚠ The gateway timed out while I was composing the answer (HTTP '+r.status+'). The model may be loading — ask again in a moment; a repeat of the same question is usually fast.'
+          : '⚠ Unexpected non-JSON response from the console (HTTP '+r.status+'). If this repeats, check the server logs.'});
+      }
+      else if(!r.ok){ addBot({reply:'⚠ '+(j.error||('HTTP '+r.status))}); }
+      else{
+        addBot(j,q); setSugs(j.suggestions); history.push({role:'assistant',content:j.reply||''});
+        // honest status: reflect whether the LLM actually answered (was hardcoded "Online" before,
+        // even when every reply came from the degraded rule-based fallback)
+        const stEl=panel.querySelector('#asStatus');
+        if(stEl) stEl.textContent = j.degraded ? 'Data-only mode · LLM offline' : 'Online · troubleshoot faster';
+      }
     }catch(e){ typing(false); addBot({reply:'⚠ Could not reach the console API: '+e.message}); }
     finally{ busy=false; send.disabled=false; input.focus(); }
   }
 
   function greet(){
     if(body.childElementCount) return;
-    addBot({reply:"أهلاً! I'm **Yusr (يُسر)** — your fast track to any answer in the console.\nI can:\n• Look up a subscriber — just paste an MSISDN (05xxxxxxxx) or National ID\n• Tell you what incidents are open right now\n• Search the ops runbooks and error codes for fixes"});
-    setSugs(['What incidents are open?','How do I handle a stuck UPG payment?','Check subscriber 0581416290']);
+    addBot({reply:"أهلاً! I'm **Yusr (يُسر)** — your fast track to any answer in the console.\nI can:\n• Look up a subscriber — just paste an MSISDN (05xxxxxxxx) or National ID\n• Search a **log reference ID** (the code in the customer's error dialog) live on the DMS nodes\n• Tell you what incidents are open right now\n• Explain any integration, and search the runbooks / error codes for fixes"});
+    // NOTE: no real MSISDN here — the subscriber chip only prefills (agent completes the number)
+    setSugs(['Search a log reference','What incidents are open?','How do I handle a stuck UPG payment?','Check subscriber 05…']);
   }
 
   function toggle(open){
@@ -167,44 +203,11 @@
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') ask(); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') toggle(false); });
 
-  /* ---------- "Ask Yusr" hint chips on key pages ---------- */
-  function hintChip(q, send, title){
-    const b=document.createElement('button');
-    b.className='pill yusr-hint'; b.style.borderLeftColor='var(--green)';
-    b.innerHTML='✦ Ask <b>Yusr</b>'; b.title=title||'Yusr — accurate answers & shortcuts, fast';
-    b.addEventListener('click',()=>window.openYusr(q,{send:!!send}));
-    return b;
-  }
-  function placeHints(){
-    // Troubleshoot / Error Control Board — next to Export
-    const ex=document.getElementById('errExport');
-    if(ex && !ex.parentElement.querySelector('.yusr-hint'))
-      ex.parentElement.appendChild(hintChip('How do I troubleshoot ', false, 'Yusr — describe the error, get the runbook fix'));
-    // Live Alerts — next to Sync now
-    const al=document.getElementById('alSyncNow');
-    if(al && !al.parentElement.querySelector('.yusr-hint'))
-      al.parentElement.appendChild(hintChip('What incidents are open and what should I check first?', true, 'Yusr — incident triage'));
-    // Home — a prominent CTA beside the greeting (not buried in the range bar)
-    const greet=document.getElementById('homeGreeting');
-    if(greet && !document.querySelector('.yusr-hint.yusr-home')){
-      const c=hintChip(null,false,'Yusr — ask anything about today’s numbers');
-      c.classList.add('yusr-home'); c.style.float='right'; c.style.marginLeft='12px';
-      greet.insertAdjacentElement('beforebegin', c);
-    }
-    // Integrations / docs page
-    const ig=document.querySelector('#view-integrations .panel .sub');
-    if(ig && !ig.parentElement.querySelector('.yusr-hint')){
-      const c=hintChip('Explain the integration ', false, 'Yusr — how any integration/webhook works');
-      c.style.marginTop='8px'; ig.insertAdjacentElement('afterend', c);
-    }
-  }
-  placeHints(); setTimeout(placeHints, 1500);   // second pass for late-rendered bars
+  /* "Ask Yusr" hint chips were removed by design (2026-08-10) — the floating bubble is the single
+   * entry point. window.openYusr stays public so any future page can deep-link into the chat. */
 
-  // hide the bubble + hints entirely when Yusr is disabled in Settings
-  fetch('/api/assist/enabled').then(r=>r.json()).then(j=>{
-    if(j && j.enabled===false){
-      fab.style.display='none'; panel.classList.remove('open');
-      document.querySelectorAll('.yusr-hint').forEach(h=>h.style.display='none');
-    }
+  // hide the bubble entirely when Yusr is disabled in Settings (the one kill-switch, all pages)
+  fetch(AB+'/api/assist/enabled').then(r=>r.json()).then(j=>{
+    if(j && j.enabled===false){ fab.style.display='none'; panel.classList.remove('open'); }
   }).catch(()=>{});
 })();

@@ -36,12 +36,13 @@ async function ordersOverTime(now, w) {
 
 async function topDealers(now, w, limit = 10) {
   const r = await db.source.query(`
-    SELECT o.seller_id, s.name AS seller_name,
+    SELECT o.seller_id,
+           COALESCE(NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.last_name)), ''), s.username) AS seller_name,
            count(*) AS attempts, count(*) FILTER (WHERE o.completed) AS completed
     FROM onboarding_orders o LEFT JOIN sellers s ON s.id = o.seller_id
     WHERE o.seller_id IS NOT NULL
       AND o.created_at >= $1::timestamptz-($2||' hours')::interval AND o.created_at < $1::timestamptz
-    GROUP BY o.seller_id, s.name ORDER BY completed DESC, attempts DESC LIMIT $3`, [now, w, limit]);
+    GROUP BY o.seller_id, 2 ORDER BY completed DESC, attempts DESC LIMIT $3`, [now, w, limit]);
   return r.rows.map(x => ({ seller_id: x.seller_id, name: x.seller_name || ('Seller #' + x.seller_id),
     attempts: +x.attempts, completed: +x.completed, conversion: rate(x.completed, x.attempts) }));
 }
@@ -49,11 +50,11 @@ async function topDealers(now, w, limit = 10) {
 async function planMix(now, w, scope = 'dealer') {
   const where = scope === 'qr' ? 'flow_type IN (2,7)' : scope === 'partner' ? 'flow_type IN (3,5)' : 'seller_id IS NOT NULL';
   const r = await db.source.query(`
-    SELECT o.plan_id, p.name AS plan_name, count(*) AS n
+    SELECT o.plan_id, COALESCE(p.title->>'en', p.title->>'ar') AS plan_name, count(*) AS n
     FROM onboarding_orders o LEFT JOIN plans p ON p.id = o.plan_id
     WHERE ${where} AND o.plan_id IS NOT NULL
       AND o.created_at >= $1::timestamptz-($2||' hours')::interval AND o.created_at < $1::timestamptz
-    GROUP BY o.plan_id, p.name ORDER BY n DESC LIMIT 12`, win(now, w));
+    GROUP BY o.plan_id, 2 ORDER BY n DESC LIMIT 12`, win(now, w));
   return r.rows.map(x => ({ plan_id: x.plan_id, plan: x.plan_name || ('Plan #' + x.plan_id), count: +x.n }));
 }
 

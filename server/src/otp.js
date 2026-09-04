@@ -27,7 +27,9 @@ async function requestOtp(email) {
 
   if (smtpConfigured()) {
     try { await sendMail(email, code); return { sent: true }; }
-    catch (e) { console.error('[OTP] SMTP send failed:', e.message); return { sent: false, error: 'Could not send email — check SMTP config.' }; }
+    // mail failure is NOT fatal: the code was generated + stored (and is in the server log),
+    // so let the user proceed to the code screen — an admin can read the code out.
+    catch (e) { console.error('[OTP] SMTP send failed:', e.message); return { sent: false, mailError: true }; }
   }
   // dev: expose the code so local sign-in works (read from logs/DB in real dev too)
   return { sent: false, dev: true, devCode: code };
@@ -48,6 +50,11 @@ async function sendMail(email, code) {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),
     secure: process.env.SMTP_SECURE === 'true',
+    // Internal relays present self-signed certs / may not need STARTTLS at all:
+    //   SMTP_TLS_REJECT_UNAUTHORIZED=false → keep STARTTLS but accept the internal (self-signed) cert
+    //   SMTP_IGNORE_TLS=true               → plain SMTP, never upgrade (some port-25 relays)
+    ignoreTLS: process.env.SMTP_IGNORE_TLS === 'true',
+    tls: process.env.SMTP_TLS_REJECT_UNAUTHORIZED === 'false' ? { rejectUnauthorized: false } : undefined,
     auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
   });
   await t.sendMail({

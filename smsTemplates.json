@@ -1,0 +1,411 @@
+{
+ "generated_at": "2026-08-21T17:39:23.522257+00:00",
+ "source": "selfcare-backend config/locales/{en,ar}.yml · MessageBuilder · Otp::OTP_MESSAGE_TYPES",
+ "note": "Templates, not sent messages. The app stores no SMS body — these are the strings MessageBuilder interpolates, so the rendered text is exact whenever the message type is known.",
+ "fallback": "كلمه المرور لمرة واحدة لسلام موبايل هي {code} is your Salam Mobile otp\n<protection message, ar>\n<protection message, en>",
+ "count": 38,
+ "templates": {
+  "activate_additional_data_sim": {
+   "en": "Your One-time Password to activate your Additional Data sim: %{otp_code}\n%{protection_message}",
+   "ar": "كلمة المرور المؤقتة لتفعيل شريحة البيانات الإضافية: %{otp_code}\n%{protection_message}",
+   "vars": [
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "activate_mnp": {
+   "en": "Your One-time Password to port your number to Salam Mobile is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions: https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور المؤقتة لنقل الرقم إلى شركة سلام موبايل هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name} \nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام:https://bit.ly/34C4N6j",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "activate_new_line": {
+   "en": "Your One-time Password to activate new phone number is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions: https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور المؤقتة لتفعيل رقم جديد هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام: https://bit.ly/34C4N6j",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "activate_service": {
+   "en": "Dear Customer,\n\nPlease use the verification code %{otp_code} to complete the purchase of %{service_name} for %{amount} SAR.\n\nPlease be aware that this service does not renew automatically.\n\nFor more details about your service, click here %{service_link}\n\nYou can cancel this service at any time using our channels including my Salam App, Salam mobile website.\n\nPlease note refunds are not available after cancellation.\n\nFor terms and conditions, visit: https://bit.ly/3oLPTBi\n\n%{protection_message}",
+   "ar": "عزيزنا العميل،\n\nلإتمام عملية شراء خدمة %{service_name} بسعر %{amount} ريال سعودي، قم باستخدام رمز التحقق التالي %{otp_code}. يرجى ملاحظة أن هذه الخدمة لن يتم تجديدها تلقائيا.\n\nلمعرفة المزيد عن مميزات هذه الخدمة، يرجى زيارة الرابط التالي %{service_link}\n\nيمكنك إلغاء هذه الخدمة في أي وقت باستخدام  قنواتنا بما في ذلك تطبيق سلام او موقع سلام موبايل، مع العلم بأنه لن يتم استرداد المبلغ المدفوع بعد الإلغاء.\n\nللاطلاع على الشروط والأحكام، يرجى زيارة الرابط التالي: https://bit.ly/3oLPTBi\n\n%{protection_message}",
+   "vars": [
+    "amount",
+    "otp_code",
+    "protection_message",
+    "service_link",
+    "service_name"
+   ]
+  },
+  "cancel_mnp": {
+   "en": "Dear Customer,\n\nYou have requested to cancel the port in request of the number %{mobile_number} to the new customer with ID number %{nationality_id_number_short}. Transaction\n\nTerms & Conditions: https://bit.ly/3oLPTBi\n\n%{protection_message}\n\nConfirmation Code: %{otp_code}",
+   "ar": "عزيزي العميل، \n\nلقد تم رفع طلب الغاء نقل الرقم %{mobile_number} لشركة سالم للعميل المنتهي رقم هويته بـ %{nationality_id_number_short}.\n\n    الشروط والأحكام: https://bit.ly/34C4N6j\n\n%{protection_message}\n\nرمز تأكيد العملية: %{otp_code}",
+   "vars": [
+    "mobile_number",
+    "nationality_id_number_short",
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "change_number": {
+   "en": "Your One-time Password to change your number: %{otp_code}\n%{protection_message}",
+   "ar": "كلمة المرور المؤقتة لتغيير رقمك: %{otp_code}\n%{protection_message}",
+   "vars": [
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "change_plan": {
+   "en": "Your One-time Password to change your %{from_type} plan to %{plan_name} is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: %{sub_fee} SAR\nThe 15% vat are excluded\n%{protection_message}\nTerms & Conditions: https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور الصالحة لمرة واحدة لتغيير باقتك %{from_type} إلى %{plan_name} هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\nالسعر لا يشمل  15٪ ضريبة القيمة المضافة\n%{protection_message}\nالشروط والأحكام: https://bit.ly/34C4N6j",
+   "vars": [
+    "from_type",
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "change_plan_diff_type": {
+   "en": "Your One-time Password to change your plan from %{from_type} to %{plan_name} %{plan_type} is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: %{sub_fee} SAR\nThe 15% vat are excluded\n%{protection_message}\nTerms & Conditions: https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور الصالحة لمرة واحدة لتغيير باقتك من %{from_type} إلى %{plan_name} %{plan_type} هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\nالسعر لا يشمل  15٪ ضريبة القيمة المضافة\n%{protection_message}\nالشروط والأحكام: https://bit.ly/34C4N6j",
+   "vars": [
+    "from_type",
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "change_plan_postpaid_postpaid": {
+   "en": "Your One-time Password to change your postpaid plan to %{plan_name} is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{otp_code}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions:https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور الصالحة لمرة واحدة لتغيير باقتك المفوترة إلى %{plan_name} هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام:https://bit.ly/34C4N6j",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "change_plan_postpaid_prepaid": {
+   "en": "Your One-time Password to change your postpaid plan to %{plan_name} is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions:https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور الصالحة لمرة واحدة لتغيير باقتك المفوترة إلى %{plan_name} هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام:https://bit.ly/34C4N6j",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "change_plan_prepaid_postpaid": {
+   "en": "Your One-time Password to change your prepaid plan to %{plan_name} is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions:https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور الصالحة لمرة واحدة لتغيير باقتك مسبقة الدفع إلى %{plan_name} هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام:https://bit.ly/34C4N6j",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "change_plan_prepaid_prepaid": {
+   "en": "Your One-time Password to change your prepaid plan to %{plan_name} is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions:https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور الصالحة لمرة واحدة لتغيير باقتك مسبقة الدفع إلى %{plan_name} هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام:https://bit.ly/34C4N6j",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "change_plan_to_postpaid": {
+   "en": "Your One-time Password to change your plan from %{from_type} to %{plan_name} %{plan_type} is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\nThe 15% vat are inclusive\n%{protection_message}\nTerms & Conditions:https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور الصالحة لمرة واحدة لتغيير باقتك من %{from_type} إلى %{plan_name} %{plan_type} هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\nالسعر يشمل 15٪ ضريبة القيمة المضافة\n%{protection_message}\nالشروط والأحكام:https://bit.ly/34C4N6j",
+   "vars": [
+    "from_type",
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "change_plan_to_prepaid": {
+   "en": "Your One-time Password to change your plan from %{from_type} to %{plan_name} %{plan_type} is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\nThe 15% vat are exclusive\n%{protection_message}\nTerms & Conditions:https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور الصالحة لمرة واحدة لتغيير باقتك من %{from_type} إلى %{plan_name} %{plan_type} هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\nالسعر لا يشمل 15٪ ضريبة القيمة المضافة\n%{protection_message}\nالشروط والأحكام:https://bit.ly/34C4N6j",
+   "vars": [
+    "from_type",
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "create_account_mysalam": {
+   "en": "Your One-time Password to create an account in the mysalam App: %{otp_code}\n%{protection_message}",
+   "ar": "كلمة المرور المؤقتة لإنشاء حساب في تطبيق mysalam: %{otp_code}\n%{protection_message}",
+   "vars": [
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "credit_transfer": {
+   "en": "Your One-time Password to transfer credit of %{amount} SAR is: %{otp_code}\n%{protection_message}\nTerms & Conditions: https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور المؤقتة لتحويل رصيد بقيمة %{amount} ريال هي: %{otp_code}\n%{protection_message}\nالشروط والأحكام: https://bit.ly/34C4N6j",
+   "vars": [
+    "amount",
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "deactivate_service": {
+   "en": "Dear Customer,\nPlease use the verification code %{otp_code} to cancel Your subscription on %{service_name}, please note refunds are not available after cancellation.\n%{protection_message}",
+   "ar": "عزيزنا العميل،\nيرجى استخدام رمز التحقق %{otp_code} لإلغاء الاشتراك في خدمة %{protection_message}, و يرجى ملاحظة أنه لن يتم استرداد المبلغ المدفوع بعد الإلغاء.\n%{protection_message}",
+   "vars": [
+    "otp_code",
+    "protection_message",
+    "service_name"
+   ]
+  },
+  "forgot_password": {
+   "en": "Your One-time Password to reset your password is: %{otp_code}\nWe are sharing this OTP for your mobile number: %{msisdn}\n%{protection_message}",
+   "ar": "كلمة المرور المؤقتة لإعادة تعيين كلمة المرور هي: %{otp_code}\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\n%{protection_message}",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "gift_data": {
+   "en": "Your One-time Password to gift data of %{data_amount} %{data_unit}, is: %{otp_code}\n%{protection_message}",
+   "ar": "كلمة المرور المؤقتة لإهداء البيانات بمقدار %{data_amount} %{data_unit} %{otp_code}\n%{protection_message}",
+   "vars": [
+    "data_amount",
+    "data_unit",
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "line_deactivation": {
+   "en": "Your One-time Password to deactivate your line: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn} Subscription type: %{plan_type}\n\n%{protection_message}",
+   "ar": "كلمة المرور المؤقتة لإلغاء رقمك: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn} نوع الاشتراك: %{plan_type}\n\n%{protection_message}",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_type",
+    "protection_message"
+   ]
+  },
+  "login_mysalam": {
+   "en": "Your One-time Password to login our mysalamApp: %{otp_code}\n%{protection_message}. Our representative will never ask for it.",
+   "ar": "كلمة المرور المؤقتة لتسجيل الدخول إلى تطبيق mysalam: %{otp_code}\n%{protection_message}.",
+   "vars": [
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "login_sa": {
+   "en": "Your One-time Password to login Salam Self-activation: %{otp_code}\n%{protection_message}.",
+   "ar": "كلمة المرور المؤقتة لتسجيل الدخول إلى منصة التفعيل الذاتي: %{otp_code}\n%{protection_message}.",
+   "vars": [
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "purchase_line": {
+   "en": "Your One-time Password to purchase your new Salam Mobile number %{purchased_number} is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions: https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور الصالحة لمرة واحدة لشراء الرقم %{purchased_number} من سلام موبايل هي: %{otp_code}\n\n كلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام: https://bit.ly/34C4N6j",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "purchased_number",
+    "sub_fee"
+   ]
+  },
+  "purchase_line_data_sim": {
+   "en": "Your One-time Password to purchase your new Salam Data SIM is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions: https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور الصالحة لمرة واحدة لشراء شريحة البيانات من سلام موبايل هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام: https://bit.ly/34C4N6j",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "purchase_line_mnp": {
+   "en": "Your One-time Password to Transfer your number %{purchased_number} to Salam Mobile is: %{otp_code}\n\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions: https://bit.ly/3oLPTBi",
+   "ar": "يرجى استخدام  الرمز المؤقت %{otp_code} لتأكيد عميلة نقل الرقم %{purchased_number} إلى سلام موبايل.\n\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام: https://bit.ly/34C4N6j",
+   "vars": [
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "purchased_number",
+    "sub_fee"
+   ]
+  },
+  "renewal": {
+   "en": "Your One-time Password to Renew your Plan is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions: https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور المؤقتة لتجديد الباقة هي: %{otp_code}\n  \nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام: https://bit.ly/34C4N6j",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "request_additional_data_sim": {
+   "en": "Your One-time Password to request your Additional Data sim: %{otp_code}\n%{protection_message}",
+   "ar": "كلمة المرور المؤقتة لطلب شريحة البيانات الإضافية: %{otp_code}\n%{protection_message}",
+   "vars": [
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "sim_replacement": {
+   "en": "Your One-time Password to order your Replacement SIM is: %{otp_code}\n\nWe are sharing this OTP for your Salam mobile number: %{contact_number}\nService type: SIM Replacement\nService fee: SAR %{fees}\n%{protection_message}\nTerms & Conditions:https://bit.ly/3oLPTBi",
+   "ar": "رمز المرور المؤقت لطلب شريحة بديلة هو: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{contact_number} من سلام موبايل\nنوع الخدمة: إستبدال الشريحة\nرسوم الخدمة: %{fees} ر.س\n%{protection_message}\nالشروط والأحكام: https://bit.ly/34C4N6j",
+   "vars": [
+    "contact_number",
+    "fees",
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "sim_replacement_activate": {
+   "en": "Your One-time Password to activate your Replacement SIM is: %{otp_code}\n\nWe are sharing this OTP for your Salam mobile number: %{contact_number}\nService type: SIM Replacement\nService fee: SAR %{fees}\n%{protection_message}\nTerms & Conditions:https://bit.ly/3oLPTBi",
+   "ar": "رمز المرور المؤقت لتفعيل شريحتك البديلة هو: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{contact_number} من سلام موبايل\nنوع الخدمة: إستبدال الشريحة\nرسوم الخدمة: %{fees} ر.س\n%{protection_message}\nالشروط والأحكام: https://bit.ly/34C4N6j",
+   "vars": [
+    "contact_number",
+    "fees",
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "spam_block": {
+   "en": "Your One-time Password to Stop receiving advertisement calls is: %{otp_code}\n%{protection_message} Our representative will never ask for it.",
+   "ar": "كلمة المرور المؤقتة لإيقاف المكالمات الدعائية: %{otp_code}\n%{protection_message} ممثّلي خدمة عملاء سلام موبايل لن يطلبوا منك مشاركة الكود.",
+   "vars": [
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "spam_unblock": {
+   "en": "Your One-time Password to Start receiving advertisement calls is: %{otp_code}\n%{protection_message} Our representative will never ask for it.",
+   "ar": "كلمة المرور المؤقتة لتفعيل المكالمات الدعائية: %{otp_code}\n%{protection_message} ممثّلي خدمة عملاء سلام موبايل لن يطلبوا منك مشاركة الكود.",
+   "vars": [
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "transfer_data": {
+   "en": "Your One-time Password to transfer data: %{otp_code}\n%{protection_message}",
+   "ar": "كلمة المرور المؤقتة لنقل بيانات بمقدار %{data_amount} %{data_unit} %{otp_code}\n%{protection_message}",
+   "vars": [
+    "otp_code",
+    "protection_message"
+   ]
+  },
+  "transfer_line": {
+   "en": "Your One-time Password to transfer the possession of your line %{msisdn} is: %{otp_code}\n\nWe are sharing this OTP for your mobile number: %{msisdn}\nSubscription type: %{plan_type}\nPackage name: %{plan_name}\nSubscription fee: SAR %{sub_fee}\n%{protection_message}\nTerms & Conditions:https://bit.ly/3oLPTBi",
+   "ar": "كلمة المرور المؤقتة للتنازل عن الرقم %{msisdn} هي: %{otp_code}\n\nكلمة المرور المؤقتة خاصة برقم الجوال: %{msisdn}\nنوع الاشتراك: %{plan_type}\nاسم الباقة: %{plan_name}\nرسوم الاشتراك: %{sub_fee}\n%{protection_message}\nالشروط والأحكام:https://bit.ly/34C4N6j",
+   "vars": [
+    "msisdn",
+    "otp_code",
+    "plan_name",
+    "plan_type",
+    "protection_message",
+    "sub_fee"
+   ]
+  },
+  "transfer_new_user": {
+   "en": "Dear Customer, The ownership of the number %{mobile_number} with %{plan_name} and a monthly fee of SAR %{monthly_fee} was requested to be transferred on your ID number ending with %{nationality_id_number_short}.\nTransaction Confirmation Code: %{otp_code}.\nFor terms and conditions,\nvisit:https://bit.ly/3oLPTBi\n%{protection_message}",
+   "ar": "عزيزي العميل، لقد تم قيد طلب التنازل عن الرقم %{mobile_number} على رقم هويتك المنتهية بـ%{nationality_id_number_short}، وذلك على باقة %{plan_name} ذات القيمة الشهرية المقدرة بـ  %{monthly_fee} ريال.\nرمز تأكيد العملية:%{otp_code}\nللإطلاع على الشروط والأحكام:\nhttps://bit.ly/3oLPTBi\n%{protection_message}",
+   "vars": [
+    "mobile_number",
+    "monthly_fee",
+    "nationality_id_number_short",
+    "otp_code",
+    "plan_name",
+    "protection_message"
+   ]
+  },
+  "transfer_new_user_postpaid": {
+   "en": "Dear Customer, The ownership of the number %{mobile_number} with %{plan_name} package and a monthly fee of SAR %{monthly_fee} was requested to be transferred to the new customer with ID number ****%{nationality_id_number_short}.\nFor terms and conditions, visit:https://bit.ly/3oLPTBi\n%{protection_message}\nTransaction Confirmation Code: %{otp_code}",
+   "ar": "عزيزي العميل، لقد تم رفع طلب التنازل عن الرقم %{mobile_number} على باقة %{plan_name} بقيمة %{monthly_fee} ريال كرسوم اشتراك شهرية للعميل المنتهي رقم هويته بـ  %{nationality_id_number_short}.\n%{protection_message}\nللإطلاع على الشروط والأحكام: https://bit.ly/3oLPTBi\nرمز تأكيد العملية: %{otp_code}",
+   "vars": [
+    "mobile_number",
+    "monthly_fee",
+    "nationality_id_number_short",
+    "otp_code",
+    "plan_name",
+    "protection_message"
+   ]
+  },
+  "transfer_new_user_prepaid": {
+   "en": "Dear Customer, The ownership of the number %{mobile_number} with %{plan_name} package and a monthly fee of SAR %{monthly_fee} was requested to be transferred to the new customer with ID number ****%{nationality_id_number_short}.\n%{protection_message}\nFor terms and conditions, visit:https://bit.ly/3oLPTBi\nTransaction Confirmation Code: %{otp_code}",
+   "ar": "عزيزي العميل، لقد تم رفع طلب التنازل عن الرقم %{mobile_number} على باقة %{plan_name} بقيمة %{monthly_fee} ريال كرسوم اشتراك شهرية للعميل المنتهي رقم هويته بـ  %{nationality_id_number_short}.\n%{protection_message}\nللإطلاع على الشروط والأحكام: https://bit.ly/3oLPTBi\nرمز تأكيد العملية: %{otp_code}",
+   "vars": [
+    "mobile_number",
+    "monthly_fee",
+    "nationality_id_number_short",
+    "otp_code",
+    "plan_name",
+    "protection_message"
+   ]
+  },
+  "transfer_old_user": {
+   "en": "Dear Customer, The ownership of the number %{mobile_number} with %{plan_name} and with a monthly fee of SAR %{plan_price} was requested to be transferred to the new customer with ID number %{nationality_id_number_short}.\nNote that confirming the request will result in the number being permanently terminated from your name.\nTransaction Confirmation Code: %{otp_code}\nFor terms and conditions,\nvisit:https://bit.ly/3oLPTBi\n%{protection_message}",
+   "ar": "عزيزي العميل، لقد قمت بطلب التنازل عن الرقم %{mobile_number} لصالح العميل حامل الهوية المنتهية بـ %{nationality_id_number_short}، وذلك على باقة %{plan_name} ذات القيمة الشهرية المقدرة بـ  %{plan_price}ريال. علماً أنه سيترتب على تأكيد الطلب إلغاء الرقم نهائياً من اسمك\nرمز تأكيد العملية:%{otp_code}\nللإطلاع على الشروط والأحكام:\nhttps://bit.ly/3oLPTBi\n%{protection_message}",
+   "vars": [
+    "mobile_number",
+    "nationality_id_number_short",
+    "otp_code",
+    "plan_name",
+    "plan_price",
+    "protection_message"
+   ]
+  },
+  "validate_active_user": {
+   "en": "Dear Customer\n\nThe OTP to update your ID information for your number %{mobile_number} is : %{otp_code}\n\n%{protection_message}",
+   "ar": "عزيزي العميل\n\nكلمة المرور المؤقتة لتحديث بيانات الهوية للرقم %{mobile_number} هي : %{otp_code}\n\n%{protection_message}",
+   "vars": [
+    "mobile_number",
+    "otp_code",
+    "protection_message"
+   ]
+  }
+ }
+}

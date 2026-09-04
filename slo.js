@@ -3,7 +3,7 @@
   "use strict";
   const $=s=>document.querySelector(s);
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  const API=(location.protocol==="file:")?"http://localhost:4600":"";
+  const API = (location.protocol==="file:") ? "http://localhost:4600" : (location.pathname.startsWith("/digital-console") ? "/digital-console" : "");
   const api=(p,opts)=>window.fetch(API+p,Object.assign({headers:{"Content-Type":"application/json"}},opts)).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
   const tv=(n,fb)=>{const v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return v||fb;};
   let vendWin=24;
@@ -59,7 +59,13 @@
 
   async function loadSlos(){
     const box=$("#sloCards"); if(!box) return; box.innerHTML=`<div class="sub" style="grid-column:1/-1">Loading service levels…</div>`;
-    let d; try{ d=await api("/api/slo"); }catch(e){ box.innerHTML=`<div class="albanner" style="grid-column:1/-1">${esc(e.message)}</div>`; return; }
+    let d; try{ d=await api("/api/slo"); }catch(e){
+      // hidden root tier: the server answers 403 {error:'restricted'} — show a clean panel, not an error banner
+      if(/^restricted$/i.test(e.message||"")){ const host=$("#view-slo"); if(host) host.innerHTML=`<div class="panel" style="text-align:center;padding:34px 20px">
+        <div style="font-size:26px">🔒</div>
+        <h2 style="margin:8px 0 4px">Restricted</h2>
+        <div class="sub">The SLA page is limited to the platform owner.</div></div>`; return; }
+      box.innerHTML=`<div class="albanner" style="grid-column:1/-1">${esc(e.message)}</div>`; return; }
     const slos=d.slos||[];
     if(!slos.length){ box.innerHTML=`<div class="okbox" style="grid-column:1/-1">No SLO targets yet.</div>`; return; }
     const canEdit=window.opsCan&&window.opsCan('editRules');
@@ -100,7 +106,17 @@
     box.innerHTML = html || `<div class="okbox">No vendor activity in the window.</div>`;
   }
 
-  document.querySelectorAll('.navtab[data-view="slo"]').forEach(b=>b.addEventListener("click", render));
+  // SLA lives in the Settings gear menu (no nav tab) — activate its view directly,
+  // mirroring window.openWorkbench: deactivate all tabs + views, clear the gear/opsBar, then render.
+  window.openSla=()=>{
+    const v=$("#view-slo"); if(!v) return;
+    document.querySelectorAll(".navtab").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
+    const gear=document.getElementById("settingsBtn"); if(gear) gear.classList.remove("on");
+    const ob=document.getElementById("opsBar"); if(ob) ob.classList.remove("show");
+    v.classList.add("active");
+    render();
+  };
   document.addEventListener("themechange",()=>{ if($("#view-slo")&&$("#view-slo").classList.contains("active")) render(); });
   document.addEventListener("opsdatarefresh",()=>{ if($("#view-slo")&&$("#view-slo").classList.contains("active")) render(); });
 })();

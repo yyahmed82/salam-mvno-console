@@ -602,3 +602,15 @@ document.addEventListener("themechange", ()=>{
 topoDraw("all");
 exRender();
 })();
+
+/* 360 quick-access pill (3 Sep 2026) — clicks through to the existing sub360 navtab so every
+   permission/router rule applies unchanged; active state follows the hash (incl. deep links). */
+(function(){
+  const b=document.getElementById('nav360'); if(!b) return;
+  b.addEventListener('click', ()=>{
+    const t=document.querySelector('.navtab[data-view="sub360"]');
+    if(t) t.click(); else location.hash='#subscriber';
+  });
+  const upd=()=>b.classList.toggle('active', /^#subscriber/.test(location.hash||''));
+  window.addEventListener('hashchange', upd); upd();
+})();
