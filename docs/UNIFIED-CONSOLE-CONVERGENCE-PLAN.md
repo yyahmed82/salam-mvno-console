@@ -135,6 +135,7 @@ Each phase ends with a deploy to `/unified-console`, a CHANGELOG entry and a ver
 2. Backfill from `--since 2026-01-01`, then run **both** writers for ≥ 7 days. Port `sync-check.ts` as `tools/fixedDrift.js`: per-day counts and per-id field diff `sda_ops_beta.order_attempts` vs `unified_console.fixed_order_attempts`. Accept at zero drift over 3 consecutive days.
 3. Flip `fixed360.js`/`fixedMap.js`/`fixedErrors.js`/metrics from `db.ops` to `db.console` (a single `FIXED_SOURCE=console|ops` switch, so rollback is an env change).
 4. Stop `opsb-ingest-watch`, `ops-ingest-watch`; keep `sda_ops`, `sda_ops_beta` read-only for 30 days, then drop. `OPS_DATABASE_URL` removed. **One DB.**
+5. Carry the 5 Sep lesson into `fixed_order_attempts`: `odb` is a list in some nexus contexts (6.5 KB seen) — store `odb` truncated to the first plate + `odb_count`, and index with `WHERE length(odb) < 1000`. Until then, apply the same partial index to `public.order_attempts_odb_idx` on prod (DBA change) so the prod watcher cannot hit the beta's 22 Aug failure.
 
 ### Phase 6 — Cutover and retirement (≈ 1 week + 30-day watch)
 1. Announce to L1/L2 (reuse the L1 session mail format); role manuals regenerated for the unified nav.
@@ -182,6 +183,7 @@ About one quarter to a single console, three months of which the old consoles ar
 | Users confused by three consoles | Phases 1–5 are invisible to L1 (unified is opt-in for testers); one announcement at cutover; 301s keep old bookmarks working |
 | Versioning lapse repeats | Phase 0 step 1 restores tags; every phase ends with a CHANGELOG entry (`VERSIONING.md`) |
 | Credentials in git (`.env.prod-sync`, deploy docs) | Removed in the Phase 0 freeze commit; `.env` files stay on 152 only |
+| Beta ingester (`opsb-ingest-watch`) crash-loops and orphans Prisma query-engine children, each holding a `sda_ops_beta` connection until the role's 20-cap is hit (root cause of the 22 Aug outage; found again 5 Sep with 34 orphans) | Short term: `DB_WATCH_API_LOGS=0`, kill `ppid 1` engines under `/apps/salam-ops-beta`; permanent: Phase 5 replaces it with the in-process Node/pg ingester (no child engine) |
 
 ---
 

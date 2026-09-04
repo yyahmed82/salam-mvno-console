@@ -109,7 +109,8 @@
        * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
       const OPENER={ alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics" };
-      const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{ window[fn](); }catch(e){} }
+      const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{
+        if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); window[fn](m?m[1]:"overview"); } else window[fn](); }catch(e){} }
       // Subscriber 360 deep link: #subscriber?key=966...
       if(r.view==="sub360" && window.openSub360){ const m=/key=([^&]+)/.exec(qs||""); window.openSub360(m?decodeURIComponent(m[1]):undefined); }
       // Troubleshoot deep link: #troubleshoot?from=..&to=..&cls=technical&cat=semati

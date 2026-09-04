@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Salam Home — Payments Flow Analysis (payments_v2 / Moyasar / SADAD / BSS)</title>
+<script src="mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2530; --border:#2b3542;
+    --ink:#e6edf3; --mut:#93a1b0; --acc:#3fb950; --acc2:#58a6ff; --warn:#e3b341; --err:#f85149;
+    --pill:#21262d; --card:#0f6fc4;
+    --header-bg:linear-gradient(180deg,#12181f,#0d1117);
+    --nav-active-bg:#132a1a; --nav-active-border:#1f5130; --nav-active-ink:#7ee787;
+    --diagram-bg:radial-gradient(ellipse at 50% 30%,rgba(28,37,48,.55),rgba(13,17,23,.5));
+    --row-alt:#12171e; --note-bg:#0f1a26; --warn-bg:#241d0c; --err-bg:#241315; --heading:#c9d7e5;
+  }
+  /* Light theme — parent passes ?theme=light (matches the app toggle). */
+  html[data-theme="light"]{
+    --bg:#f3f5f9; --panel:#ffffff; --panel2:#eef2f7; --border:#d7dee8;
+    --ink:#132036; --mut:#5a6889; --acc:#0e8a37; --acc2:#0a6fb0; --warn:#b7791f; --err:#d64550;
+    --pill:#e7ecf3; --card:#0a6fb0;
+    --header-bg:linear-gradient(180deg,#ffffff,#f0f3f8);
+    --nav-active-bg:#e3f3e8; --nav-active-border:#9fd4b0; --nav-active-ink:#0e8a37;
+    --diagram-bg:#ffffff;
+    --row-alt:#f4f7fb; --note-bg:#eaf1fb; --warn-bg:#fdf6e3; --err-bg:#fdecec; --heading:#1b2a44;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  header{padding:26px 30px 18px;border-bottom:1px solid var(--border);background:var(--header-bg)}
+  header h1{margin:0 0 4px;font-size:22px;letter-spacing:.2px}
+  header p{margin:0;color:var(--mut);font-size:13.5px}
+  .wrap{display:flex;min-height:calc(100vh - 92px)}
+  nav{width:250px;flex:0 0 250px;border-right:1px solid var(--border);padding:14px 10px;position:sticky;top:0;height:100vh;overflow:auto;background:var(--panel)}
+  nav h4{margin:16px 10px 6px;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--mut)}
+  nav a{display:block;padding:8px 12px;margin:2px 4px;border-radius:7px;color:var(--ink);text-decoration:none;font-size:13.5px;cursor:pointer;border:1px solid transparent}
+  nav a:hover{background:var(--panel2)}
+  nav a.active{background:var(--nav-active-bg);border-color:var(--nav-active-border);color:var(--nav-active-ink)}
+  main{flex:1;padding:26px 34px 80px;max-width:1180px;overflow:auto}
+  section{display:none;animation:f .2s ease}
+  section.on{display:block}
+  @keyframes f{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  h2{font-size:20px;margin:6px 0 4px;border-left:3px solid var(--acc);padding-left:10px}
+  h3{font-size:16px;margin:26px 0 8px;color:var(--heading)}
+  h4.sub{color:var(--acc2);margin:20px 0 6px;font-size:14px}
+  p.lead{color:var(--mut);margin:4px 0 16px}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}
+  @media(max-width:900px){.g2,.g3{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .card h5{margin:0 0 8px;font-size:14px;color:var(--ink)}
+  .mut{color:var(--mut)}
+  code,.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+  code{background:var(--pill);padding:1.5px 6px;border-radius:5px;color:#79c0ff}
+  .diagram{background:var(--diagram-bg);border:1px solid var(--border);border-radius:12px;padding:16px;margin:12px 0;overflow:auto;box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+  .mermaid{font-size:14px}
+  .mermaid .edgeLabel,.mermaid .edgeLabel p{background:transparent!important;color:var(--mut)!important}
+  .mermaid .edgeLabel rect{fill:var(--bg)!important;opacity:.85}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
+  th,td{border:1px solid var(--border);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--heading);font-weight:600;position:sticky;top:0}
+  tr:nth-child(even) td{background:var(--row-alt)}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap}
+  .p-ok{background:#12331d;color:#7ee787;border:1px solid #1f5130}
+  /* Light mode: all status pills read as one consistent set — solid colour, white
+     text (matches the green pills; no heavy dark badges floating on the white page). */
+  html[data-theme="light"] .p-ok{background:#0e8a37;color:#fff;border-color:#0e8a37}
+  html[data-theme="light"] .p-info{background:#0a6fb0;color:#fff;border-color:#0a6fb0}
+  html[data-theme="light"] .p-warn{background:#b7791f;color:#fff;border-color:#b7791f}
+  html[data-theme="light"] .p-err{background:#d64550;color:#fff;border-color:#d64550}
+  html[data-theme="light"] .p-mut{background:#5a6889;color:#fff;border-color:#5a6889}
+  .p-warn{background:#3a2f10;color:#e3b341;border:1px solid #6b5518}
+  .p-err{background:#3a1518;color:#ff7b72;border:1px solid #6e2329}
+  .p-info{background:#12263a;color:#79c0ff;border:1px solid #1f4266}
+  .p-mut{background:#20262e;color:#93a1b0;border:1px solid #313b46}
+  .note{border-left:3px solid var(--acc2);background:var(--note-bg);padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+  .warnbox{border-left:3px solid var(--warn);background:var(--warn-bg);padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+  .errbox{border-left:3px solid var(--err);background:var(--err-bg);padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+  ul{margin:8px 0 8px 2px;padding-left:18px}li{margin:3px 0}
+  .kbd{border:1px solid var(--border);background:var(--pill);border-radius:5px;padding:1px 6px;font-size:12px}
+  .flowtag{font-size:11px;color:var(--mut)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 0;font-size:12px;color:var(--mut)}
+  .tag{display:inline-block;padding:1px 7px;border-radius:5px;background:var(--pill);font-size:11.5px;margin:0 3px 3px 0;border:1px solid var(--border)}
+  a.ext{color:var(--acc2)}
+  .path{color:var(--mut);font-size:11.5px}
+  hr{border:none;border-top:1px solid var(--border);margin:26px 0}
+  .big{font-size:26px;font-weight:700}
+  /* Interactive Architecture overview diagram */
+  .archdiag{padding:12px 12px 8px}
+  .archlegend{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:8px}
+  .archchip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:20px;border:1px solid var(--border);background:var(--panel);color:var(--mut);font-size:12px;cursor:pointer;user-select:none;transition:all .12s}
+  .archchip:hover{border-color:var(--acc)}
+  .archchip.on{color:var(--ink);border-color:currentColor}
+  .archchip i{width:11px;height:3px;border-radius:2px;display:inline-block}
+  .archchip.all.on{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
+  .archdiag svg{display:block;width:100%;height:auto}
+  .archdiag svg .zone{fill:var(--panel2);opacity:.5;stroke:var(--border);stroke-width:1;rx:14}
+  .archdiag svg .zone-l{font-size:11px;font-weight:700;letter-spacing:.4px;fill:var(--mut);text-transform:uppercase}
+  .archdiag svg .node{cursor:pointer}
+  .archdiag svg .node rect{fill:var(--panel);stroke:var(--border);stroke-width:1.4;rx:9;transition:all .15s}
+  .archdiag svg .node:hover rect{stroke:var(--acc)}
+  .archdiag svg .node polygon{fill:var(--panel);stroke:var(--warn);stroke-width:1.6;transition:all .15s}
+  .archdiag svg .node.dec:hover polygon{stroke:var(--acc)}
+  .archdiag svg .node .t{font-size:12.5px;font-weight:600;fill:var(--ink)}
+  .archdiag svg .node.dec .t{font-size:11.5px;font-weight:700}
+  .archdiag svg .node .s{font-size:10px;fill:var(--mut)}
+  .archdiag svg .edge{fill:none;stroke-width:1.8;opacity:.9;transition:opacity .15s}
+  .archdiag svg .edge-l{font-size:9.5px;fill:var(--mut)}
+  .archdiag svg.filtered .edge{opacity:.08}
+  .archdiag svg.filtered .edge.hi{opacity:1;stroke-width:2.4}
+  .archdiag svg.filtered .node rect,.archdiag svg.filtered .node polygon{opacity:.35}
+  .archdiag svg.filtered .node.hi rect,.archdiag svg.filtered .node.hi polygon{opacity:1;stroke-width:2.2}
+  .archdiag svg.filtered .edge-l{opacity:.12}
+  .archdiag svg.filtered .edge-l.hi{opacity:1}
+  .archhint{font-size:10.5px;color:var(--mut);padding:6px 2px 0}
+  /* ===== interactive sequence diagrams (mkSeq) ===== */
+  .seqdiag{padding:12px 12px 8px}
+  .seqbar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+  .seqplay{display:flex;align-items:center;gap:6px}
+  .seqplay button{background:var(--panel);border:1px solid var(--border);color:var(--ink);border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;transition:all .12s}
+  .seqplay button:hover{border-color:var(--acc);color:var(--acc)}
+  .seqplay .count{font-size:11.5px;color:var(--mut);min-width:66px;text-align:center;font-variant-numeric:tabular-nums}
+  .seqdiag svg{display:block;width:100%;height:auto}
+  .seqdiag svg .life{stroke:var(--border);stroke-width:1.3;stroke-dasharray:3 4}
+  .seqdiag svg .actor rect{fill:var(--panel2);stroke:var(--acc);stroke-width:1.5;transition:all .15s}
+  .seqdiag svg .actor{cursor:pointer}
+  .seqdiag svg .actor:hover rect{stroke:var(--acc2)}
+  .seqdiag svg .actor .an{font-size:12px;font-weight:700;fill:var(--ink)}
+  .seqdiag svg .actor .as{font-size:9.5px;fill:var(--mut)}
+  .seqdiag svg .msg{cursor:pointer}
+  .seqdiag svg .msg .ln{fill:none;stroke-width:1.7;transition:all .15s}
+  .seqdiag svg .msg.ret .ln{stroke-dasharray:5 4}
+  .seqdiag svg .msg:hover .ln{stroke-width:2.7}
+  .seqdiag svg .msg .ml{font-size:10.5px;fill:var(--ink)}
+  .seqdiag svg .msg .num{font-size:8.5px;font-weight:700;fill:#fff}
+  .seqdiag svg .frag{fill:none;stroke:var(--warn);stroke-width:1.15;stroke-dasharray:2 3}
+  .seqdiag svg .frag-l{font-size:9.5px;font-weight:700;fill:var(--warn)}
+  .seqdiag svg .frag-lbg{fill:var(--warn-bg);stroke:var(--warn);stroke-width:.7}
+  .seqdiag svg .frag-div{stroke:var(--warn);stroke-width:1;stroke-dasharray:2 3;opacity:.65}
+  .seqdiag svg.filtered .msg{opacity:.1}
+  .seqdiag svg.filtered .msg.hi{opacity:1}
+  .seqdiag svg.filtered .actor{opacity:.38}
+  .seqdiag svg.filtered .actor.hi{opacity:1}
+  .seqdiag svg.filtered .frag-g{opacity:.25}
+  .seqdiag svg.stepping .msg{opacity:.13}
+  .seqdiag svg.stepping .msg.seen{opacity:.5}
+  .seqdiag svg.stepping .msg.cur{opacity:1}
+  .seqdiag svg.stepping .msg.cur .ln{stroke-width:2.8}
+  .seqdiag svg.stepping .frag-g{opacity:.3}
+</style>
+<script>try{if(new URLSearchParams(location.search).get('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}</script>
+</head>
+<body>
+<header>
+  <h1>Salam Home — Payments Flow Analysis</h1>
+  <p>End-to-end payment journeys across <b>payments_v2</b> (shared payments-api) · Moyasar · SADAD · BSS — web e-purchase / QR, Pulse mobile, and SDA dealer apps. Grounded in <span class="mono">salam-nexus/packages/payments-api</span> + <span class="mono">packages/api</span> source and the prod <span class="mono">payments_v2</span> schema.</p>
+</header>
+<div class="wrap">
+<nav id="nav">
+  <h4>Foundations</h4>
+  <a data-t="overview" class="active">Architecture overview</a>
+  <a data-t="apps">Multi-tenant applications</a>
+  <a data-t="statemodel">Invoice &amp; payment state model</a>
+  <a data-t="statusmatrix">Moyasar status matrix ★</a>
+  <h4>Journeys</h4>
+  <a data-t="j-web">Web e-purchase (card)</a>
+  <a data-t="j-qr">Web QR code</a>
+  <a data-t="j-wallet">Apple Pay / Samsung Pay</a>
+  <a data-t="j-pulse">Pulse mobile (buy + manage)</a>
+  <a data-t="j-sda">SDA dealer (SADAD)</a>
+  <h4>Cross-cutting</h4>
+  <a data-t="notify">App-notify &amp; BSS order</a>
+  <a data-t="sadad">SADAD notification flow</a>
+  <a data-t="failure">Failure &amp; defect cases</a>
+  <a data-t="db">payments_v2 schema</a>
+  <a data-t="test">Test coverage hooks</a>
+</nav>
+<main>
+
+<!-- ================= OVERVIEW ================= -->
+<section id="overview" class="on">
+  <h2>Architecture overview</h2>
+  <p class="lead">One shared <b>payments-api</b> service (its own DB = <span class="mono">payments_v2</span>) serves every Salam surface. Each surface authenticates with its own API key = one row in <span class="mono">applications</span>, and receives status callbacks on its own <span class="mono">webhook_url</span>.</p>
+
+  <div class="diagram archdiag">
+    <div class="archlegend" id="archlegend"></div>
+    <svg id="archsvg" viewBox="0 0 1040 540" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="archhint">Click a <b>node</b> to trace its connections, or a <b>flow chip</b> to isolate one path. Click again / “All” to reset.</div>
+  </div>
+
+  <div class="note"><b>The load-bearing fact:</b> the BSS order is placed by the <b>webhook callback</b> (<span class="mono">notifyApplication → /webhooks/&hellip;/payment</span>), <u>not</u> by the browser poll. The front-end <span class="mono">checkPayment</span> poll only drives the UI and the <span class="mono">PAID_BY_ZERO</span> short-circuit. If the callback fails, money is captured but no service is provisioned.</div>
+
+  <div class="grid g3">
+    <div class="card"><h5>3 payment channels in prod</h5><span class="tag">MOYASAR</span><span class="tag">SADAD</span><span class="tag">TAP_PAYMENTS</span><span class="tag">TAMARA</span><div class="mut" style="margin-top:6px">Moyasar is the primary card rail; SADAD for dealer instant bills; Tap/Tamara wired but secondary.</div></div>
+    <div class="card"><h5>2 payment flows that matter</h5><span class="tag">STANDARD</span> pay → PAID<br/><span class="tag">MANUAL_CAPTURE</span> authorize → capture/void<br/><span class="tag">RECURRING</span> saved token<div class="mut" style="margin-top:6px">e-purchase FTTH uses MANUAL_CAPTURE so the charge can be voided if BSS rejects the order.</div></div>
+    <div class="card"><h5>Zero-charge shortcut</h5><span class="pill p-info">PAID_BY_ZERO</span><div class="mut" style="margin-top:6px">When <span class="mono">totalCharge === '0'</span> the gateway is skipped entirely and the workflow auto-advances.</div></div>
+  </div>
+</section>
+
+<!-- ================= APPS ================= -->
+<section id="apps">
+  <h2>Multi-tenant <span class="mono">applications</span> model</h2>
+  <p class="lead">payments-api is multi-tenant. The three tRPC clients in <span class="path">packages/api/src/clients/payments.ts</span> each carry a different <span class="mono">x-api-key</span> → resolve to a different <span class="mono">applications</span> row → different <span class="mono">webhook_url</span> + <span class="mono">webhook_secret</span>. This is how one payment engine fans back out to the correct journey.</p>
+  <table>
+    <tr><th>Core-API client</th><th>API key (env)</th><th>Surfaces that use it</th><th>Callback (webhook_url)</th><th>What the callback does</th></tr>
+    <tr><td class="mono">paymentClient</td><td class="mono">PAYMENTS_API_KEY</td><td>Web e-purchase, QR, Pulse <b>buy FTTH</b></td><td class="mono">/webhooks/epurchase/payment</td><td>Verifies <span class="mono">secret</span>, updates workflow, on PAID/AUTHORIZED → <span class="mono">updateCustomerProfile</span> → BSS <span class="mono">createOrderNew</span></td></tr>
+    <tr><td class="mono">salamHomePaymentClient</td><td class="mono">SALAM_HOME_PAYMENTS_API_KEY</td><td>Pulse <b>manage-line</b> (relocation, change plan, renew)</td><td class="mono">/webhooks/salamHome/payment</td><td>Requires invoice <span class="pill p-ok">PAID</span>, routes by <span class="mono">metadata.serviceType</span> → relocation / change-plan / renew BSS calls</td></tr>
+    <tr><td class="mono">paymentOptimizationClient</td><td class="mono">PAYMENTS_OPTIMIZATION_API_KEY</td><td>SDA dealer <b>SADAD instant invoice</b></td><td class="mono">/webhooks/sadad/payment</td><td>Requires invoice <span class="pill p-ok">PAID</span> → BSS <span class="mono">ePurchase.sadadPayment</span> + <span class="mono">realTimeBillUpload</span>, with retry</td></tr>
+  </table>
+  <div class="note">All three callbacks first persist the raw body into <span class="mono">webhook_requests</span> (nexus side) with <span class="mono">retries</span> / <span class="mono">isSuccess</span> / <span class="mono">reason</span> — your audit trail for "did the order actually get placed".</div>
+</section>
+
+<!-- ================= STATE MODEL ================= -->
+<section id="statemodel">
+  <h2>Invoice &amp; payment state model</h2>
+  <p class="lead">Two related state machines. The <b>invoice</b> is what the app polls and what gates order placement; the <b>payment</b> is the per-attempt record (a single invoice can have many payment attempts, each with a <span class="mono">payment_activities</span> audit trail).</p>
+
+  <h3>Invoice status machine <span class="flowtag">(invoice_status enum)</span></h3>
+  <div class="diagram archdiag">
+    <div class="archlegend" id="invlegend"></div>
+    <svg id="invsvg" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="archhint">Click a <b>state</b> to trace its transitions, or a <b>flow chip</b> to isolate one kind (paid / authorize / void / refund…).</div>
+  </div>
+
+  <h3>Payment status machine <span class="flowtag">(payment_status enum — mirrors Moyasar 1:1 via transformPaymentStatus)</span></h3>
+  <div class="diagram archdiag">
+    <div class="archlegend" id="paylegend"></div>
+    <svg id="paysvg" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="archhint">Click a <b>state</b> to trace its transitions, or a <b>flow chip</b> to isolate one kind.</div>
+  </div>
+  <div class="note"><span class="mono">transformPaymentStatus()</span> maps Moyasar's 8 statuses to the internal enum verbatim: <code>initiated→INITIATED</code>, <code>paid→PAID</code>, <code>failed→FAILED</code>, <code>authorized→AUTHORIZED</code>, <code>captured→CAPTURED</code>, <code>refunded→REFUNDED</code>, <code>voided→VOIDED</code>, <code>verified→VERIFIED</code>. Every webhook writes a <span class="mono">payment_activities</span> row, so the full status history is queryable.</div>
+</section>
+
+<!-- ================= STATUS MATRIX ================= -->
+<section id="statusmatrix">
+  <h2>Moyasar status matrix — every status &amp; transition ★</h2>
+  <p class="lead">This is the authoritative mapping from <span class="path">payments-api/src/clients/moyasar.ts → handleWebhook + statusMap</span>. The webhook endpoint <span class="mono">POST /webhooks/moyasar</span> accepts 7 event types; <span class="mono">handleWebhook</span> re-fetches the payment from Moyasar (source of truth), upserts <span class="mono">payments</span>, then consults <span class="mono">statusMap</span>.</p>
+
+  <table>
+    <tr><th>Moyasar status<br/><span class="flowtag">(webhook type)</span></th><th>payment.status</th><th>In statusMap?</th><th>Invoice: valid prev → new</th><th>webhook_type fired</th><th>notifyApplication?</th><th>Net effect</th></tr>
+    <tr>
+      <td><code>initiated</code><br/><span class="flowtag">(none)</span></td><td><span class="pill p-mut">INITIATED</span></td><td><span class="pill p-mut">no</span></td><td>—</td><td>—</td><td><span class="pill p-mut">no</span></td><td>Attempt recorded; UI keeps polling.</td>
+    </tr>
+    <tr>
+      <td><code>paid</code><br/><span class="flowtag">payment_paid</span></td><td><span class="pill p-ok">PAID</span></td><td><span class="pill p-ok">yes</span></td><td><span class="pill p-info">PENDING</span> → <span class="pill p-ok">PAID</span></td><td><span class="tag">PAYMENT_PAID</span></td><td><span class="pill p-ok">YES</span></td><td>STANDARD flow: app places BSS order immediately.</td>
+    </tr>
+    <tr>
+      <td><code>authorized</code><br/><span class="flowtag">payment_authorized</span></td><td><span class="pill p-info">AUTHORIZED</span></td><td><span class="pill p-ok">yes</span></td><td><span class="pill p-info">PENDING</span> → <span class="pill p-info">AUTHORIZED</span></td><td><span class="tag">PAYMENT_AUTHORIZED</span></td><td><span class="pill p-ok">YES</span></td><td>MANUAL_CAPTURE: app places order, then capture/void by result.</td>
+    </tr>
+    <tr>
+      <td><code>captured</code><br/><span class="flowtag">payment_captured</span></td><td><span class="pill p-ok">CAPTURED</span></td><td><span class="pill p-ok">yes</span></td><td><span class="pill p-info">AUTHORIZED</span> → <span class="pill p-ok">CAPTURED</span></td><td><span class="tag">PAYMENT_CAPTURED</span></td><td><span class="pill p-ok">YES</span></td><td>Funds settled after successful provisioning.</td>
+    </tr>
+    <tr>
+      <td><code>voided</code><br/><span class="flowtag">payment_voided</span></td><td><span class="pill p-warn">VOIDED</span></td><td><span class="pill p-ok">yes</span></td><td><span class="pill p-info">AUTHORIZED</span> → <span class="pill p-warn">VOIDED</span><br/><span class="flowtag">else "Invoice is not Authorized"</span></td><td><span class="tag">PAYMENT_VOIDED</span></td><td><span class="pill p-ok">YES</span></td><td>Authorization released (BSS order failed / abandoned).</td>
+    </tr>
+    <tr>
+      <td><code>failed</code><br/><span class="flowtag">payment_failed</span></td><td><span class="pill p-err">FAILED</span></td><td><span class="pill p-err">NO</span></td><td>— <span class="flowtag">"Ignoring payment"</span></td><td>—</td><td><span class="pill p-err">NO</span></td><td>Payment + activity recorded; <b>invoice untouched, app not called</b>. UI learns via poll.</td>
+    </tr>
+    <tr>
+      <td><code>refunded</code><br/><span class="flowtag">payment_refunded</span></td><td><span class="pill p-warn">REFUNDED</span></td><td><span class="pill p-err">NO</span></td><td>— <span class="flowtag">"Ignoring payment"</span></td><td>—</td><td><span class="pill p-err">NO</span></td><td>Recorded only via webhook path; real refunds happen through <span class="mono">refundInvoice</span> (writes payment_refunds).</td>
+    </tr>
+    <tr>
+      <td><code>verified</code><br/><span class="flowtag">payment_verified</span></td><td><span class="pill p-info">VERIFIED</span></td><td><span class="pill p-err">NO</span></td><td>— <span class="flowtag">"Ignoring payment"</span></td><td>—</td><td><span class="pill p-err">NO</span></td><td>Card-save / token verification; may create <span class="mono">cards</span> row (CARD_ADDED).</td>
+    </tr>
+  </table>
+
+  <div class="warnbox"><b>Gap to test:</b> <code>failed</code>, <code>refunded</code> and <code>verified</code> are declared as <span class="mono">webhook_type</span> enum values (<span class="mono">PAYMENT_FAILED / PAYMENT_REFUNDED</span>) but <span class="mono">statusMap</span> only handles paid/authorized/captured/voided. So a <code>payment_failed</code> webhook never notifies the app — the front-end only discovers failure by polling <span class="mono">checkPayment</span>/<span class="mono">paymentStatus</span>.</div>
+
+  <h3>Guard conditions before any transition</h3>
+  <p class="lead">handleWebhook short-circuits (logs &amp; returns) on any of these — each is a branch to cover in tests:</p>
+  <table>
+    <tr><th>Guard</th><th>Condition</th><th>Log</th></tr>
+    <tr><td>Live mode</td><td><span class="mono">!live &amp;&amp; NODE_ENV=production &amp;&amp; !TEST_MODE</span></td><td>Ignoring non-live webhook</td></tr>
+    <tr><td>No data</td><td><span class="mono">!input.data</span></td><td>Ignoring webhook with no data</td></tr>
+    <tr><td>Payment not at gateway</td><td><span class="mono">getPayment(id)</span> returns null</td><td>Payment not found</td></tr>
+    <tr><td>Version</td><td><span class="mono">metadata.version !== '2'</span></td><td>Unsupported version</td></tr>
+    <tr><td>Invoice id</td><td>missing <span class="mono">metadata.invoiceId</span></td><td>Invoice ID not found</td></tr>
+    <tr><td>Invoice exists</td><td>invoice not in DB</td><td>Invoice not found</td></tr>
+    <tr><td>Amount match</td><td><span class="mono">invoice.amount !== payment.amount</span></td><td>Invoice amount mismatch</td></tr>
+    <tr><td>Idempotency</td><td><span class="mono">invoice.status === handler.newStatus</span></td><td>"Invoice already PAID/…"</td></tr>
+    <tr><td>Valid transition</td><td>prev status not in <span class="mono">validPrevStatuses</span></td><td>Invalid transition / "Invoice is not Authorized"</td></tr>
+  </table>
+</section>
+
+<!-- ================= WEB CARD ================= -->
+<section id="j-web">
+  <h2>Web e-purchase — card payment (STANDARD path shown; FTTH uses MANUAL_CAPTURE)</h2>
+  <p class="lead"><span class="path">apps/epurchase</span> → core <span class="mono">epurchase.ts</span> → payments-api (<span class="mono">paymentClient</span>). The browser talks to Moyasar <b>directly</b> with the publishable key, then registers the attempt via <span class="mono">initPayment</span> and polls.</p>
+  <div class="diagram seqdiag">
+    <div class="seqbar"><div class="archlegend" id="seqweb-legend"></div><div class="seqplay" id="seqweb-play"></div></div>
+    <svg id="seqweb-svg" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="archhint">Click an <b>actor</b> to trace its messages, a <b>flow chip</b> to filter, or step through with <b>◀ Prev / Next ▶</b>.</div>
+  </div>
+  <div class="legend"><span>★ Order placement = step "createOrderNew", triggered by the webhook — not the poll.</span></div>
+</section>
+
+<!-- ================= QR ================= -->
+<section id="j-qr">
+  <h2>Web QR code journey</h2>
+  <p class="lead">The "QR Code" journey is <b>not a separate payment rail</b>. A QR carries a <span class="mono">referralCode</span> (stored in <span class="mono">localStorage/sessionStorage</span>, read in <span class="path">components/stepper.tsx</span>). When present with a QR-enabled plan (<span class="mono">enableQrOfferPrice</span>), the customer is charged <span class="mono">qr_discounted_price</span> instead of the standard price. Everything downstream (invoice → Moyasar → webhook → BSS) is identical to the web card flow.</p>
+  <div class="diagram archdiag">
+    <div class="archlegend" id="qrlegend"></div>
+    <svg id="qrsvg" viewBox="0 0 720 710" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="archhint">Click a <b>node</b> or a <b>branch chip</b> (yes / no) to trace the QR pricing decision.</div>
+  </div>
+  <div class="note">Test implication: QR only changes the <b>amount</b> on the invoice. The amount-match guard in <span class="mono">handleWebhook</span> (<span class="mono">invoice.amount !== payment.amount</span>) means a mispriced QR invoice will silently fail to progress — a good negative test.</div>
+</section>
+
+<!-- ================= WALLET ================= -->
+<section id="j-wallet">
+  <h2>Apple Pay / Samsung Pay / STC Pay</h2>
+  <p class="lead">Wallet rails differ in how the token is obtained, then converge on the same invoice/webhook machinery.</p>
+  <div class="grid g3">
+    <div class="card"><h5>Apple Pay</h5><div class="mut">Browser runs <span class="mono">applepay/initiate</span> (merchant validation) → gets a wallet token → POSTs to Moyasar <span class="mono">source.type=applepay</span> with <span class="mono">manual</span> from paymentFlow. Same <span class="mono">/webhooks/moyasar</span> path.</div></div>
+    <div class="card"><h5>Samsung Pay</h5><div class="mut">Server-side: <span class="mono">SamsungPayment</span> mutation → <span class="mono">moyasar.createSamsungPayment(invoice, token)</span>. Only <span class="mono">paid/authorized/captured</span> return a payment; a <span class="mono">payment</span> row is created immediately with <span class="mono">source=SAMSUNG_PAY</span>.</div></div>
+    <div class="card"><h5>STC Pay (via Tap)</h5><div class="mut"><span class="mono">initTapStcPayment</span> → Tap charge INITIATED → OTP → <span class="mono">confirmTapStcOtp</span> must return <span class="mono">CAPTURED</span>. Channel <span class="mono">TAP_PAYMENTS</span>, source <span class="mono">STC_PAY</span>.</div></div>
+  </div>
+  <div class="diagram seqdiag">
+    <div class="seqbar"><div class="archlegend" id="seqwallet-legend"></div><div class="seqplay" id="seqwallet-play"></div></div>
+    <svg id="seqwallet-svg" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="archhint">Apple Pay path shown (Samsung / STC converge on the same webhook). Click an <b>actor</b>, a <b>flow chip</b>, or step through with <b>◀ Prev / Next ▶</b>.</div>
+  </div>
+</section>
+
+<!-- ================= PULSE ================= -->
+<section id="j-pulse">
+  <h2>Pulse mobile — buy FTTH + manage-line</h2>
+  <p class="lead">Pulse hosts two distinct payment journeys against two different applications.</p>
+  <h4 class="sub">A. Buy FTTH (<span class="mono">ePurchaseFTTH</span>, paymentClient → /webhooks/epurchase/payment)</h4>
+  <p class="mut">Identical engine to web e-purchase: MANUAL_CAPTURE invoice, direct Moyasar call from the app (<span class="path">apps/pulse/src/lib/moyasar.ts</span>), <span class="mono">checkPayment</span> poll @5s, webhook-driven <span class="mono">createOrderNew</span>, capture-on-success / void-on-failure.</p>
+  <h4 class="sub">B. Manage-line (salamHomePaymentClient → /webhooks/salamHome/payment)</h4>
+  <p class="mut">Relocation / change-plan / renew. Invoice must reach <span class="pill p-ok">PAID</span>; the callback routes by <span class="mono">metadata.serviceType</span>.</p>
+  <div class="diagram seqdiag">
+    <div class="seqbar"><div class="archlegend" id="seqpulse-legend"></div><div class="seqplay" id="seqpulse-play"></div></div>
+    <svg id="seqpulse-svg" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="archhint">Note the nested branches: outer <b>totalCharge = 0</b> (zero-charge skip) and inner <b>serviceType</b> routing. Click an <b>actor</b>, a <b>flow chip</b>, or step with <b>◀ Prev / Next ▶</b>.</div>
+  </div>
+</section>
+
+<!-- ================= SDA ================= -->
+<section id="j-sda">
+  <h2>SDA dealer — SADAD instant invoice</h2>
+  <p class="lead">Dealers (SDA app) sell FTTH/FTTB/5G. Payment is collected via a <b>SADAD instant bill</b>: BSS <span class="mono">generateInstantInvoice(serviceId)</span> returns a <span class="mono">sadadAuNumber</span> + charge; a payments-api invoice is created (paymentOptimizationClient) carrying the SADAD reference in metadata. The customer pays the SADAD bill through their banking app; once the invoice becomes <span class="pill p-ok">PAID</span>, payments-api calls <span class="mono">/webhooks/sadad/payment</span>.</p>
+  <div class="diagram seqdiag">
+    <div class="seqbar"><div class="archlegend" id="seqsada-legend"></div><div class="seqplay" id="seqsada-play"></div></div>
+    <svg id="seqsada-svg" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="archhint">The customer pays out-of-band (bank / SADAD) — no inline card. Click an <b>actor</b>, a <b>flow chip</b>, or step through with <b>◀ Prev / Next ▶</b>.</div>
+  </div>
+  <div class="warnbox">The SDA callback runs a <b>retry wrapper</b> (3 attempts, <span class="mono">attempt × 10s</span> backoff) around <span class="mono">sadadPayment</span> and increments <span class="mono">webhook_requests.retries</span>. This is the exact endpoint (<span class="mono">172.31.38.146:3056/sda/webhooks/sadad/payment</span>) that appeared in the "paid but not notified" incident — a 12s <span class="mono">notifyApplication</span> timeout on the payments-api side means the retry loop here never even starts.</div>
+</section>
+
+<!-- ================= NOTIFY ================= -->
+<section id="notify">
+  <h2>App-notify &amp; BSS order placement</h2>
+  <p class="lead"><span class="mono">notifyApplication</span> (payments-api) is the bridge from "money moved" to "service provisioned". It is a single POST with a 12-second timeout and <b>no retry loop</b> inside payments-api — success sets <span class="mono">webhooks.status=DELIVERED + notifiedAt</span>; failure sets <span class="mono">webhooks.status=FAILED</span> and stops.</p>
+  <div class="diagram archdiag">
+    <div class="archlegend" id="anslegend"></div>
+    <svg id="anssvg" viewBox="0 0 760 660" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="archhint">Click the <b>2xx within 12s?</b> decision or a <b>branch chip</b> to see the success path vs the SPOF (paid-but-not-provisioned).</div>
+  </div>
+  <table>
+    <tr><th>Receiver</th><th>Pre-check</th><th>Success action</th><th>Own retry?</th></tr>
+    <tr><td class="mono">/webhooks/epurchase/payment</td><td>secret == EPURCHASE_PAYMENT_WEBHOOK_SECRET</td><td>status ∈ {PAID,AUTHORIZED} → updateCustomerProfile → createOrderNew</td><td>via <span class="mono">retry()</span> in createOrder path</td></tr>
+    <tr><td class="mono">/webhooks/salamHome/payment</td><td>invoice status == PAID</td><td>route by serviceType (relocation/changePlan/renew)</td><td>no</td></tr>
+    <tr><td class="mono">/webhooks/sadad/payment</td><td>invoice PAID + amount match</td><td>sadadPayment + realTimeBillUpload</td><td>yes — 3× / 10s backoff</td></tr>
+  </table>
+  <div class="note">Reconciliation safety-net (nexus side): <span class="mono">actionsRouter.cancelOrder</span> + <span class="mono">processPayments()</span> sweep AUTHORIZED invoices on expired workflows to capture-or-void, catching stuck MANUAL_CAPTURE authorizations.</div>
+</section>
+
+<!-- ================= SADAD ================= -->
+<section id="sadad">
+  <h2>SADAD notification flow (detail)</h2>
+  <p class="lead">SADAD is a Saudi bill-payment rail, distinct from card. In payments_v2 it shows up as <span class="mono">invoice.sadad_id</span>, <span class="mono">payment_channel=SADAD</span>, <span class="mono">payment_method=SADAD</span>, <span class="mono">payment_source=SADAD</span>. The customer pays a SADAD <em>bill number</em> in their banking app; the resulting invoice-<span class="pill p-ok">PAID</span> event drives the same <span class="mono">notifyApplication</span> → <span class="mono">/webhooks/sadad/payment</span> callback.</p>
+  <table>
+    <tr><th>Field</th><th>Meaning</th></tr>
+    <tr><td class="mono">metadata.customerId</td><td>BSS customer</td></tr>
+    <tr><td class="mono">metadata.orderNumber / sadadReference</td><td>order + SADAD AU reference</td></tr>
+    <tr><td class="mono">metadata.amount / totalAmount</td><td>paid vs full (drives <span class="mono">remainingAmount</span> → realTimeBillUpload)</td></tr>
+    <tr><td class="mono">metadata.sadadInvoiceId</td><td>SADAD AU number for bill upload</td></tr>
+  </table>
+  <div class="warnbox"><b>Partial payment handling:</b> <span class="mono">remainingAmount = amount==totalAmount ? 0 : totalAmount − amount</span> → <span class="mono">realTimeBillUpload(sadadInvoiceId, remainingAmount)</span> pushes the residual back as a prepaid bill. Worth an explicit test: full-pay (remaining=0) vs partial-pay (remaining&gt;0).</div>
+  <div class="note">The <b>ingress</b> that flips a SADAD invoice to PAID inside payments-api is the payment-provider boundary and is not in the core routers reviewed — treat "SADAD bill paid → invoice PAID" as the trust boundary to stub in E2E.</div>
+</section>
+
+<!-- ================= FAILURE ================= -->
+<section id="failure">
+  <h2>Failure &amp; defect cases</h2>
+  <p class="lead">The high-value negative paths — several are live production defects surfaced in the payments-api winston logs.</p>
+  <table>
+    <tr><th>#</th><th>Case</th><th>Signature</th><th>Effect</th><th>Severity</th></tr>
+    <tr><td>1</td><td>Duplicate Moyasar webhook race</td><td class="mono">Prisma P2002 — unique(transaction_id)</td><td><span class="mono">initPayment</span> create + webhook upsert (or two concurrent webhooks) collide → <span class="mono">payments.initPayment</span> 500</td><td><span class="pill p-err">high</span></td></tr>
+    <tr><td>2</td><td>App-notify timeout</td><td class="mono">[Moyasar Webhook] Failed to notify application + TimeoutError</td><td>12s POST to SDA/BSS webhook times out → webhook FAILED → invoice PAID but order never placed</td><td><span class="pill p-err">critical</span></td></tr>
+    <tr><td>3</td><td>payment_failed not propagated</td><td>statusMap miss → "Ignoring payment"</td><td>App never told of failure; UI relies on poll only</td><td><span class="pill p-warn">med</span></td></tr>
+    <tr><td>4</td><td>Amount mismatch</td><td class="mono">Invoice amount mismatch</td><td>Silent stop; invoice stuck PENDING (e.g. mispriced QR)</td><td><span class="pill p-warn">med</span></td></tr>
+    <tr><td>5</td><td>Version guard</td><td class="mono">Unsupported version</td><td>Legacy (non-v2) payment silently ignored</td><td><span class="pill p-mut">low</span></td></tr>
+    <tr><td>6</td><td>MANUAL_CAPTURE stuck AUTHORIZED</td><td>no capture/void</td><td>Authorization held; needs <span class="mono">processPayments()</span> sweep</td><td><span class="pill p-warn">med</span></td></tr>
+    <tr><td>7</td><td>Invoice expired mid-pay</td><td class="mono">Invoice has expired</td><td>initPayment / SamsungPayment rejected after <span class="mono">expiresAt</span></td><td><span class="pill p-mut">low</span></td></tr>
+    <tr><td>8</td><td>SADAD callback failure</td><td class="mono">webhook_requests.isSuccess=false</td><td>sadadPayment fails all 3 retries → paid, no BSS provisioning</td><td><span class="pill p-err">high</span></td></tr>
+  </table>
+  <div class="errbox"><b>The systemic risk</b> across cases 2 &amp; 8: payments-api considers its job done once <span class="mono">notifyApplication</span> returns/fails; the money is captured but provisioning is fire-and-forget with a short timeout. The reconciliation must be driven off <span class="mono">webhooks.status = FAILED</span> and <span class="mono">webhook_requests.isSuccess = false</span>.</div>
+</section>
+
+<!-- ================= DB ================= -->
+<section id="db">
+  <h2>payments_v2 schema (prod)</h2>
+  <p class="lead">10 tables. Enum values are the prod truth (from <span class="mono">pg_enum</span>).</p>
+  <div class="grid g2">
+    <div class="card"><h5>invoices</h5><span class="mono">id, status(invoice_status), amount, description, reference_id, auto_pay, return_url, expires_at, metadata(jsonb), sadad_id, userId, application_id, channel(invoice_channel), payment_flow, created_at, updated_at</span></div>
+    <div class="card"><h5>payments</h5><span class="mono">id, amount, description, source(payment_source), method(payment_method), status(payment_status), channel(payment_channel), save_card, transaction_id ⟵UNIQUE, gateway_payload(jsonb), bank_message, invoice_id, created_at, updated_at</span></div>
+    <div class="card"><h5>payment_activities</h5><span class="mono">id, status(payment_status), payment_id, created_at, updated_at</span> — status audit trail</div>
+    <div class="card"><h5>payment_refunds</h5><span class="mono">id, amount, reason, payment_id, created_at, updated_at</span></div>
+    <div class="card"><h5>webhooks</h5><span class="mono">id, type(webhook_type), status(webhook_status), retries, invoice_id, notified_at, card_id, payment_id, created_at, updated_at</span> — outbound notify tracking</div>
+    <div class="card"><h5>webhook_requests</h5><span class="mono">id, source, context(jsonb), created_at, updated_at</span> — raw inbound</div>
+    <div class="card"><h5>applications</h5><span class="mono">id, name, webhook_url, webhook_secret, api_key, created_at, updated_at</span></div>
+    <div class="card"><h5>cards</h5><span class="mono">id, token, name, last_four_digits, expiry_month, expiry_year, type(card_type), status(card_status), is_default, userId, created_at, updated_at</span></div>
+    <div class="card"><h5>users</h5><span class="mono">id, name, phone, reference_id, application_id, created_at, updated_at</span></div>
+    <div class="card"><h5>verification_codes</h5><span class="mono">id, code, identifier, used_at, expires_at, created_at, updated_at</span></div>
+  </div>
+  <h3>Enum values (prod)</h3>
+  <table>
+    <tr><th>Enum</th><th>Values</th></tr>
+    <tr><td class="mono">payment_status</td><td><span class="tag">INITIATED</span><span class="tag">PAID</span><span class="tag">FAILED</span><span class="tag">REFUNDED</span><span class="tag">VOIDED</span><span class="tag">AUTHORIZED</span><span class="tag">CAPTURED</span><span class="tag">VERIFIED</span></td></tr>
+    <tr><td class="mono">invoice_status</td><td><span class="tag">PENDING</span><span class="tag">PAID</span><span class="tag">CANCELLED</span><span class="tag">EXPIRED</span><span class="tag">REFUNDED</span><span class="tag">AUTHORIZED</span><span class="tag">VOIDED</span><span class="tag">CAPTURED</span></td></tr>
+    <tr><td class="mono">payment_channel</td><td><span class="tag">MOYASAR</span><span class="tag">SADAD</span><span class="tag">TAP_PAYMENTS</span><span class="tag">TAMARA</span></td></tr>
+    <tr><td class="mono">invoice_channel</td><td><span class="tag">MOYASAR</span><span class="tag">TAP_PAYMENTS</span></td></tr>
+    <tr><td class="mono">payment_flow</td><td><span class="tag">STANDARD</span><span class="tag">MANUAL_CAPTURE</span><span class="tag">RECURRING</span></td></tr>
+    <tr><td class="mono">payment_source</td><td><span class="tag">CARD</span><span class="tag">APPLE_PAY</span><span class="tag">STC_PAY</span><span class="tag">SADAD</span><span class="tag">SAMSUNG_PAY</span><span class="tag">TAMARA</span></td></tr>
+    <tr><td class="mono">payment_method</td><td><span class="tag">MADA</span><span class="tag">VISA</span><span class="tag">MASTERCARD</span><span class="tag">AMEX</span><span class="tag">SADAD</span><span class="tag">TAMARA</span></td></tr>
+    <tr><td class="mono">webhook_type</td><td><span class="tag">PAYMENT_PAID</span><span class="tag">PAYMENT_FAILED</span><span class="tag">PAYMENT_REFUNDED</span><span class="tag">PAYMENT_AUTHORIZED</span><span class="tag">PAYMENT_VOIDED</span><span class="tag">PAYMENT_CAPTURED</span><span class="tag">CARD_ADDED</span><span class="tag">CARD_REMOVED</span><span class="tag">CARD_DEFAULT</span><span class="tag">CARD_EXPIRED</span></td></tr>
+    <tr><td class="mono">webhook_status</td><td><span class="tag">PENDING</span><span class="tag">DELIVERED</span><span class="tag">FAILED</span></td></tr>
+    <tr><td class="mono">card_status</td><td><span class="tag">ACTIVE</span><span class="tag">INACTIVE</span></td></tr>
+    <tr><td class="mono">card_type</td><td><span class="tag">MADA</span><span class="tag">VISA</span><span class="tag">MASTERCARD</span><span class="tag">AMEX</span></td></tr>
+  </table>
+</section>
+
+<!-- ================= TEST ================= -->
+<section id="test">
+  <h2>Test coverage hooks (Maestro E2E + integration)</h2>
+  <p class="lead">Mapping the flows above to concrete, testable branches.</p>
+  <h3>Happy paths (one per surface)</h3>
+  <ul>
+    <li><b>Web card</b>: createInvoice(MANUAL_CAPTURE) → Moyasar authorized → webhook → BSS order → capture → invoice CAPTURED.</li>
+    <li><b>Web QR</b>: referral present → invoice amount = qr_discounted_price → same as web card. Assert charged amount.</li>
+    <li><b>Pulse buy</b>: ePurchaseFTTH poll @5s until PAID/CAPTURED; assert orderNbr.</li>
+    <li><b>Pulse manage</b>: PAID_BY_ZERO short-circuit (charge 0) and paid path per serviceType.</li>
+    <li><b>SDA SADAD</b>: generateInstantInvoice → invoice PAID → sadadPayment success → webhook_requests.isSuccess.</li>
+  </ul>
+  <h3>Status-driven branches (drive via Moyasar test-mode / stubbed /webhooks/moyasar)</h3>
+  <ul>
+    <li>Each of paid / authorized / captured / voided → assert invoice transition + webhook_type + DELIVERED.</li>
+    <li>failed / refunded / verified → assert NO invoice change, NO app notify (documents current behavior / potential bug).</li>
+    <li>Idempotency: replay same webhook → "already X", no double order.</li>
+    <li>Guards: amount mismatch, version≠2, expired invoice, invalid transition.</li>
+  </ul>
+  <h3>Defect regression</h3>
+  <ul>
+    <li>P2002: fire duplicate webhook + initPayment concurrently → expect graceful handling, not 500.</li>
+    <li>Notify timeout: make webhook_url hang &gt;12s → webhooks.status FAILED → reconciliation picks it up.</li>
+  </ul>
+  <hr/>
+  <p class="mut">Sources: <span class="mono">salam-nexus/packages/payments-api/src/{routers/webhooks.ts, routers/invoices.ts, routers/payments.ts, clients/moyasar.ts}</span>, <span class="mono">packages/api/src/{routers/webhooks.ts, routers/epurchase.ts, routers/salam-app/manage-line.ts, routers/sda.ts, workflows.ts, clients/payments.ts}</span>, front-end <span class="mono">apps/{epurchase,pulse,payments-web}/src/lib/moyasar.ts</span>, and prod <span class="mono">payments_v2</span> schema + pg_enum dump.</p>
+</section>
+
+</main>
+</div>
+<script>
+  // ===== Reusable interactive graph engine (theme-aware, click-to-highlight) =====
+  // One engine renders every node-and-edge diagram on this page: the architecture
+  // map and the invoice / payment state machines. Border-aware edge routing means
+  // nodes can sit anywhere; edges leave/enter on the side facing their target.
+  function mkGraph(svg, legend, spec) {
+    if (!svg || !legend) return;
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+    const NW = spec.nodeW || 172, NH = spec.nodeH || 44;
+    const N = spec.nodes, E = spec.edges, F = spec.flows;
+
+    // geometry helpers
+    for (const id in N) {
+      const n = N[id];
+      if (n.type === 'terminal') { n.r = 9; n.cx = n.x; n.cy = n.y; }
+      else { if (n.type === 'decision') n.diamond = true; n.w = n.w || (n.diamond ? 150 : NW); n.h = n.h || (n.diamond ? 74 : NH); n.cx = n.x + n.w / 2; n.cy = n.y + n.h / 2; }
+    }
+    const border = (n, tx, ty) => {
+      const dx = tx - n.cx, dy = ty - n.cy;
+      if (n.r) { const L = Math.hypot(dx, dy) || 1; return [n.cx + dx / L * n.r, n.cy + dy / L * n.r]; }
+      const hw = n.w / 2, hh = n.h / 2;
+      if (n.diamond) { // |X|/hw + |Y|/hh = 1
+        const denom = Math.abs(dx) / hw + Math.abs(dy) / hh;
+        const t = denom === 0 ? 0 : 1 / denom;
+        return [n.cx + dx * t, n.cy + dy * t];
+      }
+      const sx = dx === 0 ? Infinity : hw / Math.abs(dx), sy = dy === 0 ? Infinity : hh / Math.abs(dy);
+      const s = Math.min(sx, sy);
+      return [n.cx + dx * s, n.cy + dy * s];
+    };
+
+    // defs: one arrowhead per flow colour
+    const defs = el('defs', {});
+    Object.entries(F).forEach(([k, o]) => {
+      const m = el('marker', { id: `${spec.id}-ah-${k}`, viewBox: '0 0 10 10', refX: '8.5', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' });
+      m.appendChild(el('path', { d: 'M0 0 L10 5 L0 10 z', fill: o.c }));
+      defs.appendChild(m);
+    });
+    svg.appendChild(defs);
+
+    // zones (optional background lanes)
+    (spec.zones || []).forEach(z => {
+      svg.appendChild(el('rect', { class: 'zone', x: z.x, y: z.y, width: z.w, height: z.h, rx: 14 }));
+      const t = el('text', { class: 'zone-l', x: z.x + 12, y: z.y - 8 }); t.textContent = z.label; svg.appendChild(t);
+    });
+
+    // edges
+    const edgeEls = [];
+    E.forEach(([a, b, flow, lbl]) => {
+      const na = N[a], nb = N[b];
+      const [x1, y1] = border(na, nb.cx, nb.cy);
+      const [x2, y2] = border(nb, na.cx, na.cy);
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      // gentle curve: bow perpendicular to the segment a little
+      const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1;
+      const bow = Math.min(26, L * 0.16);
+      const cxp = mx - dy / L * bow, cyp = my + dx / L * bow;
+      const d = `M${x1.toFixed(1)} ${y1.toFixed(1)} Q ${cxp.toFixed(1)} ${cyp.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+      const col = F[flow].c;
+      const p = el('path', { class: `edge f-${flow}`, d, stroke: col, 'marker-end': `url(#${spec.id}-ah-${flow})`, 'data-a': a, 'data-b': b, 'data-flow': flow });
+      svg.appendChild(p);
+      const rec = { p, a, b, flow, lbl: null };
+      if (lbl) {
+        const tx = el('text', { class: `edge-l f-${flow}`, x: cxp.toFixed(1), y: (cyp - 5).toFixed(1), 'text-anchor': 'middle', 'data-flow': flow });
+        tx.textContent = lbl; svg.appendChild(tx); rec.lbl = tx;
+      }
+      edgeEls.push(rec);
+    });
+
+    // nodes on top
+    const nodeEls = {};
+    for (const id in N) {
+      const n = N[id];
+      const g = el('g', { class: 'node' + (n.type === 'terminal' ? ' term' : '') + (n.diamond ? ' dec' : ''), 'data-id': id });
+      if (n.type === 'terminal') {
+        g.appendChild(el('circle', { cx: n.cx, cy: n.cy, r: n.r }));
+      } else if (n.diamond) {
+        const hw = n.w / 2, hh = n.h / 2;
+        g.appendChild(el('polygon', { points: `${n.cx},${n.y} ${n.x + n.w},${n.cy} ${n.cx},${n.y + n.h} ${n.x},${n.cy}` }));
+        const t = el('text', { class: 't', x: n.cx, y: n.cy + 4, 'text-anchor': 'middle' }); t.textContent = n.t; g.appendChild(t);
+      } else {
+        g.appendChild(el('rect', { x: n.x, y: n.y, width: n.w, height: n.h, rx: 9 }));
+        const t = el('text', { class: 't', x: n.cx, y: n.y + (n.s ? 19 : 27), 'text-anchor': 'middle' }); t.textContent = n.t; g.appendChild(t);
+        if (n.s) { const s = el('text', { class: 's', x: n.cx, y: n.y + 33, 'text-anchor': 'middle' }); s.textContent = n.s; g.appendChild(s); }
+      }
+      svg.appendChild(g);
+      nodeEls[id] = g;
+    }
+
+    // interactions
+    function reset() {
+      svg.classList.remove('filtered');
+      edgeEls.forEach(e => { e.p.classList.remove('hi'); if (e.lbl) e.lbl.classList.remove('hi'); });
+      Object.values(nodeEls).forEach(g => g.classList.remove('hi'));
+      [...legend.children].forEach(c => c.classList.toggle('on', c.dataset.f === 'all'));
+    }
+    let active = null;
+    function byFlow(flow) {
+      active = 'f:' + flow; svg.classList.add('filtered');
+      const lit = new Set();
+      edgeEls.forEach(e => { const on = e.flow === flow; e.p.classList.toggle('hi', on); if (e.lbl) e.lbl.classList.toggle('hi', on); if (on) { lit.add(e.a); lit.add(e.b); } });
+      Object.entries(nodeEls).forEach(([id, g]) => g.classList.toggle('hi', lit.has(id)));
+      [...legend.children].forEach(c => c.classList.toggle('on', c.dataset.f === flow));
+    }
+    function byNode(id) {
+      active = 'n:' + id; svg.classList.add('filtered');
+      const lit = new Set([id]);
+      edgeEls.forEach(e => { const on = e.a === id || e.b === id; e.p.classList.toggle('hi', on); if (e.lbl) e.lbl.classList.toggle('hi', on); if (on) { lit.add(e.a); lit.add(e.b); } });
+      Object.entries(nodeEls).forEach(([nid, g]) => g.classList.toggle('hi', lit.has(nid)));
+      [...legend.children].forEach(c => c.classList.remove('on'));
+    }
+    Object.entries(nodeEls).forEach(([id, g]) => g.addEventListener('click', ev => { ev.stopPropagation(); active === 'n:' + id ? (active = null, reset()) : byNode(id); }));
+
+    // legend
+    const mk = (cls, f, colour, text) => {
+      const d = document.createElement('div'); d.className = cls; d.dataset.f = f;
+      if (colour) { const i = document.createElement('i'); i.style.background = colour; d.appendChild(i); }
+      d.appendChild(document.createTextNode(text)); return d;
+    };
+    const all = mk('archchip all on', 'all', null, 'All');
+    all.addEventListener('click', () => { active = null; reset(); });
+    legend.appendChild(all);
+    Object.entries(F).forEach(([k, o]) => {
+      const c = mk('archchip', k, o.c, o.label);
+      c.addEventListener('click', () => active === 'f:' + k ? (active = null, reset()) : byFlow(k));
+      legend.appendChild(c);
+    });
+  }
+
+  // ---- flow palettes (semantic; theme accents where possible) ----
+  const C = { create:'var(--acc2)', success:'var(--acc)', authorize:'#4d9dff', verify:'#00c6b8', fail:'#ff5a5a', refund:'#e3b341', terminal:'#8b98ad', gateway:'#ff9d4d', webhook:'#ff5a9e', notify:'#b98cff', order:'var(--acc)', sadad:'#e3b341' };
+
+  // ---- 1) Architecture map ----
+  (function(){
+    const NW=178, ZW=[ {x:16,w:200,label:'Front-ends'},{x:300,w:230,label:'Core API · tRPC :5005'},{x:600,w:210,label:'payments-api · payments_v2'},{x:858,w:168,label:'BSS / rails'} ];
+    const nx = z => ZW[z].x + (ZW[z].w-NW)/2;
+    const nodes={
+      fe_ep:{x:nx(0),y:70,t:'Web e-purchase',s:'apps/epurchase'}, fe_qr:{x:nx(0),y:132,t:'Web QR offer',s:'referral pricing'},
+      fe_pu:{x:nx(0),y:194,t:'Pulse app',s:'apps/pulse'}, fe_pw:{x:nx(0),y:256,t:'payments-web',s:'hosted /p2'},
+      co_ep:{x:nx(1),y:70,t:'routers/epurchase',s:'buy FTTH'}, co_ml:{x:nx(1),y:132,t:'manage-line.ts',s:'relocate · change-plan'},
+      co_sda:{x:nx(1),y:194,t:'routers/sda.ts',s:'dealer · SADAD'}, co_wh:{x:nx(1),y:300,t:'routers/webhooks',s:'receives callbacks'},
+      pa_inv:{x:nx(2),y:88,t:'invoices / payments',s:'payments_v2 DB'}, pa_moy:{x:nx(2),y:190,t:'clients/moyasar.ts',s:'handleWebhook'}, pa_not:{x:nx(2),y:290,t:'notifyApplication',s:'POST webhook_url'},
+      bss:{x:nx(3),y:88,t:'BSS / ZSmart',s:'createOrderNew'}, moya:{x:nx(1),y:392,t:'Moyasar gateway',s:'card · applepay'}, sad:{x:nx(2),y:392,t:'SADAD bill rail',s:'instant bill'}
+    };
+    const flows={ createInvoice:{c:C.create,label:'createInvoice (core → payments-api)'}, gateway:{c:C.gateway,label:'Gateway pay (browser → Moyasar)'}, webhook:{c:C.webhook,label:'Moyasar webhook → handleWebhook'}, notify:{c:C.notify,label:'notifyApplication (12s, SPOF)'}, order:{c:C.success,label:'BSS order / provisioning'}, sadad:{c:C.sadad,label:'SADAD bill rail'} };
+    const edges=[ ['fe_ep','co_ep','createInvoice','createInvoice'],['fe_qr','co_ep','createInvoice',''],['fe_pu','co_ml','createInvoice',''],['co_ep','pa_inv','createInvoice','x-api-key'],['co_ml','pa_inv','createInvoice',''],['co_sda','pa_inv','createInvoice',''],['fe_ep','moya','gateway','card direct'],['fe_pu','moya','gateway',''],['fe_pw','moya','gateway',''],['moya','pa_moy','webhook','POST /webhooks/moyasar'],['pa_moy','pa_inv','webhook',''],['pa_moy','pa_not','notify',''],['pa_not','co_wh','notify','notifyApplication (12s)'],['co_wh','bss','order','place / update order'],['bss','co_ep','order','order placed'],['sad','pa_inv','sadad','bill paid'] ];
+    const svg=document.getElementById('archsvg'); if(svg){ (spec=>mkGraph(svg,document.getElementById('archlegend'),spec))({id:'arch',nodes,edges,flows,zones:ZW.map(z=>({x:z.x,y:44,w:z.w,h:452,label:z.label}))}); }
+  })();
+
+  // ---- 2) Invoice status machine ----
+  (function(){
+    const T='terminal';
+    const nodes={
+      s0:{type:T,x:500,y:34}, PENDING:{x:435,y:64,w:130,t:'PENDING'},
+      PAID:{x:110,y:210,w:120,t:'PAID'}, AUTHORIZED:{x:390,y:210,w:150,t:'AUTHORIZED'}, EXPIRED:{x:700,y:210,w:120,t:'EXPIRED'}, CANCELLED:{x:850,y:210,w:130,t:'CANCELLED'},
+      CAPTURED:{x:300,y:355,w:130,t:'CAPTURED'}, VOIDED:{x:480,y:355,w:120,t:'VOIDED'},
+      REFUNDED:{x:190,y:485,w:130,t:'REFUNDED'}, sE:{type:T,x:470,y:530}
+    };
+    const flows={ create:{c:C.create,label:'createInvoice'}, success:{c:C.success,label:'paid / captured'}, authorize:{c:C.authorize,label:'authorized (MANUAL_CAPTURE)'}, fail:{c:C.fail,label:'void (BSS failed)'}, refund:{c:C.refund,label:'refundInvoice'}, terminal:{c:C.terminal,label:'terminal / expiry'} };
+    const edges=[ ['s0','PENDING','create','createInvoice'],['PENDING','PAID','success','moyasar paid (STANDARD)'],['PENDING','AUTHORIZED','authorize','moyasar authorized'],['PENDING','EXPIRED','terminal','expiresAt passed'],['PENDING','CANCELLED','terminal','cancelled'],['AUTHORIZED','CAPTURED','success','capture (BSS OK)'],['AUTHORIZED','VOIDED','fail','void (BSS failed)'],['PAID','REFUNDED','refund','refundInvoice'],['CAPTURED','REFUNDED','refund','refundInvoice'],['PAID','sE','terminal',''],['CAPTURED','sE','terminal',''],['VOIDED','sE','terminal',''],['REFUNDED','sE','terminal',''] ];
+    const svg=document.getElementById('invsvg'); if(svg) mkGraph(svg,document.getElementById('invlegend'),{id:'inv',nodes,edges,flows});
+  })();
+
+  // ---- 3) Payment status machine ----
+  (function(){
+    const T='terminal';
+    const nodes={
+      p0:{type:T,x:500,y:34}, INITIATED:{x:430,y:64,w:140,t:'INITIATED'},
+      VERIFIED:{x:110,y:210,w:120,t:'VERIFIED'}, AUTHORIZED:{x:300,y:210,w:150,t:'AUTHORIZED'}, PAID:{x:560,y:210,w:110,t:'PAID'}, FAILED:{x:760,y:210,w:120,t:'FAILED'},
+      VOIDED:{x:270,y:355,w:120,t:'VOIDED'}, CAPTURED:{x:470,y:355,w:130,t:'CAPTURED'},
+      REFUNDED:{x:470,y:485,w:130,t:'REFUNDED'}, pE:{type:T,x:430,y:530}
+    };
+    const flows={ create:{c:C.create,label:'initPayment / createPayment'}, success:{c:C.success,label:'paid / captured'}, authorize:{c:C.authorize,label:'authorized'}, verify:{c:C.verify,label:'verified (card save)'}, fail:{c:C.fail,label:'failed / voided'}, refund:{c:C.refund,label:'refunded'}, terminal:{c:C.terminal,label:'terminal'} };
+    const edges=[ ['p0','INITIATED','create','initPayment / createPayment'],['INITIATED','PAID','success','paid'],['INITIATED','FAILED','fail','failed'],['INITIATED','AUTHORIZED','authorize','authorized'],['INITIATED','VERIFIED','verify','verified (card save)'],['AUTHORIZED','CAPTURED','success','captured'],['AUTHORIZED','VOIDED','fail','voided'],['PAID','REFUNDED','refund','refunded'],['CAPTURED','REFUNDED','refund','refunded'],['FAILED','pE','terminal',''],['VOIDED','pE','terminal',''],['REFUNDED','pE','terminal',''] ];
+    const svg=document.getElementById('paysvg'); if(svg) mkGraph(svg,document.getElementById('paylegend'),{id:'pay',nodes,edges,flows});
+  })();
+
+  // ---- 4) Web QR pricing flowchart ----
+  (function(){
+    const D='decision';
+    const nodes={
+      QR:{x:250,y:30,w:220,t:'Scan QR',s:'dealer / marketing'},
+      R:{x:250,y:120,w:220,t:'referralCode saved',s:'local / session storage'},
+      PL:{x:230,y:210,w:260,t:'Plans.tsx: isQrFlow',s:'hasReferral && enableQrOfferPrice'},
+      PR:{type:D,x:290,y:305,w:140,h:76,t:'QR pricing?'},
+      QP:{x:110,y:430,w:210,t:'price = qr_discounted_price',s:'badge = qr_offer_text'},
+      SP:{x:400,y:430,w:210,t:'price = standard/offer',s:'default pricing'},
+      INV:{x:250,y:540,w:220,t:'createInvoice',s:'amount = QR price'},
+      STD:{x:230,y:630,w:260,t:'→ identical to card flow',s:'Moyasar → webhook → BSS order'}
+    };
+    const flows={ step:{c:C.create,label:'main path'}, yes:{c:C.success,label:'QR pricing = yes'}, no:{c:C.authorize,label:'standard pricing = no'} };
+    const edges=[ ['QR','R','step',''],['R','PL','step',''],['PL','PR','step',''],['PR','QP','yes','yes'],['PR','SP','no','no'],['QP','INV','yes',''],['SP','INV','no',''],['INV','STD','step',''] ];
+    const svg=document.getElementById('qrsvg'); if(svg) mkGraph(svg,document.getElementById('qrlegend'),{id:'qr',nodes,edges,flows});
+  })();
+
+  // ---- 5) App-notify & BSS order flowchart ----
+  (function(){
+    const D='decision';
+    const nodes={
+      A:{x:280,y:30,w:220,t:'handleWebhook',s:'invoice transitioned'},
+      B:{x:270,y:120,w:240,t:'createWebhook(type)',s:'webhooks row PENDING'},
+      Cc:{x:250,y:210,w:280,t:'POST webhook_url',s:'{data, invoiceId, secret} · timeout 12s'},
+      D2:{type:D,x:315,y:310,w:150,h:80,t:'2xx within 12s?'},
+      E:{x:110,y:440,w:230,t:'webhooks: DELIVERED',s:'notifiedAt = now'},
+      F:{x:440,y:440,w:240,t:'webhooks: FAILED',s:'no auto-retry'},
+      G:{x:110,y:550,w:230,t:'Core places BSS order',s:'service provisioned'},
+      H:{x:440,y:550,w:240,t:'✕ PAID but order NOT placed',s:'manual reconciliation'}
+    };
+    const flows={ step:{c:C.create,label:'main path'}, yes:{c:C.success,label:'2xx within 12s'}, fail:{c:C.fail,label:'no / timeout → SPOF'} };
+    const edges=[ ['A','B','step',''],['B','Cc','step',''],['Cc','D2','step',''],['D2','E','yes','yes'],['D2','F','fail','no / timeout'],['E','G','yes',''],['F','H','fail',''] ];
+    const svg=document.getElementById('anssvg'); if(svg) mkGraph(svg,document.getElementById('anslegend'),{id:'ans',nodes,edges,flows});
+  })();
+
+  // ===== Reusable interactive SEQUENCE engine (lifelines + ordered messages) =====
+  // Renders every payment sequence: actor columns with lifelines, numbered
+  // messages (sync / dashed return / self-loop), loop & alt fragment boxes, plus
+  // three interaction modes — click an actor (trace its messages), click a flow
+  // chip (filter by kind), or step through with ◀ ▶ (reveal one message at a time).
+  function mkSeq(svg, legend, play, spec) {
+    if (!svg) return;
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+    const W = spec.w || 980, A = spec.actors, S = spec.steps, FR = spec.frags || [], G = spec.groups;
+    const idx = {}; A.forEach((a, i) => idx[a.id] = i);
+    const L = 96, Rm = 96, span = A.length > 1 ? (W - L - Rm) / (A.length - 1) : 0;
+    A.forEach((a, i) => a.x = L + i * span);
+    const aw = Math.max(92, Math.min(span - 14, 150));
+    const HY = 18, HH = 46, lifeTop = HY + HH;
+    const openC = {}, closeC = {}, divC = {};
+    FR.forEach(f => { openC[f.from] = (openC[f.from] || 0) + 1; closeC[f.to] = (closeC[f.to] || 0) + 1; (f.dividers || []).forEach(d => divC[d.at] = (divC[d.at] || 0) + 1); });
+    const ROW = 46, SELF = 58, FTOP = 26, FBOT = 14, DIV = 22;
+    const stepY = []; let y = lifeTop + 34;
+    S.forEach((s, i) => { y += (openC[i] || 0) * FTOP; y += (divC[i] || 0) * DIV; stepY[i] = y; y += (s.kind === 'self' ? SELF : ROW); y += (closeC[i] || 0) * FBOT; });
+    const bottomY = y + 8, H = bottomY + HH + 22;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+    const defs = el('defs', {});
+    Object.entries(G).forEach(([k, o]) => { const m = el('marker', { id: `${spec.id}-a-${k}`, viewBox: '0 0 10 10', refX: '8.5', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' }); m.appendChild(el('path', { d: 'M0 0 L10 5 L0 10 z', fill: o.c })); defs.appendChild(m); });
+    svg.appendChild(defs);
+
+    // fragment boxes (behind lifelines)
+    const containd = f => FR.filter(g => g !== f && g.from <= f.from && g.to >= f.to && !(g.from === f.from && g.to === f.to)).length;
+    FR.forEach(f => {
+      let mn = 99, mx = -1;
+      for (let i = f.from; i <= f.to; i++) { const s = S[i]; mn = Math.min(mn, idx[s.from], idx[s.to]); mx = Math.max(mx, idx[s.from], idx[s.to]); }
+      const ins = containd(f) * 11;
+      const x0 = A[mn].x - 34 + ins, x1 = A[mx].x + 34 - ins;
+      const yy0 = stepY[f.from] - 20, last = S[f.to], yy1 = stepY[f.to] + (last.kind === 'self' ? 34 : 16);
+      const g = el('g', { class: 'frag-g' });
+      g.appendChild(el('rect', { class: 'frag', x: x0, y: yy0, width: x1 - x0, height: yy1 - yy0, rx: 6 }));
+      const txt = `${f.type} ${f.label}`, tw = 15 + txt.length * 5.3;
+      g.appendChild(el('rect', { class: 'frag-lbg', x: x0, y: yy0 - 1, width: tw, height: 15, rx: 3 }));
+      const tl = el('text', { class: 'frag-l', x: x0 + 6, y: yy0 + 10 }); tl.textContent = txt; g.appendChild(tl);
+      (f.dividers || []).forEach(dv => {
+        const dy = stepY[dv.at] - 12;
+        g.appendChild(el('line', { class: 'frag-div', x1: x0, y1: dy, x2: x1, y2: dy }));
+        const dt = el('text', { class: 'frag-l', x: x0 + 8, y: dy - 3 }); dt.textContent = '[' + dv.label + ']'; g.appendChild(dt);
+      });
+      svg.appendChild(g);
+    });
+
+    // lifelines + actor boxes (top and bottom mirror)
+    const actorEls = {};
+    A.forEach(a => {
+      svg.appendChild(el('line', { class: 'life', x1: a.x, y1: lifeTop, x2: a.x, y2: bottomY }));
+      actorEls[a.id] = [HY, bottomY + 8].map(by => {
+        const g = el('g', { class: 'actor', 'data-actor': a.id });
+        g.appendChild(el('rect', { x: a.x - aw / 2, y: by, width: aw, height: HH - 4, rx: 8 }));
+        const an = el('text', { class: 'an', x: a.x, y: by + (a.sub ? 18 : 26), 'text-anchor': 'middle' }); an.textContent = a.label; g.appendChild(an);
+        if (a.sub) { const as = el('text', { class: 'as', x: a.x, y: by + 31, 'text-anchor': 'middle' }); as.textContent = a.sub; g.appendChild(as); }
+        svg.appendChild(g); return g;
+      });
+    });
+
+    // messages
+    const badge = (g, x, y, n, col) => { g.appendChild(el('circle', { class: 'numbg', cx: x, cy: y, r: 7, fill: col })); const t = el('text', { class: 'num', x, y: y + 3, 'text-anchor': 'middle' }); t.textContent = n; g.appendChild(t); };
+    const msgEls = [];
+    S.forEach((s, i) => {
+      const col = G[s.g].c, yy = stepY[i], xa = A[idx[s.from]].x, xb = A[idx[s.to]].x;
+      const g = el('g', { class: 'msg ' + (s.kind === 'return' ? 'ret ' : '') + 'g-' + s.g, 'data-idx': i, 'data-g': s.g });
+      if (s.kind === 'self') {
+        const lastCol = idx[s.from] === A.length - 1, w = lastCol ? -30 : 30;
+        g.appendChild(el('path', { class: 'ln', d: `M${xa} ${yy} h${w} v18 h${-w}`, stroke: col, 'marker-end': `url(#${spec.id}-a-${s.g})` }));
+        const t = el('text', { class: 'ml', x: xa + (lastCol ? w - 8 : w + 8), y: yy + 8, 'text-anchor': lastCol ? 'end' : 'start' }); t.textContent = s.t; g.appendChild(t);
+        badge(g, xa, yy - 2, i + 1, col);
+      } else {
+        const dir = xb > xa ? 1 : -1;
+        g.appendChild(el('line', { class: 'ln', x1: xa + dir * 4, y1: yy, x2: xb - dir * 4, y2: yy, stroke: col, 'marker-end': `url(#${spec.id}-a-${s.g})` }));
+        const t = el('text', { class: 'ml', x: (xa + xb) / 2, y: yy - 6, 'text-anchor': 'middle' }); t.textContent = s.t; g.appendChild(t);
+        badge(g, xa + dir * 4, yy, i + 1, col);
+      }
+      svg.appendChild(g); msgEls.push(g);
+    });
+
+    // interactions
+    let mode = null, cur = -1, cnt = null;
+    const clearHi = () => { msgEls.forEach(m => m.classList.remove('hi', 'cur', 'seen')); Object.values(actorEls).forEach(gs => gs.forEach(g => g.classList.remove('hi'))); };
+    const updCount = () => { if (cnt) cnt.textContent = cur < 0 ? `${S.length} steps` : `${cur + 1} / ${S.length}`; };
+    function reset() { mode = null; cur = -1; svg.classList.remove('filtered', 'stepping'); clearHi(); [...legend.children].forEach(c => c.classList.toggle('on', c.dataset.f === 'all')); updCount(); }
+    function byGroup(k) {
+      mode = 'g:' + k; svg.classList.remove('stepping'); svg.classList.add('filtered'); clearHi(); cur = -1;
+      const lit = new Set();
+      S.forEach((s, i) => { if (s.g === k) { msgEls[i].classList.add('hi'); lit.add(s.from); lit.add(s.to); } });
+      Object.entries(actorEls).forEach(([id, gs]) => gs.forEach(g => g.classList.toggle('hi', lit.has(id))));
+      [...legend.children].forEach(c => c.classList.toggle('on', c.dataset.f === k)); updCount();
+    }
+    function byActor(id) {
+      mode = 'a:' + id; svg.classList.remove('stepping'); svg.classList.add('filtered'); clearHi(); cur = -1;
+      const lit = new Set([id]);
+      S.forEach((s, i) => { if (s.from === id || s.to === id) { msgEls[i].classList.add('hi'); lit.add(s.from); lit.add(s.to); } });
+      Object.entries(actorEls).forEach(([aid, gs]) => gs.forEach(g => g.classList.toggle('hi', lit.has(aid))));
+      [...legend.children].forEach(c => c.classList.remove('on')); updCount();
+    }
+    function stepShow(i) {
+      mode = 'step'; svg.classList.remove('filtered'); svg.classList.add('stepping'); clearHi(); cur = i;
+      msgEls.forEach((m, j) => { if (j < i) m.classList.add('seen'); else if (j === i) m.classList.add('cur'); });
+      [...legend.children].forEach(c => c.classList.remove('on')); updCount();
+    }
+    Object.entries(actorEls).forEach(([id, gs]) => gs.forEach(g => g.addEventListener('click', ev => { ev.stopPropagation(); mode === 'a:' + id ? reset() : byActor(id); })));
+    msgEls.forEach((m, i) => m.addEventListener('click', ev => { ev.stopPropagation(); mode === 'step' && cur === i ? reset() : stepShow(i); }));
+    svg.addEventListener('click', () => reset());
+
+    if (play) {
+      const mkBtn = (t, fn) => { const b = document.createElement('button'); b.textContent = t; b.addEventListener('click', fn); return b; };
+      play.appendChild(mkBtn('◀ Prev', () => stepShow(cur < 0 ? 0 : Math.max(0, cur - 1))));
+      cnt = document.createElement('span'); cnt.className = 'count'; play.appendChild(cnt);
+      play.appendChild(mkBtn('Next ▶', () => stepShow(cur < 0 ? 0 : Math.min(S.length - 1, cur + 1))));
+      play.appendChild(mkBtn('Reset', () => reset()));
+    }
+    const mk = (f, colour, text, cls) => { const d = document.createElement('div'); d.className = 'archchip' + (cls || ''); d.dataset.f = f; if (colour) { const i = document.createElement('i'); i.style.background = colour; d.appendChild(i); } d.appendChild(document.createTextNode(text)); return d; };
+    const all = mk('all', null, 'All', ' all on'); all.addEventListener('click', () => reset()); legend.appendChild(all);
+    Object.entries(G).forEach(([k, o]) => { const c = mk(k, o.c, o.label); c.addEventListener('click', () => mode === 'g:' + k ? reset() : byGroup(k)); legend.appendChild(c); });
+    updCount();
+  }
+
+  // ---- sequence flow palette (shares C where possible) ----
+  const SG = { create: C.create, gateway: C.gateway, poll: '#00c6b8', webhook: C.webhook, notify: C.notify, order: C.success, fail: C.fail, zero: '#8b98ad', sadad: C.sadad };
+  const grp = (...keys) => Object.fromEntries(keys.map(k => [k, { c: SG[k], label: ({ create: 'createInvoice', gateway: 'gateway pay', poll: 'status poll', webhook: 'Moyasar webhook', notify: 'notifyApplication', order: 'BSS order', fail: 'void / refund', zero: 'zero-charge skip', sadad: 'SADAD bill' })[k] }]));
+
+  // ---- 6) Web e-purchase — card sequence ----
+  (function () {
+    const svg = document.getElementById('seqweb-svg'); if (!svg) return;
+    const actors = [
+      { id: 'U', label: 'Browser', sub: 'epurchase' }, { id: 'API', label: 'Core API', sub: 'epurchase.ts' },
+      { id: 'PAY', label: 'payments-api', sub: '' }, { id: 'M', label: 'Moyasar', sub: 'gateway' },
+      { id: 'WH', label: 'Core webhook', sub: '/webhooks/epurchase' }, { id: 'BSS', label: 'BSS', sub: '' }
+    ];
+    const steps = [
+      { from: 'API', to: 'PAY', t: 'createInvoice (MANUAL_CAPTURE, version=2)', g: 'create' },
+      { from: 'PAY', to: 'API', t: 'invoice {id, PENDING}', kind: 'return', g: 'create' },
+      { from: 'API', to: 'U', t: 'order summary + invoice', kind: 'return', g: 'create' },
+      { from: 'U', to: 'M', t: 'POST /v1/payments (card, manual, pk_live)', g: 'gateway' },
+      { from: 'M', to: 'U', t: 'payment {id, status}', kind: 'return', g: 'gateway' },
+      { from: 'U', to: 'PAY', t: 'initPayment(invoiceId, txn, saveCard)', g: 'gateway' },
+      { from: 'PAY', to: 'PAY', t: 'payment INITIATED + activity', kind: 'self', g: 'gateway' },
+      { from: 'U', to: 'API', t: 'checkPayment(stateId, invoiceId)', g: 'poll' },
+      { from: 'M', to: 'PAY', t: 'POST /webhooks/moyasar (payment_authorized)', kind: 'return', g: 'webhook' },
+      { from: 'PAY', to: 'M', t: 'getPayment(id) re-fetch', g: 'webhook' },
+      { from: 'PAY', to: 'PAY', t: 'upsert AUTHORIZED · invoice→AUTHORIZED', kind: 'self', g: 'webhook' },
+      { from: 'PAY', to: 'WH', t: 'notifyApplication(webhook_url, secret) [12s]', g: 'notify' },
+      { from: 'WH', to: 'WH', t: 'verify secret · upsert ePurchasePayment', kind: 'self', g: 'notify' },
+      { from: 'WH', to: 'API', t: 'updateCustomerProfile → onNextStep', g: 'notify' },
+      { from: 'API', to: 'BSS', t: 'createOrderNew (salamnewconnection)', g: 'order' },
+      { from: 'BSS', to: 'API', t: 'orderNbr', kind: 'return', g: 'order' },
+      { from: 'API', to: 'PAY', t: 'captureInvoice(paymentId) → CAPTURED', g: 'order' },
+      { from: 'API', to: 'PAY', t: 'voidInvoice(paymentId) → VOIDED (refunded)', g: 'fail' }
+    ];
+    const frags = [
+      { type: 'loop', label: 'every 5s', from: 7, to: 7 },
+      { type: 'alt', label: 'order OK', from: 15, to: 17, dividers: [{ at: 17, label: 'else order fails' }] }
+    ];
+    mkSeq(svg, document.getElementById('seqweb-legend'), document.getElementById('seqweb-play'),
+      { id: 'seqweb', actors, steps, frags, groups: grp('create', 'gateway', 'poll', 'webhook', 'notify', 'order', 'fail') });
+  })();
+
+  // ---- 7) Apple Pay / wallet sequence ----
+  (function () {
+    const svg = document.getElementById('seqwallet-svg'); if (!svg) return;
+    const actors = [
+      { id: 'U', label: 'Browser', sub: 'wallet' }, { id: 'M', label: 'Moyasar', sub: 'gateway' },
+      { id: 'PAY', label: 'payments-api', sub: '' }, { id: 'WH', label: 'Core webhook', sub: '' }
+    ];
+    const steps = [
+      { from: 'U', to: 'M', t: 'applepay/initiate (merchant validation)', g: 'gateway' },
+      { from: 'M', to: 'U', t: 'session', kind: 'return', g: 'gateway' },
+      { from: 'U', to: 'M', t: 'POST /payments source=applepay, manual', g: 'gateway' },
+      { from: 'M', to: 'U', t: 'payment', kind: 'return', g: 'gateway' },
+      { from: 'M', to: 'PAY', t: '/webhooks/moyasar (authorized | paid)', kind: 'return', g: 'webhook' },
+      { from: 'PAY', to: 'PAY', t: 'same statusMap → invoice transition', kind: 'self', g: 'webhook' },
+      { from: 'PAY', to: 'WH', t: 'notifyApplication → BSS order', g: 'notify' }
+    ];
+    mkSeq(svg, document.getElementById('seqwallet-legend'), document.getElementById('seqwallet-play'),
+      { id: 'seqwallet', actors, steps, groups: grp('gateway', 'webhook', 'notify') });
+  })();
+
+  // ---- 8) Pulse manage-line sequence ----
+  (function () {
+    const svg = document.getElementById('seqpulse-svg'); if (!svg) return;
+    const actors = [
+      { id: 'U', label: 'Pulse app', sub: '' }, { id: 'ML', label: 'manage-line.ts', sub: '' },
+      { id: 'PAY', label: 'payments-api', sub: '' }, { id: 'M', label: 'Moyasar', sub: '' },
+      { id: 'WH', label: 'Core webhook', sub: '/webhooks/salamHome' }, { id: 'BSS', label: 'BSS', sub: '' }
+    ];
+    const steps = [
+      { from: 'ML', to: 'PAY', t: 'createInvoice (salamHome, metadata.serviceType)', g: 'create' },
+      { from: 'ML', to: 'ML', t: 'PAID_BY_ZERO → skip gateway, advance', kind: 'self', g: 'zero' },
+      { from: 'U', to: 'M', t: 'pay (card)', g: 'gateway' },
+      { from: 'M', to: 'PAY', t: '/webhooks/moyasar paid', kind: 'return', g: 'webhook' },
+      { from: 'PAY', to: 'PAY', t: 'invoice PENDING → PAID', kind: 'self', g: 'webhook' },
+      { from: 'PAY', to: 'WH', t: 'notifyApplication', g: 'notify' },
+      { from: 'WH', to: 'WH', t: 'require invoice PAID', kind: 'self', g: 'notify' },
+      { from: 'WH', to: 'BSS', t: 'RelocationFTTH → salamHomeRelocation', g: 'order' },
+      { from: 'WH', to: 'BSS', t: 'ChangePlan → salamHomeChangePlan', g: 'order' },
+      { from: 'WH', to: 'BSS', t: 'RenewFTTH → salamHomeRenewPlan', g: 'order' }
+    ];
+    const frags = [
+      { type: 'alt', label: 'totalCharge = 0', from: 1, to: 9, dividers: [{ at: 2, label: 'else charge > 0' }] },
+      { type: 'alt', label: 'serviceType', from: 7, to: 9, dividers: [{ at: 8, label: 'ChangePlan' }, { at: 9, label: 'RenewFTTH' }] }
+    ];
+    mkSeq(svg, document.getElementById('seqpulse-legend'), document.getElementById('seqpulse-play'),
+      { id: 'seqpulse', actors, steps, frags, groups: grp('create', 'zero', 'gateway', 'webhook', 'notify', 'order') });
+  })();
+
+  // ---- 9) SDA dealer SADAD sequence ----
+  (function () {
+    const svg = document.getElementById('seqsada-svg'); if (!svg) return;
+    const actors = [
+      { id: 'D', label: 'SDA dealer app', sub: '' }, { id: 'WF', label: 'core workflows.ts', sub: '' },
+      { id: 'BSS', label: 'BSS', sub: 'ZSmart' }, { id: 'PAY', label: 'payments-api', sub: 'optimization' },
+      { id: 'BANK', label: 'Bank / SADAD', sub: 'customer' }, { id: 'WH', label: 'Core webhook', sub: '/webhooks/sadad' }
+    ];
+    const steps = [
+      { from: 'D', to: 'WF', t: 'reach payment step', g: 'create' },
+      { from: 'WF', to: 'BSS', t: 'generateInstantInvoice(serviceId)', g: 'create' },
+      { from: 'BSS', to: 'WF', t: '{charge, sadadAuNumber}', kind: 'return', g: 'create' },
+      { from: 'WF', to: 'PAY', t: 'createInvoice(amount, metadata{sadadReference…})', g: 'create' },
+      { from: 'PAY', to: 'WF', t: 'invoice PENDING (sadad_id)', kind: 'return', g: 'create' },
+      { from: 'WF', to: 'D', t: 'show SADAD number to customer', kind: 'return', g: 'create' },
+      { from: 'BANK', to: 'PAY', t: 'bill paid → invoice PAID', kind: 'return', g: 'sadad' },
+      { from: 'PAY', to: 'WH', t: 'notifyApplication (invoice PAID)', g: 'notify' },
+      { from: 'WH', to: 'WH', t: 'getInvoice · require PAID · amount match', kind: 'self', g: 'notify' },
+      { from: 'WH', to: 'BSS', t: 'ePurchase.sadadPayment(…) [retry x3]', g: 'order' },
+      { from: 'WH', to: 'BSS', t: 'realTimeBillUpload(sadadInvoiceId, remaining)', g: 'order' },
+      { from: 'WH', to: 'WH', t: 'webhook_requests.isSuccess = true', kind: 'self', g: 'order' }
+    ];
+    mkSeq(svg, document.getElementById('seqsada-legend'), document.getElementById('seqsada-play'),
+      { id: 'seqsada', actors, steps, groups: grp('create', 'sadad', 'notify', 'order') });
+  })();
+
+  // Navigation wiring runs FIRST and is independent of Mermaid — so even if the
+  // diagram library fails to load, the sidebar stays clickable.
+  const links=[...document.querySelectorAll('#nav a')], secs=[...document.querySelectorAll('section')];
+
+  // Mermaid must render each diagram WHILE ITS SECTION IS VISIBLE. startOnLoad
+  // would render all diagrams at once while most sections are display:none —
+  // measurement then fails and Mermaid stamps its "Syntax error" graphic (which
+  // sticks). So we initialise with startOnLoad:false and render a section's
+  // diagrams lazily the first time it is shown (each renders exactly once).
+  let mermaidOK=false;
+  function renderSection(sec){
+    if(!mermaidOK||!sec) return;
+    const nodes=[...sec.querySelectorAll('.mermaid:not([data-processed])')];
+    if(!nodes.length) return;
+    try { window.mermaid.run({ nodes, suppressErrors:true }); }
+    catch(e){ console.error('mermaid render failed:', e); }
+  }
+  function show(id){
+    secs.forEach(s=>s.classList.toggle('on',s.id===id));
+    links.forEach(a=>a.classList.toggle('active',a.dataset.t===id));
+    renderSection(document.getElementById(id));
+    document.querySelector('main').scrollTop=0;window.scrollTo(0,0);
+  }
+  links.forEach(a=>a.addEventListener('click',()=>show(a.dataset.t)));
+
+  // Mermaid is optional & guarded — a failure never breaks navigation.
+  try {
+    if (window.mermaid) {
+      // Theme comes from the parent app (?theme=light|dark) — pick a matching
+      // mermaid palette so the diagrams flip with the page.
+      var LIGHT = document.documentElement.getAttribute('data-theme') === 'light';
+      var tv = LIGHT ? {
+          darkMode:false, background:'transparent', fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif', fontSize:'13px',
+          primaryColor:'#ffffff', primaryBorderColor:'#0e8a37', primaryTextColor:'#132036',
+          secondaryColor:'#eef2f7', secondaryBorderColor:'#d7dee8', secondaryTextColor:'#132036',
+          tertiaryColor:'#f3f5f9', tertiaryBorderColor:'#d7dee8', tertiaryTextColor:'#1b2a44',
+          lineColor:'#5a6889', textColor:'#132036', nodeTextColor:'#132036', titleColor:'#132036',
+          clusterBkg:'rgba(238,242,247,.7)', clusterBorder:'#d7dee8', edgeLabelBackground:'#f3f5f9',
+          nodeBorder:'#9fb0c8', mainBkg:'#ffffff',
+          actorBkg:'#ffffff', actorBorder:'#0e8a37', actorTextColor:'#132036', actorLineColor:'#5a6889',
+          signalColor:'#5a6889', signalTextColor:'#1b2a44', labelBoxBkgColor:'#eef2f7', labelBoxBorderColor:'#d7dee8', labelTextColor:'#132036',
+          noteBkgColor:'#e3f3e8', noteBorderColor:'#9fd4b0', noteTextColor:'#0e8a37',
+        } : {
+          darkMode:true, background:'transparent', fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif', fontSize:'13px',
+          primaryColor:'#1c2530', primaryBorderColor:'#3fb950', primaryTextColor:'#e6edf3',
+          secondaryColor:'#161b22', secondaryBorderColor:'#2b3542', secondaryTextColor:'#e6edf3',
+          tertiaryColor:'#12181f', tertiaryBorderColor:'#2b3542', tertiaryTextColor:'#c9d7e5',
+          lineColor:'#93a1b0', textColor:'#e6edf3', nodeTextColor:'#e6edf3', titleColor:'#e6edf3',
+          clusterBkg:'rgba(22,27,34,.6)', clusterBorder:'#2b3542', edgeLabelBackground:'#0d1117',
+          nodeBorder:'#3b4756', mainBkg:'#1c2530',
+          actorBkg:'#1c2530', actorBorder:'#3fb950', actorTextColor:'#e6edf3', actorLineColor:'#93a1b0',
+          signalColor:'#93a1b0', signalTextColor:'#c9d7e5', labelBoxBkgColor:'#161b22', labelBoxBorderColor:'#2b3542', labelTextColor:'#e6edf3',
+          noteBkgColor:'#132a1a', noteBorderColor:'#1f5130', noteTextColor:'#7ee787',
+        };
+      window.mermaid.initialize({
+        startOnLoad:false, securityLevel:'loose', theme:'base',
+        flowchart:{curve:'basis',useMaxWidth:true,htmlLabels:true,nodeSpacing:55,rankSpacing:80,padding:14}, sequence:{useMaxWidth:true,boxMargin:12,messageMargin:38,actorMargin:60},
+        themeVariables:tv,
+      });
+      mermaidOK=true;
+      renderSection(document.querySelector('section.on')); // render the initially-visible section
+    }
+  } catch (e) { console.error('mermaid init failed (diagrams may not render):', e); }
+</script>
+</body>
+</html>

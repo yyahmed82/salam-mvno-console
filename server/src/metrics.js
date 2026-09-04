@@ -996,4 +996,17 @@ const METRICS = {
   }
 };
 
+/* ---------------- FIXED / SALAM HOME (unified console) ----------------
+ * Computed from db.ops (sda_ops), not the selfcare replica — see fixedMetrics.js. Merged here so
+ * the catalog seed (seedRules.CATALOG), sync.js and /api/rules/test pick them up unchanged.
+ * Boot-time guards: every key must be `fixed_`-prefixed (plan §2.1) and unique across segments. */
+{
+  const FIXED = require('./fixedMetrics').METRICS;
+  for (const k of Object.keys(FIXED)) {
+    if (!k.startsWith('fixed_')) throw new Error(`fixedMetrics: key "${k}" must start with fixed_`);
+    if (Object.prototype.hasOwnProperty.call(METRICS, k)) throw new Error(`metric key registered twice: ${k}`);
+    METRICS[k] = FIXED[k];
+  }
+}
+
 module.exports = { METRICS };

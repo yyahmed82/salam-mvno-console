@@ -17,7 +17,7 @@ async function probe(pool, sql, params = []) {
 
 /* What each source looks like when it is alive. Cheap queries only — these run on every health call. */
 async function status() {
-  const [ops, nexus, payments] = await Promise.all([
+  const [ops, opsBeta, nexus, payments] = await Promise.all([
     probe(db.ops, `SELECT
         (SELECT count(*)::int FROM order_attempts)                       AS attempts,
         (SELECT max(started_at) FROM order_attempts)                      AS newest_attempt,
@@ -26,10 +26,11 @@ async function status() {
         (SELECT last_ts FROM ingest_state WHERE source='replica' LIMIT 1) AS ingest_cursor,
         current_database()                                                AS db,
         current_schema()                                                  AS schema`),
+    probe(db.opsBeta, `SELECT current_schema() AS schema, (SELECT max(started_at) FROM order_attempts) AS newest_attempt`),
     probe(db.nexus, `SELECT current_database() AS db, now() AS server_now`),
     probe(db.payments, `SELECT current_database() AS db, now() AS server_now`),
   ]);
-  return { enabled: roles.FIXED_ENABLED, views: roles.FIXED_VIEWS, ops, nexus, payments };
+  return { enabled: roles.FIXED_ENABLED, views: roles.FIXED_VIEWS, ops, opsBeta, nexus, payments };
 }
 
 function mount(app, { requireView, audit } = {}) {
@@ -48,6 +49,18 @@ function mount(app, { requireView, audit } = {}) {
     if (audit && q.find) audit(req, 'fixed.search', String(q.find).slice(0, 40), { rows: r.rows.length }); return r; }));
   app.get('/api/fixed/dealers',   gate, wrap(q => f360.dealers(q)));
   app.get('/api/fixed/errors',    gate, wrap(q => f360.errorFeed(q)));
+  // frontend config for the Fixed pages (Maps key etc.) — never secrets beyond a browser key
+  app.get('/api/fixed/config', gate, (req, res) => res.json({
+    mapsKey: process.env.GMAPS_KEY || null, mapId: process.env.GMAPS_MAP_ID || null,
+    source: db.ops ? (db.ops.schema || 'public') : null, beta: !!db.opsBeta, nexus: !!db.nexus, payments: !!db.payments }));
+
+  /* SUB-MODULES — one file per Fixed page, each exports mount(app, { gate, wrap, audit, requireCap, db, f360 }).
+   * Optional: a missing file is simply a page that has not shipped yet. Keep this list in the hub's TAB_ORDER. */
+  const deps = { gate, wrap, audit, requireCap: arguments[1] && arguments[1].requireCap, db, f360, roles };
+  for (const m of ['fixedMap', 'fixedErrors', 'fixedDash', 'fixedAlerts', 'fixedDocs', 'fixedReport']) {
+    try { const mod = require('./' + m); if (typeof mod.mount === 'function') { mod.mount(app, deps); console.log(`[fixed] mounted ${m}`); } }
+    catch (e) { if (e.code === 'MODULE_NOT_FOUND' && String(e.message).includes(m)) continue; console.error(`[fixed] ${m} failed to mount:`, e.message); }
+  }
 }
 
 module.exports = { mount, status };

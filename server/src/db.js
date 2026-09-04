@@ -66,22 +66,25 @@ const roPool = (url, name, max = 3, timeoutMs = 15000) => {
     for (const k of ['schema', 'connection_limit', 'pool_timeout', 'pgbouncer', 'connect_timeout']) u.searchParams.delete(k);
     url = u.toString();
   } catch (_) { /* unparsable → hand it to pg as-is */ }
-  const opts = schema ? `-c timezone=UTC -c search_path=${schema.replace(/[^a-zA-Z0-9_]/g, '')},public` : PG_UTC.options;
+  // READ-ONLY AT THE DRIVER: every Fixed-side connection starts with default_transaction_read_only=on, so even a
+  // read-write role (sda_ops_app while the DBA grants a RO one) cannot INSERT/UPDATE/DDL from this console.
+  const opts = `-c timezone=UTC -c default_transaction_read_only=on` + (schema ? ` -c search_path=${schema.replace(/[^a-zA-Z0-9_]/g, '')},public` : '');
   const pool = new Pool({ connectionString: url, max, statement_timeout: timeoutMs,
     idleTimeoutMillis: 30000, connectionTimeoutMillis: 5000, application_name: name, options: opts });
   pool.schema = schema || 'public';
   return pool;
 };
 const ops      = roPool(process.env.OPS_DATABASE_URL      || '', 'salam_unified_ops_ro',      Number(process.env.OPS_POOL_MAX) || 3);
+const opsBeta  = roPool(process.env.OPS_BETA_DATABASE_URL || '', 'salam_unified_opsbeta_ro',  1);   // B2C / Salam Home app rows (beta schema)
 const nexus    = roPool(process.env.NEXUS_DATABASE_URL    || '', 'salam_unified_nexus_ro',    2);
 const payments = roPool(process.env.PAYMENTS_DATABASE_URL || '', 'salam_unified_payments_ro', 2);
-for (const [n, p] of [['OPS', ops], ['NEXUS', nexus], ['PAYMENTS', payments]])
+for (const [n, p] of [['OPS', ops], ['OPS_BETA', opsBeta], ['NEXUS', nexus], ['PAYMENTS', payments]])
   if (p) p.on('error', e => { try { console.error(`[${n} pool]`, e.message); } catch (_) {} });
 
 // belt & braces: if a server/role default ever overrides the startup option, force it per-connection
 const pinUtc = pool => pool.on('connect', c => { c.query("SET TIME ZONE 'UTC'").catch(() => {}); });
-pinUtc(source); pinUtc(console_); if (upg) pinUtc(upg); if (ops) pinUtc(ops); if (nexus) pinUtc(nexus); if (payments) pinUtc(payments);
+pinUtc(source); pinUtc(console_); if (upg) pinUtc(upg); if (ops) pinUtc(ops); if (opsBeta) pinUtc(opsBeta); if (nexus) pinUtc(nexus); if (payments) pinUtc(payments);
 
 module.exports = { source, console: console_, upg, upgConfigured: !!upg,
-  ops, opsConfigured: !!ops, nexus, nexusConfigured: !!nexus, payments, paymentsConfigured: !!payments,
+  ops, opsConfigured: !!ops, opsBeta, opsBetaConfigured: !!opsBeta, nexus, nexusConfigured: !!nexus, payments, paymentsConfigured: !!payments,
   SOURCE_URL, CONSOLE_URL };

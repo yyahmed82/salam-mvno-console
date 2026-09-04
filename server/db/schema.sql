@@ -82,6 +82,10 @@ ALTER TABLE alerts ADD COLUMN IF NOT EXISTS esc_level     integer NOT NULL DEFAU
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS esc_last_at   timestamptz;
 ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS runbook   text;   -- what to do when this fires (text or URL)
 ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS alert_class text; -- technical | business (errclass.js split; 'mixed' retired 2026-08-11)
+-- unified console: which segment a rule / firing belongs to (plan §2.1) — 'mvno' (default) | 'fixed'
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS segment text NOT NULL DEFAULT 'mvno';
+ALTER TABLE alerts      ADD COLUMN IF NOT EXISTS segment text NOT NULL DEFAULT 'mvno';
+CREATE INDEX IF NOT EXISTS idx_alerts_segment_fired ON alerts (segment, fired_at DESC);
 
 -- incident discussion thread
 CREATE TABLE IF NOT EXISTS incident_comments (

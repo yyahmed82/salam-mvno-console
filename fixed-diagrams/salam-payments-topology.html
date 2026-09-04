@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Salam Home · Payments Topology — NOC View</title>
+<style>
+  :root{
+    --bg-0:#05070d; --bg-1:#0a0e1a; --bg-2:#0f1525; --bg-3:#161d33;
+    --panel:rgba(20,27,48,.6); --panel-2:rgba(15,21,37,.85);
+    --line:rgba(120,145,200,.18); --line-strong:rgba(140,165,220,.32);
+    --ink:#e7edff; --muted:#8896b8; --dim:#5a6889;
+    --channels:#00b3ff; --gateways:#ff7849; --papi:#b066ff; --core:#00d9ff; --bss:#4ade80; --third:#ffa940;
+    /* flow colours */
+    --create:#00d9ff; --gateway:#ff7849; --webhook:#ff4d8d; --notify:#b066ff; --order:#4ade80; --capture:#00ffd5; --sadad:#ffa940;
+    --head-grad:linear-gradient(135deg,rgba(15,21,37,.9),rgba(10,14,26,.7)); --zone-fill:rgba(20,27,48,.28); --node-fill:rgba(12,17,30,.92);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;overflow-x:hidden;color:var(--ink);
+    font-family:'Inter',ui-sans-serif,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(ellipse at 18% 8%,rgba(0,217,255,.08),transparent 60%),
+      radial-gradient(ellipse at 82% 92%,rgba(176,102,255,.07),transparent 60%),var(--bg-0);}
+  body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(120,145,200,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(120,145,200,.04) 1px,transparent 1px);
+    background-size:38px 38px;mask-image:radial-gradient(ellipse at center,black 35%,transparent 82%);}
+  main{position:relative;z-index:1;width:min(1560px,calc(100vw - 28px));margin:0 auto;padding:22px 0 46px}
+
+  .header{display:flex;align-items:center;gap:22px;padding:16px 22px;margin-bottom:14px;border:1px solid var(--line);border-radius:14px;
+    background:var(--head-grad);backdrop-filter:blur(20px);position:relative;overflow:hidden;
+    box-shadow:0 8px 32px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.04)}
+  .header::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;opacity:.6;
+    background:linear-gradient(90deg,transparent,var(--core),var(--papi),var(--webhook),transparent)}
+  .brand{display:flex;flex-direction:column;gap:2px}
+  .brand h1{margin:0;font-size:18px;letter-spacing:.3px}
+  .brand span{color:var(--muted);font-size:12px}
+  .status-strip{display:flex;gap:20px;margin-left:auto;font-size:12px;color:var(--muted)}
+  .status-item .val{color:var(--ink);font-weight:700}
+  .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bss);margin-right:6px;
+    box-shadow:0 0 8px var(--bss);animation:blink 2s ease-in-out infinite;vertical-align:middle}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+  .stat{border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:var(--panel);backdrop-filter:blur(14px)}
+  .stat-val{font-size:22px;font-weight:800;color:var(--ink)}
+  .stat-val .unit{font-size:11px;font-weight:600;color:var(--muted);margin-left:5px}
+  .stat-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-top:2px}
+
+  .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;margin-bottom:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);backdrop-filter:blur(14px)}
+  .toolbar-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-right:4px}
+  .chip{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:20px;border:1px solid var(--line);
+    background:rgba(255,255,255,.02);color:var(--muted);font-size:12.5px;cursor:pointer;transition:all .2s}
+  .chip:hover{border-color:var(--line-strong);color:var(--ink)}
+  .chip .dot{width:9px;height:9px;border-radius:50%;box-shadow:0 0 8px currentColor}
+  .chip.active{background:rgba(255,255,255,.06);border-color:currentColor;color:var(--ink)}
+  .toolbar-spacer{flex:1}
+  .btn{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:rgba(255,255,255,.02);color:var(--muted);font-size:12.5px;cursor:pointer;transition:all .2s}
+  .btn:hover{background:rgba(255,255,255,.06);border-color:var(--core);color:var(--core)}
+  .btn.primary{background:var(--core);color:#001a1a;border-color:var(--core);font-weight:700}
+  .btn.primary:hover{filter:brightness(1.1)}
+
+  .canvas-wrap{position:relative;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:
+    radial-gradient(ellipse at 50% 40%,rgba(20,27,48,.5),rgba(5,7,13,.2));min-height:640px}
+  svg.diagram{display:block;width:100%;height:auto}
+
+  .zone-bg{fill:var(--zone-fill);stroke:var(--line);stroke-width:1;rx:16}
+  .zone-label{fill:var(--muted);font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+  .zone-accent{font-size:11px}
+
+  .node-group{cursor:pointer;transition:all .3s ease}
+  .node-bg{fill:var(--node-fill);stroke:currentColor;stroke-width:1.4;rx:11;transition:all .3s ease}
+  .node-group:hover .node-bg{stroke-width:2.2;filter:drop-shadow(0 0 12px currentColor)}
+  .node-group:hover{transform:translateY(-2px)}
+  .node-group.dim{opacity:.16}
+  .node-group.focus .node-bg{stroke-width:2.6;filter:drop-shadow(0 0 20px currentColor)}
+  .node-title{fill:var(--ink);font-size:14px;font-weight:700;pointer-events:none}
+  .node-sub{fill:var(--muted);font-size:11px;pointer-events:none}
+  .node-ip{fill:var(--dim);font-size:10px;font-family:ui-monospace,Menlo,monospace;pointer-events:none}
+  .icon{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+  .tag-pill{rx:4}
+  .tag-text{font-size:10px;font-weight:700;pointer-events:none}
+
+  .flow{fill:none;stroke-width:1.6;opacity:.72;transition:all .3s ease;filter:drop-shadow(0 0 4px currentColor)}
+  .flow.dashed{stroke-dasharray:6 5}
+  .flow.dotted{stroke-dasharray:2 5}
+  .flow.dim{opacity:.07;filter:none}
+  .flow.glow{stroke-width:3;opacity:1;filter:drop-shadow(0 0 9px currentColor)}
+  .flow.create{stroke:var(--create);color:var(--create);marker-end:url(#a-create)}
+  .flow.gateway{stroke:var(--gateway);color:var(--gateway);marker-end:url(#a-gateway)}
+  .flow.webhook{stroke:var(--webhook);color:var(--webhook);marker-end:url(#a-webhook)}
+  .flow.notify{stroke:var(--notify);color:var(--notify);marker-end:url(#a-notify)}
+  .flow.order{stroke:var(--order);color:var(--order);marker-end:url(#a-order)}
+  .flow.capture{stroke:var(--capture);color:var(--capture);marker-end:url(#a-capture)}
+  .flow.sadad{stroke:var(--sadad);color:var(--sadad);marker-end:url(#a-sadad)}
+  .flow-label{fill:var(--muted);font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;
+    paint-order:stroke;stroke:var(--bg-1);stroke-width:4;stroke-linejoin:round;pointer-events:none}
+
+  .packets{pointer-events:none}
+  .packets.paused *{animation-play-state:paused!important}
+  .packet{filter:drop-shadow(0 0 6px currentColor)}
+  .packet.create{fill:var(--create)}.packet.gateway{fill:var(--gateway)}.packet.webhook{fill:var(--webhook)}
+  .packet.notify{fill:var(--notify)}.packet.order{fill:var(--order)}.packet.capture{fill:var(--capture)}.packet.sadad{fill:var(--sadad)}
+
+  .legend{position:absolute;left:16px;bottom:16px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;
+    background:var(--panel-2);backdrop-filter:blur(10px);font-size:11.5px}
+  .legend-title{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+  .legend-row{display:flex;align-items:center;gap:9px;margin:5px 0;color:var(--muted)}
+  .legend-line{width:22px;height:0;border-top:2.5px solid currentColor;box-shadow:0 0 6px currentColor}
+  .legend-line.dashed{border-top-style:dashed;box-shadow:none}
+  .minimap{position:absolute;right:16px;top:16px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2);backdrop-filter:blur(10px)}
+  .minimap-label{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+  .info{position:absolute;right:16px;bottom:16px;width:290px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;
+    background:var(--panel-2);backdrop-filter:blur(20px);transition:all .25s}
+  .info.empty .info-name,.info.empty .info-meta,.info.empty .info-desc{display:none}
+  .info-hint{color:var(--dim);font-size:12px;display:none}
+  .info.empty .info-hint{display:block}
+  .info-name{font-size:15px;font-weight:800;color:var(--ink);margin-bottom:3px}
+  .info-meta{font-size:11.5px;color:var(--core);font-family:ui-monospace,Menlo,monospace;margin-bottom:8px}
+  .info-desc{font-size:12.5px;color:var(--muted);line-height:1.5}
+  @media(max-width:920px){.legend,.minimap{display:none}.stats{grid-template-columns:repeat(2,1fr)}.info{position:static;width:auto;margin:12px}}
+
+  /* Light theme — parent passes ?theme=light (matches the app toggle). Flips
+     structural surfaces to light; accent hues darkened for light-bg contrast. */
+  html[data-theme="light"]{
+    --bg-0:#eef1f6; --bg-1:#e7ecf4; --bg-2:#dfe5f0; --bg-3:#d6deec;
+    --panel:rgba(255,255,255,.72); --panel-2:rgba(255,255,255,.94);
+    --line:rgba(30,50,90,.12); --line-strong:rgba(30,50,90,.22);
+    --ink:#132036; --muted:#4f5d78; --dim:#8b97b0;
+    --channels:#0a7ea8; --gateways:#c25a2a; --papi:#7c4dcc; --core:#0a86c4; --bss:#2e9e57; --third:#b7791f;
+    --create:#0a86c4; --gateway:#c25a2a; --webhook:#c43b6e; --notify:#7c4dcc; --order:#2e9e57; --capture:#0a9c8a; --sadad:#b7791f; --fail:#d64550; --oss:#d64550;
+    --head-grad:linear-gradient(135deg,#ffffff,#eef2f7); --zone-fill:rgba(30,50,90,.05); --node-fill:#ffffff;
+  }
+  /* Light chrome = Salam green (Export button + button hovers; Core-API data colour --core stays). */
+  html[data-theme="light"] .btn.primary{background:#0e8a37;color:#fff;border-color:#0e8a37}
+  html[data-theme="light"] .btn:hover{border-color:#0e8a37;color:#0e8a37}
+  /* Light mode: drop the neon glow (washes out on white), boost line contrast, lighten the canvas. */
+  html[data-theme="light"] .canvas-wrap{background:radial-gradient(ellipse at 50% 40%,#ffffff,#eef2f7)}
+  html[data-theme="light"] .flow{opacity:.9;filter:none;stroke-width:1.8}
+  html[data-theme="light"] .flow.glow{opacity:1;filter:none;stroke-width:3}
+  html[data-theme="light"] .flow.dim{opacity:.12;filter:none}
+  html[data-theme="light"] .packet{filter:none}
+  html[data-theme="light"] .node-bg{stroke-width:1.6}
+  html[data-theme="light"] .node-group:hover .node-bg,
+  html[data-theme="light"] .node-group.focus .node-bg{filter:none;stroke-width:2.6}
+  html[data-theme="light"] .flow-label{stroke:#ffffff;stroke-width:4;fill:#334063}
+  html[data-theme="light"] body::before{background-image:linear-gradient(rgba(30,50,90,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(30,50,90,.05) 1px,transparent 1px)}
+</style>
+<script>try{if(new URLSearchParams(location.search).get('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}</script>
+</head>
+<body>
+<main>
+  <header class="header">
+    <div class="brand">
+      <h1>Salam Home · Payments Topology</h1>
+      <span>payments_v2 · Moyasar · SADAD · BSS — e-purchase / QR · Pulse · SDA dealer</span>
+    </div>
+    <div class="status-strip">
+      <div class="status-item"><span class="status-dot"></span>Engine <span class="val">payments-api</span></div>
+      <div class="status-item">Apps <span class="val">3</span></div>
+      <div class="status-item">Nodes <span class="val">14</span></div>
+      <div class="status-item">Flows <span class="val">7</span></div>
+    </div>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-val">4<span class="unit">channels</span></div><div class="stat-lbl">Front-ends</div></div>
+    <div class="stat"><div class="stat-val">3<span class="unit">apps</span></div><div class="stat-lbl">webhook_url tenants</div></div>
+    <div class="stat"><div class="stat-val">8<span class="unit">statuses</span></div><div class="stat-lbl">Moyasar → payment_status</div></div>
+    <div class="stat"><div class="stat-val">12<span class="unit">sec</span></div><div class="stat-lbl">notify timeout (SPOF)</div></div>
+  </div>
+
+  <div class="toolbar">
+    <span class="toolbar-label">Filter flow</span>
+    <button class="chip active" data-filter="all"><span class="dot" style="background:var(--ink)"></span>All</button>
+    <button class="chip" data-filter="create"><span class="dot" style="background:var(--create);color:var(--create)"></span>createInvoice</button>
+    <button class="chip" data-filter="gateway"><span class="dot" style="background:var(--gateway);color:var(--gateway)"></span>Gateway pay</button>
+    <button class="chip" data-filter="webhook"><span class="dot" style="background:var(--webhook);color:var(--webhook)"></span>Moyasar webhook</button>
+    <button class="chip" data-filter="notify"><span class="dot" style="background:var(--notify);color:var(--notify)"></span>notifyApplication</button>
+    <button class="chip" data-filter="order"><span class="dot" style="background:var(--order);color:var(--order)"></span>BSS order</button>
+    <button class="chip" data-filter="capture"><span class="dot" style="background:var(--capture);color:var(--capture)"></span>capture/void</button>
+    <button class="chip" data-filter="sadad"><span class="dot" style="background:var(--sadad);color:var(--sadad)"></span>SADAD</button>
+    <div class="toolbar-spacer"></div>
+    <button class="btn" id="pauseBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg><span>Pause</span></button>
+    <button class="btn" id="resetBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span>Reset</span></button>
+    <button class="btn primary" id="exportBtn" title="Download the diagram as a PDF">Export PDF</button>
+  </div>
+
+  <div class="canvas-wrap">
+    <div class="legend">
+      <div class="legend-title">Flow types</div>
+      <div class="legend-row"><span class="legend-line" style="color:var(--create)"></span>createInvoice (core → payments-api)</div>
+      <div class="legend-row"><span class="legend-line" style="color:var(--gateway)"></span>Gateway pay (browser → Moyasar)</div>
+      <div class="legend-row"><span class="legend-line" style="color:var(--webhook)"></span>Moyasar webhook → handleWebhook</div>
+      <div class="legend-row"><span class="legend-line" style="color:var(--notify)"></span>notifyApplication (12s, SPOF)</div>
+      <div class="legend-row"><span class="legend-line" style="color:var(--order)"></span>BSS order / provisioning</div>
+      <div class="legend-row"><span class="legend-line dashed" style="color:var(--capture)"></span>capture / void / refund</div>
+      <div class="legend-row"><span class="legend-line dashed" style="color:var(--sadad)"></span>SADAD bill rail</div>
+    </div>
+
+    <div class="minimap">
+      <div class="minimap-label">Layout</div>
+      <svg width="150" height="96" viewBox="0 0 150 96">
+        <rect x="6" y="10" width="30" height="52" rx="4" fill="none" stroke="var(--channels)" stroke-dasharray="2 3"/>
+        <rect x="6" y="66" width="30" height="24" rx="4" fill="none" stroke="var(--gateways)" stroke-dasharray="2 3"/>
+        <rect x="58" y="44" width="34" height="46" rx="4" fill="none" stroke="var(--papi)" stroke-dasharray="2 3"/>
+        <rect x="100" y="8" width="34" height="54" rx="4" fill="none" stroke="var(--core)" stroke-dasharray="2 3"/>
+        <rect x="118" y="40" width="20" height="18" rx="3" fill="var(--bss)" opacity=".7"/>
+        <text x="21" y="8" text-anchor="middle" fill="var(--muted)" font-size="6">CH</text>
+        <text x="75" y="42" text-anchor="middle" fill="var(--muted)" font-size="6">PAY</text>
+        <text x="117" y="6" text-anchor="middle" fill="var(--muted)" font-size="6">CORE</text>
+      </svg>
+    </div>
+
+    <div class="info empty" id="infoPanel">
+      <div class="info-hint">Click any node to inspect its role, endpoint and connected flows. Use the chips to isolate a flow type.</div>
+      <div class="info-name"></div><div class="info-meta"></div><div class="info-desc"></div>
+    </div>
+
+    <svg class="diagram" viewBox="0 0 1500 900" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <marker id="a-create" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--create)"/></marker>
+        <marker id="a-gateway" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--gateway)"/></marker>
+        <marker id="a-webhook" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--webhook)"/></marker>
+        <marker id="a-notify" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--notify)"/></marker>
+        <marker id="a-order" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--order)"/></marker>
+        <marker id="a-capture" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--capture)"/></marker>
+        <marker id="a-sadad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--sadad)"/></marker>
+        <symbol id="i-web" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18"/></symbol>
+        <symbol id="i-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M20 14v.01M14 20v.01M20 20v.01M17 17v.01"/></symbol>
+        <symbol id="i-mobile" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+        <symbol id="i-host" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+        <symbol id="i-card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></symbol>
+        <symbol id="i-sadad" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 8v8M12 8v8M16 8v8"/></symbol>
+        <symbol id="i-hook" viewBox="0 0 24 24"><path d="M18 6v6a6 6 0 0 1-12 0V9"/><circle cx="18" cy="4" r="2"/><path d="M6 9l-3 3 3 3"/></symbol>
+        <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
+        <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></symbol>
+        <symbol id="i-bss" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="7" rx="1"/><rect x="4" y="14" width="16" height="6" rx="1"/><path d="M8 7.5h.01M8 17h.01"/></symbol>
+      </defs>
+
+      <!-- ===== ZONES ===== -->
+      <rect class="zone-bg" x="26" y="60" width="252" height="454" rx="16"/>
+      <text class="zone-label" x="42" y="86" style="fill:var(--channels)">CHANNELS · Front-ends</text>
+      <rect class="zone-bg" x="26" y="560" width="252" height="300" rx="16"/>
+      <text class="zone-label" x="42" y="586" style="fill:var(--gateways)">PAYMENT RAILS</text>
+      <rect class="zone-bg" x="486" y="440" width="360" height="420" rx="16"/>
+      <text class="zone-label" x="504" y="466" style="fill:var(--papi)">PAYMENTS-API · payments_v2</text>
+      <rect class="zone-bg" x="906" y="70" width="392" height="520" rx="16"/>
+      <text class="zone-label" x="924" y="96" style="fill:var(--core)">CORE API · salam-nexus/packages/api · tRPC :5005</text>
+      <rect class="zone-bg" x="1330" y="250" width="150" height="210" rx="16"/>
+      <text class="zone-label" x="1346" y="276" style="fill:var(--bss)">BSS</text>
+
+      <!-- ===== FLOWS + LABELS (border-aware; generated in JS from node rects) ===== -->
+      <g id="flowLayer"></g>
+      <g id="labelLayer"></g>
+
+      <!-- ===== NODES ===== -->
+      <!-- CHANNELS -->
+      <g class="node-group" data-node="web" data-name="Web e-purchase" data-meta="apps/epurchase → paymentClient" data-desc="Consumer buy-FTTH web journey. Creates a MANUAL_CAPTURE invoice via core, pays Moyasar directly with the publishable key, polls checkPayment @5s. Order is placed by the webhook, not the poll.">
+        <rect class="node-bg" x="50" y="104" width="200" height="60" style="color:var(--channels)"/>
+        <use href="#i-web" x="66" y="122" width="22" height="22" class="icon" style="color:var(--channels)"/>
+        <text class="node-title" x="98" y="130">Web e-purchase</text>
+        <text class="node-sub" x="98" y="148">apps/epurchase</text>
+      </g>
+      <g class="node-group" data-node="qr" data-name="Web QR offer" data-meta="referral pricing → paymentClient" data-desc="Same rail as web e-purchase. A scanned QR carries a referralCode → qr_discounted_price is charged. Only the invoice amount differs; the amount-match guard in handleWebhook applies.">
+        <rect class="node-bg" x="50" y="186" width="200" height="60" style="color:var(--channels)"/>
+        <use href="#i-qr" x="66" y="204" width="22" height="22" class="icon" style="color:var(--channels)"/>
+        <text class="node-title" x="98" y="212">Web QR offer</text>
+        <text class="node-sub" x="98" y="230">referral-priced e-purchase</text>
+      </g>
+      <g class="node-group" data-node="pulse" data-name="Pulse mobile app" data-meta="apps/pulse → paymentClient + salamHomePaymentClient" data-desc="Two journeys: buy FTTH (ePurchaseFTTH, epurchase app) and manage-line (relocation / change-plan / renew, salamHome app). PAID_BY_ZERO short-circuits zero-charge summaries.">
+        <rect class="node-bg" x="50" y="268" width="200" height="60" style="color:var(--channels)"/>
+        <use href="#i-mobile" x="66" y="286" width="22" height="22" class="icon" style="color:var(--channels)"/>
+        <text class="node-title" x="98" y="294">Pulse app</text>
+        <text class="node-sub" x="98" y="312">buy + manage-line</text>
+      </g>
+      <g class="node-group" data-node="pweb" data-name="payments-web (hosted)" data-meta="apps/payments-web · /p2/{invoice}" data-desc="Hosted Moyasar checkout page (card / Apple Pay / Samsung Pay) rendered from an invoice id. Used for redirect/return-url payment completion.">
+        <rect class="node-bg" x="50" y="350" width="200" height="60" style="color:var(--channels)"/>
+        <use href="#i-host" x="66" y="368" width="22" height="22" class="icon" style="color:var(--channels)"/>
+        <text class="node-title" x="98" y="376">payments-web</text>
+        <text class="node-sub" x="98" y="394">hosted /p2 checkout</text>
+      </g>
+
+      <!-- RAILS -->
+      <g class="node-group" data-node="moy" data-name="Moyasar gateway" data-meta="api.moyasar.com/v1 · pk_live / sk_live" data-desc="Primary card rail. Browser POSTs /v1/payments (creditcard/applepay/samsung, manual flag from paymentFlow). Fires POST /webhooks/moyasar with 7 event types. payment_status mirrors Moyasar 1:1.">
+        <rect class="node-bg" x="50" y="612" width="200" height="60" style="color:var(--gateways)"/>
+        <use href="#i-card" x="66" y="630" width="22" height="22" class="icon" style="color:var(--gateways)"/>
+        <text class="node-title" x="98" y="638">Moyasar</text>
+        <text class="node-sub" x="98" y="656">card · applepay · samsung</text>
+      </g>
+      <g class="node-group" data-node="sad" data-name="SADAD bill rail" data-meta="sadad_id · channel SADAD" data-desc="Saudi bill-payment rail for SDA dealer instant invoices. BSS generateInstantInvoice → sadadAuNumber. Bill paid in banking app → invoice PAID → /webhooks/sadad/payment. Partial pay → realTimeBillUpload.">
+        <rect class="node-bg" x="50" y="732" width="200" height="60" style="color:var(--third)"/>
+        <use href="#i-sadad" x="66" y="750" width="22" height="22" class="icon" style="color:var(--third)"/>
+        <text class="node-title" x="98" y="758">SADAD</text>
+        <text class="node-sub" x="98" y="776">instant bill (dealer)</text>
+      </g>
+
+      <!-- PAYMENTS-API -->
+      <g class="node-group" data-node="hwh" data-name="handleWebhook" data-meta="clients/moyasar.ts" data-desc="Receives POST /webhooks/moyasar, re-fetches payment (source of truth), upserts payments (+activity), consults statusMap. Guards: live-mode, version=2, invoiceId, amount-match, idempotency, valid-transition.">
+        <rect class="node-bg" x="516" y="510" width="288" height="58" style="color:var(--papi)"/>
+        <use href="#i-hook" x="532" y="528" width="22" height="22" class="icon" style="color:var(--papi)"/>
+        <text class="node-title" x="564" y="535">handleWebhook</text>
+        <text class="node-sub" x="564" y="553">statusMap · transformPaymentStatus</text>
+      </g>
+      <g class="node-group" data-node="db" data-name="invoices / payments" data-meta="payments_v2 (Postgres)" data-desc="invoices (status, channel, payment_flow, sadad_id) · payments (transaction_id UNIQUE → P2002) · payment_activities audit · webhooks (retries, notified_at) · webhook_requests · cards.">
+        <rect class="node-bg" x="516" y="632" width="288" height="70" style="color:var(--bss)"/>
+        <use href="#i-db" x="532" y="650" width="22" height="22" class="icon" style="color:var(--bss)"/>
+        <text class="node-title" x="564" y="662">invoices / payments</text>
+        <text class="node-sub" x="564" y="680">+ activities · webhooks · cards</text>
+        <rect class="tag-pill" x="726" y="638" width="60" height="15" style="fill:rgba(255,77,141,.12);stroke:rgba(255,77,141,.35)"/>
+        <text class="tag-text" x="756" y="649" text-anchor="middle" style="fill:var(--webhook)">UNIQUE txn</text>
+      </g>
+      <g class="node-group" data-node="notify" data-name="notifyApplication" data-meta="POST webhook_url · timeout 12000ms" data-desc="Bridge from 'money moved' to 'service provisioned'. Single POST (no retry inside payments-api). Success → webhooks DELIVERED + notifiedAt; failure/timeout → webhooks FAILED. This is the reconciliation trigger.">
+        <rect class="node-bg" x="516" y="770" width="288" height="58" style="color:var(--notify)"/>
+        <use href="#i-bell" x="532" y="788" width="22" height="22" class="icon" style="color:var(--notify)"/>
+        <text class="node-title" x="564" y="795">notifyApplication</text>
+        <text class="node-sub" x="564" y="813">12s · DELIVERED / FAILED</text>
+      </g>
+
+      <!-- CORE API -->
+      <g class="node-group" data-node="ep" data-name="epurchase.ts" data-meta="paymentClient · PAYMENTS_API_KEY" data-desc="Consumer buy-FTTH driver. createInvoice(MANUAL_CAPTURE); receives /webhooks/epurchase/payment (secret-checked); on PAID/AUTHORIZED → updateCustomerProfile → BSS createOrderNew → capture on success / void on failure.">
+        <rect class="node-bg" x="928" y="132" width="352" height="54" style="color:var(--core)"/>
+        <use href="#i-gear" x="944" y="148" width="22" height="22" class="icon" style="color:var(--core)"/>
+        <text class="node-title" x="976" y="156">routers/epurchase.ts</text>
+        <text class="node-sub" x="976" y="174">buy FTTH · createOrderNew</text>
+      </g>
+      <g class="node-group" data-node="ml" data-name="manage-line.ts" data-meta="salamHomePaymentClient · SALAM_HOME_PAYMENTS_API_KEY" data-desc="Pulse manage-line: relocation / change-plan / renew. Requires invoice PAID; /webhooks/salamHome/payment routes by metadata.serviceType.">
+        <rect class="node-bg" x="928" y="212" width="352" height="54" style="color:var(--core)"/>
+        <use href="#i-gear" x="944" y="228" width="22" height="22" class="icon" style="color:var(--core)"/>
+        <text class="node-title" x="976" y="236">routers/salam-app/manage-line.ts</text>
+        <text class="node-sub" x="976" y="254">relocation · change-plan · renew</text>
+      </g>
+      <g class="node-group" data-node="sda" data-name="sda.ts + workflows.ts" data-meta="paymentOptimizationClient · PAYMENTS_OPTIMIZATION_API_KEY" data-desc="SDA dealer journeys. generateInstantInvoice → SADAD invoice; /webhooks/sadad/payment (require PAID + amount) → BSS sadadPayment + realTimeBillUpload with 3× retry.">
+        <rect class="node-bg" x="928" y="292" width="352" height="54" style="color:var(--core)"/>
+        <use href="#i-gear" x="944" y="308" width="22" height="22" class="icon" style="color:var(--core)"/>
+        <text class="node-title" x="976" y="316">routers/sda.ts · workflows.ts</text>
+        <text class="node-sub" x="976" y="334">dealer FTTH/FTTB/5G · SADAD</text>
+      </g>
+      <g class="node-group" data-node="rec" data-name="webhooks.ts receivers" data-meta="/webhooks/{epurchase|salamHome|sadad}/payment" data-desc="Callback endpoints hit by notifyApplication. Persist webhook_requests (retries/isSuccess/reason), verify secret / require PAID, then place or update the BSS order.">
+        <rect class="node-bg" x="928" y="392" width="352" height="94" style="color:var(--core)"/>
+        <use href="#i-hook" x="944" y="410" width="22" height="22" class="icon" style="color:var(--core)"/>
+        <text class="node-title" x="976" y="418">routers/webhooks.ts · receivers</text>
+        <text class="node-sub" x="944" y="446">/webhooks/epurchase/payment</text>
+        <text class="node-sub" x="944" y="462">/webhooks/salamHome/payment</text>
+        <text class="node-sub" x="944" y="478">/webhooks/sadad/payment</text>
+      </g>
+
+      <!-- BSS -->
+      <g class="node-group" data-node="bss" data-name="BSS / ZSmart" data-meta="createOrderNew · sadadPayment · relocation" data-desc="Provisioning system. Places the connection order once payment is confirmed. On success → capture invoice; on failure → void/refund. sadadPayment + realTimeBillUpload for dealer SADAD.">
+        <rect class="node-bg" x="1346" y="300" width="120" height="118" style="color:var(--bss)"/>
+        <use href="#i-bss" x="1394" y="322" width="24" height="24" class="icon" style="color:var(--bss)"/>
+        <text class="node-title" x="1406" y="366" text-anchor="middle">BSS</text>
+        <text class="node-sub" x="1406" y="384" text-anchor="middle">ZSmart</text>
+        <text class="node-sub" x="1406" y="400" text-anchor="middle">createOrderNew</text>
+      </g>
+
+      <!-- ===== PACKETS (generated in JS to match the routed flow paths) ===== -->
+      <g class="packets" id="packetLayer" aria-hidden="true"></g>
+    </svg>
+  </div>
+</main>
+
+<script>
+  // ---- Border-aware flow routing: every arrow leaves/enters on the box edge
+  //      facing the OTHER box's centre (same logic as the other diagrams), so
+  //      nothing floats in empty space or overshoots a node. ----
+  (function buildFlows(){
+    const NS='http://www.w3.org/2000/svg';
+    const flowLayer=document.getElementById('flowLayer');
+    const labelLayer=document.getElementById('labelLayer');
+    const packetLayer=document.getElementById('packetLayer');
+    const R={};
+    document.querySelectorAll('.node-group').forEach(g=>{
+      const r=g.querySelector('rect.node-bg'); if(!r) return;
+      const x=+r.getAttribute('x'),y=+r.getAttribute('y'),w=+r.getAttribute('width'),h=+r.getAttribute('height');
+      R[g.dataset.node]={x,y,w,h,cx:x+w/2,cy:y+h/2};
+    });
+    const border=(n,tx,ty)=>{const dx=tx-n.cx,dy=ty-n.cy,hw=n.w/2,hh=n.h/2;
+      const sx=dx===0?1e9:hw/Math.abs(dx),sy=dy===0?1e9:hh/Math.abs(dy),s=Math.min(sx,sy);
+      return [n.cx+dx*s,n.cy+dy*s];};
+    const pathFor=(a,b,bow)=>{const A=R[a],B=R[b];
+      const [x1,y1]=border(A,B.cx,B.cy),[x2,y2]=border(B,A.cx,A.cy);
+      const mx=(x1+x2)/2,my=(y1+y2)/2,dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy)||1;
+      const bw=bow==null?Math.min(70,L*0.14):bow;
+      const cx=mx-dy/L*bw,cy=my+dx/L*bw;
+      return {d:`M${x1.toFixed(1)} ${y1.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`,cx,cy};};
+    // [src, dst, flow, {dash, dot, bow, label, lrot}]
+    const E=[
+      ['web','ep','create',{bow:-20}],
+      ['qr','ep','create',{bow:10}],
+      ['pulse','ep','create',{bow:40}],
+      ['pulse','ml','create',{bow:-30}],
+      ['ep','db','create',{bow:80,label:'createInvoice'}],
+      ['ml','db','create',{bow:50}],
+      ['sda','db','create',{bow:22}],
+      ['web','moy','gateway',{bow:70,label:'card / applepay / samsung',lrot:true}],
+      ['qr','moy','gateway',{bow:46}],
+      ['pulse','moy','gateway',{bow:26}],
+      ['pweb','moy','gateway',{bow:8}],
+      ['moy','hwh','webhook',{label:'POST /webhooks/moyasar'}],
+      ['hwh','db','webhook',{dot:true,bow:0}],
+      ['notify','rec','notify',{bow:120,label:'notifyApplication · 12s'}],
+      ['rec','bss','order',{label:'createOrderNew'}],
+      ['bss','ep','order',{dash:true,bow:80}],
+      ['ep','db','capture',{dash:true,bow:-90}],
+      ['db','moy','capture',{dash:true,bow:70}],
+      ['sad','db','sadad',{bow:34,label:'SADAD bill'}],
+      ['db','sad','sadad',{dot:true,bow:-44}],
+    ];
+    let di=0;
+    E.forEach(([a,b,flow,o])=>{
+      if(!R[a]||!R[b]) return;
+      const g=pathFor(a,b,o.bow);
+      const p=document.createElementNS(NS,'path');
+      p.setAttribute('class','flow '+flow+(o.dash?' dashed':'')+(o.dot?' dotted':''));
+      p.setAttribute('d',g.d);
+      p.setAttribute('data-flow',flow); p.setAttribute('data-src',a); p.setAttribute('data-dst',b);
+      flowLayer.appendChild(p);
+      const c=document.createElementNS(NS,'circle');
+      c.setAttribute('class','packet '+flow); c.setAttribute('r',(di%3===0?3.6:3).toFixed(1));
+      const am=document.createElementNS(NS,'animateMotion');
+      am.setAttribute('dur',(2.6+(di%5)*0.3).toFixed(1)+'s');
+      am.setAttribute('begin',((di%4)*0.4).toFixed(1)+'s');
+      am.setAttribute('repeatCount','indefinite'); am.setAttribute('path',g.d);
+      c.appendChild(am); packetLayer.appendChild(c); di++;
+      if(o.label){
+        const t=document.createElementNS(NS,'text'); t.setAttribute('class','flow-label');
+        t.setAttribute('x',g.cx.toFixed(1)); t.setAttribute('y',(g.cy-6).toFixed(1)); t.setAttribute('text-anchor','middle');
+        if(o.lrot) t.setAttribute('transform',`rotate(-90 ${g.cx.toFixed(1)} ${g.cy.toFixed(1)})`);
+        t.textContent=o.label; labelLayer.appendChild(t);
+      }
+    });
+  })();
+
+  const flows=[...document.querySelectorAll('.flow')];
+  const packets=[...document.querySelectorAll('.packet')];
+  const nodes=[...document.querySelectorAll('.node-group')];
+  const chips=[...document.querySelectorAll('.chip[data-filter]')];
+  const info=document.getElementById('infoPanel');
+  let selected=null, activeFilter='all';
+
+  function applyFilter(f){
+    activeFilter=f;
+    chips.forEach(c=>c.classList.toggle('active',c.dataset.filter===f));
+    if(f==='all'){flows.forEach(x=>x.classList.remove('dim'));packets.forEach(p=>p.style.display='');}
+    else{flows.forEach(x=>x.classList.toggle('dim',x.dataset.flow!==f));
+      packets.forEach(p=>p.style.display=p.classList.contains(f)?'':'none');}
+  }
+  chips.forEach(c=>c.addEventListener('click',()=>{clearSel();applyFilter(c.dataset.filter);}));
+
+  function emptyInfo(){info.classList.add('empty');}
+  function showInfo(n){
+    info.classList.remove('empty');
+    info.querySelector('.info-name').textContent=n.dataset.name||'';
+    info.querySelector('.info-meta').textContent=n.dataset.meta||'';
+    info.querySelector('.info-desc').textContent=n.dataset.desc||'';
+  }
+  function clearSel(){selected=null;nodes.forEach(n=>n.classList.remove('focus','dim'));
+    flows.forEach(f=>f.classList.remove('glow'));
+    if(activeFilter==='all')flows.forEach(f=>f.classList.remove('dim'));emptyInfo();}
+
+  nodes.forEach(node=>node.addEventListener('click',e=>{
+    e.stopPropagation();
+    const id=node.dataset.node;
+    if(selected===id){clearSel();applyFilter(activeFilter);return;}
+    selected=id;
+    const conn=new Set([id]);
+    flows.forEach(f=>{if(f.dataset.src===id)conn.add(f.dataset.dst);if(f.dataset.dst===id)conn.add(f.dataset.src);});
+    nodes.forEach(n=>{n.classList.toggle('focus',n.dataset.node===id);n.classList.toggle('dim',!conn.has(n.dataset.node));});
+    flows.forEach(f=>{const rel=f.dataset.src===id||f.dataset.dst===id;f.classList.toggle('glow',rel);f.classList.toggle('dim',!rel);});
+    packets.forEach(p=>p.style.display='');
+    showInfo(node);
+  }));
+  document.querySelector('.canvas-wrap').addEventListener('click',e=>{
+    if(e.target.tagName==='svg'||e.target.classList.contains('zone-bg')){clearSel();applyFilter(activeFilter);}
+  });
+
+  const pauseBtn=document.getElementById('pauseBtn');let paused=false;
+  pauseBtn.addEventListener('click',()=>{paused=!paused;const s=document.querySelector('svg.diagram');
+    paused?s.pauseAnimations():s.unpauseAnimations();
+    pauseBtn.querySelector('span').textContent=paused?'Play':'Pause';
+    pauseBtn.querySelector('svg').innerHTML=paused?'<polygon points="6 4 20 12 6 20 6 4"/>':'<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';});
+  document.getElementById('resetBtn').addEventListener('click',()=>{clearSel();applyFilter('all');});
+
+  // ---- In-place PDF export: rasterise the diagram SVG (computed colours baked
+  //      in so no external CSS is needed), wrap the JPEG in a minimal one-page
+  //      PDF and download it directly — no browser print dialog. ----
+  function exportTopologyPDF(){
+    const src=document.querySelector('svg.diagram'); if(!src){window.print();return;}
+    const clone=src.cloneNode(true);
+    (function bake(o,c){
+      if(o.nodeType===1 && /^(path|rect|circle|ellipse|line|polygon|polyline|text|tspan|use)$/.test(o.tagName)){
+        const cs=getComputedStyle(o), set=(k,v)=>{ if(v&&v!=='none'&&v!=='') c.setAttribute(k,v); };
+        set('fill',cs.fill); set('stroke',cs.stroke);
+        if(cs.strokeWidth) c.setAttribute('stroke-width',cs.strokeWidth);
+        if(cs.opacity && cs.opacity!=='1') c.setAttribute('opacity',cs.opacity);
+        if(cs.strokeDasharray && cs.strokeDasharray!=='none') c.setAttribute('stroke-dasharray',cs.strokeDasharray.replace(/px/g,''));
+        if(cs.fontSize) c.setAttribute('font-size',cs.fontSize);
+        if(cs.fontWeight) c.setAttribute('font-weight',cs.fontWeight);
+        if(cs.fontFamily) c.setAttribute('font-family',cs.fontFamily);
+        c.removeAttribute('style'); c.removeAttribute('class');
+      }
+      for(let i=0;i<o.children.length;i++) if(c.children[i]) bake(o.children[i],c.children[i]);
+    })(src,clone);
+    clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    const light=document.documentElement.getAttribute('data-theme')==='light';
+    const url='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(clone));
+    const img=new Image();
+    img.onload=function(){
+      const W=1500,H=900,SC=2, cv=document.createElement('canvas'); cv.width=W*SC; cv.height=H*SC;
+      const ctx=cv.getContext('2d'); ctx.fillStyle=light?'#ffffff':'#0a0e1a'; ctx.fillRect(0,0,cv.width,cv.height);
+      ctx.drawImage(img,0,0,cv.width,cv.height);
+      cv.toBlob(function(b){ if(!b){window.print();return;} b.arrayBuffer().then(function(ab){ buildPDF(new Uint8Array(ab),cv.width,cv.height); }); },'image/jpeg',0.92);
+    };
+    img.onerror=function(){ window.print(); };
+    img.src=url;
+  }
+  function buildPDF(jpeg, iw, ih){
+    const enc=s=>{const a=new Uint8Array(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i)&255;return a;};
+    const parts=[]; let len=0; const push=p=>{parts.push(p);len+=p.length;};
+    const PW=842,PH=595, s=Math.min(PW/iw,PH/ih), dw=iw*s, dh=ih*s, ox=(PW-dw)/2, oy=(PH-dh)/2;
+    const content='q '+dw.toFixed(2)+' 0 0 '+dh.toFixed(2)+' '+ox.toFixed(2)+' '+oy.toFixed(2)+' cm /Im0 Do Q';
+    const off=[];
+    push(enc('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'));
+    off[1]=len; push(enc('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n'));
+    off[2]=len; push(enc('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n'));
+    off[3]=len; push(enc('3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+PW+' '+PH+'] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n'));
+    off[4]=len; push(enc('4 0 obj\n<< /Type /XObject /Subtype /Image /Width '+iw+' /Height '+ih+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpeg.length+' >>\nstream\n'));
+    push(jpeg); push(enc('\nendstream\nendobj\n'));
+    off[5]=len; push(enc('5 0 obj\n<< /Length '+content.length+' >>\nstream\n'+content+'\nendstream\nendobj\n'));
+    const xrefStart=len;
+    let xref='xref\n0 6\n0000000000 65535 f \n';
+    for(let i=1;i<=5;i++) xref+=String(off[i]).padStart(10,'0')+' 00000 n \n';
+    push(enc(xref));
+    push(enc('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xrefStart+'\n%%EOF'));
+    const total=new Uint8Array(len); let p=0; parts.forEach(a=>{total.set(a,p);p+=a.length;});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([total],{type:'application/pdf'}));
+    a.download='salam-payments-topology.pdf'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  }
+  document.getElementById('exportBtn').addEventListener('click',exportTopologyPDF);
+</script>
+</body>
+</html>

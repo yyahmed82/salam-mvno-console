@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Salam Home · Payments Journey Player</title>
+<style>
+  :root{
+    --bg-0:#05070d; --bg-1:#0a0e1a; --panel:rgba(20,27,48,.6); --panel-2:rgba(15,21,37,.9);
+    --line:rgba(120,145,200,.18); --line-strong:rgba(140,165,220,.32);
+    --ink:#e7edff; --muted:#8896b8; --dim:#5a6889;
+    --play-bg:#22b357; --code-bg:#070b14; --code-fg:#c9d7e5; --code-border:var(--line);
+    --channels:#00b3ff; --gateways:#ff7849; --papi:#b066ff; --core:#00d9ff; --bss:#4ade80; --third:#ffa940;
+    --create:#00d9ff; --gateway:#ff7849; --webhook:#ff4d8d; --notify:#b066ff; --order:#4ade80; --capture:#00ffd5; --sadad:#ffa940; --fail:#ff5a5a; --oss:#ff3b52;
+    --head-grad:linear-gradient(135deg,rgba(15,21,37,.9),rgba(10,14,26,.7)); --zone-fill:rgba(20,27,48,.28); --node-fill:rgba(12,17,30,.94); --canvas-bg:radial-gradient(ellipse at 50% 40%,rgba(20,27,48,.5),rgba(5,7,13,.2)); --select-bg:rgba(10,14,26,.9); --box-bg:rgba(10,14,26,.6);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;overflow-x:hidden;color:var(--ink);
+    font-family:'Inter',ui-sans-serif,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(ellipse at 18% 8%,rgba(0,217,255,.08),transparent 60%),radial-gradient(ellipse at 82% 92%,rgba(176,102,255,.07),transparent 60%),var(--bg-0);}
+  body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(rgba(120,145,200,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(120,145,200,.04) 1px,transparent 1px);
+    background-size:38px 38px;mask-image:radial-gradient(ellipse at center,black 35%,transparent 82%);}
+  main{position:relative;z-index:1;width:min(1560px,calc(100vw - 28px));margin:0 auto;padding:20px 0 40px}
+
+  .header{display:flex;align-items:center;gap:22px;padding:15px 22px;margin-bottom:12px;border:1px solid var(--line);border-radius:14px;
+    background:var(--head-grad);backdrop-filter:blur(20px);position:relative;overflow:hidden;
+    box-shadow:0 8px 32px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.04)}
+  .header::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;opacity:.6;background:linear-gradient(90deg,transparent,var(--core),var(--papi),var(--webhook),transparent)}
+  .brand h1{margin:0;font-size:18px;letter-spacing:.3px}
+  .brand span{color:var(--muted);font-size:12px}
+  .hint-top{margin-left:auto;color:var(--muted);font-size:12px;max-width:360px;text-align:right}
+
+  /* Player bar */
+  .player{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 14px;margin-bottom:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);backdrop-filter:blur(14px)}
+  .player label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
+  select{appearance:none;background:var(--select-bg);color:var(--ink);border:1px solid var(--line-strong);border-radius:9px;
+    padding:8px 30px 8px 12px;font-size:13px;font-family:inherit;cursor:pointer;min-width:300px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238896b8' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+  .ctrl{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 14px;border-radius:9px;border:1px solid var(--line);background:rgba(255,255,255,.02);color:var(--ink);font-size:13px;cursor:pointer;transition:all .18s}
+  .ctrl:hover{background:rgba(255,255,255,.07);border-color:var(--core)}
+  .ctrl:disabled{opacity:.35;cursor:not-allowed}
+  .ctrl.play{background:var(--play-bg);color:#fff;border-color:var(--play-bg);font-weight:800;min-width:104px}
+  .ctrl.play:hover{filter:brightness(1.06)}
+  .ctrl svg{fill:currentColor}
+  .spacer{flex:1}
+  .stepcount{font-variant-numeric:tabular-nums;font-weight:800;font-size:14px;color:var(--core);min-width:56px;text-align:center}
+
+  .canvas-wrap{position:relative;border:1px solid var(--line);border-radius:16px 16px 0 0;overflow:hidden;background:var(--canvas-bg)}
+  svg.diagram{display:block;width:100%;height:auto}
+
+  .zone-bg{fill:var(--zone-fill);stroke:var(--line);stroke-width:1}
+  .zone-label{fill:var(--muted);font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+  .zone-bg.zdim{opacity:.35;transition:opacity .35s}
+
+  .node-group{transition:all .35s ease}
+  .node-bg{fill:var(--node-fill);stroke:currentColor;stroke-width:1.4;rx:11;transition:all .35s ease}
+  .node-title{fill:var(--ink);font-size:14px;font-weight:700;pointer-events:none}
+  .node-sub{fill:var(--muted);font-size:11px;pointer-events:none}
+  .icon{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+  .tag-pill{rx:4}.tag-text{font-size:10px;font-weight:700;pointer-events:none}
+  .node-group.dim{opacity:.14}
+  .node-group.act .node-bg{stroke-width:2.8;filter:drop-shadow(0 0 22px currentColor)}
+  .node-group.act{transform:translateY(-2px)}
+  .node-pulse{fill:none;stroke:currentColor;stroke-width:2;opacity:0;rx:11}
+  .node-group.act .node-pulse{animation:ring 1.6s ease-out infinite}
+  @keyframes ring{0%{opacity:.55;transform:scale(1)}100%{opacity:0;transform:scale(1.06)}}
+
+  .flow{fill:none;stroke-width:1.5;opacity:.16;transition:all .35s ease}
+  .flow.dashed{stroke-dasharray:6 5}.flow.dotted{stroke-dasharray:2 5}
+  .flow.create{stroke:var(--create);color:var(--create);marker-end:url(#a-create)}
+  .flow.gateway{stroke:var(--gateway);color:var(--gateway);marker-end:url(#a-gateway)}
+  .flow.webhook{stroke:var(--webhook);color:var(--webhook);marker-end:url(#a-webhook)}
+  .flow.notify{stroke:var(--notify);color:var(--notify);marker-end:url(#a-notify)}
+  .flow.order{stroke:var(--order);color:var(--order);marker-end:url(#a-order)}
+  .flow.capture{stroke:var(--capture);color:var(--capture);marker-end:url(#a-capture)}
+  .flow.sadad{stroke:var(--sadad);color:var(--sadad);marker-end:url(#a-sadad)}
+  .flow.oss{stroke:var(--oss);color:var(--oss);marker-end:url(#a-oss)}
+  .flow.active{opacity:1;stroke-width:3.4;filter:drop-shadow(0 0 10px currentColor)}
+  .flow.past{opacity:.5;stroke-width:2}
+  .flow.failstep{stroke:var(--fail)!important;color:var(--fail)!important;filter:drop-shadow(0 0 12px var(--fail));opacity:1;stroke-width:3.4}
+
+  #cursor{filter:drop-shadow(0 0 10px currentColor)}
+  #cursorHalo{opacity:.4}
+
+  /* Story bar */
+  .story{border:1px solid var(--line);border-top:none;border-radius:0 0 16px 16px;background:var(--panel-2);backdrop-filter:blur(20px);padding:16px 22px;display:flex;gap:20px;align-items:flex-start;min-height:104px}
+  .story-num{flex:0 0 auto;width:52px;height:52px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#001a1a;background:var(--core);box-shadow:0 0 22px rgba(0,217,255,.4)}
+  .story-num.fail{background:var(--fail);box-shadow:0 0 22px rgba(255,90,90,.45);color:#1a0000}
+  .story-num.done{background:var(--bss);box-shadow:0 0 22px rgba(74,222,128,.4)}
+  .story-main{flex:1;min-width:0}
+  .story-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .story-title{font-size:17px;font-weight:800}
+  .badge{font-size:11.5px;font-weight:700;padding:3px 11px;border-radius:20px;border:1px solid currentColor;white-space:nowrap}
+  .badge.ok{color:#7ee787}.badge.info{color:#79c0ff}.badge.warn{color:#e3b341}.badge.fail{color:#ff7b72}.badge.mut{color:#93a1b0}
+  .story-desc{color:var(--muted);font-size:13.5px;line-height:1.55;margin-top:6px;max-width:1080px}
+  .story-scene{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:2px}
+  .dots{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  .dot{width:26px;height:5px;border-radius:3px;background:rgba(255,255,255,.12);cursor:pointer;transition:all .2s}
+  .dot.on{background:var(--core);box-shadow:0 0 8px var(--core)}
+  .dot.done{background:rgba(0,217,255,.4)}
+  .dot.fail.on{background:var(--fail);box-shadow:0 0 8px var(--fail)}
+
+  .legendmini{position:absolute;left:14px;bottom:14px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);backdrop-filter:blur(10px);font-size:11px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;max-width:70%}
+  .lg{display:inline-flex;align-items:center;gap:6px}
+  .lg i{width:16px;height:0;border-top:2.5px solid currentColor;box-shadow:0 0 6px currentColor;display:inline-block}
+
+  /* Infra layer */
+  .node-ip{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none}
+  body.infra .node-ip{opacity:.92}
+  .ip-inf{font-style:italic}
+  .zonebadge{font-size:9px;font-weight:800;letter-spacing:.4px;pointer-events:none;opacity:0;transition:opacity .3s}
+  body.infra .zonebadge{opacity:.9}
+  .ctrl.toggle.on{background:rgba(0,217,255,.16);border-color:var(--core);color:var(--core)}
+  .zones{display:none;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 14px;margin-bottom:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-size:11.5px;color:var(--muted)}
+  body.infra .zones{display:flex}
+  .zdot{display:inline-flex;align-items:center;gap:6px}
+  .zdot b{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .zones .src{margin-left:auto;color:var(--dim);font-family:ui-monospace,monospace;font-size:11px}
+  /* network hop line in story */
+  .story-net{display:none;margin-top:9px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--muted);
+    background:var(--box-bg);border:1px solid var(--line);border-radius:8px;padding:7px 11px;line-height:1.7}
+  body.infra .story-net{display:block}
+  .story-net .h{color:var(--ink);font-weight:700}
+  .story-net .hop{color:var(--core)}
+  .story-net .via{color:var(--dim)}
+  .story-net .inf{color:var(--gateways)}
+
+  /* Technical detail panel */
+  .tech{margin-top:12px;border:1px solid var(--line);border-radius:14px;background:var(--panel-2);backdrop-filter:blur(20px);overflow:hidden}
+  .tech-head{display:flex;align-items:center;gap:12px;padding:13px 18px;cursor:pointer;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .tech.collapsed .tech-body{display:none}
+  .tech.collapsed .tech-head{border-bottom:none}
+  .method{font-size:11px;font-weight:800;letter-spacing:.5px;padding:3px 9px;border-radius:6px;font-family:ui-monospace,monospace}
+  .m-post{background:rgba(0,217,255,.16);color:#79d9ff;border:1px solid rgba(0,217,255,.4)}
+  .m-get{background:rgba(74,222,128,.14);color:#7ee787;border:1px solid rgba(74,222,128,.35)}
+  .m-int{background:rgba(176,102,255,.16);color:#c9a3ff;border:1px solid rgba(176,102,255,.4)}
+  .m-soap{background:rgba(255,169,64,.14);color:#ffc074;border:1px solid rgba(255,169,64,.35)}
+  .tech-ep{font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:700;color:var(--ink)}
+  .tech-host{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--dim);margin-left:auto}
+  .tech-chev{color:var(--muted);font-size:13px;transition:transform .2s}
+  .tech.collapsed .tech-chev{transform:rotate(-90deg)}
+  .tech-body{padding:16px 18px}
+  .tech-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:820px){.tech-grid{grid-template-columns:1fr}}
+  .code-wrap h6{margin:0 0 6px;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--dim)}
+  pre.code{margin:0;padding:12px 14px;background:var(--code-bg);border:1px solid var(--code-border);border-radius:9px;overflow:auto;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.55;color:var(--code-fg);max-height:230px;white-space:pre}
+  .decide{margin-top:14px}
+  .decide h6{margin:0 0 7px;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--dim)}
+  .drow{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid rgba(120,145,200,.1);font-size:13px}
+  .drow:first-of-type{border-top:none}
+  .dwhen{flex:0 0 210px;font-family:ui-monospace,monospace;font-size:11.5px;color:#79c0ff}
+  .dwhen.ok{color:#7ee787}.dwhen.bad{color:#ff7b72}.dwhen.warn{color:#e3b341}
+  .dthen{flex:1;color:var(--muted);min-width:0}
+  .dthen b{color:var(--ink);font-weight:600}
+  .logline{margin-top:13px;font-family:ui-monospace,monospace;font-size:11.5px;color:var(--muted);
+    background:var(--box-bg);border:1px solid var(--line);border-left:3px solid var(--gateways);border-radius:0 8px 8px 0;padding:8px 12px}
+  .logline .lk{color:var(--dim);text-transform:uppercase;letter-spacing:1px;font-size:10px;display:block;margin-bottom:3px}
+  @media(max-width:820px){.legendmini{display:none}.hint-top{display:none}}
+
+  /* Light theme — parent passes ?theme=light (matches the app toggle). Flips
+     structural surfaces to light; accent hues darkened for light-bg contrast. */
+  html[data-theme="light"]{
+    --bg-0:#eef1f6; --bg-1:#e7ecf4; --bg-2:#dfe5f0; --bg-3:#d6deec;
+    --panel:rgba(255,255,255,.72); --panel-2:rgba(255,255,255,.94);
+    --line:rgba(30,50,90,.12); --line-strong:rgba(30,50,90,.22);
+    --ink:#132036; --muted:#4f5d78; --dim:#8b97b0;
+    --play-bg:#0e8a37; --code-bg:#f6f8fb; --code-fg:#1f2937; --code-border:#dce3ec;
+    --channels:#0a7ea8; --gateways:#c25a2a; --papi:#7c4dcc; --core:#0a86c4; --bss:#2e9e57; --third:#b7791f;
+    --create:#0a86c4; --gateway:#c25a2a; --webhook:#c43b6e; --notify:#7c4dcc; --order:#2e9e57; --capture:#0a9c8a; --sadad:#b7791f; --fail:#d64550; --oss:#d64550;
+    --head-grad:linear-gradient(135deg,#ffffff,#eef2f7); --zone-fill:rgba(30,50,90,.05); --node-fill:#ffffff; --canvas-bg:radial-gradient(ellipse at 50% 40%,rgba(230,238,250,.6),rgba(243,245,249,.3)); --select-bg:#ffffff; --box-bg:#ffffff;
+  }
+  /* Light chrome = Salam green (Core-API data colour --core stays as-is). */
+  html[data-theme="light"] .stepcount{color:var(--play-bg)}
+  html[data-theme="light"] .ctrl:hover{border-color:var(--play-bg)}
+  html[data-theme="light"] .story-num{background:var(--play-bg);color:#fff;box-shadow:0 0 22px rgba(14,138,55,.35)}
+  html[data-theme="light"] .dot.on{background:var(--play-bg);box-shadow:0 0 8px var(--play-bg)}
+  html[data-theme="light"] .ctrl.toggle.on{background:rgba(14,138,55,.14);border-color:var(--play-bg);color:var(--play-bg)}
+  /* Light mode: story badges become solid + white (consistent with the flow-analysis pills). */
+  html[data-theme="light"] .badge.ok{background:#0e8a37;color:#fff;border-color:#0e8a37}
+  html[data-theme="light"] .badge.info{background:#0a6fb0;color:#fff;border-color:#0a6fb0}
+  html[data-theme="light"] .badge.warn{background:#b7791f;color:#fff;border-color:#b7791f}
+  html[data-theme="light"] .badge.fail{background:#d64550;color:#fff;border-color:#d64550}
+  html[data-theme="light"] .badge.mut{background:#5a6889;color:#fff;border-color:#5a6889}
+</style>
+<script>try{if(new URLSearchParams(location.search).get('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}</script>
+</head>
+<body>
+<main>
+  <header class="header">
+    <div class="brand"><h1>Salam Home · Payments Journey Player</h1><span>Follow one payment end-to-end — pick a scenario and step through it</span></div>
+    <div class="hint-top">Choose a journey below, then press <b>Play</b> (or Next). The glowing cursor shows exactly where the transaction is at each step.</div>
+  </header>
+
+  <div class="player">
+    <label>Journey</label>
+    <select id="journey"></select>
+    <button class="ctrl" id="prev" title="Previous step">◀ Prev</button>
+    <button class="ctrl play" id="play">▶ Play</button>
+    <button class="ctrl" id="next" title="Next step">Next ▶</button>
+    <button class="ctrl" id="restart" title="Restart">↻</button>
+    <button class="ctrl toggle" id="infraBtn" title="Show hostnames, IPs and ports from the HLD">⊞ Infra</button>
+    <div class="spacer"></div>
+    <div class="stepcount" id="stepcount">–</div>
+  </div>
+
+  <div class="zones">
+    <span class="zdot" style="color:var(--channels)"><b style="background:var(--channels)"></b>App / Web · 172.31.38.128/25</span>
+    <span class="zdot" style="color:var(--bss)"><b style="background:var(--bss)"></b>DB · private</span>
+    <span class="zdot" style="color:var(--papi)"><b style="background:var(--papi)"></b>Payments / gateway</span>
+    <span class="zdot" style="color:var(--third)"><b style="background:var(--third)"></b>Monitoring · 172.31.142.0/24</span>
+    <span class="zdot" style="color:var(--muted)"><b style="background:var(--muted)"></b>External</span>
+    <span class="zdot" style="color:var(--core)"><b style="background:var(--core)"></b>Public RP 172.31.38.115:443 (single entry)</span>
+    <span class="src">source: Salam HLD v1.2 · italic = service→host inferred</span>
+  </div>
+
+  <div class="canvas-wrap">
+    <div class="legendmini">
+      <span class="lg" style="color:var(--create)"><i></i>createInvoice</span>
+      <span class="lg" style="color:var(--gateway)"><i></i>gateway pay</span>
+      <span class="lg" style="color:var(--webhook)"><i></i>webhook</span>
+      <span class="lg" style="color:var(--notify)"><i></i>notify</span>
+      <span class="lg" style="color:var(--order)"><i></i>BSS order</span>
+      <span class="lg" style="color:var(--capture)"><i></i>capture/void</span>
+      <span class="lg" style="color:var(--sadad)"><i></i>SADAD</span>
+      <span class="lg" style="color:var(--oss)"><i></i>OSS geo-feasibility</span>
+    </div>
+
+    <svg class="diagram" viewBox="0 0 1500 900" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <marker id="a-create" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#00d9ff"/></marker>
+        <marker id="a-gateway" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ff7849"/></marker>
+        <marker id="a-webhook" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ff4d8d"/></marker>
+        <marker id="a-notify" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#b066ff"/></marker>
+        <marker id="a-order" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4ade80"/></marker>
+        <marker id="a-capture" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#00ffd5"/></marker>
+        <marker id="a-sadad" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ffa940"/></marker>
+        <marker id="a-oss" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ff3b52"/></marker>
+        <marker id="a-fail" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ff5a5a"/></marker>
+        <symbol id="i-web" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18"/></symbol>
+        <symbol id="i-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M20 14v.01M14 20v.01M20 20v.01M17 17v.01"/></symbol>
+        <symbol id="i-mobile" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+        <symbol id="i-host" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+        <symbol id="i-card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></symbol>
+        <symbol id="i-sadad" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 8v8M12 8v8M16 8v8"/></symbol>
+        <symbol id="i-hook" viewBox="0 0 24 24"><path d="M18 6v6a6 6 0 0 1-12 0V9"/><circle cx="18" cy="4" r="2"/><path d="M6 9l-3 3 3 3"/></symbol>
+        <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
+        <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></symbol>
+        <symbol id="i-bss" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="7" rx="1"/><rect x="4" y="14" width="16" height="6" rx="1"/><path d="M8 7.5h.01M8 17h.01"/></symbol>
+      </defs>
+
+      <!-- ZONES -->
+      <rect class="zone-bg" data-zone="ch" x="26" y="60" width="252" height="480" rx="16"/>
+      <text class="zone-label" x="42" y="86" style="fill:var(--channels)">CHANNELS · Front-ends</text>
+      <rect class="zone-bg" data-zone="rail" x="26" y="560" width="252" height="300" rx="16"/>
+      <text class="zone-label" x="42" y="586" style="fill:var(--gateways)">PAYMENT RAILS</text>
+      <rect class="zone-bg" data-zone="pay" x="486" y="440" width="360" height="420" rx="16"/>
+      <text class="zone-label" x="504" y="466" style="fill:var(--papi)">PAYMENTS-API · payments_v2</text>
+      <rect class="zone-bg" data-zone="core" x="906" y="70" width="392" height="520" rx="16"/>
+      <text class="zone-label" x="924" y="96" style="fill:var(--core)">CORE API · salam-nexus/packages/api · :5005</text>
+      <rect class="zone-bg" data-zone="bss" x="1330" y="250" width="150" height="360" rx="16"/>
+      <text class="zone-label" x="1346" y="276" style="fill:var(--bss)">BSS / OSS</text>
+
+      <!-- FLOWS -->
+      <path class="flow create" data-src="web" data-dst="ep" data-flow="create" d="M258 128 Q580 118 906 150"/>
+      <path class="flow create" data-src="qr" data-dst="ep" data-flow="create" d="M258 210 Q580 180 906 158"/>
+      <path class="flow create" data-src="pulse" data-dst="ep" data-flow="create" d="M258 292 Q560 240 906 172"/>
+      <path class="flow create" data-src="pulse" data-dst="ml" data-flow="create" d="M258 300 Q560 300 906 250"/>
+      <path class="flow create" data-src="ep" data-dst="db" data-flow="create" d="M906 158 Q700 400 846 640"/>
+      <path class="flow create" data-src="ml" data-dst="db" data-flow="create" d="M906 250 Q740 470 830 648"/>
+      <path class="flow create" data-src="sda" data-dst="db" data-flow="create" d="M906 342 Q800 520 812 660"/>
+      <path class="flow create" data-src="sdaapp" data-dst="sda" data-flow="create" d="M258 462 Q620 430 926 322"/>
+      <path class="flow order" data-src="sda" data-dst="bss" data-flow="order" d="M1282 320 Q1332 322 1346 348"/>
+      <path class="flow oss" data-src="sda" data-dst="oss" data-flow="oss" d="M1282 330 Q1372 430 1400 486"/>
+      <path class="flow oss dashed" data-src="bss" data-dst="oss" data-flow="oss" d="M1406 420 V486"/>
+      <path class="flow sadad dashed" data-src="bss" data-dst="sad" data-flow="sadad" d="M1360 414 Q820 500 252 754"/>
+      <path class="flow gateway" data-src="web" data-dst="moy" data-flow="gateway" d="M150 160 Q88 400 150 620"/>
+      <path class="flow gateway" data-src="qr" data-dst="moy" data-flow="gateway" d="M162 242 Q112 440 152 622"/>
+      <path class="flow gateway" data-src="pulse" data-dst="moy" data-flow="gateway" d="M172 324 Q140 480 156 624"/>
+      <path class="flow gateway" data-src="pweb" data-dst="moy" data-flow="gateway" d="M162 406 Q176 520 158 626"/>
+      <path class="flow webhook" data-src="moy" data-dst="hwh" data-flow="webhook" d="M258 636 Q420 590 516 566"/>
+      <path class="flow webhook dotted" data-src="hwh" data-dst="db" data-flow="webhook" d="M660 590 V632"/>
+      <path class="flow notify" data-src="notify" data-dst="rec" data-flow="notify" d="M780 812 Q1120 760 1062 494"/>
+      <path class="flow order" data-src="rec" data-dst="bss" data-flow="order" d="M1258 452 Q1340 420 1346 372"/>
+      <path class="flow order dashed" data-src="bss" data-dst="ep" data-flow="order" d="M1380 300 Q1330 150 1236 168"/>
+      <path class="flow capture dashed" data-src="ep" data-dst="db" data-flow="capture" d="M912 182 Q760 440 844 654"/>
+      <path class="flow capture dashed" data-src="db" data-dst="moy" data-flow="capture" d="M846 700 Q460 760 258 668"/>
+      <path class="flow sadad" data-src="sad" data-dst="db" data-flow="sadad" d="M258 756 Q520 730 812 700"/>
+      <path class="flow sadad dotted" data-src="db" data-dst="sad" data-flow="sadad" d="M812 716 Q500 820 258 776"/>
+
+      <!-- NODES -->
+      <g class="node-group" data-node="web" style="color:var(--channels)">
+        <rect class="node-pulse" x="50" y="104" width="200" height="60"/>
+        <rect class="node-bg" x="50" y="104" width="200" height="60"/>
+        <use href="#i-web" x="66" y="122" width="22" height="22" class="icon"/>
+        <text class="node-title" x="98" y="130">Web e-purchase</text><text class="node-sub" x="98" y="148">apps/epurchase</text>
+      </g>
+      <g class="node-group" data-node="qr" style="color:var(--channels)">
+        <rect class="node-pulse" x="50" y="186" width="200" height="60"/>
+        <rect class="node-bg" x="50" y="186" width="200" height="60"/>
+        <use href="#i-qr" x="66" y="204" width="22" height="22" class="icon"/>
+        <text class="node-title" x="98" y="212">Web QR offer</text><text class="node-sub" x="98" y="230">referral-priced e-purchase</text>
+      </g>
+      <g class="node-group" data-node="pulse" style="color:var(--channels)">
+        <rect class="node-pulse" x="50" y="268" width="200" height="60"/>
+        <rect class="node-bg" x="50" y="268" width="200" height="60"/>
+        <use href="#i-mobile" x="66" y="286" width="22" height="22" class="icon"/>
+        <text class="node-title" x="98" y="294">Pulse app</text><text class="node-sub" x="98" y="312">buy + manage-line</text>
+      </g>
+      <g class="node-group" data-node="pweb" style="color:var(--channels)">
+        <rect class="node-pulse" x="50" y="350" width="200" height="60"/>
+        <rect class="node-bg" x="50" y="350" width="200" height="60"/>
+        <use href="#i-host" x="66" y="368" width="22" height="22" class="icon"/>
+        <text class="node-title" x="98" y="376">payments-web</text><text class="node-sub" x="98" y="394">hosted /p2 checkout</text>
+      </g>
+      <g class="node-group" data-node="sdaapp" style="color:var(--third)">
+        <rect class="node-pulse" x="50" y="432" width="200" height="60"/>
+        <rect class="node-bg" x="50" y="432" width="200" height="60"/>
+        <use href="#i-mobile" x="66" y="450" width="22" height="22" class="icon"/>
+        <text class="node-title" x="98" y="458">SDA dealer app</text><text class="node-sub" x="98" y="476">admin · promoter · activator</text>
+      </g>
+      <g class="node-group" data-node="moy" style="color:var(--gateways)">
+        <rect class="node-pulse" x="50" y="612" width="200" height="60"/>
+        <rect class="node-bg" x="50" y="612" width="200" height="60"/>
+        <use href="#i-card" x="66" y="630" width="22" height="22" class="icon"/>
+        <text class="node-title" x="98" y="638">Moyasar</text><text class="node-sub" x="98" y="656">card · applepay · samsung</text>
+      </g>
+      <g class="node-group" data-node="sad" style="color:var(--third)">
+        <rect class="node-pulse" x="50" y="732" width="200" height="60"/>
+        <rect class="node-bg" x="50" y="732" width="200" height="60"/>
+        <use href="#i-sadad" x="66" y="750" width="22" height="22" class="icon"/>
+        <text class="node-title" x="98" y="758">SADAD</text><text class="node-sub" x="98" y="776">instant bill (dealer)</text>
+      </g>
+      <g class="node-group" data-node="hwh" style="color:var(--papi)">
+        <rect class="node-pulse" x="516" y="510" width="288" height="58"/>
+        <rect class="node-bg" x="516" y="510" width="288" height="58"/>
+        <use href="#i-hook" x="532" y="528" width="22" height="22" class="icon"/>
+        <text class="node-title" x="564" y="535">handleWebhook</text><text class="node-sub" x="564" y="553">statusMap · transformPaymentStatus</text>
+      </g>
+      <g class="node-group" data-node="db" style="color:var(--bss)">
+        <rect class="node-pulse" x="516" y="632" width="288" height="70"/>
+        <rect class="node-bg" x="516" y="632" width="288" height="70"/>
+        <use href="#i-db" x="532" y="650" width="22" height="22" class="icon"/>
+        <text class="node-title" x="564" y="662">invoices / payments</text><text class="node-sub" x="564" y="680">+ activities · webhooks · cards</text>
+        <rect class="tag-pill" x="726" y="638" width="60" height="15" style="fill:rgba(255,77,141,.12);stroke:rgba(255,77,141,.35)"/>
+        <text class="tag-text" x="756" y="649" text-anchor="middle" style="fill:var(--webhook)">UNIQUE txn</text>
+      </g>
+      <g class="node-group" data-node="notify" style="color:var(--notify)">
+        <rect class="node-pulse" x="516" y="770" width="288" height="58"/>
+        <rect class="node-bg" x="516" y="770" width="288" height="58"/>
+        <use href="#i-bell" x="532" y="788" width="22" height="22" class="icon"/>
+        <text class="node-title" x="564" y="795">notifyApplication</text><text class="node-sub" x="564" y="813">12s · DELIVERED / FAILED</text>
+      </g>
+      <g class="node-group" data-node="ep" style="color:var(--core)">
+        <rect class="node-pulse" x="928" y="132" width="352" height="54"/>
+        <rect class="node-bg" x="928" y="132" width="352" height="54"/>
+        <use href="#i-gear" x="944" y="148" width="22" height="22" class="icon"/>
+        <text class="node-title" x="976" y="156">routers/epurchase.ts</text><text class="node-sub" x="976" y="174">buy FTTH · createOrderNew</text>
+      </g>
+      <g class="node-group" data-node="ml" style="color:var(--core)">
+        <rect class="node-pulse" x="928" y="212" width="352" height="54"/>
+        <rect class="node-bg" x="928" y="212" width="352" height="54"/>
+        <use href="#i-gear" x="944" y="228" width="22" height="22" class="icon"/>
+        <text class="node-title" x="976" y="236">routers/salam-app/manage-line.ts</text><text class="node-sub" x="976" y="254">relocation · change-plan · renew</text>
+      </g>
+      <g class="node-group" data-node="sda" style="color:var(--core)">
+        <rect class="node-pulse" x="928" y="292" width="352" height="54"/>
+        <rect class="node-bg" x="928" y="292" width="352" height="54"/>
+        <use href="#i-gear" x="944" y="308" width="22" height="22" class="icon"/>
+        <text class="node-title" x="976" y="316">routers/sda.ts · workflows.ts</text><text class="node-sub" x="976" y="334">dealer FTTH/FTTB/5G · SADAD</text>
+      </g>
+      <g class="node-group" data-node="rec" style="color:var(--core)">
+        <rect class="node-pulse" x="928" y="392" width="352" height="94"/>
+        <rect class="node-bg" x="928" y="392" width="352" height="94"/>
+        <use href="#i-hook" x="944" y="410" width="22" height="22" class="icon"/>
+        <text class="node-title" x="976" y="418">routers/webhooks.ts · receivers</text>
+        <text class="node-sub" x="944" y="446">/webhooks/epurchase/payment</text>
+        <text class="node-sub" x="944" y="462">/webhooks/salamHome/payment</text>
+        <text class="node-sub" x="944" y="478">/webhooks/sadad/payment</text>
+      </g>
+      <g class="node-group" data-node="bss" style="color:var(--bss)">
+        <rect class="node-pulse" x="1346" y="300" width="120" height="118"/>
+        <rect class="node-bg" x="1346" y="300" width="120" height="118"/>
+        <use href="#i-bss" x="1394" y="322" width="24" height="24" class="icon"/>
+        <text class="node-title" x="1406" y="366" text-anchor="middle">BSS</text>
+        <text class="node-sub" x="1406" y="384" text-anchor="middle">ZSmart</text>
+        <text class="node-sub" x="1406" y="400" text-anchor="middle">createOrderNew</text>
+      </g>
+      <g class="node-group" data-node="oss" style="color:var(--oss)">
+        <rect class="node-pulse" x="1346" y="474" width="120" height="86"/>
+        <rect class="node-bg" x="1346" y="474" width="120" height="86"/>
+        <use href="#i-gear" x="1394" y="490" width="24" height="24" class="icon"/>
+        <text class="node-title" x="1406" y="536" text-anchor="middle">OSS</text>
+        <text class="node-sub" x="1406" y="552" text-anchor="middle">ProdGeoFeasibility</text>
+      </g>
+
+      <!-- CURSOR -->
+      <circle id="cursorHalo" r="13" fill="#fff" style="display:none"><animateMotion id="haloMotion" dur="2s" repeatCount="indefinite"/></circle>
+      <circle id="cursor" r="6.5" fill="#fff" style="display:none"><animateMotion id="cursorMotion" dur="2s" repeatCount="indefinite"/></circle>
+    </svg>
+  </div>
+
+  <div class="story" id="story">
+    <div class="story-num" id="storyNum">–</div>
+    <div class="story-main">
+      <div class="story-scene" id="storyScene">Select a journey to begin</div>
+      <div class="story-head"><span class="story-title" id="storyTitle">Payment journey player</span><span class="badge mut" id="storyBadge" style="display:none"></span></div>
+      <div class="story-desc" id="storyDesc">Pick a scenario above and press Play. A single cursor travels the exact path a transaction takes — createInvoice, gateway payment, Moyasar webhook, app notify, and BSS provisioning — with a plain-language note at every step. Failure scenarios show where it breaks. Toggle <b>⊞ Infra</b> to overlay HLD hostnames, IPs and ports.</div>
+      <div class="story-net" id="storyNet"></div>
+      <div class="dots" id="dots"></div>
+    </div>
+  </div>
+
+  <section class="tech" id="tech">
+    <div class="tech-head" id="techHead">
+      <span class="method m-post" id="techMethod">POST</span>
+      <span class="tech-ep" id="techEp">Endpoint</span>
+      <span class="tech-host" id="techHost"></span>
+      <span class="tech-chev">▾</span>
+    </div>
+    <div class="tech-body">
+      <div class="tech-grid">
+        <div class="code-wrap"><h6>Sample request</h6><pre class="code" id="techReq"></pre></div>
+        <div class="code-wrap"><h6>Sample response</h6><pre class="code" id="techRes"></pre></div>
+      </div>
+      <div class="decide"><h6>According to the response → what to do</h6><div id="techDecide"></div></div>
+      <div class="logline" id="techLog"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const scenarios = {
+  "web-card": { name:"Web / Pulse — Card paid (STANDARD)", steps:[
+    {s:"web",d:"ep",f:"create",t:"Create the invoice",badge:["invoice PENDING","info"],x:"Customer confirms the order. Core (epurchase.ts) calls payments-api createInvoice with the amount and metadata.version=2."},
+    {s:"ep",d:"db",f:"create",t:"Invoice stored in payments_v2",badge:["PENDING","info"],x:"payments-api writes the invoice row (status PENDING) and returns its id + hosted checkout URL. A user row is upserted per application."},
+    {s:"web",d:"moy",f:"gateway",t:"Customer pays the gateway",badge:["card","mut"],x:"The browser posts card details straight to Moyasar with the publishable key. Moyasar creates a payment. The app now polls checkPayment every 5s (UI only)."},
+    {s:"moy",d:"hwh",f:"webhook",t:"Moyasar webhook fires",badge:["payment_paid","ok"],x:"Moyasar sends POST /webhooks/moyasar (type=payment_paid). handleWebhook re-fetches the payment from Moyasar as the source of truth."},
+    {s:"hwh",d:"db",f:"webhook",t:"Apply status → invoice PAID",badge:["invoice PAID","ok"],x:"Guards pass (live, version=2, invoiceId, amount match, idempotency). Invoice PENDING→PAID, payment PAID + payment_activities row, a PAYMENT_PAID webhook row is created."},
+    {s:"notify",d:"rec",f:"notify",t:"Notify the app (12s)",badge:["DELIVERED","ok"],x:"notifyApplication POSTs the app's webhook_url (/webhooks/epurchase/payment) with the shared secret. Success marks the webhook DELIVERED + notifiedAt. No retry inside payments-api."},
+    {s:"rec",d:"bss",f:"order",t:"Place the BSS order",badge:["ordering","info"],x:"The receiver verifies the secret, then updateCustomerProfile → BSS createOrderNew (salamnewconnection)."},
+    {s:"bss",d:"ep",f:"order",t:"Provisioned ✓",badge:["orderNbr ✓","ok"],x:"BSS returns the order number. Service is provisioned and the journey is complete.",done:true}
+  ]},
+  "web-manual": { name:"Web e-purchase FTTH — MANUAL_CAPTURE (authorize → capture)", steps:[
+    {s:"web",d:"ep",f:"create",t:"Create invoice (MANUAL_CAPTURE)",badge:["MANUAL_CAPTURE","info"],x:"FTTH buy uses paymentFlow=MANUAL_CAPTURE so the charge can be voided if BSS rejects the order. createInvoice is called via core."},
+    {s:"ep",d:"db",f:"create",t:"Invoice stored",badge:["PENDING","info"],x:"payments-api stores the invoice as PENDING and returns it to the app."},
+    {s:"web",d:"moy",f:"gateway",t:"Authorize on the card",badge:["manual=true","mut"],x:"Browser pays Moyasar with manual=true. The card is authorized (funds held), not captured."},
+    {s:"moy",d:"hwh",f:"webhook",t:"payment_authorized webhook",badge:["payment_authorized","info"],x:"Moyasar fires payment_authorized. handleWebhook re-fetches and records the payment as AUTHORIZED."},
+    {s:"hwh",d:"db",f:"webhook",t:"Invoice → AUTHORIZED",badge:["invoice AUTHORIZED","info"],x:"statusMap: PENDING→AUTHORIZED, webhook PAYMENT_AUTHORIZED created. Funds are held, not yet taken."},
+    {s:"notify",d:"rec",f:"notify",t:"Notify the app",badge:["DELIVERED","ok"],x:"notifyApplication → /webhooks/epurchase/payment. On PAID or AUTHORIZED the receiver proceeds to place the order."},
+    {s:"rec",d:"bss",f:"order",t:"Place the BSS order",badge:["ordering","info"],x:"BSS createOrderNew is attempted with the authorized payment."},
+    {s:"bss",d:"ep",f:"order",t:"Order OK → capture",badge:["orderNbr ✓","ok"],x:"BSS returns an order number. Core now moves to capture the held funds via handleInvoiceUpdate('capture')."},
+    {s:"ep",d:"db",f:"capture",t:"captureInvoice",badge:["capturing","info"],x:"Core calls payments-api captureInvoice(paymentId). Payment must be AUTHORIZED."},
+    {s:"db",d:"moy",f:"capture",t:"Capture on Moyasar → CAPTURED",badge:["invoice CAPTURED","ok"],x:"payments-api calls Moyasar capture. Payment CAPTURED + activity; invoice CAPTURED. Money is settled. Done.",done:true}
+  ]},
+  "web-manual-void": { name:"Web FTTH — order fails → VOID (refund)", steps:[
+    {s:"web",d:"ep",f:"create",t:"Create invoice (MANUAL_CAPTURE)",badge:["MANUAL_CAPTURE","info"],x:"Same authorize-first setup as the capture path."},
+    {s:"web",d:"moy",f:"gateway",t:"Authorize on the card",badge:["authorized","info"],x:"Card authorized (funds held)."},
+    {s:"moy",d:"hwh",f:"webhook",t:"payment_authorized",badge:["invoice AUTHORIZED","info"],x:"handleWebhook sets invoice AUTHORIZED and notifies the app."},
+    {s:"notify",d:"rec",f:"notify",t:"Notify → attempt order",badge:["DELIVERED","ok"],x:"Receiver proceeds to place the BSS order."},
+    {s:"rec",d:"bss",f:"order",t:"BSS order FAILS",badge:["order failed","fail"],x:"createOrderNew fails (e.g. feasibility/port). The customer is told: 'Order creation failed. Your payment will be refunded shortly.'",fail:true},
+    {s:"ep",d:"db",f:"capture",t:"voidInvoice",badge:["voiding","warn"],x:"Core calls handleInvoiceUpdate('void') → payments-api voidInvoice(paymentId)."},
+    {s:"db",d:"moy",f:"capture",t:"Void on Moyasar → VOIDED",badge:["invoice VOIDED","warn"],x:"Moyasar void releases the authorization. Payment VOIDED + activity; invoice VOIDED. No money taken.",done:true}
+  ]},
+  "web-qr": { name:"Web QR offer — referral-priced card", steps:[
+    {s:"qr",d:"ep",f:"create",t:"QR pricing → create invoice",badge:["qr_discounted_price","info"],x:"A scanned QR carries a referralCode. With a QR-enabled plan the amount = qr_discounted_price. createInvoice is called with that amount."},
+    {s:"ep",d:"db",f:"create",t:"Invoice stored (QR amount)",badge:["PENDING","info"],x:"Only the amount differs from a standard invoice. The amount-match guard in handleWebhook later enforces it — a mispriced QR invoice silently stalls."},
+    {s:"qr",d:"moy",f:"gateway",t:"Customer pays the gateway",badge:["card","mut"],x:"Browser pays Moyasar directly."},
+    {s:"moy",d:"hwh",f:"webhook",t:"Moyasar webhook",badge:["payment_paid","ok"],x:"payment_paid → handleWebhook re-fetches and validates the amount matches the QR price."},
+    {s:"hwh",d:"db",f:"webhook",t:"Invoice → PAID",badge:["invoice PAID","ok"],x:"Same as the standard card path from here on."},
+    {s:"notify",d:"rec",f:"notify",t:"Notify the app",badge:["DELIVERED","ok"],x:"notifyApplication → /webhooks/epurchase/payment."},
+    {s:"rec",d:"bss",f:"order",t:"Place the BSS order",badge:["ordering","info"],x:"BSS createOrderNew."},
+    {s:"bss",d:"ep",f:"order",t:"Provisioned ✓",badge:["orderNbr ✓","ok"],x:"Order placed at the QR price. Done.",done:true}
+  ]},
+  "pulse-manage": { name:"Pulse manage-line — relocation / change-plan / renew", steps:[
+    {s:"pulse",d:"ml",f:"create",t:"Create invoice (salamHome)",badge:["serviceType","info"],x:"manage-line.ts calls createInvoice via salamHomePaymentClient, tagging metadata.serviceType (RelocationFTTH / ChangePlan / RenewFTTH). Zero-charge summaries short-circuit as PAID_BY_ZERO."},
+    {s:"ml",d:"db",f:"create",t:"Invoice stored",badge:["PENDING","info"],x:"Invoice stored under the Salam Home application (its own webhook_url + secret)."},
+    {s:"pulse",d:"moy",f:"gateway",t:"Customer pays",badge:["card","mut"],x:"Pulse pays Moyasar directly."},
+    {s:"moy",d:"hwh",f:"webhook",t:"payment_paid webhook",badge:["payment_paid","ok"],x:"handleWebhook re-fetches and validates the payment."},
+    {s:"hwh",d:"db",f:"webhook",t:"Invoice → PAID",badge:["invoice PAID","ok"],x:"Invoice PENDING→PAID, PAYMENT_PAID webhook created."},
+    {s:"notify",d:"rec",f:"notify",t:"Notify /webhooks/salamHome/payment",badge:["require PAID","info"],x:"The salamHome receiver requires the invoice to be PAID before acting."},
+    {s:"rec",d:"bss",f:"order",t:"Route by serviceType → BSS",badge:["provisioned ✓","ok"],x:"By metadata.serviceType: salamHomeRelocation / salamHomeChangePlan / salamHomeRenewPlan is executed against BSS. Done.",done:true}
+  ]},
+  "sda-sadad": { name:"SDA dealer — end-to-end (order → SADAD → provision)", steps:[
+    {s:"sdaapp",d:"sda",f:"create",k:"sdaStart",t:"Dealer opens SDA app & starts order",badge:["staff login","info"],x:"A dealer (ADMIN / PROMOTER / ACTIVATOR) logs into the SDA app and starts an order for a plan. sda.initWorkflow creates the workflowState (ftth / fttb / 5G WL / FWA / promoters). FTTH is gated to FTTH_DEALERS staff codes; a promoter lead must be NEW."},
+    {s:"sda",d:"bss",f:"order",k:"sdaFeasibility",t:"Feasibility + customer + Absher OTP",badge:["BSS / ZSmart","info"],x:"The dealer walks the workflow steps: feasibilityCheck (FTTH = ODB on BSS/ZSmart) → customerProfile → createCustomer → confirmOtp (Absher OTP). No money has moved yet."},
+    {s:"sda",d:"oss",f:"oss",k:"geoFeasibility",t:"5G / FWA geo-feasibility → OSS",badge:["OSS · ProdGeoFeasibility","info"],x:"For 5G White-Label / FWA plans, geo-feasibility is checked against the OSS system (not BSS): geoFeasibilityCheckOSS → fetchOSSApi('ProdGeoFeasibility'). FTTH stays on BSS ODB feasibility."},
+    {s:"bss",d:"sad",f:"sadad",k:"genInstantInvoice",t:"BSS issues the SADAD bill",badge:["SADAD AU #","info"],x:"Core calls ctx.ePurchase.generateInstantInvoice(serviceId) → BSS registers a SADAD bill and returns the SADAD AU number + charge. This is where the SADAD reference originates."},
+    {s:"sda",d:"db",f:"create",k:"sadadInvoiceCreate",t:"Create payments-api invoice",badge:["invoice PENDING","info"],x:"Core creates a payments-api invoice (paymentOptimizationClient) carrying the SADAD refs (sadadReference / sadadInvoiceId) in metadata — channel MOYASAR, sadad_id set."},
+    {s:"sda",d:"bss",f:"order",k:"sdaCreateOrder",t:"Submit order → createOrder (ZSmart)",badge:["orderNumber ✓","ok"],x:"sda.submitOrder → createAppointment + createOrder (ZSmart). ⚠ The order is placed NOW and gets an orderNumber — BEFORE the SADAD bill is paid (pay-after-order model)."},
+    {s:"sad",d:"db",f:"sadad",k:"sadadBillPaid",t:"Customer pays the SADAD bill",badge:["invoice PAID","ok"],x:"The customer pays the SADAD bill number in their banking app. That confirmation flips the payments-api invoice to PAID."},
+    {s:"notify",d:"rec",f:"notify",t:"Notify /webhooks/sadad/payment",badge:["PAID + amount","info"],x:"notifyApplication calls the SADAD receiver; it re-fetches the invoice, requires PAID and checks the amount matches."},
+    {s:"rec",d:"bss",f:"order",k:"recvSadad",t:"BSS sadadPayment(orderNumber) ×3",badge:["provisioning","info"],x:"Receiver calls BSS ePurchase.sadadPayment(customerId, orderNumber, sadadReference, methodId, amount, ...) — notifying BSS that the SADAD payment landed against the EXISTING order. Wrapped in a 3-attempt retry (10s×attempt)."},
+    {s:"db",d:"sad",f:"sadad",k:"realTimeBillUpload",t:"realTimeBillUpload (residual) · done",badge:["reviewOrder ✓","ok"],x:"Partial payments push remaining = totalAmount − amount as a prepaid bill (realTimeBillUpload → SBM 172.31.3.200). webhook_requests.isSuccess=true. Dealer reaches reviewOrder — order provisioned.",done:true}
+  ]},
+  "sda-unpaid": { name:"⚠ SDA gap — order placed but SADAD never paid", steps:[
+    {s:"sdaapp",d:"sda",f:"create",k:"sdaStart",t:"Dealer starts the order",badge:["staff login","info"],x:"Dealer starts a workflow in the SDA app (feasibility → customer → OTP)."},
+    {s:"sda",d:"db",f:"create",k:"sadadInvoiceCreate",t:"SADAD invoice generated",badge:["invoice PENDING","info"],x:"generateInstantInvoice → createInvoice. The SADAD bill exists but is unpaid (PENDING)."},
+    {s:"sda",d:"bss",f:"order",k:"sdaCreateOrder",t:"Order placed in ZSmart",badge:["orderNumber ✓","warn"],x:"submitOrder → createOrder gives an orderNumber. The BSS order now exists even though the invoice is still PENDING."},
+    {s:"sad",d:"db",f:"sadad",k:"sadadBillPaid",t:"Customer never pays the SADAD bill",badge:["stays PENDING","fail"],x:"The SADAD bill is abandoned / expires. The invoice never reaches PAID, so /webhooks/sadad/payment NEVER fires and BSS is never notified of payment — yet the order was already created. Result: an orphaned unpaid order. Needs a reconciliation sweep / cancelOrder to clean up.",fail:true,done:true}
+  ]},
+  "fail-declined": { name:"⚠ Failure — card declined (payment_failed)", steps:[
+    {s:"web",d:"ep",f:"create",t:"Create the invoice",badge:["PENDING","info"],x:"Normal start — invoice created and stored as PENDING."},
+    {s:"web",d:"moy",f:"gateway",t:"Payment attempt",badge:["card","mut"],x:"Customer submits the card to Moyasar."},
+    {s:"moy",d:"hwh",f:"webhook",t:"payment_failed webhook",badge:["payment_failed","fail"],x:"The bank declines. Moyasar fires payment_failed. handleWebhook records the payment as FAILED + activity (with bank_message)."},
+    {s:"hwh",d:"db",f:"webhook",t:"Ignored — invoice stays PENDING",badge:["no notify","fail"],x:"statusMap has NO handler for 'failed' → 'Ignoring payment'. The invoice is untouched and the app is NOT notified. The UI only learns of failure via its checkPayment/paymentStatus poll.",fail:true,done:true}
+  ]},
+  "fail-notify": { name:"⚠ Failure — notify timeout (paid, not provisioned)", steps:[
+    {s:"web",d:"ep",f:"create",t:"Create the invoice",badge:["PENDING","info"],x:"Normal start."},
+    {s:"web",d:"moy",f:"gateway",t:"Customer pays successfully",badge:["paid","ok"],x:"Payment succeeds at Moyasar — money is taken."},
+    {s:"moy",d:"hwh",f:"webhook",t:"payment_paid webhook",badge:["invoice PAID","ok"],x:"handleWebhook sets invoice PENDING→PAID and creates the outbound webhook row."},
+    {s:"notify",d:"rec",f:"notify",t:"notifyApplication TIMES OUT",badge:["webhook FAILED","fail"],x:"The POST to the app webhook_url hangs > 12s (the real SDA incident: 172.31.38.146:3056). notifyApplication catches the timeout and marks the webhook FAILED. There is no retry inside payments-api.",fail:true},
+    {s:"rec",d:"bss",f:"order",t:"BSS order NEVER placed",badge:["not provisioned","fail"],x:"Because the callback failed, the receiver never runs → no createOrderNew. Result: money captured, service not provisioned. Recovery must be driven off webhooks.status=FAILED / webhook_requests.isSuccess=false.",fail:true,done:true}
+  ]},
+  "refund": { name:"Refund — post-payment", steps:[
+    {s:"ep",d:"db",f:"capture",t:"refundInvoice",badge:["PAID / CAPTURED","info"],x:"An operator/flow calls refundInvoice(paymentId, amount, reason). Allowed only when the payment is PAID or CAPTURED and not already refunded."},
+    {s:"db",d:"moy",f:"capture",t:"Refund on Moyasar → REFUNDED",badge:["REFUNDED","warn"],x:"payments-api calls Moyasar refund. Payment REFUNDED + a payment_refunds row + activity are written. Note: an inbound payment_refunded webhook is recorded but does NOT itself notify the app.",done:true}
+  ]}
+};
+
+const flows=[...document.querySelectorAll('.flow')];
+const nodes=[...document.querySelectorAll('.node-group')];
+const zones=[...document.querySelectorAll('.zone-bg')];
+const cursor=document.getElementById('cursor'), cursorM=document.getElementById('cursorMotion');
+const halo=document.getElementById('cursorHalo'), haloM=document.getElementById('haloMotion');
+const svg=document.querySelector('svg.diagram');
+const sel=document.getElementById('journey');
+const colr={create:'#00d9ff',gateway:'#ff7849',webhook:'#ff4d8d',notify:'#b066ff',order:'#4ade80',capture:'#00ffd5',sadad:'#ffa940',oss:'#ff3b52',fail:'#ff5a5a'};
+let cur=null, idx=0, playing=false, timer=null;
+
+Object.entries(scenarios).forEach(([k,v])=>{const o=document.createElement('option');o.value=k;o.textContent=v.name;sel.appendChild(o);});
+
+// ===== INFRA (from Salam HLD v1.2). zone colours; inf=service→host inferred =====
+const zc={app:'#00b3ff',db:'#4ade80',pay:'#b066ff',mon:'#ffa940',ext:'#8896b8',edge:'#00d9ff'};
+const infra={
+  web:  {host:'RUH-SALAM-SITE01', ip:'172.31.38.146', port:'443', zone:'app', role:'Salam.sa · ePurchase (PHP/Nginx)', via:'Public RP 172.31.38.115'},
+  qr:   {host:'RUH-SALAM-SITE01', ip:'172.31.38.146', port:'443', zone:'app', role:'ePurchase (referral/QR pricing)', via:'Public RP 172.31.38.115'},
+  pulse:{host:'Pulse mobile client', ip:'sa.salam.fiber', port:'', zone:'ext', role:'Android/iOS app → Core API', via:'Public RP 172.31.38.115'},
+  pweb: {host:'RUH-SALAM-SITE01 · /p2', ip:'172.31.38.146', port:'443', zone:'app', role:'Hosted Moyasar checkout'},
+  sdaapp:{host:'SDA dealer app (staff)', ip:'apps/sda', port:'', zone:'ext', role:'ADMIN / PROMOTER / ACTIVATOR → Core API', via:'Public RP 172.31.38.115'},
+  moy:  {host:'api.moyasar.com', ip:'external', port:'443', zone:'ext', role:'Moyasar gateway (SaaS)'},
+  sad:  {host:'SADAD bill rail', ip:'external', port:'', zone:'ext', role:'Saudi bill payment (via BSS)'},
+  hwh:  {host:'payments-api · tRPC', ip:'prod-integ-01 172.31.142.37', port:'/webhooks/moyasar', zone:'pay', role:'handleWebhook (Coolify/Docker)', via:'Public RP 172.31.38.115:443', inf:true},
+  db:   {host:'RUH-DatabaseP01 · PostgreSQL', ip:'172.31.15.121', port:'5432', zone:'db', role:'payments_v2 · backups q6h → /backup/psqlDBdump'},
+  notify:{host:'payments-api · notifyApplication', ip:'prod-integ-01 172.31.142.37', port:'→ webhook_url (12s)', zone:'pay', role:'outbound POST to app', inf:true},
+  ep:   {host:'RUH-SALAM-WEB-APP02', ip:'172.31.38.162', port:'5005', zone:'app', role:'Core API tRPC · epurchase.ts', inf:true},
+  ml:   {host:'RUH-SALAM-WEB-APP02', ip:'172.31.38.162', port:'5005', zone:'app', role:'Core API tRPC · manage-line.ts', inf:true},
+  sda:  {host:'RUH-SALAM-WEB-APP02', ip:'172.31.38.162', port:'5005', zone:'app', role:'Core API tRPC · sda.ts / workflows.ts', inf:true},
+  rec:  {host:'Core API webhooks · SDA 172.31.38.146:3056', ip:'172.31.38.162', port:'5005', zone:'app', role:'/webhooks/{epurchase|salamHome|sadad}/payment', inf:true},
+  bss:  {host:'BSS / ZSmart', ip:'external', port:'', zone:'ext', role:'createOrderNew · sadadPayment · generateInstantInvoice'},
+  oss:  {host:'OSS', ip:'OSS_BASE_URL', port:'access_token', zone:'ext', role:'ProdGeoFeasibility (5G/FWA geo-feasibility)'}
+};
+// inject an IP label + zone tag under each node box
+nodes.forEach(n=>{
+  const inf=infra[n.dataset.node]; if(!inf)return;
+  const bg=n.querySelector('.node-bg');
+  const x=+bg.getAttribute('x'), y=+bg.getAttribute('y'), w=+bg.getAttribute('width'), h=+bg.getAttribute('height');
+  const col=zc[inf.zone]||'#8896b8';
+  const ipStr=inf.ip+(inf.port?(' : '+inf.port):'');
+  const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+  t.setAttribute('class','node-ip'+(inf.inf?' ip-inf':''));
+  t.setAttribute('x',x+8); t.setAttribute('y',y+h+15); t.setAttribute('fill',col);
+  t.textContent=(inf.host.length>34?inf.host.slice(0,33)+'…':inf.host)+'  ·  '+ipStr;
+  n.appendChild(t);
+  const z=document.createElementNS('http://www.w3.org/2000/svg','text');
+  z.setAttribute('class','zonebadge'); z.setAttribute('x',x+w-6); z.setAttribute('y',y+15);
+  z.setAttribute('text-anchor','end'); z.setAttribute('fill',col);
+  z.textContent=inf.zone.toUpperCase();
+  n.appendChild(z);
+});
+// ===== General rule: every arrow meets a node at its border-centre =====
+// (the point where the ray from the node centre toward the edge's control
+//  point exits the box) — never a corner.
+function fitEdges(){
+  const box={};
+  nodes.forEach(n=>{const b=n.querySelector('.node-bg'); if(!b)return;
+    const x=+b.getAttribute('x'),y=+b.getAttribute('y'),w=+b.getAttribute('width'),h=+b.getAttribute('height');
+    box[n.dataset.node]={cx:x+w/2, cy:y+h/2, hw:w/2, hh:h/2};});
+  const brd=(a,tx,ty)=>{const dx=tx-a.cx,dy=ty-a.cy;
+    const t=Math.min(a.hw/(Math.abs(dx)||1e-6), a.hh/(Math.abs(dy)||1e-6));
+    return {x:a.cx+dx*t, y:a.cy+dy*t};};
+  flows.forEach(f=>{const A=box[f.dataset.src],B=box[f.dataset.dst]; if(!A||!B)return;
+    const d=f.getAttribute('d')||'';
+    const q=d.match(/Q\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/);           // keep authored routing (control pt)
+    const cx=q?+q[1]:(A.cx+B.cx)/2, cy=q?+q[2]:(A.cy+B.cy)/2;
+    const pa=brd(A,cx,cy), pb=brd(B,cx,cy);                     // border-centre toward the control point
+    f.setAttribute('d',`M${pa.x.toFixed(1)} ${pa.y.toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${pb.x.toFixed(1)} ${pb.y.toFixed(1)}`);});
+}
+
+function hop(st){
+  const a=infra[st.s], b=infra[st.d]; if(!a||!b)return'';
+  const fmt=o=>`<span class="h">${o.host}</span> <span class="hop">${o.ip}${o.port?' :'+o.port:''}</span>`;
+  const via=(b.via||a.via)?`<span class="via"> · via ${(b.via||a.via)}</span>`:'';
+  const inf=(a.inf||b.inf)?` <span class="inf">(host inferred)</span>`:'';
+  return `${fmt(a)} <span class="via">→</span> ${fmt(b)}${via}${inf}`;
+}
+
+// ===== TECHNICAL SPECS (verbatim from payments-api + core-api source) =====
+const T = {
+  createInvoice:{m:'POST',ep:'/invoices  ·  spProtectedProcedure',host:'payments-api  ·  x-api-key (PAYMENTS_API_KEY)',
+    req:`POST /invoices\nx-api-key: ****   x-trpc-source: core-api\n{\n  "amount": 24150,                 // halalas (SAR 241.50)\n  "description": "E-Purchase FTTH Order",\n  "referenceId": "<workflowStateId>",\n  "paymentFlow": "MANUAL_CAPTURE",  // or STANDARD\n  "expiresAt": "2026-07-01T15:00:00Z",\n  "returnUrl": "https://salam.sa/epurchase/en/16202?backUid=true",\n  "metadata": { "customer_id":"...", "package_price":"241.5",\n                "plan_period":"12", "package_name":"..." },\n  "user": { "id":"<ctx.userId>", "name":"...", "phone":"9665xxxxxxx" }\n}`,
+    res:`200 OK\n{\n  "id": "inv_9f2a...",\n  "status": "PENDING",\n  "amount": 24150,\n  "channel": "MOYASAR",\n  "paymentFlow": "MANUAL_CAPTURE",\n  "referenceId": "<workflowStateId>",\n  "url": "https://salam.sa/p2/inv_9f2a...",\n  "accessToken": "eyJhbGci...",\n  "createdAt": "2026-07-01T12:00:00Z"\n}`,
+    d:[['200 · id + PENDING','ok','Advance to the payment step; hand the invoice id + hosted <b>url</b> to the front-end.'],
+       ['totalCharge === "0"','warn','Skip the gateway entirely — invoice short-circuits to <b>PAID_BY_ZERO</b>, workflow auto-advances.'],
+       ['4xx / 5xx','bad','Abort the order; surface "Plan not found" / validation error to the user.']],
+    log:'core: paymentClient.invoices.createInvoice.mutate(...)'},
+
+  moyasarPay:{m:'POST',ep:'https://api.moyasar.com/v1/payments  (publishable key, from browser)',host:'api.moyasar.com : 443  ·  external SaaS',
+    req:`POST https://api.moyasar.com/v1/payments\n{\n  "amount": 24150, "currency": "SAR",\n  "callback_url": "https://msp.salam.sa/p2/en/success-app?...",\n  "publishable_api_key": "pk_live_ySCGnDNV1a...",\n  "source": { "type":"creditcard", "name":"...", "number":"4111...",\n              "month":"12", "year":"27", "cvc":"***",\n              "manual": true },   // manual = MANUAL_CAPTURE\n  "metadata": { "invoiceId":"inv_9f2a...", "referenceId":"<wf>",\n                "version":"2" }   // version=2 REQUIRED by webhook\n}`,
+    res:`201 Created\n{\n  "id": "a1b2c3...",              // becomes payments.transaction_id\n  "status": "initiated | paid | authorized | failed",\n  "source": { "type":"creditcard","company":"visa",\n              "message": null, "transaction_url": "https://...3ds" }\n}`,
+    d:[['status paid / authorized','ok','Call <b>initPayment</b> then poll; the Moyasar webhook will drive the order.'],
+       ['status initiated + transaction_url','warn','Redirect the user to 3-D Secure; final status arrives via webhook.'],
+       ['status failed','bad','Show decline using <b>source.message</b> (bank_message); let the user retry.']],
+    log:'front-end createPayment() → POST /v1/payments'},
+
+  initPayment:{m:'POST',ep:'payments.initPayment  ·  userProtectedProcedure',host:'payments-api  ·  invoice access token',
+    req:`initPayment\n{\n  "invoiceId": "inv_9f2a...",\n  "transactionId": "a1b2c3...",   // Moyasar payment id\n  "saveCard": false\n}`,
+    res:`204 No Content\n// creates payments row: status INITIATED\n// + payment_activities { status: INITIATED }`,
+    d:[['invoice not PENDING','bad','Reject with "Invoice is not pending".'],
+       ['invoice.expiresAt < now','bad','Reject with "Invoice has expired".'],
+       ['⚠ duplicate txn / webhook race','bad','Prisma <b>P2002</b> on unique(transaction_id) → initPayment 500. Idempotency needed.']],
+    log:'payments.initPayment  ·  Prisma P2002 — Unique constraint failed on (transaction_id)'},
+
+  poll:{m:'GET',ep:'ePurchase.actions.checkPayment (poll @5s)  /  payments.paymentStatus',host:'core-api  ·  UI polling only',
+    req:`// checkPayment (consumer)\n{ "invoiceId":"inv_9f2a...", "stateId":"<wf>" }\n\n// paymentStatus (public)\n{ "channel":"MOYASAR", "transactionId":"a1b2c3..." }`,
+    res:`// checkPayment → PAID_BY_ZERO shortcut only\n{ "payments":[ { "status":"PAID" } ] }\n\n// paymentStatus (re-reads Moyasar)\n{ "status": "PAID" | "FAILED" }`,
+    d:[['PAID_BY_ZERO','ok','checkPayment advances the workflow itself (no gateway).'],
+       ['still pending','warn','Keep polling; the <b>webhook</b> (not the poll) places the BSS order.'],
+       ['FAILED','bad','Show failure — note: a failed webhook does NOT notify the app, so the poll is the only signal.']],
+    log:'refetchInterval: 5000 (card-payment.tsx / ePurchasePayment.tsx)'},
+
+  moyasarWebhook:{m:'POST',ep:'/webhooks/moyasar  ·  publicProcedure',host:'payments-api  ·  via Public RP 172.31.38.115 : 443',
+    req:`POST /webhooks/moyasar\n{\n  "id": "wh_...", "type": "payment_paid",  // 7 types accepted\n  "live": true, "account_name": "...", "secret_token": "...",\n  "created_at": "2026-07-01T12:01:00Z",\n  "data": {\n    "id": "a1b2c3...", "status": "paid", "amount": 24150,\n    "source": { "company":"visa","type":"creditcard","message":null,\n                "token": null },\n    "metadata": { "invoiceId":"inv_9f2a...", "version":"2" }\n  }\n}`,
+    res:`204 No Content\n// handleWebhook re-fetches GET /v1/payments/{id} as source of truth`,
+    d:[['!live && prod && !TEST_MODE','warn','Ignore — "Ignoring non-live webhook".'],
+       ['no data','warn','Ignore — "Ignoring webhook with no data".'],
+       ['valid','ok','Proceed to handleWebhook → upsert payment + statusMap.']],
+    log:'"[Moyasar Webhook] Received Moyasar webhook"'},
+
+  handleWebhookApply:{m:'INT',ep:'handleWebhook → payment.upsert + statusMap',host:'payments-api  ·  PostgreSQL 172.31.15.121 (payments_v2)',
+    req:`// re-fetch source of truth\nGET https://api.moyasar.com/v1/payments/a1b2c3...\n\n// upsert by transaction_id, append activity\npayment.upsert({ where:{ transactionId:"a1b2c3..." },\n  create/update:{ status: PAID, gatewayPayload, bankMessage,\n    activity:{ create:{ status: PAID } } } })`,
+    res:`// statusMap[payment.status]:\n//  paid      : PENDING   -> PAID       (PAYMENT_PAID)\n//  authorized: PENDING   -> AUTHORIZED (PAYMENT_AUTHORIZED)\n//  captured  : AUTHORIZED-> CAPTURED   (PAYMENT_CAPTURED)\n//  voided    : AUTHORIZED-> VOIDED     (PAYMENT_VOIDED)\ninvoice.status = PAID   // + webhooks row created`,
+    d:[['version !== "2" / no invoiceId','bad','Return early — "Unsupported version" / "Invoice ID not found".'],
+       ['invoice.amount !== payment.amount','bad','Return early — "Invoice amount mismatch" (e.g. mis-priced QR).'],
+       ['invoice.status === newStatus','warn','Idempotent skip — "Invoice already PAID".'],
+       ['prev not in validPrevStatuses','bad','Skip — "Invalid transition" / "Invoice is not Authorized".'],
+       ['failed / refunded / verified','bad','No statusMap handler → "Ignoring payment": invoice untouched, <b>app NOT notified</b>.']],
+    log:'"[Moyasar Webhook] Invoice found"  /  "[Moyasar Webhook] Ignoring payment"'},
+
+  notifyApplication:{m:'POST',ep:'POST {application.webhook_url}  ·  timeout 12000ms  ·  NO internal retry',host:'payments-api → app webhook_url',
+    req:`POST {invoice.application.webhookUrl}\n{\n  "data": { ...updatedPayment },\n  "invoiceId": "inv_9f2a...",\n  "referenceId": "<workflowStateId>",\n  "metadata": { ... },\n  "secret": "<application.webhookSecret>"\n}`,
+    res:`2xx  -> webhooks.status = DELIVERED, notifiedAt = now\ntimeout / non-2xx -> webhooks.status = FAILED`,
+    d:[['2xx within 12s','ok','Mark webhook <b>DELIVERED</b>; the receiver places the BSS order.'],
+       ['timeout > 12s / error','bad','Mark webhook <b>FAILED</b>, no retry. Invoice is PAID but order NOT placed — reconcile off webhooks.status=FAILED.']],
+    log:'"[Moyasar Webhook] Notifying application" → "Application notified"  /  "Failed to notify application" + TimeoutError'},
+
+  recvEpurchase:{m:'POST',ep:'/webhooks/epurchase/payment  ·  publicProcedure',host:'core-api  ·  secret-checked',
+    req:`POST /webhooks/epurchase/payment\n{\n  "referenceId": "<workflowStateId>",\n  "invoiceId": "inv_9f2a...",\n  "secret": "<EPURCHASE_PAYMENT_WEBHOOK_SECRET>"\n}`,
+    res:`204 No Content\n// persists webhook_requests, upserts ePurchasePayment,\n// then getInvoice + updateCustomerProfile`,
+    d:[['secret mismatch','bad','Throw NOT_FOUND — "Webhook trigger is invalid".'],
+       ['invoice PAID or AUTHORIZED','ok','updateCustomerProfile → onNextStep → <b>BSS createOrderNew</b>.'],
+       ['getInvoice fails','bad','Log "order creation failed"; webhook_requests.isSuccess=false.']],
+    log:'"[Epurchase payment Webhook] order creation success=>"  /  "...failed =>"'},
+
+  recvSalamHome:{m:'POST',ep:'/webhooks/salamHome/payment  ·  publicProcedure',host:'core-api  ·  salamHome app',
+    req:`POST /webhooks/salamHome/payment\n{\n  "invoiceId": "inv_...",\n  "referenceId": "<workflowStateId>",\n  "metadata": { "serviceType": "RelocationFTTH" }  // | ChangePlan | RenewFTTH\n}`,
+    res:`204 No Content`,
+    d:[['invoice.status !== PAID','bad','Throw NOT_FOUND — "Invoice is not Paid".'],
+       ['serviceType RelocationFTTH','ok','salamHomeRelocation(referenceId).'],
+       ['serviceType ChangePlan / RenewFTTH','ok','salamHomeChangePlan / salamHomeRenewPlan.']],
+    log:'"[Salam Home payment Webhook] webhook success=>"'},
+
+  recvSadad:{m:'POST',ep:'/webhooks/sadad/payment  ·  publicProcedure',host:'core-api  ·  SDA 172.31.38.146:3056 (per incident)',
+    req:`POST /webhooks/sadad/payment\n{\n  "invoiceId": "inv_...",\n  "metadata": {\n    "customerId":"...", "orderNumber":"...", "sadadReference":"...",\n    "amount":"24150", "totalAmount":"24150", "sadadInvoiceId":"..." }\n}`,
+    res:`204 No Content\n// retry(sadadPayment, 3x, 10s*attempt backoff)\n// webhook_requests.retries incremented`,
+    d:[['invoice not PAID','bad','Throw NOT_FOUND — "Invoice is not Paid".'],
+       ['invoice.amount !== amount','bad','Throw BAD_REQUEST — "Invoice amount mismatch".'],
+       ['sadadPayment Success','ok','webhook_requests.isSuccess=true; realTimeBillUpload(residual).'],
+       ['all 3 retries fail','bad','isSuccess=false, reason logged — paid but NOT provisioned.']],
+    log:'"[Sadad payment Webhook] webhook success=>"  /  "...webhook Failure=>"'},
+
+  createOrderNew:{m:'POST',ep:'salamnewconnection (BSS)  ·  timeout 60000ms',host:'BSS_BASE_URL  ·  ZSmart',
+    req:`POST {BSS_BASE_URL}/salamnewconnection\n{\n  "paidFlag": "Y", "subsPlanId": "16202", "planType": "POST_PAID",\n  "paymentMethodId": "801",          // 801 mada/visa, 103 sadad...\n  "installDate": "...", "slotId":"...", "teamId":"...",\n  "feasibilityId":"...", "acctId":"...", "custCode":"...",\n  "gatewayName": "MOYASAR",\n  "thirdTransactionId": "a1b2c3...", // Moyasar payment id\n  "period": "12", ... }`,
+    res:`200 OK  (60s timeout)\n{\n  "status": "Success",           // | "Failure"\n  "orderNbr": "SO-100234...",\n  "custOrderNbr": "...", "custOrderId": 88123,\n  "msisdn": "...", "errorCode": null, "errorMessage": null\n}`,
+    d:[['status Success + orderNbr','ok','Order placed → <b>captureInvoice(paymentId)</b> (MANUAL_CAPTURE).'],
+       ['status Failure / errorMessage','bad','<b>voidInvoice</b>; tell user "Order creation failed. Your payment will be refunded shortly."'],
+       ['timeout > 60s','bad','Treat as failure; safety-net processPayments() sweeps AUTHORIZED invoices.']],
+    log:'core: ctx.ePurchase.createOrderNew(...) → { orderNbr }'},
+
+  captureInvoice:{m:'POST',ep:'/payments/{paymentId}/capture  ·  spProtectedProcedure',host:'payments-api → Moyasar capture',
+    req:`POST /payments/pay_77a.../capture\n{ "paymentId": "pay_77a...", "amount": 24150 }  // amount optional`,
+    res:`200 OK\n{ "id":"pay_77a...", "status":"CAPTURED",\n  "channel":"MOYASAR", "transactionId":"a1b2c3..." }\n// + payment_activities { status: CAPTURED }`,
+    d:[['payment.status === AUTHORIZED','ok','Moyasar capture → payment + invoice CAPTURED. Money settled.'],
+       ['payment.status !== AUTHORIZED','bad','Throw BAD_REQUEST — "Payment is not AUTHORIZED".'],
+       ['amount > payment.amount','bad','Throw BAD_REQUEST — "Captured amount is greater...".']],
+    log:'core: handleInvoiceUpdate("capture") → captureInvoice.mutate'},
+
+  voidInvoice:{m:'POST',ep:'/payments/{paymentId}/void  ·  spProtectedProcedure',host:'payments-api → Moyasar void',
+    req:`POST /payments/pay_77a.../void\n{ "paymentId": "pay_77a..." }`,
+    res:`200 OK\n{ "id":"pay_77a...", "status":"VOIDED" }\n// + payment_activities { status: VOIDED }`,
+    d:[['payment.status === AUTHORIZED','ok','Moyasar void releases the hold → payment + invoice VOIDED. No money taken.'],
+       ['payment.status !== AUTHORIZED','bad','Throw BAD_REQUEST — "Payment is not AUTHORIZED".']],
+    log:'core: handleInvoiceUpdate("void") → voidInvoice.mutate'},
+
+  refundInvoice:{m:'POST',ep:'/payments/{paymentId}/refund  ·  spProtectedProcedure',host:'payments-api → Moyasar refund',
+    req:`POST /payments/pay_77a.../refund\n{ "paymentId":"pay_77a...", "amount":24150, "reason":"customer request" }`,
+    res:`200 OK\n{ "id":"pay_77a...", "status":"REFUNDED" }\n// + payment_refunds { amount, reason } + activity REFUNDED`,
+    d:[['status PAID or CAPTURED','ok','Moyasar refund → payment REFUNDED + payment_refunds row.'],
+       ['already REFUNDED','bad','Throw BAD_REQUEST — "Payment is already refunded".'],
+       ['amount > payment.amount','bad','Throw BAD_REQUEST — "Refund amount is greater...".']],
+    log:'inbound payment_refunded webhook is recorded but does NOT itself notify the app'},
+
+  sdaStart:{m:'POST',ep:'sda.initWorkflow  ·  protectedProcedure (staff)',host:'core-api  ·  SDA app · staff session',
+    req:`initWorkflow\n{\n  "planId": "16202",\n  "period": "12",              // '1' | '3' | '6' | '12'\n  "dealerLocation": { "latitude": 24.71, "longitude": 46.67 },\n  "leadId": "<optional, for promoters>"\n}`,
+    res:`{ "id": "wf_st_...", "currentStep": "feasibilityCheck",\n  "planType": "POST_PAID", "staffId": "<staff>" }`,
+    d:[['role not ADMIN/PROMOTER/ACTIVATOR (5G)','bad','Reject — "You are not authorized to sell 5G".'],
+       ['ftth & staff ∉ FTTH_DEALERS','bad','Reject with sdaError — FTTH gated to specific dealer codes.'],
+       ['promoter lead.status !== NEW','bad','Reject — "Lead is already <status>".'],
+       ['ok','ok','Cancel any existing open workflow, create workflowState → first step.']],
+    log:'sda.ts: ctx.prisma.workflowState.create(...)'},
+
+  sdaFeasibility:{m:'POST',ep:'sda.feasibilityCheck → createCustomer → confirmOtp  (ZSmart/Absher)',host:'core-api → BSS / ZSmart',
+    req:`// walked step-by-step by the dealer:\nfeasibilityCheck { stateId }           // ODB / geo\ncustomerProfile / createCustomer { ... } // BSS customer\nconfirmOtp { stateId, otp }             // Absher OTP`,
+    res:`feasibility { odb, provider, appointments[] }\ncustomer { customerCode, accountCode }\notp { verified: true }`,
+    d:[['not feasible / ODB blacklist','bad','Stop — error.locationNotCovered / "Port is not available".'],
+       ['OTP invalid','bad','Stop — error.invalidOtp.'],
+       ['all pass','ok','Advance to payment (jarirPayment) then submitOrder. No money moved yet.']],
+    log:'sda.ts: feasibilityCheck / createCustomer / confirmOtp (zsmart.ts)'},
+
+  sdaCreateOrder:{m:'POST',ep:'sda.submitOrder → createOrder (ZSmart)',host:'core-api → BSS / ZSmart',
+    req:`submitOrder { "stateId": "wf_st_..." }\n// beforeStart prepareSubmitOrder → createOrderCalFee\n// then createAppointment + createOrder(ZSmart)`,
+    res:`{ "orderList": [ { "orderNumber": "000000014957",\n     "orderStatus": "C", "serviceNumber": "FTTH00296896",\n     "sadadNumber": null, "paymentAmount": "41400" } ],\n  "resultCode": "0", "resultDesc": "success" }`,
+    d:[['resultCode "0" + orderNumber','ok','Order is placed (pay-after-order). SADAD bill will be settled against this orderNumber.'],
+       ['bundle & no landline','bad','Throw — "Failed to lock landline".'],
+       ['create fails','bad','order.errorMessage = "Order creation failed. Your payment will be refunded shortly."'],
+       ['⚠ order placed, bill unpaid','warn','Orphaned unpaid order risk → needs reconciliation / cancelOrder.']],
+    log:'workflows.ts: createOrderCalFee(...) / createOrder (zsmart.ts)'},
+
+  geoFeasibility:{m:'POST',ep:'geoFeasibilityCheckOSS → fetchOSSApi("ProdGeoFeasibility")',host:'core-api → OSS  ·  OSS_BASE_URL + OSS_API_KEY',
+    req:`POST {OSS_BASE_URL}\n{\n  "access_token": "<OSS_API_KEY>",\n  "method": "ProdGeoFeasibility", "version": "1.0",\n  "content": {\n    "accessMode": "FWA", "locationType": "G",\n    "geoLocation": { "city":"Riyadh", "district":"...",\n                     "latitude":"24.7100000", "longitude":"46.6700000" }\n  }\n}`,
+    res:`{ "res_code": "00000",\n  "result": { "addressId": "...", "antennaId": "..." } }`,
+    d:[['res_code "00000"','ok','Feasible — carry addressId / antennaId into the order (5G/FWA).'],
+       ['res_code !== "00000" / null','bad','Not feasible → error.locationNotCovered; stop the journey.'],
+       ['note','info','FTTH does NOT use OSS — it uses ODB feasibility on BSS/ZSmart.']],
+    log:'zsmart.ts: fetchOSSApi("ProdGeoFeasibility", ...) → res_code'},
+
+  genInstantInvoice:{m:'POST',ep:'generateInstantInvoice(serviceId)  ·  BSS',host:'core-api → BSS',
+    req:`generateInstantInvoice("FTTH00296896")`,
+    res:`{ "charge": "241.50",\n  "sadadAuNumber": "9700123456789" }   // SADAD bill reference`,
+    d:[['charge > 0','ok','A SADAD bill is registered at BSS; use sadadAuNumber to create the payments-api invoice.'],
+       ['charge == 0','warn','Skip payment; proceed with the order.']],
+    log:'core: ctx.ePurchase.generateInstantInvoice(serviceId)'},
+
+  sadadInvoiceCreate:{m:'POST',ep:'createInvoice (paymentOptimizationClient)',host:'core → payments-api',
+    req:`// 1) BSS\ngenerateInstantInvoice(serviceId) -> { charge, sadadAuNumber }\n// 2) payments-api\ncreateInvoice({ amount: round(charge*100),\n  metadata:{ sadadReference:sadadAuNumber, sadadInvoiceId:sadadAuNumber,\n             orderNumber, customerId, amount, totalAmount } })`,
+    res:`{ "id":"inv_...", "status":"PENDING", "sadad_id":"<sadadAuNumber>" }`,
+    d:[['sadadCharge.charge > 0','ok','Create the SADAD invoice; show the SADAD number to the customer.'],
+       ['charge == 0','warn','Skip payment; proceed with the order.']],
+    log:'workflows.ts: paymentOptimizationClient.invoices.createInvoice.mutate'},
+
+  sadadBillPaid:{m:'INT',ep:'SADAD bill paid → invoice → PAID  (payment-provider boundary)',host:'SADAD rail → payments-api',
+    req:`// Customer pays the SADAD bill number in their banking app.\n// The provider confirmation flips the payments_v2 invoice to PAID.\n// (This ingress is outside the core routers — trust boundary.)`,
+    res:`invoice.status = PAID  ->  triggers notifyApplication -> /webhooks/sadad/payment`,
+    d:[['invoice PAID','ok','notifyApplication fires the SADAD receiver.'],
+       ['unpaid / expired','warn','Invoice stays PENDING; no provisioning.']],
+    log:'stub this boundary in E2E (SADAD → invoice PAID)'},
+
+  realTimeBillUpload:{m:'SOAP',ep:'RealTimeBillUploadZM  ·  http://172.31.3.200/sbm/sbm.asmx',host:'BSS SBM  ·  172.31.3.200',
+    req:`POST http://172.31.3.200/sbm/sbm.asmx\nSOAPAction: http://tempuri.org/RealTimeBillUploadZM\n<RealTimeBillUploadZM>\n  <ServiceId>{sadadInvoiceId}</ServiceId>\n  <ServiceType>AUTOMAND</ServiceType>\n  <BillingType>Pre-Paid</BillingType>\n  <Price>{remainingAmount}</Price>   <!-- totalAmount - amount -->\n  <Channel>MINIBOSS</Channel>\n</RealTimeBillUploadZM>`,
+    res:`200 OK (SOAP body)  ·  non-blocking (errors caught & logged)`,
+    d:[['amount == totalAmount','warn','remaining = 0 — nothing to upload.'],
+       ['partial payment','ok','remaining = totalAmount − amount pushed as a prepaid bill.'],
+       ['SOAP error','bad','Caught & logged ("cancel sadad error"); does not fail the webhook.']],
+    log:'"calling soap request for => ... " / "SOAP request status <n>"'},
+
+  mcapture:{m:'POST',ep:'https://api.moyasar.com/v1/payments/{id}/capture',host:'payments-api → Moyasar',
+    req:`POST /v1/payments/a1b2c3.../capture`,
+    res:`{ "id":"a1b2c3...", "status":"captured", "captured": 24150 }`,
+    d:[['captured','ok','Payment CAPTURED + activity; invoice CAPTURED.'],
+       ['404 / null','bad','Throw "Failed to capture payment".']],
+    log:'MoyasarClient.capturePayment(id, amount)'},
+  mvoid:{m:'POST',ep:'https://api.moyasar.com/v1/payments/{id}/void',host:'payments-api → Moyasar',
+    req:`POST /v1/payments/a1b2c3.../void`,
+    res:`{ "id":"a1b2c3...", "status":"voided", "voidedAt":"..." }`,
+    d:[['voided','ok','Payment VOIDED + activity; invoice VOIDED. Hold released.'],
+       ['404 / null','bad','Throw "Failed to void payment".']],
+    log:'MoyasarClient.voidPayment(id)'},
+  mrefund:{m:'POST',ep:'https://api.moyasar.com/v1/payments/{id}/refund',host:'payments-api → Moyasar',
+    req:`POST /v1/payments/a1b2c3.../refund\n{ "amount": 24150 }`,
+    res:`{ "id":"a1b2c3...", "status":"refunded", "refunded": 24150 }`,
+    d:[['refunded','ok','payment REFUNDED + payment_refunds row + activity.'],
+       ['404 / null','bad','Throw "Failed to refund payment".']],
+    log:'MoyasarClient.refundPayment(id, amount)'}
+};
+
+function deriveK(scn, st){
+  if(st.k) return st.k;
+  const s=st.s,d=st.d,f=st.f;
+  if(f==='create'){ if(s==='sdaapp') return 'sdaStart'; if(s==='sda') return 'sadadInvoiceCreate'; return 'createInvoice'; }
+  if(f==='gateway') return 'moyasarPay';
+  if(f==='webhook') return d==='hwh' ? 'moyasarWebhook' : 'handleWebhookApply';
+  if(f==='notify') return 'notifyApplication';
+  if(f==='order' && s==='sda') return 'sdaCreateOrder';
+  if(f==='order' && s==='rec'){ if(scn==='pulse-manage')return'recvSalamHome'; if(scn==='sda-sadad'||scn==='sda-unpaid')return'recvSadad'; return'recvEpurchase'; }
+  if(f==='order' && s==='bss') return 'createOrderNew';
+  if(f==='capture' && s!=='db'){ if(scn==='refund')return'refundInvoice'; if(scn==='web-manual-void')return'voidInvoice'; return'captureInvoice'; }
+  if(f==='capture' && s==='db'){ if(scn==='refund')return'mrefund'; if(scn==='web-manual-void')return'mvoid'; return'mcapture'; }
+  if(f==='oss') return 'geoFeasibility';
+  if(f==='sadad'){ if(s==='bss') return 'genInstantInvoice'; return d==='db' ? 'sadadBillPaid' : 'realTimeBillUpload'; }
+  return null;
+}
+function renderTech(st){
+  const k=deriveK(cur,st); const spec=k&&T[k];
+  const sec=document.getElementById('tech');
+  if(!spec){sec.style.display='none';return;} sec.style.display='';
+  const mc={POST:'m-post',GET:'m-get',INT:'m-int',SOAP:'m-soap'}[spec.m]||'m-post';
+  const mm=document.getElementById('techMethod'); mm.className='method '+mc; mm.textContent=spec.m==='INT'?'INTERNAL':spec.m;
+  document.getElementById('techEp').textContent=spec.ep;
+  document.getElementById('techHost').textContent=spec.host||'';
+  document.getElementById('techReq').textContent=spec.req;
+  document.getElementById('techRes').textContent=spec.res;
+  document.getElementById('techDecide').innerHTML=spec.d.map(r=>
+    `<div class="drow"><div class="dwhen ${r[1]}">${r[0]}</div><div class="dthen">${r[2]}</div></div>`).join('');
+  document.getElementById('techLog').innerHTML=`<span class="lk">Log signature</span>${spec.log}`;
+}
+
+function findFlow(s,d,f){return flows.find(x=>x.dataset.src===s&&x.dataset.dst===d&&x.dataset.flow===f);}
+function nodeOf(id){return nodes.find(n=>n.dataset.node===id);}
+
+function render(){
+  const sc=scenarios[cur]; const st=sc.steps[idx];
+  const active=new Set(); sc.steps.forEach((p,i)=>{if(i<=idx){active.add(p.s);active.add(p.d);}});
+  // nodes
+  nodes.forEach(n=>{
+    const on=n.dataset.node===st.s||n.dataset.node===st.d;
+    n.classList.toggle('act',on);
+    n.classList.toggle('dim',!(active.has(n.dataset.node)));
+  });
+  // flows: dim all, show traversed as past, current as active
+  flows.forEach(f=>{f.classList.remove('active','past','failstep');f.style.markerEnd='';});
+  sc.steps.forEach((p,i)=>{const fl=findFlow(p.s,p.d,p.f);if(!fl)return;
+    if(i<idx)fl.classList.add('past');
+  });
+  const af=findFlow(st.s,st.d,st.f);
+  if(af){af.classList.add('active');if(st.fail){af.classList.add('failstep');af.style.markerEnd='url(#a-fail)';}}
+  // cursor — dot, line and arrowhead all share this colour
+  const dpath=af?af.getAttribute('d'):null;
+  const c=st.fail?colr.fail:(colr[st.f]||colr.order);
+  cursor.style.display=halo.style.display=dpath?'':'none';
+  cursor.style.color=c;cursor.setAttribute('fill',c);halo.setAttribute('fill',c);
+  if(dpath){cursorM.setAttribute('path',dpath);haloM.setAttribute('path',dpath);
+    try{cursorM.beginElement();haloM.beginElement();}catch(e){}}
+  // story
+  const num=document.getElementById('storyNum');
+  num.textContent=st.done?(st.fail?'✕':'✓'):(idx+1);
+  num.className='story-num'+(st.fail&&st.done?' fail':st.done?' done':st.fail?' fail':'');
+  document.getElementById('storyScene').textContent=sc.name+' — step '+(idx+1)+' of '+sc.steps.length;
+  document.getElementById('storyTitle').textContent=st.t;
+  document.getElementById('storyDesc').textContent=st.x;
+  const b=document.getElementById('storyBadge');
+  if(st.badge){b.style.display='';b.className='badge '+st.badge[1];b.textContent=st.badge[0];}else b.style.display='none';
+  document.getElementById('storyNet').innerHTML=hop(st);
+  renderTech(st);
+  document.getElementById('stepcount').textContent=(idx+1)+' / '+sc.steps.length;
+  // dots
+  const dd=document.getElementById('dots');dd.innerHTML='';
+  sc.steps.forEach((p,i)=>{const el=document.createElement('span');
+    el.className='dot'+(i===idx?' on':'')+(i<idx?' done':'')+(p.fail?' fail':'');
+    el.onclick=()=>{idx=i;render();};dd.appendChild(el);});
+  document.getElementById('prev').disabled=idx===0;
+  document.getElementById('next').disabled=idx===sc.steps.length-1;
+}
+
+function load(k){cur=k;idx=0;render();}
+function next(){const sc=scenarios[cur];if(idx<sc.steps.length-1){idx++;render();}else stop();}
+function prev(){if(idx>0){idx--;render();}}
+function play(){if(!cur)return;if(idx>=scenarios[cur].steps.length-1)idx=0;playing=true;setPlayBtn();
+  clearInterval(timer);render();timer=setInterval(()=>{const sc=scenarios[cur];if(idx>=sc.steps.length-1){stop();}else{idx++;render();}},3400);}
+function stop(){playing=false;clearInterval(timer);setPlayBtn();}
+function setPlayBtn(){const b=document.getElementById('play');b.innerHTML=playing?'❚❚ Pause':'▶ Play';}
+
+sel.addEventListener('change',()=>{stop();load(sel.value);});
+document.getElementById('play').addEventListener('click',()=>{playing?stop():play();});
+document.getElementById('next').addEventListener('click',()=>{stop();next();});
+document.getElementById('prev').addEventListener('click',()=>{stop();prev();});
+document.getElementById('restart').addEventListener('click',()=>{stop();idx=0;render();});
+document.getElementById('infraBtn').addEventListener('click',()=>{
+  const on=document.body.classList.toggle('infra');
+  document.getElementById('infraBtn').classList.toggle('on',on);
+});
+document.getElementById('techHead').addEventListener('click',()=>document.getElementById('tech').classList.toggle('collapsed'));
+
+// init
+fitEdges();
+sel.value="web-card";load("web-card");
+</script>
+</body>
+</html>

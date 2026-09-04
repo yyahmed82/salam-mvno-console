@@ -429,4 +429,82 @@ const RULES = [
     runbook: '1) Monitoring → ④ SMS → Gateway reachability: which host(s), what error (timeout vs DNS vs refused). 2) Both hosts failing → Unifonic-side or network egress — engage Unifonic + network team. 3) One host → that host\'s egress/DNS. 4) Expect otp_verify_drop to follow within minutes if real.' }
 ];
 
+/* ================= FIXED / SALAM HOME (unified console) =================
+ * The 15 built-ins of the prod Operations Console (salam-dealer-ops alert-engine.ts BUILTIN_RULES),
+ * ported 1:1: same names as /operations-console, same severity / operator / threshold / window /
+ * min-sample / KSA active hours. Keys and metric keys are `fixed_`-prefixed (plan §2.1), rows carry
+ * segment='fixed'. Donor severity 1→P1, 2→P2, 3→P3; donor teams SALES_OPS→'Sales Ops',
+ * DIGITAL_OPS→'Digital Ops', OSS_OPS→'OSS Ops', BSS_OPS→'BSS Ops'. Donor `scope` (ticket theme
+ * keyword) becomes dim {scope} — fixedMetrics emits one snapshot row per scope. Donor `params` are
+ * echoed for documentation; the values actually used are FIXED_PARAMS in fixedMetrics.js.
+ * `enabled:false` = seeded OFF (donor ships it on; per-dealer stagnation is noisy — opt in from the UI).
+ * The upsert in init.js never touches `enabled`, so operator toggles survive a re-seed. */
+const FIXED_RULES = [
+  { key: 'fixed_error_spike', name: 'Error spike (P0/P1)', severity: 'P1', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_error_p0p1_categories', operator: 'gte', threshold: 1, window_hours: 3, min_sample: 0, params: { spike: 15, windowMin: 60 },
+    description: 'Open errors reaching effective priority P0/P1 (money-at-risk categories escalate).',
+    runbook: '1) Fixed → Errors: which category is at P0/P1 and its count in the last 60 min. 2) PAYMENT_NOT_NOTIFIED / PROVISION_NO_ORDER = money at risk — page BSS/OSS on-call. 3) Check the order trace for the failing step and API. 4) Resolve the category once the root cause is fixed so the metric clears.' },
+  { key: 'fixed_nafath_fail_spike', name: 'Nafath failure spike', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'business',
+    metric_key: 'fixed_nafath_fail_rate', operator: 'gte', threshold: 0.30, window_hours: 24, min_sample: 20,
+    description: '5G (HomeFI/FWA) identity verification failing above threshold.',
+    runbook: '1) Fixed → Overview → Nafath outcomes: TIMEOUT vs REJECTED split. 2) TIMEOUT-dominated = Nafath/Absher side or callback path — check with the platform team. 3) REJECTED = customers declining in the Nafath app (expected share ~10–20%).' },
+  { key: 'fixed_semati_fail_spike', name: 'Semati provisioning failure spike', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_semati_fail_rate', operator: 'gte', threshold: 0.30, window_hours: 24, min_sample: 20,
+    description: '5G MSISDN provisioning (Semati SIM lock, after Nafath) failing above threshold — SEMATI_FAILED / MOBILE_EXISTS.',
+    runbook: '1) Fixed → Errors: SEMATI_FAILED vs MOBILE_EXISTS. 2) MOBILE_EXISTS = dealer re-using an MSISDN — coach the dealer. 3) SEMATI_FAILED rising across dealers = Semati (TCC) provider issue — engage the Semati owner, cross-check the MVNO Semati alerts.' },
+  { key: 'fixed_conversion_drop', name: 'Conversion drop (SDA / dealer)', severity: 'P2', team: 'Sales Ops', segment: 'fixed', alert_class: 'business', channel: 'sda',
+    metric_key: 'fixed_conversion_drop_pp', operator: 'gte', threshold: 0.15, window_hours: 24, min_sample: 30,
+    description: 'Dealer conversion fell vs the prior 7-day baseline.',
+    runbook: '1) Fixed → Overview: outcome mix and by-journey conversion for the window vs last week. 2) One journey collapsing = integration issue (see Nafath / Semati / error rules). 3) All journeys down = platform or a sales-side cause (campaign end, holiday).' },
+  { key: 'fixed_manafith_denials', name: 'Manafith denials', severity: 'P2', team: 'Sales Ops', segment: 'fixed', alert_class: 'business',
+    metric_key: 'fixed_manafith_deny_rate', operator: 'gte', threshold: 0.20, window_hours: 24, min_sample: 10,
+    description: 'Government dealer-validation (Manafith) DENIED above the normal rate.',
+    runbook: '1) Fixed → Overview → Manafith denied by region / dealer. 2) Concentrated on a few dealers = licence/registration lapsed — Sales Ops to follow up. 3) Broad = Manafith service change — engage the integration owner.' },
+  { key: 'fixed_workhours_drop', name: 'Working-hours activity drop (SDA)', severity: 'P2', team: 'Sales Ops', segment: 'fixed', alert_class: 'business', channel: 'sda',
+    metric_key: 'fixed_workhours_activity_ratio', operator: 'lte', threshold: 0.5, window_hours: 3, min_sample: 10, active_from: 15, active_to: 22, params: { baselineDays: 7 },
+    description: 'Hourly SDA volume collapsed vs the same-hour baseline during dealer hours.',
+    runbook: '1) Confirm the ingest is fresh (Fixed → Overview freshness strip) — a stalled watcher looks like a volume drop. 2) If data is fresh, check the SDA app / login path with a dealer. 3) Inform Sales Ops if it is a field-side cause (holiday, event).' },
+  { key: 'fixed_offhours_activity', name: 'Off-hours unusual activity (SDA)', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'business', channel: 'sda',
+    metric_key: 'fixed_offhours_sda_attempts', operator: 'gte', threshold: 30, window_hours: 3, min_sample: 0, params: { offStart: 1, offEnd: 6 },
+    description: 'SDA attempts during the 01:00–06:00 KSA dead window (test/automation/fraud).',
+    runbook: '1) Fixed → SDA map / recent attempts filtered to the night window: which dealers and from where. 2) One dealer = test or automation — contact the dealer. 3) Many dealers / same device = suspected credential sharing or fraud — escalate to Fraud & Security.' },
+  { key: 'fixed_dealer_stagnation', name: 'Per-dealer stagnation (SDA)', severity: 'P3', team: 'Sales Ops', segment: 'fixed', alert_class: 'business', channel: 'sda', enabled: false,
+    metric_key: 'fixed_dealer_stagnation_count', operator: 'gte', threshold: 1, window_hours: 3, min_sample: 0, active_from: 15, active_to: 22, params: { minDays: 3, minBaseline: 5, minWindowAttempts: 3 },
+    description: 'A warm dealer with attempts this window but zero completions. Seeded OFF (noisy) — enable from the Rules tab.',
+    runbook: '1) Fixed → Overview → Top dealers: the stagnating dealer\'s attempts and last error. 2) Same error every attempt = coaching / data issue (ODB, ID). 3) Different errors = platform — check the Fixed error board.' },
+  { key: 'fixed_dealer_timeout_wave', name: 'Dealer timeout wave (P2)', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_timeout_dealers', operator: 'gt', threshold: 5, window_hours: 1, min_sample: 0, params: { windowMin: 30 },
+    description: 'More than 5 dealers hit timeout-class errors (Absher verify-code / Nafath / API timeouts) within 30 minutes.',
+    runbook: '1) Fixed → Errors: TIMEOUT / NAFATH_TIMEOUT events in the last 30 min — which step (Absher verify, Nafath callback, order API). 2) Same step across dealers = upstream (Absher/Nafath/BSS) slow — engage the provider. 3) Watch for escalation to the P1 storm rule.' },
+  { key: 'fixed_dealer_timeout_storm', name: 'Dealer timeout storm (P1)', severity: 'P1', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_timeout_dealers', operator: 'gt', threshold: 10, window_hours: 1, min_sample: 0, params: { windowMin: 30 },
+    description: 'More than 10 dealers hit timeout-class errors within 30 minutes — treat as a platform-wide incident.',
+    runbook: 'Platform-wide: open a P1, page Digital Ops L2 and the owning provider (Absher / Nafath / BSS per the failing step), and inform Sales Ops that dealers will see timeouts until resolved.' },
+  { key: 'fixed_sms_balance_low', name: 'SMS balance low (Unifonic)', severity: 'P2', team: 'BSS Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_sms_balance', operator: 'lt', threshold: 500, window_hours: 24, min_sample: 0,
+    description: 'Unifonic SMS-gateway balance dropped below the safe buffer — top up before OTP/consent messages stop delivering (at 0 they queue but never arrive). Needs FIXED_SMS_BALANCE_URL; without it the metric has no data and the rule never fires.',
+    runbook: '1) Top up the Unifonic account (one consent OTP ≈ 12 units). 2) Until topped up, consent OTPs silently fail — warn Sales Ops. 3) Verify sends resume (balance > 0 on the next send response).' },
+  { key: 'fixed_ticket_order_api_error', name: 'New-connection / order API-error spike (tickets)', severity: 'P2', team: 'OSS Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_incident_ticket_count', operator: 'gte', threshold: 5, window_hours: 168, min_sample: 0, dim: { scope: 'API error' },
+    description: 'Spike in Fixed \'New Connection API Error\' tickets — the ordering/BSS-OSS integration is failing.',
+    runbook: '1) Fixed → Playbook / tickets: the week\'s "API error" tickets and their order numbers. 2) Trace one order end-to-end (Fixed → order trace) to find the failing OSS/BSS call. 3) Engage OSS Ops with the request ids.' },
+  { key: 'fixed_ticket_payment_suspend', name: 'Payment / SADAD ticket spike (tickets)', severity: 'P2', team: 'BSS Ops', segment: 'fixed', alert_class: 'business',
+    metric_key: 'fixed_incident_ticket_count', operator: 'gte', threshold: 5, window_hours: 168, min_sample: 0, dim: { scope: 'Payment' },
+    description: 'Spike in Fixed payment/SADAD tickets (incl. \'paid but suspended\').',
+    runbook: '1) List the week\'s Payment/SADAD tickets — paid-but-suspended dominates? 2) Check the SADAD → BSS payment notification path with BSS Ops. 3) Bulk-restore suspended accounts once payments are matched.' },
+  { key: 'fixed_ticket_gateway_system', name: 'Gateway / system ticket spike (tickets)', severity: 'P1', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_incident_ticket_count', operator: 'gte', threshold: 3, window_hours: 168, min_sample: 0, dim: { scope: 'Gateway' },
+    description: 'Spike in Fixed API-gateway / platform tickets (e.g. RUH-GETAPIGWP).',
+    runbook: '1) Gateway tickets = the API gateway (RUH-GETAPIGWP) is failing for dealers/customers. 2) Check gateway health and recent deployments with the platform team. 3) Open a P1 if orders are blocked.' },
+  { key: 'fixed_incident_sla_breach', name: 'Incident SLA-breach rate (tickets)', severity: 'P3', team: 'Digital Ops', segment: 'fixed', alert_class: 'business', enabled: false,
+    metric_key: 'fixed_incident_sla_breach_rate', operator: 'gte', threshold: 0.30, window_hours: 168, min_sample: 5,
+    description: 'Share of CTT tickets whose SLA was Missed over the week. Not a prod built-in (the metric exists there without a seeded rule) — seeded OFF for parity; enable when the ticket feed is trusted.',
+    runbook: '1) Review the SLA-missed tickets by assigned group. 2) Raise with the owning group lead; adjust OLA if systematic.' }
+];
+for (const r of FIXED_RULES) {
+  if (!r.key.startsWith('fixed_') || !r.metric_key.startsWith('fixed_')) throw new Error(`fixed rule ${r.key} must use fixed_ keys`);
+  if (!METRICS[r.metric_key]) throw new Error(`fixed rule ${r.key}: unknown metric ${r.metric_key}`);
+  RULES.push(r);
+}
+
 module.exports = { CATALOG, RULES };

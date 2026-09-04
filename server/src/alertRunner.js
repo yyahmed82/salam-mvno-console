@@ -96,11 +96,11 @@ async function runAlerts(simNow) {
         await c.query(
           `INSERT INTO alerts (rule_id, rule_key, name, severity, team, status, metric_key,
              operator, threshold, observed_value, sample, window_hours, dim, message,
-             fired_at, last_seen_at, peak_value, breach_count)
-           VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,$10,$11,$12,$13,$14,$14,$9,1)`,
+             fired_at, last_seen_at, peak_value, breach_count, segment)
+           VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,$10,$11,$12,$13,$14,$14,$9,1,$15)`,
           [rule.id, rule.key, rule.name, rule.severity, rule.team, rule.metric_key,
            rule.operator, rule.threshold, ev.value, ev.sample, rule.window_hours,
-           JSON.stringify(rule.dim || {}), msg, now]);
+           JSON.stringify(rule.dim || {}), msg, now, rule.segment || 'mvno']);
         opened++;
         ev.justOpened = true;
       }

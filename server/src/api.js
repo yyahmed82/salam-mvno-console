@@ -2973,7 +2973,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // Fixed / Salam Home routes — all under /api/fixed/* (see fixed.js)
-require('./fixed').mount(app, { requireView, audit });
+require('./fixed').mount(app, { requireView, audit, requireCap });
 
 app.get('/api/rules', async (req, res) => {
   const rules = (await C.query(`SELECT r.*, mc.unit, mc.higher_is_bad FROM alert_rules r
@@ -3702,7 +3702,7 @@ app.get('/api/ready', async (req, res) => { const r = await reliability.ready();
 app.get('/api/version', (req, res) => res.json({ ...reliability.version(),
   console: 'unified', publicUrl: process.env.CONSOLE_PUBLIC_URL || null,
   fixedEnabled: roles.FIXED_ENABLED, fixedViews: roles.FIXED_VIEWS,
-  pools: { upg: db.upgConfigured, ops: db.opsConfigured, nexus: db.nexusConfigured, payments: db.paymentsConfigured } }));
+  pools: { upg: db.upgConfigured, ops: db.opsConfigured, opsBeta: db.opsBetaConfigured, nexus: db.nexusConfigured, payments: db.paymentsConfigured } }));
 app.get('/api/errors/log', requireCap('manageUsers'), async (req, res) => {
   try {
     const rows = (await C.query(`SELECT id, at, level, message, route, actor, ip FROM console_errors ORDER BY at DESC LIMIT 200`)).rows;

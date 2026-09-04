@@ -24,19 +24,20 @@ async function init({ reset = false } = {}) {
   for (const r of RULES) {
     await c.query(
       `INSERT INTO alert_rules
-        (key,name,description,metric_key,operator,threshold,window_hours,min_sample,team,severity,channel,dim,active_from,active_to,params,runbook,alert_class,enabled,builtin)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,true,true)
+        (key,name,description,metric_key,operator,threshold,window_hours,min_sample,team,severity,channel,dim,active_from,active_to,params,runbook,alert_class,segment,enabled,builtin)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,true)
        ON CONFLICT (key) DO UPDATE SET
          name=EXCLUDED.name, description=EXCLUDED.description, metric_key=EXCLUDED.metric_key,
          operator=EXCLUDED.operator, threshold=EXCLUDED.threshold, window_hours=EXCLUDED.window_hours,
          min_sample=EXCLUDED.min_sample, team=EXCLUDED.team, severity=EXCLUDED.severity,
          channel=EXCLUDED.channel, dim=EXCLUDED.dim, active_from=EXCLUDED.active_from,
          active_to=EXCLUDED.active_to, runbook=COALESCE(EXCLUDED.runbook, alert_rules.runbook),
-         alert_class=EXCLUDED.alert_class, updated_at=now()`,
+         alert_class=EXCLUDED.alert_class, segment=EXCLUDED.segment, updated_at=now()`,
       [r.key, r.name, r.description || null, r.metric_key, r.operator, r.threshold,
        r.window_hours || 1, r.min_sample || 0, r.team || null, r.severity || 'P3',
        r.channel || 'any', JSON.stringify(r.dim || {}), r.active_from ?? null, r.active_to ?? null,
-       JSON.stringify(r.params || {}), r.runbook || null, r.alert_class || null]);
+       JSON.stringify(r.params || {}), r.runbook || null, r.alert_class || null,
+       r.segment || 'mvno', r.enabled !== false /* seed-time default only; the upsert never touches `enabled` */]);
     n++;
   }
 

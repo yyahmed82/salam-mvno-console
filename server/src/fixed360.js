@@ -136,15 +136,16 @@ async function summary(q) {
 
 /* ---- Salam Home app (B2C) journeys — the beta's /b2c overview, per workflow ---- */
 async function b2cOverview(q) {
-  if (!db.ops) throw notConfigured();
+  const pool = db.opsBeta || db.ops;   // Salam Home app rows exist only in the beta schema (stage 1)
+  if (!pool) throw notConfigured();
   const s = parseScope({ ...q, channel: 'salamhome' });
-  const r = await db.ops.query(`SELECT oa.workflow::text AS workflow, count(*)::int AS n,
+  const r = await pool.query(`SELECT oa.workflow::text AS workflow, count(*)::int AS n,
         count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed,
         count(*) FILTER (WHERE oa.outcome='STALLED')::int AS stalled,
         count(*) FILTER (WHERE oa.outcome='IN_PROGRESS')::int AS in_progress,
         count(*) FILTER (WHERE oa.order_number IS NOT NULL)::int AS with_order
       ${FROM} ${s.where} GROUP BY 1 ORDER BY 2 DESC`, s.params);
-  const stops = await db.ops.query(`SELECT oa.workflow::text AS workflow, oa.step_reached AS step, count(*)::int AS n
+  const stops = await pool.query(`SELECT oa.workflow::text AS workflow, oa.step_reached AS step, count(*)::int AS n
       ${FROM} ${s.where} AND oa.outcome <> 'COMPLETED' GROUP BY 1,2 ORDER BY 1, 3 DESC`, s.params);
   return { window: { from: s.from, to: s.to }, provisional: 'B2C definitions unsigned (docs/B2C-DEFINITIONS.md) — figures provisional',
     byWorkflow: r.rows.map(x => ({ ...x, label: WORKFLOW_LABEL[x.workflow] || x.workflow, conversion: pct(x.completed, x.n) })),
