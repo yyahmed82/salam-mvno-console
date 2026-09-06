@@ -1,5 +1,5 @@
 /* PM2 config for the Salam Unified Console on 152 (also usable for the frozen digital-console line).
- * Name/port come from .env: PM2_NAME (default salam-unified), PORT (default 4700).
+ * Name/port come from .env: PM2_NAME (default salam-unified), PORT (default 4701 — 4700 is salam-undertaking on 152).
  * Loads /apps/console/.env into the process env (PM2 has no native env_file support),
  * then runs server/src/boot.js (self-seeds DB schema + rules, then serves on PORT).
  * Start:  cd /apps/console && pm2 start ecosystem.prod.config.js && pm2 save
@@ -31,7 +31,7 @@ function loadEnv(file) {
 
 const APP_DIR = path.resolve(__dirname);
 const env = Object.assign({
-  PORT: '4700',
+  PORT: '4701',
   STATIC_DIR: path.join(APP_DIR, 'web'),
   NODE_ENV: 'production',
   /* MUST be UTC. The app stores created_at as `timestamp WITHOUT time zone` holding UTC, and

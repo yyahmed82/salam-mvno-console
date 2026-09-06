@@ -13,6 +13,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
 - **Two menus highlighted at once** — the Fixed group button kept its "on" state (and current-page chip) after
   navigating to Home or a Mobile page; the nav now clears the Fixed pages' active state whenever the hash leaves
   `#fixed`, and clears Mobile/Home when it enters it. Exactly one group is current.
+- **Deploy:** unified target listens on **:4701** on 152 (4700 is `salam-undertaking`); `deploy.sh` creates the target
+  tree on first deploy; `docs/DEPLOY-UNIFIED-RUNBOOK.md` added (isolation guarantees, milestone cadence).
 ### Added
 - **Tickets tagged 📱 Mobile / 🏠 Fixed** — `console_tickets.segment` (default `mobile`, so every ticket raised before the
   Fixed side existed is Mobile). Raise-a-ticket asks which business (pre-selected from the page you are on); the

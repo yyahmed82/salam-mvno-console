@@ -12,11 +12,11 @@ set -euo pipefail
 
 HOST="${DEPLOY_HOST:-yosri@172.31.38.152}"
 # Deployment target on 152 (unified console is the default for this repo):
-#   DEPLOY_TARGET=unified  → /apps/unified  · PM2 salam-unified · :4700 · https://salam.sa/unified-console/
+#   DEPLOY_TARGET=unified  → /apps/unified  · PM2 salam-unified · :4701  (4700 is taken by salam-undertaking on 152) · https://salam.sa/unified-console/
 #   DEPLOY_TARGET=digital  → /apps/console  · PM2 salam-console · :4600 · https://salam.sa/digital-console/  (frozen line)
 TARGET="${DEPLOY_TARGET:-unified}"
 case "$TARGET" in
-  unified) APP="/apps/unified"; PM2NAME="salam-unified"; PORT=4700; URL="https://salam.sa/unified-console/";;
+  unified) APP="/apps/unified"; PM2NAME="salam-unified"; PORT="${UNIFIED_PORT:-4701}"; URL="https://salam.sa/unified-console/";;
   digital) APP="/apps/console"; PM2NAME="salam-console"; PORT=4600; URL="https://salam.sa/digital-console/";;
   *) echo "✗ unknown DEPLOY_TARGET=$TARGET (unified|digital)"; exit 1;;
 esac
@@ -89,6 +89,7 @@ PM2="$(command -v pm2 || echo /usr/local/bin/pm2)"
 [ -x "$PM2" ] || { echo "✗ pm2 not found (looked in /usr/local/bin) — aborting"; exit 1; }
 [ -s "$SRC" ] || { echo "✗ payload missing/empty at $SRC"; exit 1; }
 rm -rf /tmp/csync && mkdir -p /tmp/csync && tar xzf "$SRC" -C /tmp/csync
+mkdir -p "$APP/server/src" "$APP/server/db" "$APP/web"   # first deploy of a new target: create the tree
 
 if [ "$MODE" = "--web-only" ]; then
   cp -f /tmp/csync/web/* "$APP/web/" 2>/dev/null || true
