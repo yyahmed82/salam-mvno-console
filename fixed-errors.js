@@ -31,7 +31,7 @@
   const prioBadge=p=>`<span class="fe-pri" style="background:${PRIO_COLOR[p]||"#7d8590"}">P${p}</span>`;
   const catBadge=(r)=>{ const esc=FX().esc; const t=TONE[r.tone]||TONE.muted; return `<span class="fe-cat"><span class="fe-catpill" style="background:${t.bg};color:${t.fg}">${esc(r.label||r.category)}</span><span class="fe-team" style="color:${TEAM_COLOR[r.team]||"var(--muted)"}">${esc(r.team||"")}</span></span>`; };
   const inp=(id,ph,val,extra)=>`<input id="${id}" class="fe-in" placeholder="${FX().esc(ph)}" value="${FX().esc(val||"")}" autocomplete="off" spellcheck="false" style="${extra||""}">`;
-  const CSS=`
+  const STYLE=`
     #fxErr h1{margin:0 0 2px;font-size:20px;font-weight:800;letter-spacing:-.2px} #fxErr .fe-sub{font-size:12.5px;color:var(--muted);margin-bottom:14px}
     #fxErr .fe-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px} @media (max-width:1000px){#fxErr .fe-cards{grid-template-columns:1fr}}
     #fxErr .fe-card{background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;padding:18px 22px;box-shadow:0 1px 3px rgba(2,6,23,.05);display:flex;flex-direction:column;gap:14px}
@@ -84,7 +84,7 @@
     if(S.hubSeen===undefined) S.hubSeen=fx.state.channel||"";                      // first paint: board starts on All channels (prod default)
     else if((fx.state.channel||"")!==S.hubSeen){ S.hubSeen=fx.state.channel||""; S.channel=S.hubSeen; }   // hub chip changed by the user → follow it
     const ch=S.channel||"";
-    host.innerHTML=`<div id="fxErr"><style>${CSS}</style>
+    host.innerHTML=`<div id="fxErr"><style>${STYLE}</style>
       <h1>Live error control board</h1>
       <div class="fe-sub">SDA &amp; QR journey errors as they happen — filter by team / category / priority and time window; open a row to see the failed step, the request / response and how often it has happened before.</div>
       <div class="fe-cards">
@@ -167,12 +167,12 @@
       :`<tr><td colspan="6" class="fe-empty">No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""?` (team / priority filter active)`:""}.</td></tr>`}</tbody></table>`;
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); tr.click(); } });
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; e.preventDefault();
-      const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${CSS.escape(id)}"]`); if(!x) return;
+      const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${id.replace(/[^\w-]/g,"")}"]`); if(!x) return;
       const isOpen=!x.hidden;                                   // truth = the DOM, never a remembered id
       el.querySelectorAll(".fe-x").forEach(o=>o.hidden=true); el.querySelectorAll(".fe-row.open").forEach(o=>o.classList.remove("open"));
       if(isOpen){ S.expanded=null; return; }
       S.expanded=id; x.hidden=false; tr.classList.add("open"); expand(host,fx,x.firstElementChild,rows.find(r=>r.id===id)); });
-    if(keepExpanded&&S.expanded){ const x=el.querySelector(`.fe-x[data-id="${CSS.escape(S.expanded)}"]`); const r=rows.find(r=>r.id===S.expanded); if(x&&r){ x.hidden=false; expand(host,fx,x.firstElementChild,r); } }
+    if(keepExpanded&&S.expanded){ const x=el.querySelector(`.fe-x[data-id="${String(S.expanded).replace(/[^\w-]/g,"")}"]`); const r=rows.find(r=>r.id===S.expanded); if(x&&r){ x.hidden=false; expand(host,fx,x.firstElementChild,r); } }
   }
 
   async function expand(host,fx,cell,row){
