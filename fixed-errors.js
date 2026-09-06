@@ -119,7 +119,7 @@
     host.querySelector("#feFind").focus();
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }
-      if(document.visibilityState!=="visible") return; load(host,fx,false); },60000);
+      if(document.visibilityState!=="visible") return; load(host,fx,true); },60000);
   }
 
   async function load(host,fx,first){
@@ -166,8 +166,12 @@
         <td class="fe-nostop">${dealer(r)}</td><td>${esc(r.region||"—")}</td><td style="white-space:nowrap">${status(r)}<span class="fe-caret" aria-hidden="true">›</span></td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="6"></td></tr>`).join("")
       :`<tr><td colspan="6" class="fe-empty">No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""?` (team / priority filter active)`:""}.</td></tr>`}</tbody></table>`;
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); tr.click(); } });
-    el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${CSS.escape(id)}"]`);
-      if(S.expanded===id){ S.expanded=null; x.hidden=true; tr.classList.remove("open"); return; } el.querySelectorAll(".fe-x").forEach(o=>o.hidden=true); el.querySelectorAll(".fe-row.open").forEach(o=>o.classList.remove("open")); S.expanded=id; x.hidden=false; tr.classList.add("open"); expand(host,fx,x.firstElementChild,rows.find(r=>r.id===id)); });
+    el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; e.preventDefault();
+      const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${CSS.escape(id)}"]`); if(!x) return;
+      const isOpen=!x.hidden;                                   // truth = the DOM, never a remembered id
+      el.querySelectorAll(".fe-x").forEach(o=>o.hidden=true); el.querySelectorAll(".fe-row.open").forEach(o=>o.classList.remove("open"));
+      if(isOpen){ S.expanded=null; return; }
+      S.expanded=id; x.hidden=false; tr.classList.add("open"); expand(host,fx,x.firstElementChild,rows.find(r=>r.id===id)); });
     if(keepExpanded&&S.expanded){ const x=el.querySelector(`.fe-x[data-id="${CSS.escape(S.expanded)}"]`); const r=rows.find(r=>r.id===S.expanded); if(x&&r){ x.hidden=false; expand(host,fx,x.firstElementChild,r); } }
   }
 
