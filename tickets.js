@@ -42,7 +42,7 @@
   }
   function closeModal(){ const ov=document.getElementById("ticketModalOv"); if(ov) ov.classList.remove("open"); PICKED=[]; }
   window.openTicketModal=function(){
-    const ov=ensureModal(); PICKED=[]; TK_SEG=guessSegment(); TK_KIND="issue";
+    const ov=ensureModal(); PICKED=[]; const ub=userBiz(); TK_SEG=ub==="both"?guessSegment():ub; TK_KIND="issue";
     ov.querySelector("#ticketModalCard").innerHTML=formHtml();
     ov.classList.add("open");
     wireForm();
@@ -52,21 +52,22 @@
    * The chosen business drives the accent colour, the header copy and the placeholder hints. */
   let TK_SEG=null, TK_KIND="issue";
   const SEG_META={
-    mobile:{ic:"📱",name:"Mobile",tag:"MVNO",blurb:"Selfcare app · DMS dealers · payments · activation · SIM / eSIM",accent:"#2563eb",soft:"rgba(37,99,235,.12)",
+    mobile:{ic:"📱",name:"Mobile",tag:"MVNO",blurb:"Selfcare app · DMS dealers · payments · activation · SIM / eSIM",accent:"#7c3aed",soft:"rgba(124,58,237,.13)",
       ph:"e.g. eSIM activation stuck at 'processing' for MSISDN …924",dph:"What happened? Which line / order / payment? What did you expect? Steps to reproduce…"},
     fixed:{ic:"🏠",name:"Fixed",tag:"FTTH · FTTB · 5G home",blurb:"SDA dealers · e-purchase / QR · Salam Home app · BSS orders",accent:"#0e9f5a",soft:"rgba(14,159,90,.12)",
       ph:"e.g. feasibility check fails for ODB KRZAHR05053 on the app",dph:"What happened? Which service / ODB / order / dealer? What did you expect? Steps to reproduce…"}};
+  const userBiz=()=>{ try{ return ((window.opsSession&&window.opsSession())||{}).me?.business||"both"; }catch(_){ return "both"; } };
   function formHtml(){
-    const m=TK_SEG?SEG_META[TK_SEG]:null;
+    const m=TK_SEG?SEG_META[TK_SEG]:null; const biz=userBiz();
     const tab=(k)=>{ const x=SEG_META[k]; const on=TK_SEG===k; return `<button type="button" class="tkb-tab${on?" on":""}" data-seg="${k}" style="--acc:${x.accent};--soft:${x.soft}">
         <span class="tkb-ic">${x.ic}</span><span class="tkb-txt"><b>${x.name}</b><small>${x.tag}</small></span>${on?'<span class="tkb-chk">✓</span>':''}</button>`; };
     const kind=(k,l,sub,ic)=>`<button type="button" class="tkk${TK_KIND===k?" on":""}" data-kind="${k}"><span class="tkk-ic">${ic}</span><span><b>${l}</b><small>${sub}</small></span></button>`;
     return `<div class="tkm" style="--acc:${m?m.accent:"var(--green)"};--soft:${m?m.soft:"var(--green-bg)"}">
       <div class="tkm-head"><div><div class="tkm-title">Raise a ticket</div><div class="tkm-sub">${m?`${m.ic} ${m.name} · ${m.blurb}`:"Report an issue or suggest an improvement — you'll get an e-mail when it is under evaluation."}</div></div><button type="button" class="tkm-x" id="tkX" title="Close (Esc)">✕</button></div>
-      <div class="tkm-step"><span class="tkm-n">1</span> Which business is this about?</div>
-      <div class="tkb-tabs">${tab("mobile")}${tab("fixed")}</div>
+      ${biz==="both"?`<div class="tkm-step"><span class="tkm-n">1</span> Which business is this about?</div>
+      <div class="tkb-tabs">${tab("mobile")}${tab("fixed")}</div>`:`<div class="tkb-tabs one">${tab(biz)}</div>`}
       ${m?`<div class="tkm-form">
-        <div class="tkm-step"><span class="tkm-n">2</span> Tell us what you need</div>
+        <div class="tkm-step"><span class="tkm-n">${biz==="both"?"2":"1"}</span> Tell us what you need</div>
         <div class="tkk-row">${kind("issue","Issue","Something is broken or wrong","🐞")}${kind("enhancement","Suggestion","An enhancement or a new idea","💡")}</div>
         <label class="tkm-lbl">Title</label>
         <input id="tkTitle" class="tkm-in" type="text" maxlength="300" placeholder="${esc(m.ph)}">

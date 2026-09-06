@@ -224,6 +224,12 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       b.classList.toggle("hidden", !views.includes(v));   // Dashboard too — a real gated view since 2 Sep 2026
     });
     window.FIXED_TAB_VIEWS = FTV; window.FIXED_VIEWS_HELD = views.filter(v=>/^fixed/.test(v));
+    // business scope (6 Sep 2026): the server already intersected the views with the user's business; here the
+    // whole Mobile ▾ / Fixed ▾ group is hidden for the other side (incl. shared-view items like docs / topology)
+    const biz = (SES.me&&SES.me.business)||"both"; window.BUSINESS = biz;
+    document.querySelectorAll('.navdrop[data-drop="mobile"] .navtab').forEach(b=>{ if(biz==="fixed") b.classList.add("hidden"); });
+    document.querySelectorAll('.navdrop[data-drop="home"] .navtab[data-fxtab]').forEach(b=>{ if(biz==="mobile") b.classList.add("hidden"); });
+    document.documentElement.setAttribute("data-business", biz);
     // SLA (SLO) page now lives in the Settings gear menu — root-tier only once ROOT_ADMINS is set
     // (root stays true for all when unset — matches the server failsafe).
     const slaMi = document.getElementById("slaMenuItem"); if(slaMi) slaMi.style.display = (SES.me && SES.me.root!==false)?"":"none";
@@ -1378,6 +1384,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const roleChecks = (name, sel) => UM_ROLES.map(([v,l])=>
       `<label class="um-check"><input type="checkbox" name="${name}" value="${v}" ${v===sel?'checked':''}><span>${l}</span></label>`).join("");
     const tagChips = sel => UM_TAGS.map(t=>`<button type="button" class="tagchip ${sel.includes(t)?'on':''}" data-tag="${t}">${t}</button>`).join("");
+    const BIZ=[["mobile","📱 Mobile","MVNO team"],["fixed","🏠 Fixed","Fixed team"],["both","📱🏠 Both","Mobile + Fixed"]];
+    const bizSeg = sel => BIZ.map(([v,l,t])=>`<button type="button" class="bizchip ${v} ${sel===v?'on':''}" data-biz="${v}" title="${t}">${l}</button>`).join("");
 
     // ---- New user card ----
     const card = `<div class="um-card">
@@ -1385,6 +1393,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       <div class="um-lbl">EMAIL</div><input class="um-input" id="nuEmail" placeholder="person@salam.sa">
       <div class="um-lbl">NAME</div><input class="um-input" id="nuName" placeholder="Full name">
       <div class="um-lbl">MOBILE</div><input class="um-input" id="nuMobile" placeholder="05x xxx xxxx">
+      <div class="um-lbl">BUSINESS <span style="font-weight:400;text-transform:none;letter-spacing:0">— which side of the console</span></div>
+      <div class="um-biz" id="nuBiz">${bizSeg("both")}</div>
       <div class="um-lbl">ROLES</div><div class="um-checks" id="nuRoles">${roleChecks("nuRole","admin")}</div>
       <div class="um-lbl">NOTIFICATIONS</div>
       <div class="um-checks">
@@ -1404,6 +1414,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <td class="u-email">${esc(u.email)}</td>
         <td><input class="u-inline" data-ufield="name" value="${esc(u.name||'')}" placeholder="—"></td>
         <td><input class="u-inline" data-ufield="mobile" value="${esc(u.mobile||'')}" placeholder="—"></td>
+        <td><div class="um-biz mini">${bizSeg(u.business||"both")}</div></td>
         <td><div class="um-rolecell">${UM_ROLES.map(([v,l])=>`<label><input type="checkbox" data-role="${v}" ${urs.includes(v)?'checked':''}><span>${l}</span></label>`).join("")}</div></td>
         <td><div class="u-tagedit">${UM_TAGS.map(t=>`<button type="button" class="tagchip mini ${utags.includes(t)?'on':''}" data-tag="${t}">${t}</button>`).join("")}</div></td>
         <td><span class="status-pill ${u.enabled?'active':'blocked'}">${u.enabled?'Active':'Blocked'}</span></td>
@@ -1415,8 +1426,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       </tr>`;
     }).join("");
     const table = `<div style="overflow-x:auto;margin-top:26px"><table class="umtable">
-      <tr><th>EMAIL</th><th>NAME</th><th>MOBILE</th><th>ROLES</th><th>TAGS</th><th>STATUS</th><th>MAIL REPORT</th><th>MAIL ALERT</th><th>QUICK TOUR</th><th>LAST LOGIN</th><th>ACTIONS</th></tr>
-      ${rows||`<tr><td colspan="11" style="color:var(--muted);padding:18px">No users yet.</td></tr>`}
+      <tr><th>EMAIL</th><th>NAME</th><th>MOBILE</th><th>BUSINESS</th><th>ROLES</th><th>TAGS</th><th>STATUS</th><th>MAIL REPORT</th><th>MAIL ALERT</th><th>QUICK TOUR</th><th>LAST LOGIN</th><th>ACTIONS</th></tr>
+      ${rows||`<tr><td colspan="12" style="color:var(--muted);padding:18px">No users yet.</td></tr>`}
     </table></div>`;
 
     $("#usersBody").innerHTML = card + table;
@@ -1430,6 +1441,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     // roles are multi-select (a user can hold several roles) — no single-select enforcement
     // tag chips toggle
     $("#nuTags").querySelectorAll(".tagchip").forEach(c=>c.addEventListener("click",()=>c.classList.toggle("on")));
+    $("#nuBiz").querySelectorAll(".bizchip").forEach(c=>c.addEventListener("click",()=>{ $("#nuBiz").querySelectorAll(".bizchip").forEach(x=>x.classList.remove("on")); c.classList.add("on"); }));
     // create
     $("#nuAdd").onclick=async()=>{
       const email=$("#nuEmail").value.trim();
@@ -1439,6 +1451,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       if(!rolesSel.length){ alert("Select at least one role."); return; }
       const payload={ email, name:$("#nuName").value.trim()||null, mobile:$("#nuMobile").value.trim()||null, roles: rolesSel,
         tags:[...$("#nuTags").querySelectorAll(".tagchip.on")].map(c=>c.dataset.tag),
+        business:(($("#nuBiz").querySelector(".bizchip.on")||{}).dataset||{}).biz||"both",
         mail_report:$("#nuMailReport").checked, mail_alert:$("#nuMailAlert").checked };
       const btn=$("#nuAdd"); btn.disabled=true;
       try{ await api("/api/users",{method:"POST",body:JSON.stringify(payload)}); renderUserMgmt(); }
@@ -1454,6 +1467,10 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         let sel=roleCbs.filter(x=>x.checked).map(x=>x.dataset.role);
         if(!sel.length){ cb.checked=true; sel=[cb.dataset.role]; }   // keep at least one role
         patch({roles:sel});
+      }));
+      // business scope (single choice)
+      tr.querySelectorAll(".um-biz .bizchip").forEach(c=>c.addEventListener("click",()=>{
+        tr.querySelectorAll(".um-biz .bizchip").forEach(x=>x.classList.remove("on")); c.classList.add("on"); patch({business:c.dataset.biz});
       }));
       // editable team tags
       tr.querySelectorAll(".u-tagedit .tagchip").forEach(c=>c.addEventListener("click",()=>{

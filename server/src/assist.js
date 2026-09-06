@@ -778,7 +778,7 @@ function actionsFor(intent, ctx) {
 }
 
 /* ------------------------------ main entry ------------------------------ */
-async function chat({ message, history, allowUnmask }) {
+async function chat({ message, history, allowUnmask, business }) {
   const cfg = await getConfig();
   const q = String(message || '').slice(0, 1000).trim();
   if (!q) return { error: 'empty message' };
@@ -788,6 +788,18 @@ async function chat({ message, history, allowUnmask }) {
 
   let intent = detectIntent(q);
   const ctx = {};
+  // Business scope (6 Sep 2026): Yusr answers inside the caller's business. A Fixed-team user asking about a
+  // National ID / mobile is routed to the Fixed customer lookup; Mobile-only intents (SMS, payments, checkout,
+  // Mobile alerts) are declined with a scope note. A Mobile-team user never triggers a Fixed lookup.
+  const biz = (business === 'mobile' || business === 'fixed') ? business : 'both';
+  ctx.business = biz;
+  if (biz === 'fixed') {
+    const MOBILE_ONLY = new Set(['sms', 'payment', 'checkout', 'logref', 'alerts']);
+    if (intent === 'customer') { const id = extractIdentifier(q); if (id) { intent = 'fixed_customer'; ctx.fixedKey = id; } }
+    if (MOBILE_ONLY.has(intent)) return { intent: 'scope', reply: 'That question is on the **Mobile** side, which is outside your team scope (Fixed). I can look up a Fixed customer (FTTH account, order number, customer code, National ID) or explain FTTH / 5G home errors.', suggestions: ['Check FTTH09071297', 'Top FTTH errors this week', 'Is the Fixed data live?'], actions: [], sources: [], degraded: false };
+  } else if (biz === 'mobile') {
+    if (intent === 'fixed_customer' || intent === 'fixed_issues') return { intent: 'scope', reply: 'That question is on the **Fixed** side (FTTH / 5G home), which is outside your team scope (Mobile). Ask me about a subscriber (MSISDN / National ID), a payment, an SMS or an open incident.', suggestions: ['Check subscriber 05…', 'What incidents are open?', 'How do I handle a stuck UPG payment?'], actions: [], sources: [], degraded: false };
+  }
 
   // Follow-up on the customer/service from a previous turn (no key in this question)
   if (!extractIdentifier(q) && !extractFixedKey(q) && !extractPaymentKey(q)) {
@@ -1107,7 +1119,7 @@ async function chat({ message, history, allowUnmask }) {
     if (!ctx.fixedKey) { const fk = extractFixedKey(q); ctx.fixedKey = fk && fk.key; }
     ctx.fixed_customer = await fixedCustomerContext(ctx.fixedKey, allowUnmask);
     // a National ID / MSISDN typed in a Fixed sentence also has a Mobile side — show both
-    if (ctx.followup && /^(?:0?5\d{8}|[12]\d{9})$/.test(String(ctx.fixedKey))) { ctx.customerKey = ctx.fixedKey; ctx.customer = await customerContext(ctx.fixedKey, allowUnmask); }
+    if (biz !== 'fixed' && ctx.followup && /^(?:0?5\d{8}|[12]\d{9})$/.test(String(ctx.fixedKey))) { ctx.customerKey = ctx.fixedKey; ctx.customer = await customerContext(ctx.fixedKey, allowUnmask); }
     ctx.kb = searchKb(q, 2);
   } else if (intent === 'fixed_issues') {
     ctx.fixed_issues = await fixedIssuesContext(q);
@@ -1116,7 +1128,7 @@ async function chat({ message, history, allowUnmask }) {
     if (!ctx.customerKey) ctx.customerKey = extractIdentifier(q);
     { const __tc=Date.now(); ctx.customer = await customerContext(ctx.followup ? ctx.customerKey : q, allowUnmask); ctx.__packMs = Date.now()-__tc; }
     // the same person may hold Fixed services — resolved through the nexus bridge (NID / mobile) when configured
-    if (db.opsConfigured) { ctx.fixed_customer = await fixedCustomerContext(ctx.customerKey, allowUnmask); if (!ctx.fixed_customer.found) delete ctx.fixed_customer; }
+    if (db.opsConfigured && biz !== 'mobile') { ctx.fixed_customer = await fixedCustomerContext(ctx.customerKey, allowUnmask); if (!ctx.fixed_customer.found) delete ctx.fixed_customer; }
     ctx.kb = searchKb(q, 2);
     ctx.cases = await searchCases(q, 3);        // team's past resolved cases — "learning from use"
   } else if (intent === 'alerts') {

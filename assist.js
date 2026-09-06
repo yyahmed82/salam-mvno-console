@@ -79,7 +79,7 @@ const AB=(window.API_BASE!==undefined)?window.API_BASE:window.CONSOLE_BASE;
     <div class="as-body" id="asBody"></div>
     <div class="as-sugs" id="asSugs"></div>
     <div class="as-foot">
-      <input id="asInput" type="text" placeholder="Ask me anything… (MSISDN, FTTH account, incident, how-to)" autocomplete="off"/>
+      <input id="asInput" type="text" placeholder="${(()=>{const b=((window.opsSession&&window.opsSession())||{}).me?.business; return b==="fixed"?"Ask me anything… (FTTH account, order, ODB, incident, how-to)":b==="mobile"?"Ask me anything… (MSISDN, National ID, payment, incident, how-to)":"Ask me anything… (MSISDN, FTTH account, incident, how-to)";})()}" autocomplete="off"/>
       <button id="asSend" title="Send">➤</button>
     </div>`;
   document.body.appendChild(fab); document.body.appendChild(panel);

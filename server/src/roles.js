@@ -17,6 +17,24 @@ const FIXED_LEGACY = { maps: 'fixed_maps', b2c: 'fixed_salamhome' };
 const FIXED_TAB_VIEW = { overview:'fixed', epurchase:'fixed_epurchase', salamhome:'fixed_salamhome', map:'fixed_maps', qr:'fixed_maps',
   dash:'fixed_reports', report:'fixed_reports', errors:'fixed_errors', alerts:'fixed_alerts', playbook:'fixed_explore', diagrams:'fixed_explore' };
 const ALL_VIEWS = ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','explore','settings','users'];
+/* ---- Business scope (6 Sep 2026) ----------------------------------------------------------------
+ * Every console user belongs to a BUSINESS: 'mobile' (MVNO team), 'fixed' (Fixed team) or 'both'. It is a
+ * second axis next to ROLES: the role says WHAT a person may do (views + caps), the business says on WHICH
+ * side. At session time the role's views are intersected with the business (scopeViews) so every gate in
+ * the system — requireView on the API, nav scoping, the router, Customer 360, Yusr, the ticket modal —
+ * follows automatically. Shared views ('dashboard' = Home, 'explore' = Customer 360 & docs, 'settings',
+ * 'users') survive both scopes; the API allow-list in api.js closes the Mobile-only endpoints for a
+ * Fixed-only session (they are gated by shared views, not by MOBILE_VIEWS). */
+const BUSINESSES = ['mobile', 'fixed', 'both'];
+const BUSINESS_LABEL = { mobile: 'Mobile (MVNO)', fixed: 'Fixed', both: 'Mobile + Fixed' };
+const MOBILE_VIEWS = ['monitoring', 'dms', 'workbench', 'alerts', 'errors', 'analytics'];
+const normBusiness = b => (BUSINESSES.includes(String(b || '').toLowerCase()) ? String(b).toLowerCase() : 'both');
+function scopeViews(views, business) {
+  const b = normBusiness(business);
+  if (b === 'mobile') return views.filter(v => !FIXED_VIEWS.includes(v));
+  if (b === 'fixed') return views.filter(v => !MOBILE_VIEWS.includes(v));
+  return views;
+}
 const CAPS = ['editRules','manageSync','manageUsers','unmaskPII','export','ackErrors','useYusr','customizeDashboard'];
 // human labels for the permissions matrix UI
 const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS', workbench:'L2 Workbench', alerts:'Alerts',
@@ -223,4 +241,4 @@ function maskDeep(obj, allowUnmask) {
   return walk(obj);
 }
 
-module.exports = { ROLES, LEGACY_VIEW, FIXED_LEGACY, FIXED_TAB_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS, FIXED_ENABLED, FIXED_VIEWS };
+module.exports = { ROLES, LEGACY_VIEW, FIXED_LEGACY, FIXED_TAB_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS, FIXED_ENABLED, FIXED_VIEWS, BUSINESSES, BUSINESS_LABEL, MOBILE_VIEWS, normBusiness, scopeViews };

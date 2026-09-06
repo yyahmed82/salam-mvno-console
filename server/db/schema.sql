@@ -179,6 +179,9 @@ ALTER TABLE console_users ADD COLUMN IF NOT EXISTS mail_report boolean NOT NULL 
 ALTER TABLE console_users ADD COLUMN IF NOT EXISTS mail_alert  boolean NOT NULL DEFAULT false;
 ALTER TABLE console_users ADD COLUMN IF NOT EXISTS tour_seen   boolean NOT NULL DEFAULT false;
 ALTER TABLE console_users ADD COLUMN IF NOT EXISTS last_login  timestamptz;
+-- business scope (6 Sep 2026): which side of the console the user works on — 'mobile' | 'fixed' | 'both'.
+-- Applied on top of roles: a role's views are intersected with the business at session time (roles.scopeViews).
+ALTER TABLE console_users ADD COLUMN IF NOT EXISTS business    text NOT NULL DEFAULT 'both';
 
 -- prod → local replica incremental-sync progress (one row per table)
 CREATE TABLE IF NOT EXISTS prod_sync_state (

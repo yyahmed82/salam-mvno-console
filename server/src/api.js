@@ -96,13 +96,17 @@ app.use(async (req, _res, next) => {
   // hidden root tier — env-only membership, independent of roles (see ROOT_SET below)
   req.isRoot = !!email && ROOT_SET.has(String(email).toLowerCase());
   let names = [];                                  // no session → NO access (not viewer-by-default)
+  let business = 'both';                           // business scope of the user (console_users.business)
   if (email) {
     names = ['report_manager'];                    // registered fallback role
     try {
-      const r = await C.query(`SELECT roles, role FROM console_users WHERE email=$1 AND enabled=true`, [email]);
-      if (r.rowCount) { const row = r.rows[0]; names = (row.roles && row.roles.length) ? row.roles : [row.role]; }
+      const r = await C.query(`SELECT roles, role, business FROM console_users WHERE email=$1 AND enabled=true`, [email]);
+      if (r.rowCount) { const row = r.rows[0]; names = (row.roles && row.roles.length) ? row.roles : [row.role]; business = roles.normBusiness(row.business); }
     } catch (e) {}
   }
+  // super admins and the root tier always see both businesses — a scope can never lock the operator out
+  if (names.includes('super_admin') || req.isRoot) business = 'both';
+  req.business = business;
   const rmap = rolePerms.current();   // code defaults merged with super-admin's saved overrides
   const realEff = roles.effective(names, rmap);
   req.realRoles = realEff.roles;
@@ -113,7 +117,17 @@ app.use(async (req, _res, next) => {
   req.roleNames = eff.roles;
   req.roleName = eff.primary;
   req.caps = eff.caps;
-  req.views = eff.views;
+  req.views = roles.scopeViews(eff.views, business);   // role ∩ business — every requireView gate follows
+  next();
+});
+// Business scope, API side. Fixed-only sessions may call only the Fixed API and the shared surfaces
+// (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
+// through the stripped views (every Fixed route is requireView-gated). Kept as an allow-list so a new
+// Mobile endpoint is closed for the Fixed team by default.
+const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck)/;
+app.use('/api/', (req, res, next) => {
+  if (req.business === 'fixed' && !FIXED_TEAM_ALLOW.test(req.originalUrl.split('?')[0]))
+    return res.status(403).json({ error: 'Not available for the Fixed team — this endpoint belongs to the Mobile side.', business: 'fixed' });
   next();
 });
 // Global gate: every /api/* call requires a valid session, except auth + liveness probes.
@@ -306,6 +320,7 @@ app.get('/api/me', async (req, res) => {
     // While ROOT_ADMINS is unset it reports true so the client falls back to today's role-based
     // visibility (matches the server-side failsafe in requireRoot).
     root: ROOT_SET.size ? !!req.isRoot : true,
+    business: req.business || 'both', businessLabel: roles.BUSINESS_LABEL[req.business || 'both'],
     views: req.views, caps: req.caps, features, fixedTabViews: roles.FIXED_TAB_VIEW || {} });
 });
 // interface feature flags — read (any signed-in user) + update (admins)
@@ -387,18 +402,23 @@ app.post('/api/users', requireCap('manageUsers'), async (req, res) => {
   const primary = roles.effective(rolesArr, rolePerms.current()).primary;
   if (await wouldOrphanSuper({ email, willBeSuper: IS_SUPER(primary, rolesArr), willBeEnabled: true }))
     return res.status(400).json({ error: LAST_SUPER_MSG });
+  const business = roles.normBusiness(b.business);
   await C.query(
-    `INSERT INTO console_users (email,name,mobile,role,roles,tags,mail_report,mail_alert) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    `INSERT INTO console_users (email,name,mobile,role,roles,tags,mail_report,mail_alert,business) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, mobile=EXCLUDED.mobile, role=EXCLUDED.role, roles=EXCLUDED.roles, tags=EXCLUDED.tags,
-         mail_report=EXCLUDED.mail_report, mail_alert=EXCLUDED.mail_alert`,
-    [email, b.name || null, b.mobile || null, primary, rolesArr, tags, !!b.mail_report, !!b.mail_alert]);
-  await audit(req, 'user.upsert', email, { roles: rolesArr });
+         mail_report=EXCLUDED.mail_report, mail_alert=EXCLUDED.mail_alert, business=EXCLUDED.business`,
+    [email, b.name || null, b.mobile || null, primary, rolesArr, tags, !!b.mail_report, !!b.mail_alert, business]);
+  await audit(req, 'user.upsert', email, { roles: rolesArr, business });
   res.json({ ok: true });
 });
 app.patch('/api/users/:id', requireCap('manageUsers'), async (req, res) => {
-  const { role, roles: rolesArr, enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen } = req.body || {};
+  const { role, roles: rolesArr, enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen, business } = req.body || {};
   const sets = [], vals = [];
   const fields = { enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen };
+  if (business !== undefined && business !== null) {
+    if (!roles.BUSINESSES.includes(String(business))) return res.status(400).json({ error: 'business must be mobile | fixed | both' });
+    fields.business = String(business);
+  }
   if (Array.isArray(rolesArr)) { const list = rolesArr.length ? rolesArr : ['report_manager']; fields.roles = list; fields.role = roles.effective(list, rolePerms.current()).primary; }
   else if (role) { fields.role = role; fields.roles = [role]; }
   // block demoting/disabling the last Super Admin
@@ -3328,7 +3348,7 @@ app.post('/api/assist/chat', requireCap('useYusr'), async (req, res) => {
     const { message, history } = req.body || {};
     const allowUnmask = !!(req.caps && req.caps.unmaskPII);
     const t0 = Date.now();
-    const out = await assist.chat({ message, history, allowUnmask });
+    const out = await assist.chat({ message, history, allowUnmask, business: req.business || 'both' });
     const ms = Date.now() - t0;
     if (out.error) return res.status(400).json(out);
     // ms + llmError feed the Settings→Yusr KPI panel (aggregated from audit_log; question text is

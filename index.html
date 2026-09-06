@@ -297,6 +297,12 @@
   .um-check{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer;user-select:none}
   .um-check input{width:15px;height:15px;accent-color:var(--green);cursor:pointer}
   .um-tags{display:flex;flex-wrap:wrap;gap:8px}
+  .um-biz{display:inline-flex;gap:4px;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--bg)}
+  .bizchip{border:0;background:transparent;color:var(--muted);border-radius:999px;padding:5px 12px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s,color .15s,box-shadow .15s;white-space:nowrap}
+  .um-biz.mini .bizchip{padding:3px 9px;font-size:11px}
+  .bizchip:hover{color:var(--ink)} .bizchip.on{color:#fff;box-shadow:0 2px 8px rgba(2,6,23,.15)}
+  .bizchip.mobile.on{background:#7c3aed} .bizchip.fixed.on{background:var(--green)} .bizchip.both.on{background:linear-gradient(90deg,#7c3aed,var(--green))}
+  .tkb-tabs.one{grid-template-columns:1fr} .tkb-tabs.one .tkb-tab{cursor:default} .tkb-tabs.one .tkb-tab:hover{transform:none;box-shadow:0 0 0 4px var(--soft)}
   .tagchip{border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:20px;padding:4px 12px;
     font-size:10.5px;letter-spacing:.6px;font-weight:800;cursor:pointer;opacity:.55}
   .tagchip.on{opacity:1;color:#fff}
@@ -702,7 +708,7 @@
   .tkm-btn.primary{background:var(--acc);border-color:var(--acc);color:#fff} .tkm-btn.primary:hover{filter:brightness(1.06)} .tkm-btn:disabled{opacity:.6;cursor:default;transform:none}
   .tkm-hint{margin-left:auto;font-size:11px;color:var(--muted)}
   @media (max-width:560px){.tkb-tabs,.tkk-row{grid-template-columns:1fr}}
-  .tk-seg{display:inline-block;font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 7px;white-space:nowrap}.tk-seg-mobile{background:rgba(37,99,235,.1);color:#1d4ed8}.tk-seg-fixed{background:rgba(14,159,90,.12);color:#0e9f5a}
+  .tk-seg{display:inline-block;font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 7px;white-space:nowrap}.tk-seg-mobile{background:rgba(124,58,237,.12);color:#6d28d9}.tk-seg-fixed{background:rgba(14,159,90,.12);color:#0e9f5a}
   .rm-sep-fixed{background:rgba(14,159,90,.08)!important;color:var(--green)!important}.rm-col-fixed{background:rgba(14,159,90,.04)}
   .rm-tbl th.rm-role,.rm-tbl td.rm-role{text-align:left;white-space:nowrap;position:sticky;left:0;background:var(--card);z-index:1}
   .rm-tbl td.rm-role small{display:block;color:var(--muted);font-size:10px;font-weight:600}
@@ -1375,65 +1381,65 @@
 <div id="ruleModal" class="modal-overlay"><div class="modal-card" id="ruleModalCard" style="max-width:560px"></div></div>
 <div id="panelModal" class="modal-overlay"><div class="modal-card" id="panelModalCard" style="max-width:720px"></div></div>
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
-<script src="base.js?v=20260906n"></script>
-<script src="navdrop.js?v=20260906n" defer></script>
-<script src="ksatime.js?v=20260906n"></script>
-<script src="data.js?v=20260906n"></script>
-<script src="data2.js?v=20260906n"></script>
-<script src="samples.js?v=20260906n"></script>
-<script src="samples2.js?v=20260906n"></script>
-<script src="apidocs.js?v=20260906n"></script>
-<script src="xlsxout.js?v=20260906n"></script>
-<script src="persist.js?v=20260906n"></script>
-<script src="app.js?v=20260906n"></script>
-<script src="uinav.js?v=20260906n"></script>
-<script src="alertsview.js?v=20260906n"></script>
-<script src="ops.js?v=20260906n"></script>
-<script src="opsbar.js?v=20260906n"></script>
-<script src="analytics.js?v=20260906n"></script>
-<script src="topo2data.js?v=20260906n"></script>
-<script src="topology2.js?v=20260906n"></script>
-<script src="tapdocs.js?v=20260906n"></script>
-<script src="screensflow.js?v=20260906n"></script>
-<script src="home.js?v=20260906n"></script>
-<script src="monitoring.js?v=20260906n"></script>
-<script src="workbench.js?v=20260906n"></script>
-<script src="growth.js?v=20260906n"></script>
-<script src="dmsjourney.js?v=20260906n"></script>
-<script src="dms.js?v=20260906n"></script>
-<script src="landing.js?v=20260906n"></script>
-<script src="fixed.js?v=20260906n"></script>
-<script src="fixed-maps-ui.js?v=20260906n"></script>
-<script src="fixed-leaflet.js?v=20260906n"></script>
-<script src="fixed-map.js?v=20260906n"></script>
-<script src="fixed-qr.js?v=20260906n"></script>
-<script src="fixed-channel.js?v=20260906n"></script>
-<script src="fixed-dash.js?v=20260906n"></script>
-<script src="fixed-errors.js?v=20260906n"></script>
-<script src="fixed-alerts.js?v=20260906n"></script>
-<script src="fixed-playbook.js?v=20260906n"></script>
-<script src="fixed-diagrams.js?v=20260906n"></script>
-<script src="fixed-report.js?v=20260906n"></script>
-<script src="otodocs.js?v=20260906n"></script>
-<script src="salamdocs.js?v=20260906n"></script>
-<script src="slo.js?v=20260906n"></script>
-<script src="audit.js?v=20260906n"></script>
-<script src="notifycfg.js?v=20260906n"></script>
-<script src="notifyclone.js?v=20260906n"></script>
+<script src="base.js?v=20260906o"></script>
+<script src="navdrop.js?v=20260906o" defer></script>
+<script src="ksatime.js?v=20260906o"></script>
+<script src="data.js?v=20260906o"></script>
+<script src="data2.js?v=20260906o"></script>
+<script src="samples.js?v=20260906o"></script>
+<script src="samples2.js?v=20260906o"></script>
+<script src="apidocs.js?v=20260906o"></script>
+<script src="xlsxout.js?v=20260906o"></script>
+<script src="persist.js?v=20260906o"></script>
+<script src="app.js?v=20260906o"></script>
+<script src="uinav.js?v=20260906o"></script>
+<script src="alertsview.js?v=20260906o"></script>
+<script src="ops.js?v=20260906o"></script>
+<script src="opsbar.js?v=20260906o"></script>
+<script src="analytics.js?v=20260906o"></script>
+<script src="topo2data.js?v=20260906o"></script>
+<script src="topology2.js?v=20260906o"></script>
+<script src="tapdocs.js?v=20260906o"></script>
+<script src="screensflow.js?v=20260906o"></script>
+<script src="home.js?v=20260906o"></script>
+<script src="monitoring.js?v=20260906o"></script>
+<script src="workbench.js?v=20260906o"></script>
+<script src="growth.js?v=20260906o"></script>
+<script src="dmsjourney.js?v=20260906o"></script>
+<script src="dms.js?v=20260906o"></script>
+<script src="landing.js?v=20260906o"></script>
+<script src="fixed.js?v=20260906o"></script>
+<script src="fixed-maps-ui.js?v=20260906o"></script>
+<script src="fixed-leaflet.js?v=20260906o"></script>
+<script src="fixed-map.js?v=20260906o"></script>
+<script src="fixed-qr.js?v=20260906o"></script>
+<script src="fixed-channel.js?v=20260906o"></script>
+<script src="fixed-dash.js?v=20260906o"></script>
+<script src="fixed-errors.js?v=20260906o"></script>
+<script src="fixed-alerts.js?v=20260906o"></script>
+<script src="fixed-playbook.js?v=20260906o"></script>
+<script src="fixed-diagrams.js?v=20260906o"></script>
+<script src="fixed-report.js?v=20260906o"></script>
+<script src="otodocs.js?v=20260906o"></script>
+<script src="salamdocs.js?v=20260906o"></script>
+<script src="slo.js?v=20260906o"></script>
+<script src="audit.js?v=20260906o"></script>
+<script src="notifycfg.js?v=20260906o"></script>
+<script src="notifyclone.js?v=20260906o"></script>
 <script src="sub360.js?v=20260904b"></script>
-<script src="rolesmatrix.js?v=20260906n"></script>
-<script src="i18n.js?v=20260906n"></script>
-<script src="settingsmenu.js?v=20260906n"></script>
-<script src="tour.js?v=20260906n"></script>
-<script src="helpmenu.js?v=20260906n"></script>
-<script src="assist.js?v=20260906n"></script>
-<script src="assistcfg.js?v=20260906n"></script>
-<script src="assistclone.js?v=20260906n"></script>
-<script src="navcfg.js?v=20260906n"></script>
-<script src="tickets.js?v=20260906n"></script>
-<script src="theme.js?v=20260906n"></script>
-<script src="router.js?v=20260906n"></script>
-<script src="live.js?v=20260906n"></script>
-<script src="oncall.js?v=20260906n"></script>
+<script src="rolesmatrix.js?v=20260906o"></script>
+<script src="i18n.js?v=20260906o"></script>
+<script src="settingsmenu.js?v=20260906o"></script>
+<script src="tour.js?v=20260906o"></script>
+<script src="helpmenu.js?v=20260906o"></script>
+<script src="assist.js?v=20260906o"></script>
+<script src="assistcfg.js?v=20260906o"></script>
+<script src="assistclone.js?v=20260906o"></script>
+<script src="navcfg.js?v=20260906o"></script>
+<script src="tickets.js?v=20260906o"></script>
+<script src="theme.js?v=20260906o"></script>
+<script src="router.js?v=20260906o"></script>
+<script src="live.js?v=20260906o"></script>
+<script src="oncall.js?v=20260906o"></script>
 </body>
 </html>

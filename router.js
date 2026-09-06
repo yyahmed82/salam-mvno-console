@@ -41,6 +41,21 @@
     if(r.oncall) return (lacks("errors")&&lacks("alerts")) ? "errors" : null;   // on-call = incident roles
     return null;   // audit/sla/tickets/assist have their own root/cap gates below
   }
+  function showDeniedBiz(pageBiz,userBiz){
+    let d=document.getElementById("accessDenied");
+    if(!d){ d=document.createElement("div"); d.id="accessDenied";
+      d.style.cssText="position:fixed;inset:0;top:64px;z-index:900;background:var(--bg,#f6f8f7);display:flex;align-items:center;justify-content:center";
+      document.body.appendChild(d); }
+    const P={mobile:"📱 Mobile",fixed:"🏠 Fixed"};
+    d.innerHTML=`<div style="text-align:center;max-width:440px;padding:32px;background:var(--panel,#fff);border:1px solid var(--line,#e5e9e7);border-radius:14px">
+      <div style="font-size:34px">${pageBiz==="fixed"?"🏠":"📱"}</div>
+      <h3 style="margin:10px 0 6px">Not part of your business</h3>
+      <p style="color:var(--muted,#64748b);font-size:13.5px;line-height:1.55">This page belongs to the <b>${P[pageBiz]}</b> side of the console. Your account is scoped to <b>${P[userBiz]||userBiz}</b>.
+      If you work on both, ask an admin to set your business to <b>Mobile + Fixed</b> in User management.</p>
+      <button class="pill" id="adHome" style="border-left-color:var(--green,#0e9f5a);margin-top:8px">Go to my home page</button></div>`;
+    d.style.display="flex";
+    const b=d.querySelector("#adHome"); if(b) b.onclick=()=>{ hideDenied(); setHash("home"); };
+  }
   function showDenied(need){
     let d=document.getElementById("accessDenied");
     if(!d){ d=document.createElement("div"); d.id="accessDenied";
@@ -85,6 +100,10 @@
     hideDenied();
     const need=neededFor(r);
     if(need && lacks(need)){ showDenied(need); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (denied)"); return; }
+    // business guard (6 Sep 2026): a Mobile-only user never lands on a Fixed page and vice-versa, deep link or not
+    const bizOf=r=>{ if(r.view==="fixed") return "fixed"; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","otodocs","tapdocs","salamdocs","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
+    const biz=(sess().me||{}).business||"both", rb=bizOf(r);
+    if(rb && biz!=="both" && rb!==biz){ showDeniedBiz(rb,biz); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (outside business)"); return; }
     if(r.home){ window.opsGoHome && window.opsGoHome(); }
     else if(r.workbench){ window.openWorkbench && window.openWorkbench(); }
     else if(r.sla){ window.openSla && window.openSla(); }

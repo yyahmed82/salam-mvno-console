@@ -45,7 +45,11 @@
   }
 
   async function load(){
-    const canM=views().includes("dashboard"), canF=views().includes("fixed");
+    const biz=(sess().me||{}).business||"both";
+    const canM=views().includes("dashboard")&&biz!=="fixed", canF=views().includes("fixed")&&biz!=="mobile";
+    // a single-business account sees a single-column home; the other column is removed, not greyed
+    const mc=$("#ldMobile"), fc=$("#ldFixed"); if(mc) mc.hidden=(biz==="fixed"); if(fc) fc.hidden=(biz==="mobile");
+    const sub=$(".ld-sub"); if(sub&&biz!=="both") sub.textContent=sub.textContent.replace("one console, both businesses", biz==="fixed"?"Fixed business":"Mobile business");
     const P=(p,fb)=>api(p).catch(()=>fb);
     const now=Date.now(), d7=7*864e5;
     const [m24,m7,noc,anoms,al,f24,f7,f7p,f30,merr]=await Promise.all([

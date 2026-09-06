@@ -34,9 +34,11 @@
   async function load(){
     const box=$("#sbBody"); if(!box) return; box.innerHTML=`<div class="sub">Loading profile…</div>`;
     // both businesses in parallel — the Fixed lookup is optional (feature-gated on the server)
+    // business scope: only the side(s) the user works on are looked up (the server 403s the other side anyway)
+    const biz=((window.opsSession&&window.opsSession())||{}).me?.business||"both";
     const [dr,fr]=await Promise.allSettled([
-      api("/api/subscriber?key="+encodeURIComponent(curKey)+(unmasked?"&unmask=1":"")),
-      api("/api/fixed/customer?key="+encodeURIComponent(curKey)+(unmasked?"&unmask=1":""))
+      biz==="fixed"?Promise.resolve({found:false,scoped:true}):api("/api/subscriber?key="+encodeURIComponent(curKey)+(unmasked?"&unmask=1":"")),
+      biz==="mobile"?Promise.resolve({found:false,scoped:true}):api("/api/fixed/customer?key="+encodeURIComponent(curKey)+(unmasked?"&unmask=1":""))
     ]);
     if(dr.status!=="fulfilled"){ box.innerHTML=`<div class="albanner">${esc(dr.reason&&dr.reason.message||"lookup failed")}</div>`; return; }
     const d=dr.value; curFixed=(fr.status==="fulfilled")?fr.value:{found:false,error:(fr.reason&&fr.reason.message)||""};
@@ -44,7 +46,7 @@
     if(!d.found){
       if(hasFixed){ box.innerHTML=fixedHead(curFixed)+`<div class="sbt-pane" data-tab="fixed">${fixedPane(curFixed)}</div>`; wireFixed(box);
         const ub=$("#sbUnmask"); if(ub) ub.addEventListener("click",()=>{ unmasked=!unmasked; load(); }); return; }
-      box.innerHTML=`<div class="okbox">No customer found for “${esc(curKey)}” on either side. Mobile: MSISDN in intl format (9665…) or National ID. Fixed: service/account number, customer code or ID, order number, 5G number or ICCID.${curFixed&&curFixed.error?`<div class="rl" style="color:var(--muted);margin-top:6px">Fixed lookup: ${esc(curFixed.error)}</div>`:""}</div>`; return; }
+      box.innerHTML=`<div class="okbox">No customer found for “${esc(curKey)}”${biz==="both"?" on either side":biz==="fixed"?" on the Fixed side":" on the Mobile side"}. Mobile: MSISDN in intl format (9665…) or National ID. Fixed: service/account number, customer code or ID, order number, 5G number or ICCID.${curFixed&&curFixed.error?`<div class="rl" style="color:var(--muted);margin-top:6px">Fixed lookup: ${esc(curFixed.error)}</div>`:""}</div>`; return; }
     curLines = d.lines || [];
     /* CALL-CENTER LAYOUT (4 Sep 2026 redesign): one STICKY header (who is this + line selector +
      * gateway health + tabs — always visible while scrolling) over five task-focused tabs.
@@ -874,7 +876,7 @@
       .svc-cards{display:flex;gap:8px;flex-wrap:wrap}
       .svc{display:inline-flex;align-items:center;gap:9px;padding:7px 11px 7px 9px;border:1px solid var(--line);border-radius:12px;background:var(--card,#fff);color:var(--ink);font:inherit;cursor:pointer;text-align:left;min-width:220px;transition:transform .15s cubic-bezier(.2,.8,.2,1),box-shadow .15s,border-color .15s,background .15s;position:relative;overflow:hidden}
       .svc::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line)}
-      .svc.mob::before{background:#2563eb} .svc.fix::before{background:var(--green,#0e9f5a)}
+      .svc.mob::before{background:#7c3aed} .svc.fix::before{background:var(--green,#0e9f5a)}
       .svc:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(2,6,23,.10);border-color:color-mix(in srgb,var(--green,#0e9f5a) 45%,var(--line))}
       .svc:active{transform:none} .svc:focus-visible{outline:2px solid var(--green,#0e9f5a);outline-offset:2px}
       .svc.sel{background:var(--green-bg,#e8f7f0);border-color:var(--green,#0e9f5a);box-shadow:0 0 0 3px rgba(14,159,90,.12)}

@@ -3,6 +3,18 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.11] — 2026-09-06 — business scope per user
+### Added
+- **Business scope** — every user is Mobile (MVNO team), Fixed or both (`console_users.business`, default both).
+  Roles say *what*, business says *on which side*; the two are intersected once at session time
+  (`roles.scopeViews`) so the API gates, navigation, router, Home, Customer 360, Yusr, the ticket modal and the
+  guided tour all follow. Fixed-only sessions additionally get an API allow-list (Mobile endpoints answer 403).
+  Deep links to the other side show "Not part of your business". Set per user in Settings → Users (BUSINESS
+  control, also on the new-user card). Design: `docs/BUSINESS-SCOPE.md`.
+### Changed
+- Mobile accent is now **violet** (`#7c3aed`) next to Fixed green — ticket modal, ticket board pill, Business
+  control, Customer 360 services strip.
+
 ## [2.0.0-alpha.10] — 2026-09-06 — map pages redesigned
 ### Changed
 - **Fixed hub bar carries no filters any more** — the Channel / Range chips under the page title are gone. Channel is always
