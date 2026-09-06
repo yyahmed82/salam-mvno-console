@@ -11,7 +11,7 @@
   const TEAMS=["OSS","IDENTITY","BSS","CLIENT","PLATFORM"];
   const TEAM_COLOR={OSS:"#dc2626",IDENTITY:"#d97706",BSS:"#2563eb",CLIENT:"var(--muted)",PLATFORM:"var(--muted)"};
   const PRIO_COLOR=["#dc4c4c","#dc4c4c","#d29922","#7d8590","#7d8590"];
-  const TONE={red:{bg:"rgba(220,76,76,.16)",fg:"#dc2626"},amber:{bg:"rgba(210,153,34,.16)",fg:"#b45309"},muted:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"}};
+  const TONE={red:{bg:"rgba(220,76,76,.16)",fg:"#dc2626"},amber:{bg:"rgba(210,153,34,.16)",fg:"var(--warn-fg)"},muted:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"}};
   const ID_FIELDS=[["serviceNo","Service no. (FTTH… / 5G no.)"],["odb","ODB / plate no (ODB: prefix ok)"],["iccid","SIM ICCID"],["cpe","CPE serial"],["msisdn","MSISDN / mobile"],["custCode","Customer code (custCode)"],["customerId","Customer ID"],["workflowId","Workflow ID (wf_st_…)"]];
   const LS=k=>{ try{ return localStorage.getItem(k); }catch(e){ return null; } };
   const S={ win:LS("fixed_err_win")||"today", channel:"", hubSeen:undefined, openOnly:true, team:"", prio:"", category:"", tech:"all", find:"", ids:{}, expanded:null, timer:null, tick:0 };
@@ -63,13 +63,13 @@
     #fxErr tr.fe-row.open td{background:var(--card2,#f8fafc)} #fxErr tr.fe-row:focus-visible{outline:2px solid var(--green,#0e9f5a);outline-offset:-2px}
     #fxErr .fe-caret{display:inline-block;color:var(--muted);font-size:12px;margin-left:8px;transition:transform .15s,color .15s} #fxErr tr.fe-row:hover .fe-caret{color:var(--green,#0e9f5a)} #fxErr tr.fe-row.open .fe-caret{transform:rotate(90deg);color:var(--green,#0e9f5a)}
     #fxErr .fe-link{color:var(--green,#0e9f5a);font-weight:700;text-decoration:underline;text-underline-offset:3px} #fxErr .fe-link small{font-size:10px;color:var(--muted);font-weight:600}
-    #fxErr .fe-st{font-size:12px;font-weight:700} #fxErr .fe-st.open{color:#b45309} #fxErr .fe-st.acked{color:#2563eb} #fxErr .fe-st.resolved{color:var(--green,#0e9f5a)}
+    #fxErr .fe-st{font-size:12px;font-weight:700} #fxErr .fe-st.open{color:var(--warn-fg)} #fxErr .fe-st.acked{color:#2563eb} #fxErr .fe-st.resolved{color:var(--green,#0e9f5a)}
     #fxErr .fe-x td{padding:14px 16px 18px;background:var(--card,#fff)}
     #fxErr .fe-xgrid{display:grid;gap:12px;font-size:13px} #fxErr .fe-what{font-size:13px} #fxErr .fe-what .k{color:var(--muted)}
     #fxErr .fe-io{display:grid;gap:12px;grid-template-columns:1fr 1fr} @media (max-width:900px){#fxErr .fe-io{grid-template-columns:1fr}}
     #fxErr .fe-io h5{margin:0 0 6px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
     #fxErr .fe-io pre{margin:0;max-height:240px;overflow:auto;background:var(--card2,#f8fafc);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
-    #fxErr .fe-pii{font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:999px;border:1px solid #b7791f;color:#b45309;background:rgba(217,119,6,.08)}
+    #fxErr .fe-pii{font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:999px;border:1px solid #b7791f;color:var(--warn-fg);background:rgba(217,119,6,.08)}
     #fxErr .fe-sim{border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:var(--card2,#f8fafc)} #fxErr .fe-sim b.t{display:block;font-size:13px;margin-bottom:6px} #fxErr .fe-sim .f{display:flex;flex-wrap:wrap;gap:18px;font-size:12.5px} #fxErr .fe-sim .f span span{color:var(--muted)}
     #fxErr .fe-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     #fxErr .fe-empty{padding:16px;color:var(--muted);font-size:13px}
@@ -193,7 +193,7 @@
         <div class="f"><span><b>${fmt(sim.d30)}</b> in 30d <span>(${fmt(sim.d7)} in 7d · ${fmt(sim.all)} ever)</span></span><span>last seen <b>${esc(rel(sim.lastSeen))}</b></span><span>affected today <b>${fmt(sim.affectedToday)}</b></span><span>median resolve <b>${sim.medianResolveMins!=null?sim.medianResolveMins+"m":"—"}</b></span>${sim.biggestDay?`<span>biggest day <b>${esc(sim.biggestDay.day)}</b> (${fmt(sim.biggestDay.count)})</span>`:""}</div></div>
       <div class="fe-actions">
         ${d.event.attempt_id?`<button id="feTrace" class="fe-btn">Open full trace → <span style="color:var(--muted);font-weight:500">(${tl.length} calls)</span></button>`:""}
-        ${c.unmaskPII&&d.event.attempt_id?`<button id="feUnmask" class="fe-btn" style="border-color:#b7791f;color:#b45309" ${d.unmaskAvailable?"":"disabled title='NEXUS_DATABASE_URL not configured'"}>🔓 Unmask (audited)</button>`:""}
+        ${c.unmaskPII&&d.event.attempt_id?`<button id="feUnmask" class="fe-btn" style="border-color:#b7791f;color:var(--warn-fg)" ${d.unmaskAvailable?"":"disabled title='NEXUS_DATABASE_URL not configured'"}>🔓 Unmask (audited)</button>`:""}
         ${c.ackErrors&&!d.event.resolved?`<button id="feAck" class="fe-btn">${d.event.acked?"Un-ack":"Ack"}</button>`:""}
         ${d.event.acked?`<span class="rl" style="font-size:10.5px;color:var(--muted)">acked by ${esc(d.event.acked_by||"")}</span>`:""}
         <span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:auto">attempt <span class="mono">${esc(d.event.attempt_id||"—")}</span> · event <span class="mono">${esc(d.event.id)}</span></span></div>

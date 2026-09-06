@@ -53,10 +53,10 @@
     const kd=iso=>new Date(new Date(iso).getTime()+KSA).toISOString().slice(0,10);
     const wNow=win();
     const dIn=id=>`<input id="${id}" type="date" value="${esc(range.mode==="custom"?(range[id==="dmsRF"?"from":"to"]||""):kd(id==="dmsRF"?wNow.from:wNow.to))}" style="font:inherit;font-size:11.5px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit">`;
-    host.innerHTML=`<div style="padding:0 18px 40px;max-width:1440px;margin:0 auto">
+    host.innerHTML=`<div class="fx-hub" style="padding:0 var(--fx-pad,18px) 40px;max-width:1440px;margin:0 auto">
       <!-- STICKY RANGE BAR — same pattern as the Dashboard: the range follows you down the page,
            and EVERY section below (journeys, business, map/roster) obeys it. -->
-      <div style="position:sticky;top:0;z-index:26;background:var(--card,#fff);border-bottom:1px solid var(--line);box-shadow:0 4px 14px rgba(15,23,42,.05);margin:0 -18px 14px;padding:10px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div class="fx-hubbar" style="position:sticky;top:var(--hdr);z-index:26;background:var(--card);border-bottom:1px solid var(--line);box-shadow:0 4px 14px rgba(15,23,42,.05);margin:0 calc(-1*var(--fx-pad,18px)) 14px;padding:10px var(--fx-pad,18px);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div><h2 style="margin:0;font-size:16px">DMS · Dealer operations</h2>
           <div class="rl" style="font-size:10.5px;color:var(--muted)">dealers end to end · DMS app + hybrid portal (mobile.salammobile.sa) · UIL/gateway → Monitoring</div></div>
         <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -136,7 +136,7 @@
     $("#cmGo").onclick=async()=>{
       out.innerHTML=`<div class="rl">Querying the DMS cluster…</div>`;
       let d; try{ d=await api(`/api/dms/commission/report?${qs()}`); }
-      catch(e){ out.innerHTML=`<div class="rl" style="color:#b45309">${esc(e.message)}</div>`; return; }
+      catch(e){ out.innerHTML=`<div class="rl" style="color:var(--warn-fg)">${esc(e.message)}</div>`; return; }
       const T=d.totals, pct=T.total?Math.round(100*T.with_commission/T.total):0;
       const chip=(l,v,c)=>`<div class="stat" style="min-width:120px"><b style="${c?`color:${c}`:""}">${v}</b><span>${esc(l)}</span></div>`;
       const pMax=Math.max(1,...d.byPlan.map(x=>Number(x.n)));
@@ -216,9 +216,9 @@
     // show the cluster we are actually reading, and which node answered — the VIP balances
     api("/api/dms/db-health").then(h=>{
       const el=$("#d360db"); if(!el) return;
-      if(!h.configured){ el.innerHTML=`<span style="color:#b45309">DMS DB not configured</span>`; return; }
+      if(!h.configured){ el.innerHTML=`<span style="color:var(--warn-fg)">DMS DB not configured</span>`; return; }
       el.innerHTML=h.ok
-        ? `<span style="color:#16a34a">●</span> ${esc(h.host||"")} · Galera ${esc((h.galera&&h.galera.wsrep_cluster_size)||"?")} · ${h.ms} ms`
+        ? `<span style="color:var(--good)">●</span> ${esc(h.host||"")} · Galera ${esc((h.galera&&h.galera.wsrep_cluster_size)||"?")} · ${h.ms} ms`
         : `<span style="color:#dc2626">● ${esc(h.error||"unreachable")}</span>`;
     }).catch(()=>{});
     const inp=$("#d360q"), go=$("#d360go"), out=$("#d360out"), mbtn=$("#d360mask");
@@ -283,7 +283,7 @@
         if(!s.ok){ msg.innerHTML=`<span style="color:#dc2626">${esc(s.error||"unavailable")}</span>`
             +(s.fix?`<div style="color:var(--muted);font-size:10px;white-space:normal;max-width:640px">${esc(s.fix)}</div>`:""); return; }
         const T=s.totals||{}, m=v=>Number(v||0).toLocaleString();
-        msg.innerHTML=`<b>${m(s.count)}</b> rows · in <b style="color:#16a34a">${m(T.in)}</b> · out <b style="color:#dc2626">${m(T.out)}</b>`
+        msg.innerHTML=`<b>${m(s.count)}</b> rows · in <b style="color:var(--good)">${m(T.in)}</b> · out <b style="color:#dc2626">${m(T.out)}</b>`
           +` · commission <b>${m(T.commission)}</b> · closing <b>${m(T.closing)}</b>`
           +` <span style="color:var(--muted)">· ${esc((s.by_type||[]).map(x=>`${x.type} ${x.count}`).join(" · "))}`
           +`${(s.by_status||[]).length>1?" · status: "+esc(s.by_status.map(x=>`${x.status} ${x.count}`).join(", ")):""}</span>`
@@ -314,7 +314,7 @@
         const url=URL.createObjectURL(blob);
         const a=document.createElement("a"); a.href=url; a.download=m?m[1]:"statement.xlsx";
         document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000);
-        msg.innerHTML=`<span style="color:#16a34a">saved ${esc(a.download)} · ${(blob.size/1024).toFixed(0)} KB</span>`;
+        msg.innerHTML=`<span style="color:var(--good)">saved ${esc(a.download)} · ${(blob.size/1024).toFixed(0)} KB</span>`;
         if(window.audit) window.audit("DEALER_STATEMENT_XLSX",(inp.value||"").trim().slice(0,40));
       }catch(e){ msg.innerHTML=`<span style="color:#dc2626">${esc(e.message)}</span>`; }
       finally{ xls.disabled=false; }
@@ -378,17 +378,17 @@
         <option value="">all</option>${(opts||[]).map(o=>`<option value="${esc(o.value)}"${_boardState[key]===o.value?" selected":""}>${esc(o.value)} (${o.count})</option>`).join("")}
       </select></label>`;
     const SORTL=[["earned","Top earners"],["unpaid","Most unpaid"],["deals","Most deals"],["paid","Most paid"],["newest","Newest"],["name","Code A–Z"]];
-    const tone=t=>t==="bad"?"#dc2626":t==="warn"?"#b45309":"#16a34a";
+    const tone=t=>t==="bad"?"#dc2626":t==="warn"?"var(--warn-fg)":"#16a34a";
     const rows=(d.rows||[]).map(r=>`<tr class="d360row" data-code="${esc(r.dealer_code||r.username||"")}" style="cursor:pointer">
       <td class="mono" style="font-weight:700">${esc(r.dealer_code||"—")}</td>
       <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name||r.username||"—")}</td>
       <td style="font-size:10.5px">${esc(r.dealer_type||"—")}</td>
-      <td style="font-size:10.5px;color:${r.status&&/active/i.test(r.status)?"#16a34a":"#b45309"}">${esc(r.status||"—")}</td>
+      <td style="font-size:10.5px;color:${r.status&&/active/i.test(r.status)?"#16a34a":"var(--warn-fg)"}">${esc(r.status||"—")}</td>
       <td style="text-align:right">${money(r.deals)}</td>
       <td style="text-align:right;font-weight:700">${money(r.earned)}</td>
       <td style="text-align:right;color:${r.paid===0&&r.earned>0?"#dc2626":"inherit"}">${money(r.paid)}</td>
       <td style="text-align:right;font-weight:700;color:${r.unpaid>0?"#dc2626":"#16a34a"}">${money(r.unpaid)}</td>
-      <td style="font-size:10.5px">${r.last_login?esc(KT.d(r.last_login)):'<span style="color:#b45309">never</span>'}</td>
+      <td style="font-size:10.5px">${r.last_login?esc(KT.d(r.last_login)):'<span style="color:var(--warn-fg)">never</span>'}</td>
       <td>${(r.badges||[]).slice(0,3).map(b=>`<span style="display:inline-block;font-size:9px;font-weight:800;border:1px solid ${tone(b.tone)};color:${tone(b.tone)};border-radius:999px;padding:1px 7px;margin:1px 2px 1px 0">${esc(b.label)}</span>`).join("")}</td></tr>`).join("");
     wrap.innerHTML=`<div class="topo-card" style="padding:10px 12px;background:var(--card,#fff)">
       <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
@@ -434,7 +434,7 @@
     const card=(title,accent,body,foot)=>`<div style="flex:1 1 300px;min-width:280px;border:1px solid var(--line);border-left:4px solid ${accent};border-radius:12px;padding:10px 13px;background:var(--card,#fff)">
       <div style="font-size:10.5px;font-weight:800;letter-spacing:.05em;color:${accent};margin-bottom:6px">${esc(title)}</div>${body}
       ${foot?`<div class="rl" style="font-size:10px;color:var(--muted);white-space:normal;margin-top:6px">${esc(foot)}</div>`:""}</div>`;
-    const onoff=b=>b==null?'<span style="color:var(--muted)">—</span>':(b?'<span style="color:#16a34a">on</span>':'<span style="color:#94a3b8">off</span>');
+    const onoff=b=>b==null?'<span style="color:var(--muted)">—</span>':(b?'<span style="color:var(--good)">on</span>':'<span style="color:#94a3b8">off</span>');
     const money=v=>v==null?"—":Number(v).toLocaleString();
 
     const warn=(S.warnings||[]).length
@@ -452,20 +452,20 @@
       (P.deactivation_reason?kv("deactivated",esc(P.deactivation_reason),"#dc2626"):""));
 
     const sec=card("SECURITY","#7c3aed",
-      kv("QR",`${onoff(S.qr_enabled)}${S.login_without_qr?' · <span style="color:#b45309">login without QR allowed</span>':""}`)+
+      kv("QR",`${onoff(S.qr_enabled)}${S.login_without_qr?' · <span style="color:var(--warn-fg)">login without QR allowed</span>':""}`)+
       kv("device reg.",`${onoff(S.device_registration)} · max ${S.max_devices??"—"}`)+
       kv("max sessions",S.max_sessions??"—")+
       kv("VPN / finger",`${onoff(S.vpn)} / ${onoff(S.fingerprint)}`)+
       kv("IAM tok / OTP",`${onoff(S.iam_token)} / ${onoff(S.iam_otp)}`)+
       kv("Absher",onoff(S.absher))+
-      kv("Semati/Nafath",S.semati_nafath_bypass?'<span style="color:#dc2626">BYPASSED</span>':'<span style="color:#16a34a">enforced</span>'),
+      kv("Semati/Nafath",S.semati_nafath_bypass?'<span style="color:#dc2626">BYPASSED</span>':'<span style="color:var(--good)">enforced</span>'),
       "Semati/Nafath is the regulator-required identity check. A bypass here is a deliberate exception.");
 
     const ses=card("SESSIONS","#0891b2",
       SE.available
         ? kv("last login",SE.last_login?esc(KT.dt(SE.last_login)):"—")+
           kv("last logout",SE.last_logout?esc(KT.dt(SE.last_logout)):"—")+
-          kv("open now",SE.open_now?'<span style="color:#16a34a">YES</span>':(SE.dangling_no_logout?'<span style="color:#b45309">no — logout never written</span>':"no"))+
+          kv("open now",SE.open_now?'<span style="color:var(--good)">YES</span>':(SE.dangling_no_logout?'<span style="color:var(--warn-fg)">no — logout never written</span>':"no"))+
           kv("logout coverage",esc(SE.logout_coverage||"—"))
         : `<div class="rl" style="font-size:11px">${esc(SE.why||SE.error||"not available")}</div>`,
       SE.available?SE.note:null);
@@ -511,7 +511,7 @@
         ? kv("seller id",AS.seller.id)+kv("username",esc(AS.seller.username||"—"))+
           (AS.mismatches&&AS.mismatches.length
             ? AS.mismatches.map(m=>`<div style="font-size:11px;color:#d97706">⚠ ${esc(m.field)}: DMS “${esc(m.dms)}” vs app “${esc(m.app)}”</div>`).join("")
-            : `<div style="font-size:11.5px;color:#16a34a;font-weight:700">✓ fields agree</div>`)
+            : `<div style="font-size:11.5px;color:var(--good);font-weight:700">✓ fields agree</div>`)
         : `<div class="rl" style="font-size:11px;white-space:normal">${esc(AS.note||"no match")}</div>`);
 
     return warn+`<div style="display:flex;gap:10px;flex-wrap:wrap">${prof}${sec}${ses}${wal}${com}${stk}${act}${app}</div>`;
@@ -556,7 +556,7 @@
     const mixBar=tot?`<div style="border-radius:6px;overflow:hidden;white-space:nowrap;font-size:0;margin:10px 0 4px">${seg(m.activated,"#10b981")}${seg(m.awaiting_activation,"#d97706")}${seg(m.in_progress,"#94a3b8")}${seg(m.archived,"#64748b")}</div>
       <div class="rl" style="font-size:10.5px;color:var(--muted);margin-bottom:8px">
         <span style="color:#10b981">● activated ${n(m.activated)}</span> · <span style="color:#d97706">● awaiting activation ${n(m.awaiting_activation)}</span>
-        · <span style="color:#94a3b8">● in progress ${n(m.in_progress)}</span>${m.archived?` · <span style="color:#64748b">● archived ${n(m.archived)}</span>`:""}</div>`:"";
+        · <span style="color:#94a3b8">● in progress ${n(m.in_progress)}</span>${m.archived?` · <span style="color:var(--muted)">● archived ${n(m.archived)}</span>`:""}</div>`:"";
     // needs attention
     const att=[];
     if(d.stagnant_dealers) att.push(`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)">
@@ -573,7 +573,7 @@
     }
     const topRows=(d.top_dealers||[]).map(x=>`<div style="display:flex;gap:8px;padding:3px 0;border-top:1px solid var(--line);font-size:11.5px">
       <span style="flex:1;font-weight:600">${esc(x.name||"—")}</span>
-      <span class="mono">${n(x.placed)}</span><span class="mono" style="color:#16a34a;font-weight:700;min-width:26px;text-align:right">${n(x.done)}</span></div>`).join("");
+      <span class="mono">${n(x.placed)}</span><span class="mono" style="color:var(--good);font-weight:700;min-width:26px;text-align:right">${n(x.done)}</span></div>`).join("");
     const go=(id,l,s)=>`<button class="pill dms-goto" data-go="${id}" style="padding:7px 14px;text-align:left"><b style="font-size:12px">${esc(l)}</b><br><span class="rl" style="font-size:10px;color:var(--muted)">${esc(s)}</span></button>`;
     box.innerHTML=`
       <div style="margin-bottom:8px"><b style="font-size:15px">${greet}${who?", "+esc(who.split(" ")[0]):""}</b>
@@ -590,7 +590,7 @@
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch">
         <div style="flex:2;min-width:340px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 14px">
           <b style="font-size:11px;letter-spacing:.03em;color:var(--muted)">NEEDS ATTENTION</b>
-          ${att.length?att.join(""):`<div class="rl" style="padding:8px 0;color:#16a34a;font-weight:700">Nothing flagged — dealer channel looks healthy right now.</div>`}</div>
+          ${att.length?att.join(""):`<div class="rl" style="padding:8px 0;color:var(--good);font-weight:700">Nothing flagged — dealer channel looks healthy right now.</div>`}</div>
         <div style="flex:1;min-width:250px;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 14px">
           <div style="display:flex;font-size:10px;color:var(--muted)"><b style="flex:1;letter-spacing:.03em">TOP DEALERS TODAY</b><span>PLACED</span><span style="min-width:34px;text-align:right">DONE</span></div>
           ${topRows||`<div class="rl" style="padding:8px 0">No dealer orders yet today.</div>`}</div>
@@ -675,10 +675,10 @@
      * "where is this part?"). Green = armed & quiet · red = open alerts · amber = can't read. */
     const alertStrip=dmsAlerts.length?`<div style="border:1px solid #dc2626;border-radius:11px;padding:8px 13px;margin-bottom:10px;background:rgba(220,38,38,.05)">
         <b style="font-size:11.5px;color:#dc2626">⚠ DMS journey alerts (${dmsAlerts.length} open)</b>
-        ${dmsAlerts.slice(0,4).map(x=>`<div style="font-size:11px;padding:2px 0"><b style="color:${x.severity==="P2"?"#dc2626":"#b45309"}">${esc(x.severity||"P3")}</b> · ${esc(x.name||x.rule_key)} — <span class="rl" style="color:var(--muted)">${esc(String(x.message||"").slice(0,180))}</span></div>`).join("")}
+        ${dmsAlerts.slice(0,4).map(x=>`<div style="font-size:11px;padding:2px 0"><b style="color:${x.severity==="P2"?"#dc2626":"var(--warn-fg)"}">${esc(x.severity||"P3")}</b> · ${esc(x.name||x.rule_key)} — <span class="rl" style="color:var(--muted)">${esc(String(x.message||"").slice(0,180))}</span></div>`).join("")}
         <button class="pill" onclick="window.setConsoleHash&&window.setConsoleHash('alerts')" style="margin-top:4px;font-size:10.5px;padding:2px 10px">Open Alerts →</button></div>`
-      :alertsErr?`<div class="rl" style="border:1px solid #d97706;border-radius:11px;padding:6px 13px;margin-bottom:10px;background:rgba(217,119,6,.06);font-size:11px;color:#b45309">⚠ DMS journey watch — status unavailable (${esc(alertsErr)})</div>`
-      :`<div class="rl" style="border:1px solid var(--line);border-radius:11px;padding:6px 13px;margin-bottom:10px;background:rgba(14,159,90,.05);font-size:11px"><span style="color:#16a34a;font-weight:700">✓ DMS journey watch</span> <span style="color:var(--muted)">— no open alerts · 17 journeys under fault-surge watch (2h window, ≥10 fails &amp; ≥15%) + grandfathered-Flex leak watch · firings appear here, on the Alerts page and in notification channels</span></div>`;
+      :alertsErr?`<div class="rl" style="border:1px solid #d97706;border-radius:11px;padding:6px 13px;margin-bottom:10px;background:rgba(217,119,6,.06);font-size:11px;color:var(--warn-fg)">⚠ DMS journey watch — status unavailable (${esc(alertsErr)})</div>`
+      :`<div class="rl" style="border:1px solid var(--line);border-radius:11px;padding:6px 13px;margin-bottom:10px;background:rgba(14,159,90,.05);font-size:11px"><span style="color:var(--good);font-weight:700">✓ DMS journey watch</span> <span style="color:var(--muted)">— no open alerts · 17 journeys under fault-surge watch (2h window, ≥10 fails &amp; ≥15%) + grandfathered-Flex leak watch · firings appear here, on the Alerts page and in notification channels</span></div>`;
     const w=gwWin();
     let d; try{ d=await api(`/api/apigw/dealers?from=${encodeURIComponent(w.from)}&to=${encodeURIComponent(w.to)}`); }
     catch(e){ box.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
@@ -688,7 +688,7 @@
       const rate=t?Math.round(1000*e2/t)/10:null;
       return `<div title="${esc(title||"")}" style="flex:1;min-width:158px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px">
         <div style="display:flex;align-items:baseline;gap:7px"><span style="font-size:21px;font-weight:800">${n(t)}</span>
-        ${e2?`<span style="font-size:11.5px;font-weight:700;color:#dc2626">${n(e2)} err${rate!=null?` (${rate}%)`:""}</span>`:`<span style="font-size:12px;font-weight:700;color:#16a34a">✓</span>`}</div>
+        ${e2?`<span style="font-size:11.5px;font-weight:700;color:#dc2626">${n(e2)} err${rate!=null?` (${rate}%)`:""}</span>`:`<span style="font-size:12px;font-weight:700;color:var(--good)">✓</span>`}</div>
         <div class="rl" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.03em">${esc(label)}</div>
         ${o&&o.p95_ms!=null?`<div class="rl" style="font-size:10px;margin-top:2px">p95 ${ms2(o.p95_ms)}</div>`:""}</div>`; };
     const kpis=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
@@ -742,7 +742,7 @@
     const slowTable=`<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card);overflow:auto">
       <div class="rl" style="font-weight:700;font-size:11px;margin-bottom:4px">Dealer-side errors &amp; slow calls <span style="font-weight:600;color:var(--muted)">· full spans · newest first — what dealers are feeling right now</span></div>
       ${slowRows?`<table style="width:100%;border-collapse:collapse;font-size:11px"><tr><th style="text-align:left;font-size:10px;color:var(--muted);padding:3px 6px">AT (KSA)</th><th style="text-align:left;font-size:10px;color:var(--muted)">SERVICE</th><th style="text-align:left;font-size:10px;color:var(--muted)">ENDPOINT</th><th style="text-align:right;font-size:10px;color:var(--muted)">ms</th><th style="text-align:left;font-size:10px;color:var(--muted)">HTTP</th><th style="text-align:left;font-size:10px;color:var(--muted)">ERROR</th><th></th></tr>${slowRows}</table>`
-        :`<div class="rl" style="color:#16a34a;font-weight:700">No dealer-side errors or slow calls in this window.</div>`}</div>`;
+        :`<div class="rl" style="color:var(--good);font-weight:700">No dealer-side errors or slow calls in this window.</div>`}</div>`;
     box.innerHTML=alertStrip+`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
         <b style="font-size:13px">Dealer traffic through the gateway <span class="mono" style="font-weight:600;font-size:10.5px;color:var(--muted)">/api/uil/*</span></b>
         <span class="rl" style="font-size:10.5px;color:var(--muted)">what the DMS app &amp; hybrid portal do on the APIGW — moved here from DMS (UIL = gateway, not DMS)</span>
@@ -812,7 +812,7 @@
       ${stat?`<div style="margin-bottom:8px"><b style="font-size:11px">Status mix</b> <span class="rl" style="font-size:9.5px;color:var(--muted)">(retained outlier spans, not all calls)</span><br>${stat}</div>`:""}
       <b style="font-size:11px">Real failing / slow calls</b> <span class="rl" style="font-size:9.5px;color:var(--muted)">errors first, newest first · ⇄ Analyze correlates with the BSS/OSB read path</span>
       ${spanRows?`<table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-top:4px"><tr><th style="text-align:left;font-size:9.5px;color:var(--muted);padding:2px 6px">AT</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">SERVICE</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">ENDPOINT</th><th style="text-align:right;font-size:9.5px;color:var(--muted)">ms</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">HTTP</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">ERROR</th><th></th></tr>${spanRows}</table>`
-        :`<div class="rl" style="color:#16a34a;font-size:11px;margin-top:4px">No retained error/slow spans in this selection — every call completed inside thresholds.</div>`}
+        :`<div class="rl" style="color:var(--good);font-size:11px;margin-top:4px">No retained error/slow spans in this selection — every call completed inside thresholds.</div>`}
       </div>`;
     host.scrollIntoView({behavior:"smooth",block:"nearest"});
     $("#gwDrillX").onclick=()=>{ host.innerHTML=""; };
@@ -868,7 +868,7 @@
       <div style="font-size:21px;font-weight:800;color:${c||'var(--ink)'}">${v}</div>
       <div class="rl" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.03em">${esc(l)}</div></div>`;
     const partialNote=d.partial?`<div style="border:1px solid #d97706;border-radius:9px;padding:6px 12px;margin-bottom:10px;background:rgba(217,119,6,.07);font-size:11px;display:flex;gap:10px;align-items:center">
-        <span style="color:#b45309;font-weight:700">⚠ Incomplete load — ${esc(Object.entries(d.partial).filter(([,v])=>v).map(([k,v])=>`${k}: ${v}`).join(" · "))}. Zeros below may be missing data, not real zeros.</span>
+        <span style="color:var(--warn-fg);font-weight:700">⚠ Incomplete load — ${esc(Object.entries(d.partial).filter(([,v])=>v).map(([k,v])=>`${k}: ${v}`).join(" · "))}. Zeros below may be missing data, not real zeros.</span>
         <button class="pill" id="dmsMapRetry" style="margin-left:auto;font-size:10.5px;padding:2px 10px">↻ Retry</button></div>`:"";
     const R=_dmsRep&&_dmsRep.totals?_dmsRep.totals:null;
     const canPii=!!(window.PII&&window.PII.can());
@@ -877,7 +877,7 @@
         <option value="">${esc(label)}: all</option>${(opts||[]).map(o=>`<option value="${esc(o.value)}"${_mf[key]===o.value?" selected":""}>${esc(o.value)} (${o.count})</option>`).join("")}</select>`;
     box.innerHTML=`${partialNote}
       ${d.unmasked?`<div style="border:1px solid #dc2626;border-radius:9px;padding:5px 11px;margin-bottom:9px;background:rgba(220,38,38,.06);font-size:11px;font-weight:700;color:#dc2626">🔓 Identifiers shown in full on the map and roster — this reveal is recorded in the audit log.</div>`:""}
-      ${pii&&!d.unmasked?`<div class="rl" style="border:1px solid #d97706;border-radius:9px;padding:5px 11px;margin-bottom:9px;background:rgba(217,119,6,.07);font-size:11px;color:#b45309">⚠ Reveal was requested but the SERVER kept identifiers masked (can_unmask=${String(d.can_unmask)}).</div>`:""}
+      ${pii&&!d.unmasked?`<div class="rl" style="border:1px solid #d97706;border-radius:9px;padding:5px 11px;margin-bottom:9px;background:rgba(217,119,6,.07);font-size:11px;color:var(--warn-fg)">⚠ Reveal was requested but the SERVER kept identifiers masked (can_unmask=${String(d.can_unmask)}).</div>`:""}
       ${canPii?`<div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button id="mapUm" class="pill" style="font-size:11px;padding:3px 12px;${pii?"border-left-color:#dc2626":""}">${pii?"🔓 Unmasked — hide":"🔒 Masked — reveal"}</button></div>`:""}
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
         ${R?chip(n(R.dealers),"Active dealers · DMS network","#2563eb"):""}
@@ -951,7 +951,7 @@
         <td style="font-size:10.5px;color:${r.status&&/active/i.test(r.status)?"#16a34a":"#dc2626"}">${esc(r.status||"—")}</td>
         <td class="rl" style="font-size:10.5px;color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.cityx||"—")}</td>
         <td class="mono" style="text-align:right;font-weight:${r.act?"700":"400"};color:${r.act?"#16a34a":"var(--muted)"}">${money(r.act)}</td>
-        <td class="mono" style="text-align:right;color:#16a34a">${money(r.comm)}</td>
+        <td class="mono" style="text-align:right;color:var(--good)">${money(r.comm)}</td>
         <td class="mono" style="text-align:right">${money(r.earned)}</td>
         <td class="mono" style="text-align:right;color:${Number(r.unpaid)>0?"#dc2626":"inherit"}">${money(r.unpaid)}</td>
         <td class="mono rl" style="text-align:right;font-size:10px;color:var(--muted)">${r.last_login?esc(KT.d(r.last_login)):"never"}</td>
@@ -1041,7 +1041,7 @@
         gestureHandling:"greedy",zoomControl:true,zoomControlOptions:{position:google.maps.ControlPosition.RIGHT_BOTTOM},fullscreenControl:false});
       const rb=document.createElement("button");
       rb.textContent="⌂ KSA"; rb.title="Reset view to Saudi Arabia";
-      rb.style.cssText="margin:0 10px 24px 0;background:#fff;border:0;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,.3);padding:7px 12px;font:600 12px/1 Roboto,Arial,sans-serif;cursor:pointer;color:#333";
+      rb.style.cssText="margin:0 10px 24px 0;background:var(--card);border:0;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,.3);padding:7px 12px;font:600 12px/1 Roboto,Arial,sans-serif;cursor:pointer;color:var(--ink)";
       rb.onclick=()=>{ _gmap.setCenter({lat:24.2,lng:45.0}); _gmap.setZoom(5.6); };
       _gmap.controls[google.maps.ControlPosition.RIGHT_BOTTOM].push(rb);
       // marker clustering — the numbered bubbles per area, like the Fixed ops console
@@ -1104,7 +1104,7 @@
           return `<tr data-did="${x.id}" style="border-top:1px solid var(--line);cursor:pointer">
           <td style="padding:4px 6px;font-weight:600">${esc(x.name||x.username||("#"+x.id))}</td>
           <td class="mono" style="text-align:right">${n(x.placed)}</td>
-          <td class="mono" style="text-align:right;color:#16a34a;font-weight:700">${n(x.done)}</td>
+          <td class="mono" style="text-align:right;color:var(--good);font-weight:700">${n(x.done)}</td>
           <td class="mono" style="text-align:right;color:${cv>=60?"#16a34a":cv>=30?"#d97706":"#dc2626"}">${cv}%</td>
           <td class="mono rl" style="text-align:right;color:var(--muted)">${esc(KT.md(x.last_at||""))}</td></tr>`; }).join("")}</table></div>
       <div class="rl" style="font-size:10px;color:var(--muted);margin-top:6px">Click a dealer for KPIs vs previous window + their orders (each drills to the Transaction timeline).</div>`;

@@ -38,7 +38,7 @@
       <path d="${path(cre)}" fill="none" stroke="#2563eb" stroke-width="1.8"/>
       <path d="${path(don)}" fill="none" stroke="#16a34a" stroke-width="1.8"/>
     </svg>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:2px"><span style="color:#2563eb">■</span> created &nbsp; <span style="color:#16a34a">■</span> completed &nbsp;·&nbsp; ${points.length} days</div>`;
+    <div style="font-size:10.5px;color:var(--muted);margin-top:2px"><span style="color:#2563eb">■</span> created &nbsp; <span style="color:var(--good)">■</span> completed &nbsp;·&nbsp; ${points.length} days</div>`;
   }
   const kpi=(b,label,cls)=>`<div class="dkpi"><b>${b}</b><span>${esc(label)}</span></div>`;
 

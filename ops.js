@@ -317,7 +317,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   function saveErr(){ if(window.pf) window.pf.set('err_state', { window:errState.window, team:errState.team, category:errState.category, sim:errState.sim, pinned:errState.pinned, rangeKey:errState.rangeKey, codeFilter:errState.codeFilter, gwFilter:errState.gwFilter, clsFilter:errState.clsFilter }); }
   // Business vs Technical color standard (errclass.js): business = the API said no (blue) ·
   // technical = the API failed to answer (red). Shared badge — reused by later rollout steps.
-  const CLS_COLOR = { business:{c:"#3b82f6",bg:"#e9f1fe",label:"Business"}, technical:{c:"#ef4444",bg:"#fdeceb",label:"Technical"}, success:{c:"#10b981",bg:"#e7f8ef",label:"Success"} };
+  const CLS_COLOR = { business:{c:"#3b82f6",bg:"var(--err-biz-bg)",label:"Business"}, technical:{c:"#ef4444",bg:"var(--err-tec-bg)",label:"Technical"}, success:{c:"#10b981",bg:"var(--ok-bg)",label:"Success"} };
   const clsBadge = (cls, reason) => { const k=CLS_COLOR[cls]; if(!k) return "";
     return `<span class="clspill" title="${esc(reason||k.label)}" style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.02em;background:${k.bg};color:${k.c};border:1px solid ${k.c}55;margin-left:6px;white-space:nowrap;vertical-align:middle">${k.label}</span>`; };
   window.clsBadge = clsBadge;
@@ -527,7 +527,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         g+=`<rect x="${x(i)}" y="${y(ab)}" width="${bw/2}" height="${Math.max(1,(H-pb)-y(ab))}" fill="#64748b" opacity=".7" style="cursor:pointer" data-upday="${esc(String(r.day).slice(0,10))}" data-upout="abandoned"><title>${esc(String(r.day))}: abandoned ${ab.toFixed(1)}% (${r.abandoned}/${r.total}) — click for cases</title></rect>`;
         g+=`<rect x="${x(i)+bw/2}" y="${y(dc)}" width="${bw/2}" height="${Math.max(1,(H-pb)-y(dc))}" fill="#3b82f6" opacity=".8" style="cursor:pointer" data-upday="${esc(String(r.day).slice(0,10))}" data-upout="declined"><title>${esc(String(r.day))}: declined ${dc.toFixed(1)}% (${r.declined}/${r.total}) — click for cases</title></rect>`;
         g+=`<text x="${x(i)+bw/2}" y="${H-4}" text-anchor="middle" font-size="7.5" fill="var(--muted)">${String(r.day).slice(8,10)}</text>`; });
-      trend=`<div class="rl" style="margin:8px 0 2px;font-weight:700">14-day trend · <span style="color:#64748b">abandonment%</span> vs <span style="color:#3b82f6">decline%</span></div>
+      trend=`<div class="rl" style="margin:8px 0 2px;font-weight:700">14-day trend · <span style="color:var(--muted)">abandonment%</span> vs <span style="color:#3b82f6">decline%</span></div>
         <svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:780px;height:${H}px">${g}</svg>`;
     }
     const dec=(d.declines||[]).filter(x=>x.reason&&x.reason!=='—');
@@ -632,7 +632,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const pc=x=>x==null?"—":(x*100).toFixed(1)+"%";
     const rowH=a=>`<tr>
       <td style="padding:3px 10px 3px 0;font-family:var(--mono);font-size:11.5px;white-space:nowrap">${esc(a.api)}</td>
-      <td style="padding:3px 8px;text-align:right;color:#16a34a;font-weight:700">${a.ok}</td>
+      <td style="padding:3px 8px;text-align:right;color:var(--good);font-weight:700">${a.ok}</td>
       <td style="padding:3px 8px;text-align:right;color:${a.fail?'#dc2626':'var(--muted)'};font-weight:700">${a.fail}</td>
       <td style="padding:3px 8px;text-align:right;font-weight:700;color:${a.failRate>=0.3?'#dc2626':a.failRate>0?'#d97706':'var(--muted)'}">${pc(a.failRate)}</td>
       <td style="padding:3px 0 3px 8px;font-family:var(--mono);font-size:11px;color:${col}">${a.topFailCode?esc(a.topFailCode):'—'}</td></tr>`;
@@ -827,14 +827,14 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         ${o?`<div style="font-size:12.5px;margin-top:6px"><b>Order</b> ${esc(o.id)} · state <span class="catpill">${esc(o.aasm_state)}</span> · plan ${esc(o.plan_id)} · completed ${esc(o.completed)} · activated ${esc(o.activated)}<br>
           <span style="color:var(--muted)">mobile ${esc(o.mobile_number)} · nid ${esc(o.nationality_id_number)}${o.customer_name?' · '+esc(o.customer_name):''}</span></div>`
           :`<div style="color:var(--muted);font-size:12.5px;margin-top:6px">No onboarding order resolved for this identifier — showing related events.</div>`}
-        <div style="margin-top:8px;font-size:11.5px;color:var(--muted)">${events.length} event${events.length===1?'':'s'}${events.length?` · <span style="color:#16a34a">${oks} ok</span> · <span style="color:#dc2626">${fails} failed</span>${pend?` · <span style="color:#d97706">${pend} in-progress</span>`:''}`:''}</div>
+        <div style="margin-top:8px;font-size:11.5px;color:var(--muted)">${events.length} event${events.length===1?'':'s'}${events.length?` · <span style="color:var(--good)">${oks} ok</span> · <span style="color:#dc2626">${fails} failed</span>${pend?` · <span style="color:#d97706">${pend} in-progress</span>`:''}`:''}</div>
         ${(()=>{ const c=tl.customer; if(!c) return "";
-          if(!c.registered) return `<div style="margin-top:7px;font-size:11.5px"><span style="background:#94a3b822;color:#64748b;border-radius:6px;padding:1px 8px;font-weight:700">NOT REGISTERED</span> <span class="rl">no app account for this mobile — journey ran without login (dealer/web checkout)</span></div>`;
+          if(!c.registered) return `<div style="margin-top:7px;font-size:11.5px"><span style="background:#94a3b822;color:var(--muted);border-radius:6px;padding:1px 8px;font-weight:700">NOT REGISTERED</span> <span class="rl">no app account for this mobile — journey ran without login (dealer/web checkout)</span></div>`;
           const ago=t=>{ if(!t) return "never"; const m=Math.round((Date.now()-new Date(t).getTime())/60000);
             return m<60?`${m}m ago`:m<1440?`${Math.round(m/60)}h ago`:`${Math.round(m/1440)}d ago`; };
           return `<div style="margin-top:7px;font-size:11.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${c.logged_in?`<span style="background:#10b98122;color:#0e9f5a;border-radius:6px;padding:1px 8px;font-weight:700" title="last login within 7 days — the app's JWT session token is still valid">LOGGED IN</span>`
-                         :`<span style="background:#94a3b822;color:#64748b;border-radius:6px;padding:1px 8px;font-weight:700" title="last login older than the 7-day JWT lifetime — no live app session">NOT LOGGED IN</span>`}
+                         :`<span style="background:#94a3b822;color:var(--muted);border-radius:6px;padding:1px 8px;font-weight:700" title="last login older than the 7-day JWT lifetime — no live app session">NOT LOGGED IN</span>`}
             <span class="rl">last login <b>${ago(c.last_login_at)}</b>${c.last_login_at?` <span class="mono" style="color:var(--muted)">(${esc(KT.dt(c.last_login_at))}Z)</span>`:""}
               · ${esc(c.platform||"?")}${c.app_version?" v"+esc(c.app_version):""} · ${c.sign_in_count} login${c.sign_in_count===1?"":"s"}
               ${c.verified?` · <span style="color:#0e9f5a">verified</span>`:` · <span style="color:#d97706">unverified</span>`}</span></div>`; })()}
@@ -934,7 +934,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         box.innerHTML=`<div style="margin-top:8px;border:1px solid var(--line);border-radius:8px;max-height:220px;overflow:auto"><table class="alerts" style="font-size:11.5px">
           <tr><th>SENT (KSA)</th><th>CHANNEL</th><th>TYPE</th><th>STATUS</th><th>MESSAGE</th></tr>
           ${rows.map(r=>`<tr><td class="mono">${esc(KT.dt(r.sent_at))}</td><td>${esc(r.channel||'—')}</td><td>${esc(r.message_type||'—')}</td>
-            <td style="font-weight:700;color:${r.status==='verified'?'#16a34a':/expired|fail/.test(r.status||'')?'#dc2626':'#d97706'}">${esc(r.status||'—')}</td>
+            <td style="font-weight:700;color:${r.status==='verified'?'var(--good)':/expired|fail/.test(r.status||'')?'#dc2626':'#d97706'}">${esc(r.status||'—')}</td>
             <td style="max-width:380px">${esc(r.body_en||r.body_note||'')}</td></tr>`).join('')}
         </table></div>`;
       }catch(e){ box.innerHTML=`<div class="rl" style="margin-top:6px;color:#dc2626">${esc(e.message)}</div>`; }
@@ -948,7 +948,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       if(!d.total_hits){ hh+=`<div class="rl" style="color:#d97706">${esc(d.note||"No match in the searched window.")}</div>`; }
       else{
         const fileRows=(d.hosts||[]).flatMap(hst=>(hst.files||[]).map(f=>`<tr><td class="mono">${esc(hst.host)}</td><td>${esc(f.service||"—")}</td><td class="mono" style="font-size:10.5px">${esc((f.file||"").split("/").pop())}</td><td style="font-weight:700">${f.hits}</td></tr>`));
-        hh+=`<div class="rl"><b>${d.total_hits}</b> matching line(s) · ${esc(d.scope||"")} · ${d.ms}ms${d.cached?` · <span style="color:#16a34a;font-weight:700">served from cache</span>`:""}</div>
+        hh+=`<div class="rl"><b>${d.total_hits}</b> matching line(s) · ${esc(d.scope||"")} · ${d.ms}ms${d.cached?` · <span style="color:var(--good);font-weight:700">served from cache</span>`:""}</div>
           <div style="border:1px solid var(--line);border-radius:8px;max-height:140px;overflow:auto;margin-top:4px"><table class="alerts" style="font-size:11px">
           <tr><th>NODE</th><th>SERVICE</th><th>FILE</th><th>HITS</th></tr>${fileRows.join("")}</table></div>`;
         if((d.hops||[]).length){
@@ -1077,7 +1077,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
           <td class="mono" style="${r.status_code&&Number(r.status_code)>=400?"color:#dc2626;font-weight:700":""}">${esc(r.status_code||"—")}</td>
           <td class="rl" style="color:#dc2626">${esc(r.error||"")}</td>
           <td>${r.uil_transaction_id?`<button class="pill" data-gwwintxn="${esc(r.uil_transaction_id)}" style="padding:2px 8px;font-size:10.5px">Analyze</button>`:""}</td></tr>`).join("")}</table>`
-        :`<div class="rl" style="color:#16a34a;font-weight:700">No gateway errors or slow calls in this window — the gateway tier was clean while this order moved.</div>`;
+        :`<div class="rl" style="color:var(--good);font-weight:700">No gateway errors or slow calls in this window — the gateway tier was clean while this order moved.</div>`;
     }
     card.querySelector(".modal-body").innerHTML=h;
     card.querySelectorAll("[data-gwwintxn]").forEach(b=>b.addEventListener("click",()=>{
@@ -1099,7 +1099,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       <div class="setrow">
         <label>STATE</label>
         <label class="switch"><input type="checkbox" id="syncEnabled" ${s.enabled?'checked':''} ${editable?'':'disabled'}><span class="slider"></span></label>
-        <span style="font-weight:700;color:${s.enabled?'#16a34a':'#94a3b8'}">${s.enabled?'AUTO — running':'MANUAL — stopped'}</span>
+        <span style="font-weight:700;color:${s.enabled?'var(--good)':'#94a3b8'}">${s.enabled?'AUTO — running':'MANUAL — stopped'}</span>
         <span class="rl" style="margin-left:auto">${data.scheduler&&data.scheduler.running?'scheduler active':'scheduler idle'}</span>
       </div>
       <div class="setrow"><label>MODE</label>
@@ -1114,7 +1114,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <label>STEP</label><input type="number" id="syncStep" value="${s.stepHours||3}" min="1" ${editable?'':'disabled'}><span class="rl">h (replay)</span>
         <button class="pill" id="syncSave" style="border-left-color:var(--green);margin-left:auto" ${editable?'':'disabled'}>Save</button>
       </div>
-      <div style="font-size:11.5px;color:#64748b;margin-top:4px">
+      <div style="font-size:11.5px;color:var(--muted);margin-top:4px">
         <b>Manual</b>: nothing runs automatically — use Sync/Simulate in Live Alerts. &nbsp;
         <b>Auto · Replay</b> (recommended for the static dump): every interval, advance ${s.stepHours||3}h of virtual time and evaluate — a live-traffic stream. &nbsp;
         <b>Auto · Live</b>: for a genuinely live replica.</div>
@@ -1213,17 +1213,17 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         host.innerHTML=`<span class="rl">Running…</span>`; scBtn.disabled=true;
         try{
           const r=await api("/api/health/selfcheck");
-          const dot=st=>({ok:'#16a34a',warn:'#d97706',fail:'#dc2626',off:'#94a3b8'}[st]||'#94a3b8');
+          const dot=st=>({ok:'var(--good)',warn:'#d97706',fail:'#dc2626',off:'#94a3b8'}[st]||'#94a3b8');
           const sum=r.summary||{};
           host.innerHTML=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:12px">`+
             (sum.fail?`<span style="color:#dc2626;font-weight:800">${sum.fail} FAIL</span>`:'')+
             (sum.warn?`<span style="color:#d97706;font-weight:800">${sum.warn} WARN</span>`:'')+
-            `<span style="color:#16a34a;font-weight:800">${sum.ok||0} OK</span>`+
+            `<span style="color:var(--good);font-weight:800">${sum.ok||0} OK</span>`+
             (sum.off?`<span style="color:#94a3b8;font-weight:700">${sum.off} off</span>`:'')+
             `<span class="rl" style="margin-left:auto">as of ${new Date(r.now).toLocaleTimeString('en-GB',{timeZone:'Asia/Riyadh',hour:'2-digit',minute:'2-digit'})} KSA</span></div>`+
             `<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 12px;align-items:baseline">`+
             (r.checks||[]).map(c=>`<span style="display:inline-flex;align-items:center;gap:7px;font-weight:600;white-space:nowrap"><span style="width:9px;height:9px;border-radius:50%;background:${dot(c.status)};flex:none"></span>${esc(c.label)}</span>`+
-              `<span class="rl" style="color:${c.status==='fail'?'#dc2626':c.status==='warn'?'#b45309':'var(--muted)'}">${esc(c.detail||'')}</span>`).join("")+
+              `<span class="rl" style="color:${c.status==='fail'?'#dc2626':c.status==='warn'?'var(--warn-fg)':'var(--muted)'}">${esc(c.detail||'')}</span>`).join("")+
             `</div>`;
         }catch(e){ host.innerHTML=`<div class="albanner">Self-check failed: ${esc(e.message)}</div>`; }
         scBtn.disabled=false;
@@ -1289,7 +1289,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     </tr>`).join("");
     box.innerHTML=`
       <div class="setrow"><label>PROD DATA SYNC</label>
-        <span class="rl">Incremental, read-only pull from the prod reporting replica into the local replica. ${d.configured?`<b style="color:#16a34a">connected</b>`:`<b style="color:#d97706">PROD_DATABASE_URL not set on the console</b>`}${running?` · <b style="color:#2563eb">running…</b>`:''}</span>
+        <span class="rl">Incremental, read-only pull from the prod reporting replica into the local replica. ${d.configured?`<b style="color:var(--good)">connected</b>`:`<b style="color:#d97706">PROD_DATABASE_URL not set on the console</b>`}${running?` · <b style="color:#2563eb">running…</b>`:''}</span>
         <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
           <label class="rl" style="display:flex;gap:5px;align-items:center">test one day (KSA)<input type="date" id="psDate" style="padding:4px 6px"></label>
           <button class="pill" id="psDry" ${running||!d.configured?'disabled':''}>Dry-run</button>
@@ -1332,8 +1332,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       if(!can("unmaskPII")){ if(card) card.remove(); return; }
       if(!card){ card=document.createElement("div"); card.id="piiCard"; ref.parentElement.insertBefore(card, ref); }
       const on=window.opsPiiUnmask();
-      card.innerHTML=`<div class="panel" style="margin-bottom:14px;border-left:3px solid ${on?'#b45309':'var(--green)'}">
-        <h2 style="display:flex;align-items:center;gap:10px">PII visibility <span style="font-size:11px;font-weight:700;color:${on?'#b45309':'var(--green-dark)'}">${on?'🔓 UNMASKED':'🔒 MASKED (default)'}</span></h2>
+      card.innerHTML=`<div class="panel" style="margin-bottom:14px;border-left:3px solid ${on?'var(--warn-fg)':'var(--green)'}">
+        <h2 style="display:flex;align-items:center;gap:10px">PII visibility <span style="font-size:11px;font-weight:700;color:${on?'var(--warn-fg)':'var(--green-dark)'}">${on?'🔓 UNMASKED':'🔒 MASKED (default)'}</span></h2>
         <div class="sub">One switch for the whole console: Subscriber 360, timelines, dashboard drill-downs and the customer locator. Applies only to your account (Super Admin) — other roles always see masked data. Every unmasked view is audited.</div>
         <button id="piiToggle" class="navtab" style="margin-top:10px;${on?'':'background:var(--green);color:#fff;border-color:var(--green)'}">${on?'🔒 Switch back to MASKED':'🔓 Unmask PII for my session'}</button>
       </div>`;
@@ -1353,7 +1353,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       $("#rolesRef").innerHTML=`<table class="alerts"><tr><th>ROLE</th><th>TEAM</th><th>SEES</th><th>CAN</th><th>NOTE</th></tr>`+
         Object.entries(roles).map(([k,r])=>{
           const caps=Object.entries(r.caps).filter(([,v])=>v).map(([c])=>c).join(', ')||'—';
-          return `<tr><td><b>${esc(r.label)}</b></td><td>${esc(r.team)}</td><td class="mono" style="font-size:10.5px">${esc(r.views.join(' '))}</td><td class="mono" style="font-size:10.5px">${esc(caps)}</td><td style="font-size:11.5px;color:#64748b">${esc(r.note)}</td></tr>`;
+          return `<tr><td><b>${esc(r.label)}</b></td><td>${esc(r.team)}</td><td class="mono" style="font-size:10.5px">${esc(r.views.join(' '))}</td><td class="mono" style="font-size:10.5px">${esc(caps)}</td><td style="font-size:11.5px;color:var(--muted)">${esc(r.note)}</td></tr>`;
         }).join("")+`</table>`;
     } catch(e){ $("#rolesRef").innerHTML=`<div class="sub">${esc(e.message)}</div>`; }
     // editable permissions matrix (renders its own read-only view for non-super users)
@@ -1759,14 +1759,14 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   }
   (function(){ if(document.getElementById("jt-css")) return;
     const st=document.createElement("style"); st.id="jt-css"; st.textContent=`
-      .jt-wrap{background:#0f172a;border-radius:8px;padding:8px 12px;margin-top:6px;font-family:var(--mono);font-size:11px;line-height:1.6;max-height:340px;overflow:auto}
-      .jt-wrap .jt-row{color:#e2e8f0;white-space:pre-wrap;word-break:break-word}
+      .jt-wrap{background:var(--panel-dark);border-radius:8px;padding:8px 12px;margin-top:6px;font-family:var(--mono);font-size:11px;line-height:1.6;max-height:340px;overflow:auto}
+      .jt-wrap .jt-row{color:var(--panel-dark-fg);white-space:pre-wrap;word-break:break-word}
       .jt-wrap summary.jt-row{cursor:pointer;list-style:none;user-select:none}
-      .jt-wrap summary.jt-row::before{content:"▸";display:inline-block;width:12px;color:#64748b;transition:transform .12s}
+      .jt-wrap summary.jt-row::before{content:"▸";display:inline-block;width:12px;color:var(--muted);transition:transform .12s}
       .jt-wrap details[open]>summary.jt-row::before{transform:rotate(90deg)}
-      .jt-wrap .jt-ch{margin-left:16px;border-left:1px solid #1e293b;padding-left:8px}
-      .jt-k{color:#7dd3fc}.jt-str{color:#bbf7d0}.jt-num{color:#fbbf24}.jt-bool{color:#f472b6}.jt-null{color:#64748b}
-      .jt-badge{color:#94a3b8;font-size:10px}.jt-c{color:#64748b}
+      .jt-wrap .jt-ch{margin-left:16px;border-left:1px solid var(--line);padding-left:8px}
+      .jt-k{color:#7dd3fc}.jt-str{color:#bbf7d0}.jt-num{color:#fbbf24}.jt-bool{color:#f472b6}.jt-null{color:var(--muted)}
+      .jt-badge{color:#94a3b8;font-size:10px}.jt-c{color:var(--muted)}
       .jt-head{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}`;
     document.head.appendChild(st); })();
 
@@ -1787,7 +1787,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const CLS={success:"#10b981",abandoned:"#64748b",declined:"#3b82f6",technical:"#ef4444",pre_bank:"#94a3b8",refunded:"#a78bfa",open:"#d97706"};
     const inv=d.invoice, s=d.summary;
     const dt=x=>x?esc(KT.dts(x))+"Z":"—";
-    let h=`<div style="border-left:3px solid ${s.outcome==='PAID'?'#10b981':'#64748b'};background:${s.outcome==='PAID'?'#ecfdf5':'var(--card2)'};border-radius:0 8px 8px 0;padding:9px 12px;margin-bottom:10px">
+    let h=`<div style="border-left:3px solid ${s.outcome==='PAID'?'#10b981':'#64748b'};background:${s.outcome==='PAID'?'var(--tint-green)':'var(--card2)'};border-radius:0 8px 8px 0;padding:9px 12px;margin-bottom:10px">
         <b>Invoice ${esc(inv.id)}</b> · ${esc(inv.status||"")} · ${esc(inv.amount)} ${inv.channel?`· ${esc(inv.channel)}`:""}${inv.description?` · ${esc(inv.description)}`:""}
         <div class="rl" style="font-size:11px;margin-top:3px">created ${dt(inv.created_at)}${inv.expires_at?` · expires ${dt(inv.expires_at)}`:""}${inv.reference_id?` · app ref <span class="mono">${esc(inv.reference_id)}</span>`:""}</div>
         <div style="font-size:12px;margin-top:3px;line-height:1.5">${esc(s.verdict)}</div></div>
@@ -1812,7 +1812,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
           ${c.method?`<span class="rl"> · ${esc(c.method)}</span>`:""}${c.bank_message?`<span class="rl"> · ${esc(c.bank_message)}</span>`:""}</div>
         <div class="rl" style="font-size:10.5px;margin-top:3px">created ${dt(c.created_at)}${c.finalized_at&&c.finalized_at!==c.created_at?` · final ${dt(c.finalized_at)}`:""}${c.secs_to_final!=null?` · ${c.secs_to_final<120?c.secs_to_final+"s":Math.round(c.secs_to_final/60)+" min"} to final`:""}${c.transaction_id?` · txn <span class="mono">${esc(c.transaction_id)}</span>`:""}</div>
         <div style="margin-top:4px">${steps||'<span class="rl">no state log</span>'}</div>${gw}
-        ${c.never_engaged?`<div class="rl" style="margin-top:3px;color:#64748b">⚠ created and expired untouched — no card entry, no 3DS, no bank call</div>`:""}
+        ${c.never_engaged?`<div class="rl" style="margin-top:3px;color:var(--muted)">⚠ created and expired untouched — no card entry, no 3DS, no bank call</div>`:""}
       </div>`; }).join("");
     const W=d.webhooks||[];
     if(W.length){
@@ -1934,7 +1934,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       if(!d.total_hits){ hh+=`<div class="rl" style="color:#d97706">${esc(d.note||"No match in the searched window.")}</div>`; }
       else{
         const fileRows=(d.hosts||[]).flatMap(hst=>(hst.files||[]).map(f=>`<tr><td class="mono">${esc(hst.host)}</td><td>${esc(f.service||"—")}</td><td class="mono" style="font-size:10.5px">${esc((f.file||"").split("/").pop())}</td><td style="font-weight:700">${f.hits}</td></tr>`));
-        hh+=`<div class="rl"><b>${d.total_hits}</b> matching line(s) · ${esc(d.scope||"")} · ${d.ms}ms${d.cached?` · <span style="color:#16a34a;font-weight:700">served from cache</span>`:""}</div>
+        hh+=`<div class="rl"><b>${d.total_hits}</b> matching line(s) · ${esc(d.scope||"")} · ${d.ms}ms${d.cached?` · <span style="color:var(--good);font-weight:700">served from cache</span>`:""}</div>
           <div style="border:1px solid var(--line);border-radius:8px;max-height:140px;overflow:auto;margin-top:4px"><table class="alerts" style="font-size:11px">
           <tr><th>NODE</th><th>SERVICE</th><th>FILE</th><th>HITS</th></tr>${fileRows.join("")}</table></div>`;
         if((d.hops||[]).length){

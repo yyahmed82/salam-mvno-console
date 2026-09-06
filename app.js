@@ -140,7 +140,7 @@ function renderDocBlock(epRaw){
   h += `<a class="livelink" href="${anchorUrl}" target="_blank" rel="noopener">Open live doc ↗</a></div>`;
   const d = r.doc;
   if(!d){ h += `<div class="prose">This endpoint is documented in the Salam partner API reference. Open the live doc for full details.</div></div>`; return h; }
-  if(d.methodPath) h += `<div style="font-family:var(--mono);font-size:11.5px;color:#3730a3;margin-bottom:6px"><b>${esc(d.methodPath)}</b></div>`;
+  if(d.methodPath) h += `<div style="font-family:var(--mono);font-size:11.5px;color:var(--indigo-fg);margin-bottom:6px"><b>${esc(d.methodPath)}</b></div>`;
   if(d.prose && d.prose.length) h += `<div class="prose">${esc(d.prose.slice(0,2).join(" "))}</div>`;
   if(d.params && d.params.length){
     h += `<table class="params"><tr><th>PARAM</th><th>REQUIRED</th><th>DESCRIPTION</th></tr>`;
@@ -186,14 +186,14 @@ function openSampleModal(epRaw){
   } else {
     const s = r.sample;
     h += `<h5>REQUEST</h5>`;
-    if(s.req && s.req.headers && Object.keys(s.req.headers).length) h += `<div style="font-size:11px;color:#64748b;margin-bottom:5px">headers: ${Object.entries(s.req.headers).map(([k,v])=>`<code>${esc(k)}: ${esc(v)}</code>`).join("  ")}</div>`;
+    if(s.req && s.req.headers && Object.keys(s.req.headers).length) h += `<div style="font-size:11px;color:var(--muted);margin-bottom:5px">headers: ${Object.entries(s.req.headers).map(([k,v])=>`<code>${esc(k)}: ${esc(v)}</code>`).join("  ")}</div>`;
     if(s.req && s.req.query) h += `<div class="codeblk">${jsonHi(s.req.query)}</div>`;
     if(s.req && s.req.body!=null) h += `<div class="codeblk">${jsonHi(s.req.body)}</div>`;
-    if(s.req && s.req.note) h += `<div style="font-size:11.5px;color:#92400e;margin-top:5px">${esc(s.req.note)}</div>`;
-    if(!s.req || (s.req.body==null && !s.req.query)) h += `<div style="font-size:12px;color:#64748b">No request body (path/query only).</div>`;
+    if(s.req && s.req.note) h += `<div style="font-size:11.5px;color:var(--tint-warn-fg);margin-top:5px">${esc(s.req.note)}</div>`;
+    if(!s.req || (s.req.body==null && !s.req.query)) h += `<div style="font-size:12px;color:var(--muted)">No request body (path/query only).</div>`;
     h += `<h5>RESPONSE</h5>`;
     if(s.res){
-      h += `<div class="statusrow"><span class="stcode ok">${s.res.status||200}</span>${s.res.contentType?`<span style="font-size:11px;color:#64748b;align-self:center">${esc(s.res.contentType)}</span>`:""}</div>`;
+      h += `<div class="statusrow"><span class="stcode ok">${s.res.status||200}</span>${s.res.contentType?`<span style="font-size:11px;color:var(--muted);align-self:center">${esc(s.res.contentType)}</span>`:""}</div>`;
       h += `<div class="codeblk">${typeof s.res.body==="string"?esc(s.res.body):jsonHi(s.res.body)}</div>`;
     }
     if(s.errors && s.errors.length){
@@ -273,7 +273,7 @@ function renderSequence(step, mode){
     if(a.clickable){
       s += `<text x="${mx}" y="${y-7}" text-anchor="middle" font-size="10.3" font-family="ui-monospace,Menlo,monospace" fill="#2563eb"${cls}${dataep} style="text-decoration:underline;text-decoration-style:dotted">${esc(lbl)}  ⤢</text>`;
     } else {
-      s += `<text x="${mx}" y="${y-7}" text-anchor="middle" font-size="10.3" font-family="ui-monospace,Menlo,monospace" fill="${a.kind==='fail'?'#b91c1c':tv('--ink-soft','#334155')}">${esc(lbl)}</text>`;
+      s += `<text x="${mx}" y="${y-7}" text-anchor="middle" font-size="10.3" font-family="ui-monospace,Menlo,monospace" fill="${a.kind==='fail'?'var(--bad-fg)':tv('--ink-soft','#334155')}">${esc(lbl)}</text>`;
     }
   });
   s += `</svg>`;
@@ -303,7 +303,7 @@ function renderStepDetail(j, idx, mode){
   if(st.st && st.st!=="—") h += `<div style="margin-top:8px"><span class="chip st">state: ${esc(st.st)}</span></div>`;
   h += `</div><div class="infocard"><h4>${mode==="failure"?"FAILURE MODES":"ON SUCCESS"}</h4>`;
   if(mode==="failure"){
-    if(st.fail && st.fail.length) st.fail.forEach(f=>{ h += `<div class="failbox"><b>${esc(f.at)}</b> — ${esc(f.why)}<br><span style="color:#7f1d1d">↳ ${esc(f.fx)}</span></div>`; });
+    if(st.fail && st.fail.length) st.fail.forEach(f=>{ h += `<div class="failbox"><b>${esc(f.at)}</b> — ${esc(f.why)}<br><span style="color:var(--tint-red-fg)">↳ ${esc(f.fx)}</span></div>`; });
     else h += `<div class="okbox">No known failure branch at this step — validation happens up/downstream.</div>`;
   } else {
     h += `<div class="okbox">${esc(st.ok || "Step completes and the journey advances.")}</div>`;

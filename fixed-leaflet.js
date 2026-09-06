@@ -33,7 +33,7 @@
       tiles.on("tileerror",()=>{ if(!tiles.__fb){ tiles.__fb=true; tiles.setUrl("https://tile.openstreetmap.org/{z}/{x}/{y}.png"); } });
       tiles.addTo(map);
       const home=L.control({position:"bottomright"}); home.onAdd=()=>{ const b=L.DomUtil.create("button"); b.textContent="⌂ KSA"; b.title="Reset view to Saudi Arabia";
-        b.style.cssText="background:#fff;border:0;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,.3);padding:7px 12px;font:600 12px/1 system-ui,sans-serif;cursor:pointer;color:#333";
+        b.style.cssText="background:var(--card);border:0;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,.3);padding:7px 12px;font:600 12px/1 system-ui,sans-serif;cursor:pointer;color:var(--ink)";
         b.onclick=e=>{ e.stopPropagation(); map.setView([23.8,45.0],6); }; return b; }; home.addTo(map);
       st={map,tiles,layer:null,dark}; maps.set(el,st);
       setTimeout(()=>map.invalidateSize(),50);

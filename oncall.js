@@ -44,7 +44,7 @@
       </div>
       <div class="oc-sec">OPEN INCIDENTS (${incs.length})</div>`;
     h+= incs.length ? incs.map(a=>`<div class="oc-item" data-go="alerts" style="border-left-color:${sevC(a.severity)}"><div class="oc-t">${esc(a.severity||'')} · ${esc(a.name||a.metric_key||'incident')}</div><div class="oc-d">${esc(a.team||'')}</div></div>`).join("")
-      : `<div class="oc-item" style="border-left-color:#16a34a;cursor:default"><div class="oc-t">No open incidents ✅</div></div>`;
+      : `<div class="oc-item" style="border-left-color:var(--good);cursor:default"><div class="oc-t">No open incidents ✅</div></div>`;
     if(an.length) h+=`<div class="oc-sec">ANOMALIES</div>`+an.map(a=>`<div class="oc-item" data-go="sla" style="border-left-color:${sevC(a.severity)}"><div class="oc-t">${esc(a.severity||'')} ${a.direction==='up'?'▲':'▼'} ${Math.abs(a.score||0).toFixed(1)}σ</div><div class="oc-d">${esc(a.text||'')}</div></div>`).join("");
     if(oldest) h+=`<div class="oc-sec">DATA FRESHNESS</div><div class="oc-item" style="cursor:default"><div class="oc-d">oldest source <b>${esc(oldest.name)}</b> · ${oldest.lagMin}m behind</div></div>`;
     h+=`</div>`;

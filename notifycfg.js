@@ -38,7 +38,7 @@
           <input type="text" id="ncBase" placeholder="https://console.salam.sa" value="${esc(c.baseUrl||"")}"></label>
       </div>
       <h4 style="margin:18px 0 4px">WhatsApp <span class="rl" style="font-weight:400">— Meta Cloud API · 1:1 fan-out to on-call numbers</span></h4>
-      <div class="sub" style="margin-bottom:10px">Sends each alert individually to every recipient (the Cloud API doesn't support groups). For proactive alerts, set an <b>approved template name</b>; without one, messages only deliver inside a 24-hour customer-initiated window. ${c.whatsappConfigured?'<b style="color:#16a34a">Configured ✓</b>':''}</div>
+      <div class="sub" style="margin-bottom:10px">Sends each alert individually to every recipient (the Cloud API doesn't support groups). For proactive alerts, set an <b>approved template name</b>; without one, messages only deliver inside a 24-hour customer-initiated window. ${c.whatsappConfigured?'<b style="color:var(--good)">Configured ✓</b>':''}</div>
       <div class="nc-form">
         <label class="nc-row"><span>Phone-number ID</span>
           <input type="text" id="ncWaPhone" placeholder="1029384756…" value="${esc(c.waPhoneId||"")}"></label>
@@ -57,7 +57,7 @@
       </div>
       <div class="sub" style="margin-top:-4px;margin-bottom:8px">152 has no direct internet — point <b>API base</b> at the nginx relay on the reverse proxy (115), which forwards only to graph.facebook.com and only from this host. Env <code>WA_BASE_URL</code> overrides this field.</div>
       <h4 style="margin:18px 0 4px">SMS <span class="rl" style="font-weight:400">— Unifonic (credentials in server env; secret)</span></h4>
-      <div class="sub" style="margin-bottom:10px">Text the on-call number for high-severity incidents. Provider URL / AppSid / sender live in the server env (<code>SMS_*</code>) — here you control the toggle, recipients and severity. ${c.smsConfigured?'<b style="color:#16a34a">Provider configured ✓</b>':'<b style="color:#dc2626">Provider env not set</b>'}</div>
+      <div class="sub" style="margin-bottom:10px">Text the on-call number for high-severity incidents. Provider URL / AppSid / sender live in the server env (<code>SMS_*</code>) — here you control the toggle, recipients and severity. ${c.smsConfigured?'<b style="color:var(--good)">Provider configured ✓</b>':'<b style="color:#dc2626">Provider env not set</b>'}</div>
       <div class="nc-form">
         <label class="nc-row"><span>Send SMS</span>
           <input type="checkbox" id="ncSmsEnabled" ${c.smsEnabled?"checked":""}></label>

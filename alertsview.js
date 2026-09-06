@@ -29,8 +29,8 @@
   /* Business/Technical alert class — colors follow the errclass.js console-wide standard
    * (business blue / technical red). No 'Mixed': every formerly-blended rule was split or
    * reclassified (2026-08-11), so every rule is exactly one class. */
-  const CLS_STYLE = { technical:{label:"Technical",fg:"#ef4444",bg:"#fdeceb"},
-                      business: {label:"Business", fg:"#3b82f6",bg:"#e9f1fe"} };
+  const CLS_STYLE = { technical:{label:"Technical",fg:"#ef4444",bg:"var(--err-tec-bg)"},
+                      business: {label:"Business", fg:"#3b82f6",bg:"var(--err-biz-bg)"} };
   const clsChip = c => { const s=CLS_STYLE[c]; return s?` <span style="display:inline-block;background:${s.bg};color:${s.fg};border-radius:4px;padding:0 6px;font-size:10.5px;font-weight:700">${s.label}</span>`:""; };
   let CLSFILTER = { alerts:"all", rules:"all" };            // client-side class filters per tab
   function clsBar(scope, items){
@@ -418,7 +418,7 @@
       const d = await api(`/api/alerts/${id}/notify`,{method:"POST",body:JSON.stringify({})});
       const ch = d.channels||[];
       out.innerHTML = ch.length
-        ? ch.map(c=>`<span style="color:${c.sent?'#16a34a':'#dc2626'}" title="${esc(c.error||'')}">${esc(c.name)} ${c.sent?'✓':'✗'}</span>`).join(' · ')
+        ? ch.map(c=>`<span style="color:${c.sent?'var(--good)':'#dc2626'}" title="${esc(c.error||'')}">${esc(c.name)} ${c.sent?'✓':'✗'}</span>`).join(' · ')
         : `<span style="color:#d97706">no ChatOps channels configured</span>`;
     }catch(e){ out.innerHTML=`<span style="color:#dc2626">notify failed: ${esc(e.message)}</span>`; btn.disabled=false; return; }
     btn.textContent="⚡ Notified";
@@ -473,7 +473,7 @@
     rows.forEach(a=>{ if(!used.has(a.id)) ordered.push(a); });   // any orphan children (root not open) fall through normally
     const strip = `<div class="incstrip">
       <div class="incstat"><b>${stats.open_total??0}</b><span>OPEN</span></div>
-      <div class="incstat"><b style="color:${(stats.unacked||0)>0?'#dc2626':'#16a34a'}">${stats.unacked??0}</b><span>UNACKED</span></div>
+      <div class="incstat"><b style="color:${(stats.unacked||0)>0?'#dc2626':'var(--good)'}">${stats.unacked??0}</b><span>UNACKED</span></div>
       <div class="incstat"><b>${dur(stats.mtta_sec)}</b><span>MTTA · 30d</span></div>
       <div class="incstat"><b>${dur(stats.mttr_sec)}</b><span>MTTR · 30d</span></div>
       <div class="incstat"><b>${stats.resolved_24h??0}</b><span>RESOLVED · 24h</span></div>
@@ -490,7 +490,7 @@
       const corrLine = !cr ? '' :
         cr.role==='child'   ? `<br><span class="rl" style="color:#7c3aed">↳ correlated under <b>${esc(cr.parentName)}</b> · not separately paged</span>` :
         cr.role==='related' ? `<br><span class="rl" style="color:#0891b2">related to ${esc(cr.parentName)}</span>` :
-        cr.role==='root'    ? `<br><span class="rl" style="color:#dc2626;font-weight:700">◆ root cause${childCount[a.rule_key]?` · ${childCount[a.rule_key]} correlated`:''}</span>${cr.impacts&&cr.impacts.length?`<br><span class="rl">blocks: ${cr.impacts.map(j=>`<span style="display:inline-block;background:#fee2e2;color:#991b1b;border-radius:4px;padding:0 5px;margin:1px 2px 0 0;font-size:10.5px">${esc(j)}</span>`).join("")}</span>`:''}` : '';
+        cr.role==='root'    ? `<br><span class="rl" style="color:#dc2626;font-weight:700">◆ root cause${childCount[a.rule_key]?` · ${childCount[a.rule_key]} correlated`:''}</span>${cr.impacts&&cr.impacts.length?`<br><span class="rl">blocks: ${cr.impacts.map(j=>`<span style="display:inline-block;background:var(--tint-red);color:var(--tint-red-fg);border-radius:4px;padding:0 5px;margin:1px 2px 0 0;font-size:10.5px">${esc(j)}</span>`).join("")}</span>`:''}` : '';
       const stateTag = a.status!=='open' ? `<span class="st-resolved">resolved</span>`
         : snoozed ? `<span style="color:#7c3aed;font-weight:700">snoozed</span>`
         : a.ack_at ? `<span style="color:#0891b2;font-weight:700">acked</span>`
@@ -498,7 +498,7 @@
       const acts = (a.status==='open' && canAck()) ? `
         ${a.ack_at?'':`<button class="pill" data-ack="${a.id}" style="padding:3px 8px">Ack</button>`}
         <button class="pill" data-snooze="${a.id}" style="padding:3px 8px">${snoozed?'Snoozed':'Snooze'}</button>
-        <button class="pill" data-resolve="${a.id}" style="padding:3px 8px;border-left-color:#16a34a">Resolve</button>` : '';
+        <button class="pill" data-resolve="${a.id}" style="padding:3px 8px;border-left-color:var(--good)">Resolve</button>` : '';
       h += `<tr${isChild?' style="opacity:.62"':''}>
         <td><span class="sevpill" style="background:${sevColor(a.severity)}">${esc(a.severity)}</span></td>
         <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span>${corrLine}</td>
@@ -601,21 +601,21 @@
     const host=$("#ecSection"); if(!host) return;
     let d; try{ d=await api("/api/errclass"); }catch(e){ host.innerHTML=`<div class="rl">${esc(e.message)}</div>`; return; }
     const ov=d.overrides||{};
-    const chip=(c,removable,side)=>`<span class="mono" style="background:${side==='tech'?'#fdeceb':'#e9f1fe'};color:${side==='tech'?'#b91c1c':'#1d4ed8'};border-radius:6px;padding:1px 8px;margin:2px;display:inline-block">${esc(c)}${removable?` <a href="#" data-ecdel="${esc(c)}" data-ecside="${side}" style="text-decoration:none;color:inherit;font-weight:800">×</a>`:''}</span>`;
+    const chip=(c,removable,side)=>`<span class="mono" style="background:${side==='tech'?'var(--err-tec-bg)':'var(--err-biz-bg)'};color:${side==='tech'?'var(--bad-fg)':'var(--blue)'};border-radius:6px;padding:1px 8px;margin:2px;display:inline-block">${esc(c)}${removable?` <a href="#" data-ecdel="${esc(c)}" data-ecside="${side}" style="text-decoration:none;color:inherit;font-weight:800">×</a>`:''}</span>`;
     host.innerHTML=`<div class="apanel"><div class="ah"><b>Business / Technical code classification</b>
         <span class="rl" style="font-weight:600;font-size:11px;color:var(--muted)">· TKT-000017 — reclassify codes without a deploy · applies to NEW events from save (history keeps its ingest class) · audited</span></div>
       <div class="abody" style="font-size:12.5px">
-        <div style="margin-bottom:6px"><b style="color:#b91c1c">TECHNICAL codes</b> <span class="rl">(built-in: ${d.builtin_tech.map(c=>chip(c,(ov.tech_remove||[]).includes(c)?false:true,'techrm')).join('')})</span><br>
+        <div style="margin-bottom:6px"><b style="color:var(--bad-fg)">TECHNICAL codes</b> <span class="rl">(built-in: ${d.builtin_tech.map(c=>chip(c,(ov.tech_remove||[]).includes(c)?false:true,'techrm')).join('')})</span><br>
           <span class="rl">added:</span> ${(ov.tech_add||[]).map(c=>chip(c,true,'tech')).join('')||'<span class="rl">—</span>'}
           ${(ov.tech_remove||[]).length?`<br><span class="rl">demoted to heuristic:</span> ${(ov.tech_remove||[]).map(c=>chip(c,true,'techundo')).join('')}`:''}
         </div>
-        <div style="margin-bottom:8px"><b style="color:#1d4ed8">BUSINESS codes</b> <span class="rl">(built-in: ${d.builtin_biz.map(c=>chip(c,false,'biz')).join('')})</span><br>
+        <div style="margin-bottom:8px"><b style="color:var(--blue)">BUSINESS codes</b> <span class="rl">(built-in: ${d.builtin_biz.map(c=>chip(c,false,'biz')).join('')})</span><br>
           <span class="rl">added (these OVERRIDE technical — the TKT-17 fix):</span> ${(ov.biz_add||[]).map(c=>chip(c,true,'biz')).join('')||'<span class="rl">—</span>'}
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="ecCode" placeholder="code e.g. 706 or -501" style="width:130px">
-          <button class="pill" id="ecAddBiz" style="border-left-color:#1d4ed8">→ mark BUSINESS</button>
-          <button class="pill" id="ecAddTech" style="border-left-color:#b91c1c">→ mark TECHNICAL</button>
+          <button class="pill" id="ecAddBiz" style="border-left-color:var(--blue)">→ mark BUSINESS</button>
+          <button class="pill" id="ecAddTech" style="border-left-color:var(--bad-fg)">→ mark TECHNICAL</button>
           <span id="ecStatus" class="rl"></span>
         </div>
         <div class="rl" style="margin-top:6px;color:var(--muted)">Scope: the API/replica classifier (Troubleshoot feed &amp; tiles, dashboard error KPIs, traffic ingest, alert metrics built on err_class). DMS journey codes have their own success set. To silence a specific rule instead, edit that rule.</div>
@@ -721,7 +721,7 @@
         <td class="mono">${esc(e.minSample)}</td>
         <td class="mono">${isVol?esc(e.volFloor):'—'}</td>
         <td class="mono">${e.maxSeverity?esc(e.maxSeverity):'—'}</td>
-        <td>${ov?'<span class="clschip" style="background:#f59e0b22;color:#b45309">custom</span>':'<span class="rl">global</span>'}</td>
+        <td>${ov?'<span class="clschip" style="background:#f59e0b22;color:var(--warn-fg)">custom</span>':'<span class="rl">global</span>'}</td>
         <td style="white-space:nowrap"><button class="pill" data-anedit="${esc(s.sig)}" style="padding:3px 9px">Edit</button></td>
       </tr>`;
     });
@@ -902,7 +902,7 @@
       try{ const r=await api("/api/rules/test",{method:"POST",body:JSON.stringify(gather())});
         const val = r.value==null?"—":(r.unit==="rate"||r.unit==="ratio")?(r.value*100).toFixed(1)+"%":r.value;
         tb.innerHTML=`Observed <b>${val}</b> (n=${r.sample}) at ${KT.dt(r.now)}Z — `+
-          (r.would_fire?`<span style="color:var(--red);font-weight:800">WOULD FIRE ✕</span>`:`<span style="color:#16a34a;font-weight:800">would not fire ✓</span>`)+
+          (r.would_fire?`<span style="color:var(--red);font-weight:800">WOULD FIRE ✕</span>`:`<span style="color:var(--good);font-weight:800">would not fire ✓</span>`)+
           (r.enoughSample?"":` <span style="color:var(--muted)">(below min sample)</span>`);
       }catch(e){ tb.innerHTML=`<span style="color:var(--red)">${esc(e.message)}</span>`; }
     };

@@ -100,7 +100,7 @@
     h+=`<div style="margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:var(--card2);font-size:11.5px;line-height:1.55">
       <b>Legend:</b>
       <span style="color:var(--green-dark);font-weight:700">LLM</span> — the local AI model (Ollama) composed the answer from the gathered data (subscriber profile, failures, alerts, runbooks). Conversational, explains causes.
-      &nbsp;·&nbsp; <span style="color:#b45309;font-weight:700">data-only</span> — the model was unreachable, so Yusr replied with the raw gathered data only (rule-based, no AI reasoning). Accurate but terse.
+      &nbsp;·&nbsp; <span style="color:var(--warn-fg);font-weight:700">data-only</span> — the model was unreachable, so Yusr replied with the raw gathered data only (rule-based, no AI reasoning). Accurate but terse.
       A high data-only share means the Ollama server is down or not installed — check "Test connection" above.</div>`;
     if(!s.chats){ box.innerHTML=h+`<div class="sub" style="margin-top:12px">No chats in this window yet.</div>`; return; }
 
@@ -187,14 +187,14 @@
     h+=`<span class="sub">latest ${rows.length}${s.chats>rows.length?` of ${s.chats}`:""} · click any chart to filter everything</span>
       <span style="margin-inline-start:auto;display:flex;gap:6px">
         <button class="asMode navtab" data-m="false" style="font-size:11px;padding:3px 9px;${FILT&&FILT.type==="mode"&&FILT.value===false?"background:var(--green);color:#fff;border-color:var(--green)":""}">LLM</button>
-        <button class="asMode navtab" data-m="true" style="font-size:11px;padding:3px 9px;${FILT&&FILT.type==="mode"&&FILT.value===true?"background:#b45309;color:#fff;border-color:#b45309":""}">data-only</button>
+        <button class="asMode navtab" data-m="true" style="font-size:11px;padding:3px 9px;${FILT&&FILT.type==="mode"&&FILT.value===true?"background:#b45309;color:#fff;border-color:var(--warn-fg)":""}">data-only</button>
       </span></div>`;
     h+=`<table style="width:100%;margin-top:6px;font-size:12px;border-collapse:collapse">
       <tr style="color:var(--muted);text-align:left"><th style="padding:4px 6px">When (KSA)</th><th>Agent</th><th>Intent</th><th>Mode</th><th style="text-align:right">latency</th></tr>`
       +(rows.length?rows.map(r=>`<tr style="border-top:1px solid var(--line)">
         <td style="padding:4px 6px;white-space:nowrap">${esc(ksaT(r.at))}</td>
         <td>${esc(r.actor||"—")}</td><td>${esc(r.intent||"—")}</td>
-        <td>${r.degraded?`<span style="color:#b45309">data-only${r.llm_error?` · ${esc(r.llm_error)}`:""}</span>`:`<span style="color:var(--green-dark)">LLM</span>`}</td>
+        <td>${r.degraded?`<span style="color:var(--warn-fg)">data-only${r.llm_error?` · ${esc(r.llm_error)}`:""}</span>`:`<span style="color:var(--green-dark)">LLM</span>`}</td>
         <td style="text-align:right">${r.ms!=null?ms(r.ms):"—"}</td></tr>`).join("")
       :`<tr><td colspan="5" class="sub" style="padding:10px 6px">No chats match this filter.</td></tr>`)
       +`</table>`;

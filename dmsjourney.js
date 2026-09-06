@@ -53,7 +53,7 @@
     if(!code) return;
     const old=document.getElementById("djOv"); if(old) old.remove();
     const ov=document.createElement("div"); ov.id="djOv";
-    ov.style.cssText="position:fixed;inset:0;z-index:960;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);overflow:auto;padding:3vh 3vw";
+    ov.style.cssText="position:fixed;inset:0;z-index:1300;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);overflow:auto;padding:3vh 3vw";
     const header=()=>`
       <div style="position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 18px;background:var(--card,#fff);border-bottom:1px solid var(--line);border-radius:16px 16px 0 0">
         <span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:rgba(14,159,90,.12);font-size:15px">👤</span>
@@ -108,7 +108,7 @@
               <div class="rl" style="font-size:9px;color:var(--muted);margin-top:3px">scanned: ${esc((t.scanned||[]).join(", "))}${(t.skipped||[]).length?` · skipped (no index): ${esc(t.skipped.map(x=>x.key).join(", "))}`:""}</div>`
             :`<div class="rl" style="font-size:10.5px">No DMS ledger rows found for this dealer code${(t.skipped||[]).length?` — skipped (no usable index): ${esc(t.skipped.map(x=>x.key).join(", "))}`:""}.</div>`;
           el.querySelectorAll(".djtl-row").forEach(tr=>tr.addEventListener("click",()=>openRowPopup(tr.dataset.j,tr.dataset.id)));
-        }catch(e){ const el=ov.querySelector("#djOvTl"); if(el) el.innerHTML=`<div class="rl" style="font-size:10.5px;color:#b45309">activity: ${esc(e.message)}</div>`; }
+        }catch(e){ const el=ov.querySelector("#djOvTl"); if(el) el.innerHTML=`<div class="rl" style="font-size:10.5px;color:var(--warn-fg)">activity: ${esc(e.message)}</div>`; }
       }catch(e){ body.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; }
     };
     wire(); load();
@@ -120,7 +120,7 @@
     if(!key||!id) return;
     const old=document.getElementById("djRv"); if(old) old.remove();
     const ov=document.createElement("div"); ov.id="djRv";
-    ov.style.cssText="position:fixed;inset:0;z-index:975;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);overflow:auto;padding:3vh 3vw";
+    ov.style.cssText="position:fixed;inset:0;z-index:1301;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);overflow:auto;padding:3vh 3vw";
     const header=(d)=>`
       <div style="position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 18px;background:var(--card,#fff);border-bottom:1px solid var(--line);border-radius:16px 16px 0 0">
         <span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:rgba(37,99,235,.12);font-size:14px">${(d&&d.icon)||"⧉"}</span>
@@ -157,7 +157,7 @@
           try{
             const t=await api(`/api/dms/journeys/trace?q=${encodeURIComponent(d.ref)}${um()?"&unmask=1":""}`);
             const el=ov.querySelector("#djRvTrace"); if(el) el.innerHTML=`<b style="font-size:11.5px">Cross-journey trace</b> <span class="rl" style="font-size:9.5px;color:var(--muted)">reference ${esc(d.ref)} · ${n((t.hits||[]).length)} step(s), oldest first</span>`+traceListHtml(t,ov);
-          }catch(e){ const el=ov.querySelector("#djRvTrace"); if(el) el.innerHTML=`<div class="rl" style="font-size:10.5px;color:#b45309">trace: ${esc(e.message)}</div>`; }
+          }catch(e){ const el=ov.querySelector("#djRvTrace"); if(el) el.innerHTML=`<div class="rl" style="font-size:10.5px;color:var(--warn-fg)">trace: ${esc(e.message)}</div>`; }
         }
       }catch(e){ body.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; }
     };
@@ -197,7 +197,7 @@
         <button class="dmsj-flow" data-j="${k}" style="cursor:pointer;font:inherit;color:inherit;text-align:center;background:var(--card2,rgba(148,163,184,.06));border:1px solid ${j.errors?(rate>=3?"#dc2626":"#d97706"):"var(--line)"};border-radius:11px;padding:8px 16px;min-width:120px">
           <div style="font-size:17px;font-weight:800">${n(j.calls)}</div>
           <div class="rl" style="font-size:10px;color:var(--muted)">${esc(l)}</div>
-          ${j.errors?`<div style="font-size:10px;font-weight:700;color:#dc2626">${n(j.errors)} fail</div>`:`<div style="font-size:10px;color:#16a34a;font-weight:700">✓</div>`}
+          ${j.errors?`<div style="font-size:10px;font-weight:700;color:#dc2626">${n(j.errors)} fail</div>`:`<div style="font-size:10px;color:var(--good);font-weight:700">✓</div>`}
         </button>`; };
     const wallet=get("topup"), refill=get("wallet_refill");
     const flowStrip=`<div style="border:1px solid var(--line);border-radius:12px;background:var(--card,#fff);padding:10px 14px;margin-bottom:12px">
@@ -219,16 +219,16 @@
       }).join("")}</svg>`; };
     const fresh=(st)=>{ if(!st) return `<span style="color:#94a3b8">not synced yet</span>`;
       if(/error|not visible|no id|no timestamp/i.test(st.note||"")) return `<span style="color:#dc2626" title="${esc(st.note)}">⚠ ${esc((st.note||"").slice(0,34))}</span>`;
-      if(/behind/i.test(st.note||"")) return `<span style="color:#b45309">${esc(st.note)}</span>`;
+      if(/behind/i.test(st.note||"")) return `<span style="color:var(--warn-fg)">${esc(st.note)}</span>`;
       const age=(Date.now()-new Date(st.updated_at).getTime())/60000;
-      return age<12?`<span style="color:#16a34a">● live</span>`:`<span style="color:#b45309">● ${Math.round(age)}m ago</span>`; };
+      return age<12?`<span style="color:var(--good)">● live</span>`:`<span style="color:var(--warn-fg)">● ${Math.round(age)}m ago</span>`; };
     const card=(j)=>{ const rate=j.calls?Math.round(1000*j.errors/j.calls)/10:0;
       return `<button class="dmsj-card" data-j="${j.key}" title="Click for the full breakdown: trend, response codes, APIs, dealers, failures" style="text-align:left;cursor:pointer;font:inherit;color:inherit;background:var(--card,#fff);border:1px solid var(--line);border-left:4px solid ${j.errors?(rate>=5?"#dc2626":rate>=1?"#d97706":"#16a34a"):"#16a34a"};border-radius:12px;padding:10px 13px;min-width:225px;flex:1">
         <div style="display:flex;align-items:center;gap:7px"><span>${j.icon||"•"}</span><b style="font-size:12px">${esc(j.label)}</b>
           <span style="margin-left:auto">${spark(j)}</span></div>
         <div style="display:flex;gap:13px;align-items:baseline;margin-top:5px">
           <span style="font-size:19px;font-weight:800">${n(j.calls)}</span>
-          ${j.errors?`<span style="font-size:11.5px;font-weight:700;color:${rate>=5?"#dc2626":"#d97706"}">${n(j.errors)} fail${rate>=0.1?` (${rate}%)`:""}</span>`:`<span style="font-size:11.5px;color:#16a34a;font-weight:700">✓ clean</span>`}
+          ${j.errors?`<span style="font-size:11.5px;font-weight:700;color:${rate>=5?"#dc2626":"#d97706"}">${n(j.errors)} fail${rate>=0.1?` (${rate}%)`:""}</span>`:`<span style="font-size:11.5px;color:var(--good);font-weight:700">✓ clean</span>`}
           ${j.peak_dealers?`<span class="rl" style="font-size:10px;color:var(--muted)">peak ${n(j.peak_dealers)} dealers/h</span>`:""}
         </div>
         <div class="rl" style="font-size:9.5px;margin-top:3px">${fresh(j.state)}${j.note?` · ${esc(j.note)}`:""}</div></button>`; };
@@ -328,10 +328,10 @@
       </div>
       <b style="font-size:11px">Failures</b> <span class="rl" style="font-size:9.5px;color:var(--muted)">${_codeFilter?`filtered: ${esc(_codeFilter)} · `:""}${F?`in selected ${M.unit} · `:""}masked · ⇄ traces the reference</span>
       ${evRows?`<table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-top:4px"><tr><th style="text-align:left;font-size:9.5px;color:var(--muted);padding:2px 6px">AT</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">DEALER</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">MSISDN</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">CODE</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">MESSAGE</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">API</th><th></th></tr>${evRows}</table>`
-        :`<div class="rl" style="color:#16a34a;font-size:11px;margin-top:4px">No failures${_codeFilter||F?" matching this selection":""} in this range.</div>`}
+        :`<div class="rl" style="color:var(--good);font-size:11px;margin-top:4px">No failures${_codeFilter||F?" matching this selection":""} in this range.</div>`}
       <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
         <b style="font-size:11px">All calls</b>
-        <span class="rl" style="font-size:9.5px;color:var(--muted)">every row, success included · latest first · live from the DMS table${_codeFilter?` · <b style="color:#b45309">filtered server-side: code ${esc(_codeFilter)}</b> (click the chip again to clear)`:""}</span>
+        <span class="rl" style="font-size:9.5px;color:var(--muted)">every row, success included · latest first · live from the DMS table${_codeFilter?` · <b style="color:var(--warn-fg)">filtered server-side: code ${esc(_codeFilter)}</b> (click the chip again to clear)`:""}</span>
         <input id="djRF" value="${esc(_rowsFilter)}" placeholder="filter loaded rows… code / dealer / api / number" style="flex:1 1 220px;min-width:180px;font:inherit;font-size:11px;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--card,#fff);color:inherit">
         <span id="djRn" class="rl" style="font-size:10px;color:var(--muted)"></span></div>
       <div id="djRows" style="margin-top:4px"><div class="rl" style="font-size:10.5px">Loading latest calls…</div></div></div>`;

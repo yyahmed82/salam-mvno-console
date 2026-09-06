@@ -65,8 +65,8 @@
     const tabs=TAB_ORDER.map(([k,l,sub])=>{ const on=k===curTab, has=!!window.FIXED_PAGES[k];
       return `<button class="fx-tab" data-t="${k}" ${has?"":"disabled"} title="${esc(sub)}${has?"":" — coming in the next drop"}" style="cursor:${has?"pointer":"default"};font:inherit;font-size:12.5px;font-weight:${on?"800":"600"};padding:7px 13px;border:1px solid ${on?"var(--green,#0e9f5a)":"var(--line)"};border-bottom:${on?"3px solid var(--green,#0e9f5a)":"1px solid var(--line)"};border-radius:10px;background:${on?"var(--card,#fff)":"transparent"};color:${has?"inherit":"var(--muted)"};opacity:${has?1:.55}">${l}</button>`; }).join("");
     const cur=TAB_ORDER.find(t=>t[0]===curTab)||TAB_ORDER[0];
-    host.innerHTML=`<div style="padding:0 18px 40px;max-width:1440px;margin:0 auto">
-      <div style="position:sticky;top:0;z-index:26;background:var(--card,#fff);border-bottom:1px solid var(--line);box-shadow:0 4px 14px rgba(15,23,42,.05);margin:0 -18px 14px;padding:10px 18px;display:flex;flex-direction:column;gap:8px">
+    host.innerHTML=`<div class="fx-hub" style="padding:0 var(--fx-pad,18px) 40px;max-width:1440px;margin:0 auto">
+      <div class="fx-hubbar" style="position:sticky;top:var(--hdr);z-index:26;background:var(--card);border-bottom:1px solid var(--line);box-shadow:0 4px 14px rgba(15,23,42,.05);margin:0 calc(-1*var(--fx-pad,18px)) 14px;padding:10px var(--fx-pad,18px);display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <div><h2 style="margin:0;font-size:16px"><span style="color:var(--muted);font-weight:600">Fixed ›</span> ${esc(cur[1])}</h2>
             <div class="rl" style="font-size:10.5px;color:var(--muted)">${esc(cur[2])} · FTTH · 5G home · e-purchase / QR · Salam Home app — Operations Console data, stage 1 · other pages: <b>Fixed ▾</b> menu</div></div>
@@ -95,7 +95,7 @@
     const wfMax=Math.max(1,...d.byWorkflow.map(o=>o.n));
     const dayMax=Math.max(1,...d.byDay.map(o=>o.n));
     const naf=d.integrations.nafath, man=d.integrations.manafith;
-    const spark=d.byDay.length?`<div style="display:flex;align-items:flex-end;gap:2px;height:46px;margin-top:6px">${d.byDay.map(x=>`<div title="${ts(x.day).slice(0,10)} · ${fmt(x.n)} attempts · ${fmt(x.completed)} completed" style="flex:1;min-width:3px;height:${Math.max(2,Math.round(44*x.n/dayMax))}px;background:linear-gradient(180deg,var(--green,#0e9f5a) ${Math.round(100*x.completed/Math.max(1,x.n))}%,#cbd5e1 0)"></div>`).join("")}</div>`:"";
+    const spark=d.byDay.length?`<div style="display:flex;align-items:flex-end;gap:2px;height:46px;margin-top:6px">${d.byDay.map(x=>`<div title="${ts(x.day).slice(0,10)} · ${fmt(x.n)} attempts · ${fmt(x.completed)} completed" style="flex:1;min-width:3px;height:${Math.max(2,Math.round(44*x.n/dayMax))}px;background:linear-gradient(180deg,var(--green,#0e9f5a) ${Math.round(100*x.completed/Math.max(1,x.n))}%,var(--line) 0)"></div>`).join("")}</div>`:"";
     $("#fxBody").innerHTML=`
       <div class="topo-stats" style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap">
         ${chip("ATTEMPTS",fmt(k.attempts),null,`${ts(d.window.from).slice(0,10)} → ${ts(d.window.to).slice(0,10)}`)}

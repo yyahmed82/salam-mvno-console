@@ -122,7 +122,7 @@
       .mon-tab{transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease,background .12s ease}
       .mon-tab:hover{transform:translateY(-1px)}
       .mon-tab:focus-visible{outline:2px solid var(--blue,#2563eb);outline-offset:2px}
-      #monRange{position:sticky;top:55px;z-index:30;transition:box-shadow .15s}
+      #monRange{position:sticky;top:var(--hdr);z-index:30;transition:box-shadow .15s}
       #monRange.stuck>div{box-shadow:0 6px 18px rgba(15,23,42,.16)}
       .mon-sum{cursor:pointer;border-radius:6px;padding:1px 5px}
       .mon-sum:hover{background:var(--line-soft,rgba(148,163,184,.18))}
@@ -231,7 +231,7 @@
       </div>
       ${w.what?`<div class="rl" style="font-size:11px;white-space:normal;margin-top:6px"><b>What it checks.</b> ${esc(w.what)}</div>`:""}
       ${w.why?`<div class="rl" style="font-size:11px;white-space:normal;color:var(--muted)"><b>Why it matters.</b> ${esc(w.why)}</div>`:""}
-      ${w.red&&c.status!=="ok"?`<div class="rl" style="font-size:11px;white-space:normal;color:#b45309;margin-top:3px"><b>First move.</b> ${esc(w.red)}</div>`:""}
+      ${w.red&&c.status!=="ok"?`<div class="rl" style="font-size:11px;white-space:normal;color:var(--warn-fg);margin-top:3px"><b>First move.</b> ${esc(w.red)}</div>`:""}
     </div>`;
     const j=host.querySelector(".mon-jump");
     if(j) j.addEventListener("click",()=>{
@@ -326,7 +326,7 @@
   }
 
   function errList(errors){
-    if(!errors.length) return `<div class="rl" style="padding:8px;color:#16a34a;font-weight:700">No error messages in this window.</div>`;
+    if(!errors.length) return `<div class="rl" style="padding:8px;color:var(--good);font-weight:700">No error messages in this window.</div>`;
     return errors.map(e=>{ const col=CLS[e.cls]||"#64748b";
       return `<div style="display:flex;gap:8px;align-items:baseline;border-top:1px solid var(--line);padding:5px 2px;font-size:11.5px">
         <span class="mono" style="font-weight:800;color:${col};min-width:60px">${esc(e.code)}</span>
@@ -378,7 +378,7 @@
       const body={ globalMs:Number($("#monThrGlobal").value)||1500, perApi };
       const msg=$("#monThrMsg"); msg.textContent="Saving…";
       try{ thr=await api("/api/monitoring/latency-thresholds",{method:"PUT",body:JSON.stringify(body)});
-        msg.innerHTML=`<span style="color:#16a34a;font-weight:700">Saved ✓ (audited)</span>`;
+        msg.innerHTML=`<span style="color:var(--good);font-weight:700">Saved ✓ (audited)</span>`;
         renderTraffic();   // repaint the per-API table with the new limits
       }catch(e){ msg.innerHTML=`<span style="color:#dc2626">${esc(e.message)}</span>`; }
     };
@@ -523,9 +523,9 @@
       ${r.response_message?`<div style="padding:5px 10px;font-size:11px;color:${bad?"#dc2626":"var(--muted)"};font-weight:${bad?700:400}">${esc(r.response_message)}</div>`:""}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px">
         <div><div style="font-size:9.5px;font-weight:800;color:var(--muted);margin-bottom:3px">REQUEST BODY</div>
-          <pre style="margin:0;max-height:230px;overflow:auto;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:8px;font-size:10px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${r.request_body!=null?pretty(r.request_body):"(no body)"}</pre></div>
+          <pre style="margin:0;max-height:230px;overflow:auto;background:var(--panel-dark);color:var(--panel-dark-fg);border-radius:8px;padding:8px;font-size:10px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${r.request_body!=null?pretty(r.request_body):"(no body)"}</pre></div>
         <div><div style="font-size:9.5px;font-weight:800;color:var(--muted);margin-bottom:3px">RESPONSE BODY</div>
-          <pre style="margin:0;max-height:230px;overflow:auto;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:8px;font-size:10px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${r.response_body!=null?pretty(r.response_body):"(no body)"}</pre></div>
+          <pre style="margin:0;max-height:230px;overflow:auto;background:var(--panel-dark);color:var(--panel-dark-fg);border-radius:8px;padding:8px;font-size:10px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${r.response_body!=null?pretty(r.response_body):"(no body)"}</pre></div>
       </div></div>`;
     }).join("");
     host.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
@@ -533,7 +533,7 @@
         <span style="flex:1"></span>
         ${d.can_unmask?`<button class="pill" id="sampMask" style="padding:3px 10px;font-size:11px;border-left-color:${d.unmasked?"#94a3b8":"#dc2626"}">${d.unmasked?"Mask":"Unmask (audited)"}</button>`:""}
       </div>`
-      +(cards||`<div class="rl" style="color:#16a34a;font-weight:700">No ${d.failOnly?"failing ":""}calls for this endpoint in the recent log window ✓</div>`);
+      +(cards||`<div class="rl" style="color:var(--good);font-weight:700">No ${d.failOnly?"failing ":""}calls for this endpoint in the recent log window ✓</div>`);
     host.querySelectorAll(".samp-an").forEach(b=>b.addEventListener("click",()=>{
       if(window.setConsoleHash) window.setConsoleHash("troubleshoot");
       setTimeout(()=>{ if(window.opsAnalyzeTrace) window.opsAnalyzeTrace(b.dataset.txn); },300);
@@ -664,12 +664,12 @@
             const n=k==='__rest'?(total-topCats.reduce((a,c2)=>a+(HBC[h][c2]||0),0)):(HBC[h][k]||0);
             if(!n) continue;
             const hgt=(n/maxH)*(HT-pb-pt); y0-=hgt;
-            const col=k==='__rest'?'#cbd5e1':((CM[k]||{}).color||'#94a3b8');
+            const col=k==='__rest'?'var(--line)':((CM[k]||{}).color||'#94a3b8');
             g+=`<rect x="${x(i)}" y="${y0}" width="${bw}" height="${Math.max(1,hgt)}" fill="${col}" opacity=".85"><title>${esc(KT.dt(h))} · ${esc(k==='__rest'?'other':((CM[k]||{}).label||k))}: ${n}</title></rect>`;
           }
           if(i%Math.ceil(hoursK.length/16)===0) g+=`<text x="${x(i)+bw/2}" y="${HT-4}" text-anchor="middle" font-size="7.5" fill="var(--muted)">${String(h).slice(11,13)}h</text>`;
         });
-        const legend=topCats.map(k=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:10.5px"><i style="width:9px;height:9px;border-radius:2px;background:${(CM[k]||{}).color||'#94a3b8'};display:inline-block"></i>${esc((CM[k]||{}).label||k)}</span>`).join("")+`<span style="font-size:10.5px"><i style="width:9px;height:9px;border-radius:2px;background:#cbd5e1;display:inline-block;margin-right:4px"></i>other</span>`;
+        const legend=topCats.map(k=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:10.5px"><i style="width:9px;height:9px;border-radius:2px;background:${(CM[k]||{}).color||'#94a3b8'};display:inline-block"></i>${esc((CM[k]||{}).label||k)}</span>`).join("")+`<span style="font-size:10.5px"><i style="width:9px;height:9px;border-radius:2px;background:var(--line);display:inline-block;margin-right:4px"></i>other</span>`;
         catChart=`<div class="apanel" style="grid-column:span 12"><div class="ah"><b>Hourly by category <span class="rl" style="font-weight:600;font-size:11px;color:var(--muted)">· last 48h · stacked · hover any segment</span></b></div>
           <div class="abody"><svg viewBox="0 0 ${W} ${HT}" style="width:100%;height:${HT}px">${g}</svg><div style="margin-top:6px">${legend}</div></div></div>`;
       } }
@@ -731,9 +731,9 @@
           const okc=s.ok_pct==null?"var(--muted)":(s.ok_pct>=95?"#16a34a":s.ok_pct>=85?"#d97706":"#dc2626");
           const codes=(s.codes||[]).filter(c=>!c.ok).slice(0,5).map(c=>
             `<div class="rl" style="font-size:10.5px;white-space:nowrap" title="${esc(c.hint||"")}">
-               <span class="mono" style="color:${c.cls==="technical"?"#dc2626":"#b45309"}">${esc(c.code)}</span>
+               <span class="mono" style="color:${c.cls==="technical"?"#dc2626":"var(--warn-fg)"}">${esc(c.code)}</span>
                ${esc(c.label||"")} <b>${num(c.n)}</b></div>`).join("")
-            || `<div class="rl" style="font-size:10.5px;color:#16a34a">no failures</div>`;
+            || `<div class="rl" style="font-size:10.5px;color:var(--good)">no failures</div>`;
           /* A step whose successes are not recorded anywhere must SAY SO. Printing 0 there would
              read as "nobody completed the OTP", which is a measurement gap, not a fact. */
           const headline=s.not_measured
@@ -755,7 +755,7 @@
             <div class="rl" style="font-size:10.5px;margin-bottom:4px">passwords accepted</div>
             <div class="rl" style="font-size:10.5px;color:var(--muted)">failed at password: <b>${num(D.password_failures)}</b></div>
             <div class="rl" style="font-size:10.5px;color:var(--muted)">wrong OTP entered: <b>${num(D.wrong_otp)}</b></div>
-            <div class="rl" style="font-size:10.5px;color:#b45309;white-space:normal;margin-top:4px">
+            <div class="rl" style="font-size:10.5px;color:var(--warn-fg);white-space:normal;margin-top:4px">
               Abandoned at OTP: <b>not computable</b></div>
             <div class="rl" style="font-size:10px;color:var(--muted);white-space:normal">${esc(D.why_not||"")}</div>
           </div>`:"";
@@ -805,7 +805,7 @@
           if(!L||!L.verdict) return "";
           const V=L.verdict, F=L.freshness||{};
           const col=V.state==="authenticating-now"?"#16a34a":V.state==="recent"?"#0e9f5a":
-                    V.state==="idle"?"#64748b":V.state==="never"?"#b45309":"#dc2626";
+                    V.state==="idle"?"#64748b":V.state==="never"?"var(--warn-fg)":"#dc2626";
           /* "SIGNED IN TODAY" was read as "is logged in right now" — which is precisely the claim
              the platform cannot support (1-year tokens, no session table, no write on logout).
              The label now names the EVENT that was recorded, not a state. */
@@ -819,15 +819,15 @@
               <td style="font-size:10.5px">${esc([l.platform,l.app_version].filter(Boolean).join(" ")||"—")}</td></tr>`).join("");
           const ev=(L.evidence||[]).map(e=>`<div class="rl" style="font-size:10.5px;color:var(--muted);white-space:normal">
               • ${esc(e.kind)} ${esc(KT.dt(e.at))} — ${esc(e.detail)} <i>${esc(e.proves||"")}</i></div>`).join("");
-          const fresh=`<div class="rl" style="font-size:10.5px;white-space:normal;margin-top:4px;color:${F.users_in_sync?"var(--muted)":"#b45309"}">
+          const fresh=`<div class="rl" style="font-size:10.5px;white-space:normal;margin-top:4px;color:${F.users_in_sync?"var(--muted)":"var(--warn-fg)"}">
               <b>Data feed:</b> ${esc(F.verdict||"")}</div>`;
           return `<div style="border:1px solid ${col};border-radius:10px;padding:8px 10px;margin-bottom:8px">
             <div><span style="font-weight:800;color:${col};border:1px solid ${col};border-radius:999px;padding:1px 9px;font-size:10px;letter-spacing:.04em">${lbl}</span>
               <b style="margin-left:7px;font-size:12px">${esc(V.headline||"")}</b></div>
             <div class="rl" style="font-size:10.5px;color:var(--muted);white-space:normal;margin-top:3px">${esc(V.why||"")}</div>
-            ${V.not_a_session?`<div class="rl" style="font-size:10.5px;color:#b45309;white-space:normal">${esc(V.not_a_session)}</div>`:""}
+            ${V.not_a_session?`<div class="rl" style="font-size:10.5px;color:var(--warn-fg);white-space:normal">${esc(V.not_a_session)}</div>`:""}
             ${V.token?`<div class="rl" style="font-size:10.5px;color:var(--muted);white-space:normal">${esc(V.token)}</div>`:""}
-            ${V.fix?`<div class="rl" style="font-size:10.5px;color:#b45309;white-space:normal">Fix: ${esc(V.fix)}</div>`:""}
+            ${V.fix?`<div class="rl" style="font-size:10.5px;color:var(--warn-fg);white-space:normal">Fix: ${esc(V.fix)}</div>`:""}
             ${lineRows?`<table class="alerts" style="margin-top:6px"><tr><th>LINE</th><th>PASSWORD ACCEPTED (KSA)</th><th>SIGN-INS</th><th>IP</th><th>DEVICE</th></tr>${lineRows}</table>`:""}
             ${ev}${fresh}
             ${(L.notes||[]).map(n=>`<div class="rl" style="font-size:10.5px;color:var(--muted);white-space:normal">• ${esc(n)}</div>`).join("")}
@@ -842,7 +842,7 @@
             :`· <span style="color:var(--muted)">no sign-in timestamp on file</span>`}</div>`:"";
         const S=d.session;
         const sPill=S?(()=>{
-          const col=S.verdict.startsWith('active now')?'#16a34a':(S.verdict.startsWith('session may')?'#d97706':'#64748b');
+          const col=S.verdict.startsWith('active now')?'var(--good)':(S.verdict.startsWith('session may')?'#d97706':'#64748b');
           const lbl=S.verdict.startsWith('active now')?'LOGGED IN NOW':(S.verdict.startsWith('session may')?'SESSION MAY BE LIVE':(S.verdict.startsWith('no recent')?'NOT LOGGED IN':'UNKNOWN'));
           const ago=S.age_minutes==null?'':(S.age_minutes<60?`${S.age_minutes}m ago`:(S.age_minutes<1440?`${Math.round(S.age_minutes/60)}h ago`:`${Math.round(S.age_minutes/1440)}d ago`));
           return `<div class="rl" style="font-size:11.5px;margin-bottom:6px">
@@ -856,16 +856,16 @@
         if(!(d.ips||[]).length){ out.innerHTML=loginCard+cust+sPill+lines+notes+`<div class="rl">No IP could be checked for that input.</div>`; return; }
         const rows=d.ips.map(x=>{
           const st=x.private
-            ? `<span style="color:#64748b;font-weight:700">not checkable</span>`
+            ? `<span style="color:var(--muted);font-weight:700">not checkable</span>`
             : (x.blocked_now
               ? `<span style="color:#dc2626;font-weight:800">BLOCKED NOW</span>`
-              : (x.blocks ? `<span style="color:#d97706;font-weight:700">was blocked</span>` : `<span style="color:#16a34a;font-weight:700">never blocked</span>`));
+              : (x.blocks ? `<span style="color:#d97706;font-weight:700">was blocked</span>` : `<span style="color:var(--good);font-weight:700">never blocked</span>`));
           const acts=(x.by_action||[]).map(a=>`${esc(a.act)} ${a.n}`).join(" · ")||"—";
           const ttl=(x.live&&x.live.keys&&x.live.keys.length)
             ? x.live.keys.map(k=>`${esc(k.action)}${k.ttl_seconds>0?` (${Math.round(k.ttl_seconds/3600)}h left)`:""}`).join(" · ") : "";
           return `<tr>
             <td class="mono">${esc(x.ip)}<div class="rl" style="font-size:10px;color:var(--muted)">${esc(x.source)}</div>
-              ${x.note?`<div class="rl" style="font-size:10px;color:#b45309;max-width:280px;white-space:normal">⚠ ${esc(x.note)}</div>`:""}</td>
+              ${x.note?`<div class="rl" style="font-size:10px;color:var(--warn-fg);max-width:280px;white-space:normal">⚠ ${esc(x.note)}</div>`:""}</td>
             <td>${st}${ttl?`<div class="rl" style="font-size:10px;color:var(--muted)">${ttl}</div>`:""}</td>
             <td>${(x.blocks||0).toLocaleString()}</td>
             <td>${x.retries||"—"}</td>
@@ -1093,7 +1093,7 @@
       const rows=d.rows.map((r,i)=>{
         const s=SMS_ST[r.status]||{c:"#64748b",t:r.status};
         const grade=r.type_source==="live"?`<span title="read from the app cache — exact" style="color:#10b981;font-weight:800">exact</span>`:r.type_source==="derived"?`<span title="reconstructed from the sign-in tracking" style="color:#2563eb;font-weight:800">derived</span>`
-          :r.type_source==="inferred"?`<span title="deduced from ${esc(r.type_because||"")}" style="color:#b45309;font-weight:800">inferred</span>`
+          :r.type_source==="inferred"?`<span title="deduced from ${esc(r.type_because||"")}" style="color:var(--warn-fg);font-weight:800">inferred</span>`
           :`<span style="color:var(--muted)">not recorded</span>`;
         return `<tr class="sms-row" data-i="${i}" style="cursor:pointer">
           <td class="mono">${esc(KT.dt(r.sent_at))}</td>
@@ -1118,7 +1118,7 @@
         <pre style="white-space:pre-wrap;font-size:11.5px;margin:2px 0 0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);${lang==="ARABIC"?"direction:rtl;text-align:right":""}">${esc(txt)}</pre></div>`:"";
       const grade=r.type_source==="live"?["#10b981","exact — read from the app cache"]
         :r.type_source==="derived"?["#2563eb","derived from the sign-in tracking"]
-        :r.type_source==="inferred"?["#b45309","inferred from "+(r.type_because||"nearby activity")]
+        :r.type_source==="inferred"?["var(--warn-fg)","inferred from "+(r.type_because||"nearby activity")]
         :["#64748b","message type not recorded"];
       host.style.maxWidth="640px";
       host.innerHTML=`<div style="border-top:3px solid ${s.c};border-radius:12px 12px 0 0;margin:-1px -1px 0"></div>
@@ -1139,7 +1139,7 @@
           number <span class="mono">${esc(r.recipient_mobile||r.identifier||"—")}</span> (${esc(r.identifier_kind||"—")})
           ${r.confirmation_reference?` · ref <span class="mono">${esc(r.confirmation_reference)}</span>`:""}
           · code stored: ${r.has_code?"yes":"no"} <i>(never displayed)</i></div>
-        ${r.recipient_note?`<div class="rl" style="font-size:10.5px;color:#b45309;white-space:normal;margin-top:5px">⚠ ${esc(r.recipient_note)}</div>`:""}
+        ${r.recipient_note?`<div class="rl" style="font-size:10.5px;color:var(--warn-fg);white-space:normal;margin-top:5px">⚠ ${esc(r.recipient_note)}</div>`:""}
         ${body(r.body_en,"ENGLISH")}${body(r.body_ar,"ARABIC")}
         <div class="rl" style="font-size:10.5px;color:var(--muted);white-space:normal;margin-top:7px">${esc(r.body_note||"")}</div>
       </div>`;
@@ -1270,7 +1270,7 @@
       <details><summary class="rl" style="cursor:pointer;font-size:10.5px;color:var(--muted)">payload</summary>
       <pre style="font-size:10px;max-height:200px;overflow:auto;white-space:pre-wrap">${esc(f.payload||"")}</pre></details></div>`).join("");
     box.innerHTML=head
-      +`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><span class="rl" style="font-weight:700">FAULTS:</span> ${fk||'<span class="rl" style="color:#16a34a">none in window</span>'}</div>`
+      +`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><span class="rl" style="font-weight:700">FAULTS:</span> ${fk||'<span class="rl" style="color:var(--good)">none in window</span>'}</div>`
       +`<div style="border:1px solid var(--line);border-radius:10px;max-height:320px;overflow:auto"><table class="alerts" style="font-size:11.5px">
         <tr><th>OSB SERVICE / BACKEND</th><th>CALLS</th><th>AVG</th><th>P95</th><th>MAX</th></tr>${rows}</table></div>`
       +(fRows?`<div class="rl" style="margin-top:8px"><b>Fault feed (payload forensics)</b></div><div style="border:1px solid var(--line);border-radius:10px;padding:4px 10px;max-height:300px;overflow:auto">${fRows}</div>`:"");
@@ -1342,7 +1342,7 @@
       <td class="rl" style="color:#dc2626">${esc(r.error||"")}</td>
       <td>${r.uil_transaction_id?`<button class="pill" data-apigwuil="${esc(r.uil_transaction_id)}" style="padding:2px 8px;font-size:10.5px" title="Open in Troubleshoot case analyzer">Analyze</button>`:`<span class="mono rl" style="color:var(--muted)" title="trace ${esc(r.trace_id||"")}">${esc((r.trace_id||"").slice(0,8))}</span>`}</td></tr>`).join("");
     const slowTable2=`<div class="apanel" style="grid-column:span 12;margin-top:12px"><div class="ah" style="display:flex;align-items:center"><b>Errors &amp; slow calls <span class="rl" style="font-weight:600;font-size:11px;color:var(--muted)">· full spans kept for every error and every call over the slow threshold · click a row for the trace · headers sort</span></b>${monExportBtn("gwSlowX")}</div>
-      <div class="abody">${slowRows?`<div style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px"><table class="alerts msort" id="gwSlowTbl"><tr><th>AT (KSA)</th><th>SERVICE</th><th>ENDPOINT</th><th>ms</th><th>HTTP</th><th>ERROR</th><th></th></tr>${slowRows}</table></div>`:`<div class="rl" style="color:#16a34a;font-weight:700">No errors or slow calls captured in this window.</div>`}</div></div>`;
+      <div class="abody">${slowRows?`<div style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:8px"><table class="alerts msort" id="gwSlowTbl"><tr><th>AT (KSA)</th><th>SERVICE</th><th>ENDPOINT</th><th>ms</th><th>HTTP</th><th>ERROR</th><th></th></tr>${slowRows}</table></div>`:`<div class="rl" style="color:var(--good);font-weight:700">No errors or slow calls captured in this window.</div>`}</div></div>`;
 
     /* ---- WHAT NEEDS ATTENTION, above the fold ----
      * The league table is sorted by VOLUME, so the endpoint that is actually broken can sit at
@@ -1365,7 +1365,7 @@
       <div style="font-size:10.5px;font-weight:800;letter-spacing:.05em;color:${accent}">${esc(title)}</div>
       <div style="font-size:20px;font-weight:800;line-height:1.15;margin-top:2px">${headline}</div>
       <div class="rl" style="font-size:10px;color:var(--muted);margin-bottom:7px">${esc(sub)}</div>
-      ${rows||`<div class="rl" style="font-size:10.5px;color:#16a34a;font-weight:700">none in this window ✓</div>`}
+      ${rows||`<div class="rl" style="font-size:10.5px;color:var(--good);font-weight:700">none in this window ✓</div>`}
       ${foot?`<div class="rl" style="font-size:9.5px;color:var(--muted);margin-top:5px;white-space:normal">${esc(foot)}</div>`:""}</div>`;
     /* One row: truncated path on the left, figure pinned right with real breathing room.
      * The previous version emitted TWO style attributes on the same div when the row was
@@ -1383,8 +1383,8 @@
     const problems=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 2px">
       ${probCard("① FAILING","#dc2626",Number(totErr).toLocaleString(),"errors across all endpoints",
         byErr.map(r=>miniRow(label(r),`${Number(r.errors).toLocaleString()} · ${r.rate.toFixed(1)}%`,"#dc2626",idxOf(r))).join(""))}
-      ${probCard("② TIMING OUT","#b45309",toSpans.length?Number(toSpans.length).toLocaleString():"0","spans that timed out or returned 408/504",
-        toTop.map(r=>miniRow(r.path,`${r.n}×`,"#b45309",EPS.findIndex(x=>x.path===r.path&&x.service===r.service))).join(""),
+      ${probCard("② TIMING OUT","var(--warn-fg)",toSpans.length?Number(toSpans.length).toLocaleString():"0","spans that timed out or returned 408/504",
+        toTop.map(r=>miniRow(r.path,`${r.n}×`,"var(--warn-fg)",EPS.findIndex(x=>x.path===r.path&&x.service===r.service))).join(""),
         "Counted from the outlier spans the collector keeps, not from every call — treat as a signal, not a total.")}
       ${probCard("③ SLOWEST","#d97706",bySlow.length?Number(bySlow[0].p95_ms).toLocaleString()+" ms":"—","worst p95 in this window",
         bySlow.map(r=>miniRow(label(r),Number(r.p95_ms).toLocaleString()+" ms",r.p95_ms>=3000?"#dc2626":"#d97706",idxOf(r))).join(""))}
@@ -1418,7 +1418,7 @@
     host.innerHTML=`<div class="apanel" style="margin-top:12px"><div class="abody rl">Loading error focus…</div></div>`;
     let d; try{ d=await api(`/api/monitoring/apigw/errfocus?window=${winH}${monQS()}${gwFam?`&fam=${encodeURIComponent(gwFam)}`:""}`); }
     catch(e){ host.innerHTML=""; return; }
-    const FAMC={ "1500":"#dc2626", timeout:"#b45309", "5xx":"#ef4444", "4xx":"#d97706", other:"#64748b" };
+    const FAMC={ "1500":"#dc2626", timeout:"var(--warn-fg)", "5xx":"#ef4444", "4xx":"#d97706", other:"#64748b" };
     const FAML={ "1500":"1500 · BSS/OSB SOAP fault", timeout:"Timeouts (408/504)", "5xx":"HTTP 5xx", "4xx":"HTTP 4xx", other:"Other" };
     const fams=d.families||[]; const famTot=fams.reduce((a,f)=>a+f.n,0);
     const chipEl=(key,lbl,n)=>`<button class="pill gwfam${(gwFam===key)?" on":""}" data-fam="${esc(key)}"
@@ -1506,7 +1506,7 @@
         ${caseRows?`<div style="font-weight:800;font-size:11px;letter-spacing:.04em;color:var(--muted);margin:12px 0 4px">RECENT CASES · ${cases.length} · newest first · click a row for trace + request/response · headers sort</div>
           <div style="max-height:380px;overflow:auto;border:1px solid var(--line);border-radius:8px">
           <table class="alerts msort" id="gwFocusTbl"><tr><th>AT (KSA)</th><th>FAM</th><th>SERVICE</th><th>ENDPOINT</th><th>HTTP</th><th>ms</th><th>ERROR</th><th></th></tr>${caseRows}</table></div>`
-          :`<div class="rl" style="color:#16a34a;font-weight:700">No failed cases for ${esc(famName)} in this window ✓</div>`}
+          :`<div class="rl" style="color:var(--good);font-weight:700">No failed cases for ${esc(famName)} in this window ✓</div>`}
         <div id="gwImpacted" style="margin-top:12px">
           <button class="pill" id="gwImpLoad" style="border-left-color:#dc2626;padding:5px 12px">👥 Load impacted customers (uil_logs · 1500/OSB faults)</button>
           <span class="rl" style="font-size:10px;color:var(--muted);margin-left:8px">the list the BSS mails paste by hand — MSISDNs/accounts extracted from the fault rows, masked, exportable</span>
@@ -1537,7 +1537,7 @@
     if(!d.ok){ host.innerHTML=`<div class="albanner">uil_logs: ${esc(d.error||"lookup failed")}</div>`; return; }
     const rows=(d.impacted||[]).map(r=>`<tr>
       <td class="mono" style="font-weight:700">${esc(r.id)}</td>
-      <td><span class="rl" style="font-size:10px;font-weight:800;color:${r.type==="msisdn"?"#2563eb":r.type==="account"?"#7c3aed":"#b45309"}">${esc(r.type)}</span></td>
+      <td><span class="rl" style="font-size:10px;font-weight:800;color:${r.type==="msisdn"?"#2563eb":r.type==="account"?"#7c3aed":"var(--warn-fg)"}">${esc(r.type)}</span></td>
       <td class="mono" style="color:#dc2626;font-weight:700">${Number(r.hits).toLocaleString()}</td>
       <td class="rl" style="max-width:340px;white-space:normal;font-size:10.5px">${esc(r.apis||"—")}</td>
       <td class="mono rl">${esc(r.first?KT.dts(r.first):"—")}</td>
@@ -1554,7 +1554,7 @@
       </div>
       ${rows?`<div style="max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px">
         <table class="alerts msort" id="gwImpTbl"><tr><th>IDENTIFIER</th><th>TYPE</th><th>HITS</th><th>APIs</th><th>FIRST (KSA)</th><th>LAST (KSA)</th></tr>${rows}</table></div>`
-        :`<div class="rl" style="color:#16a34a;font-weight:700;margin-top:8px">No identifiers found in the fault rows of this window ✓</div>`}
+        :`<div class="rl" style="color:var(--good);font-weight:700;margin-top:8px">No identifiers found in the fault rows of this window ✓</div>`}
       <div class="rl" style="font-size:10px;color:var(--muted);margin-top:6px">Identifiers are extracted from the uil_logs fault rows (request/response fields). Masked by default; unmasked views are audited per click. Export carries exactly what is on screen — attach it to the incident mail instead of pasting numbers.</div>
     </div>`;
     const it=$("#gwImpTbl"); if(it) monSortable(it);
@@ -1638,9 +1638,9 @@
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px">
                 <div><div style="font-size:9.5px;font-weight:800;color:var(--muted);margin-bottom:3px">REQUEST</div>
-                  <pre style="margin:0;max-height:220px;overflow:auto;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:8px;font-size:10px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${req!=null?monJson(req):"(not captured)"}</pre></div>
+                  <pre style="margin:0;max-height:220px;overflow:auto;background:var(--panel-dark);color:var(--panel-dark-fg);border-radius:8px;padding:8px;font-size:10px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${req!=null?monJson(req):"(not captured)"}</pre></div>
                 <div><div style="font-size:9.5px;font-weight:800;color:var(--muted);margin-bottom:3px">RESPONSE</div>
-                  <pre style="margin:0;max-height:220px;overflow:auto;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:8px;font-size:10px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${rsp!=null?monJson(rsp):"(not captured)"}</pre></div>
+                  <pre style="margin:0;max-height:220px;overflow:auto;background:var(--panel-dark);color:var(--panel-dark-fg);border-radius:8px;padding:8px;font-size:10px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${rsp!=null?monJson(rsp):"(not captured)"}</pre></div>
               </div></div>`;
             }).join("");
         } else {
@@ -1720,7 +1720,7 @@
       <div class="apanel" style="margin-top:10px"><div class="ah" style="display:flex;align-items:center"><b>Slowest kept traces
         <span class="rl" style="font-weight:600;font-size:11px;color:var(--muted)">· click a row for the trace · headers sort</span></b>${monExportBtn("gwEpX")}</div>
         <div class="abody">${spans?`<table class="alerts msort" id="gwEpTbl"><tr><th>AT (KSA)</th><th>ms</th><th>HTTP</th><th>ERROR</th><th>HOST</th><th></th></tr>${spans}</table>`
-          :`<div class="rl" style="color:#16a34a;font-weight:700">No errors or slow calls kept for this endpoint ✓</div>`}</div></div>
+          :`<div class="rl" style="color:var(--good);font-weight:700">No errors or slow calls kept for this endpoint ✓</div>`}</div></div>
     </div>`;
     host.querySelector(".gw-x").addEventListener("click",close);
     const et=host.querySelector("#gwEpTbl"); if(et) monSortable(et);
@@ -1761,7 +1761,7 @@
       return `<tr><td style="padding:4px 8px;font-weight:700">${esc(v)}</td>
         <td class="mono" style="text-align:right">${tot.toLocaleString()}</td>
         <td style="min-width:220px"><div style="border-radius:5px;overflow:hidden;white-space:nowrap;font-size:0">${bar}</div></td>
-        <td class="mono" style="text-align:right;color:#16a34a;font-weight:700">${(b.completed||0).toLocaleString()}</td>
+        <td class="mono" style="text-align:right;color:var(--good);font-weight:700">${(b.completed||0).toLocaleString()}</td>
         <td class="mono" style="text-align:right;color:#ef4444">${((b.undelivered||0)+(b.refused||0)).toLocaleString()}</td>
         <td class="mono" style="text-align:right">${t&&t.avg_hours!=null?t.avg_hours+"h":"—"}</td></tr>`; }).join("");
     const legend=Object.entries(BC).map(([k,c])=>`<span style="color:${c}">● ${k}</span>`).join(" · ");
@@ -1798,7 +1798,7 @@
         ${r.internal_reference_id||r.external_reference_id?`<button class="pill mon-courier" data-ref="${esc(r.internal_reference_id||r.external_reference_id)}" style="padding:2px 8px;font-size:10px;border-left-color:#0d9488">⇄ Wire</button>`:""}
         <button class="pill mon-deltl" data-row="del:${r.id}" style="padding:2px 8px;font-size:10px">Timeline →</button></td></tr>`).join("");
     const stuckP=`<div class="apanel" style="grid-column:span 12"><div class="ah"><b>Stuck shipments <span class="rl" style="font-weight:600;font-size:11px;color:var(--muted)">· open &gt;24h, oldest first · ⇄ Wire = the real courier request/response</span></b></div>
-      <div class="abody">${sRows?`<table class="alerts"><tr><th>CREATED</th><th>VENDOR</th><th>STATE</th><th style="text-align:right">AGE</th><th>OUR REF</th><th>MOBILE</th><th></th></tr>${sRows}</table>`:`<div class="rl" style="color:#16a34a;font-weight:700">No shipments stuck beyond 24h in this window.</div>`}</div></div>`;
+      <div class="abody">${sRows?`<table class="alerts"><tr><th>CREATED</th><th>VENDOR</th><th>STATE</th><th style="text-align:right">AGE</th><th>OUR REF</th><th>MOBILE</th><th></th></tr>${sRows}</table>`:`<div class="rl" style="color:var(--good);font-weight:700">No shipments stuck beyond 24h in this window.</div>`}</div></div>`;
     box.innerHTML=head+`<div style="display:grid;grid-template-columns:repeat(12,1fr);gap:12px">${funnel}${chart}${stuckP}</div>`;
     box.querySelectorAll(".mon-courier").forEach(b=>b.addEventListener("click",()=>{ if(window.opsCourierTrace) window.opsCourierTrace(b.dataset.ref); }));
     box.querySelectorAll(".mon-deltl").forEach(b=>b.addEventListener("click",()=>{ if(window.opsOpenTimeline) window.opsOpenTimeline(null,b.dataset.row,null); }));

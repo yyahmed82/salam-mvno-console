@@ -52,7 +52,7 @@
   align-items:center;justify-content:center}
 .sf-lbl{font-size:12.5px;font-weight:700;text-align:center;line-height:1.3;color:var(--fg,#222)}
 .sf-plat{width:186px;display:flex;flex-direction:column;gap:3px;margin-top:-3px}
-.sf-pbar{display:flex;height:7px;border-radius:4px;overflow:hidden;background:#eef1f4}
+.sf-pbar{display:flex;height:7px;border-radius:4px;overflow:hidden;background:var(--line-soft)}
 .sf-pbar span{display:block;height:100%}
 .sf-pleg{display:flex;justify-content:center;gap:8px;font-size:9.5px;color:var(--muted);flex-wrap:wrap}
 .sf-pleg i{font-style:normal;display:inline-flex;align-items:center;gap:3px}
@@ -63,33 +63,33 @@
   align-items:center;justify-content:center;gap:4px}
 .sf-join .arr{font-size:22px;line-height:1;color:#c7cfd9}
 .sf-join .drop{font-size:12px;font-weight:800;padding:2px 8px;border-radius:999px;white-space:nowrap}
-.sf-join .drop.bad{color:#b91c1c;background:#fee2e2}
-.sf-join .drop.warn{color:#b45309;background:#fef3c7}
-.sf-join .drop.ok{color:#0e7c4a;background:#dcfce7}
+.sf-join .drop.bad{color:var(--bad-fg);background:var(--tint-red)}
+.sf-join .drop.warn{color:var(--warn-fg);background:var(--tint-amber)}
+.sf-join .drop.ok{color:var(--tint-green-fg);background:var(--tint-green)}
 .sf-note{margin-top:10px;font-size:10.5px;color:var(--muted)}
 .sf-vchip{display:inline-flex;gap:6px;align-items:center;margin-left:8px;padding:3px 11px;
   border:1px solid var(--line);border-radius:999px;font-size:11px;color:var(--muted)}
 .sf-vchip b{color:var(--blue)}
-.sf-vchip.sf-ap{border-color:#e9d5ff;background:#faf5ff;color:#6b21a8}
+.sf-vchip.sf-ap{border-color:var(--tint-violet-fg);background:var(--tint-violet);color:var(--tint-violet-fg)}
 .sf-vchip.sf-ap b{color:#7c3aed}
-.sf-direct{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#0e7c4a;
-  padding:2px 8px;border-radius:999px;background:#dcfce7}
+.sf-direct{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tint-green-fg);
+  padding:2px 8px;border-radius:999px;background:var(--tint-green)}
 .sf-flow{padding:10px 0 4px;border-top:1px solid var(--line);margin-top:8px}
 .sf-flow:first-of-type{border-top:0;margin-top:0}
 .sf-fhead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
-.sf-fnum{width:19px;height:19px;border-radius:50%;background:#eef2f7;color:#475569;font-size:10.5px;
+.sf-fnum{width:19px;height:19px;border-radius:50%;background:var(--card2);color:var(--ink-soft);font-size:10.5px;
   font-weight:800;display:inline-flex;align-items:center;justify-content:center}
 .sf-fname{font-size:12.5px;font-weight:800;color:var(--fg,#222)}
 .sf-fdesc{font-size:11px;color:var(--muted);max-width:760px}
 .sf-fsum{margin-left:auto;font-size:11px;color:var(--muted)}
 .sf-fsum b{color:var(--fg,#222);font-size:12.5px}
-.sf-fiss{margin-left:8px;padding:1px 8px;border-radius:999px;background:#fee2e2;color:#b91c1c;font-weight:700}
-.sf-err{width:186px;text-align:center;font-size:10px;font-weight:700;color:#b91c1c;background:#fee2e2;
+.sf-fiss{margin-left:8px;padding:1px 8px;border-radius:999px;background:var(--tint-red);color:var(--bad-fg);font-weight:700}
+.sf-err{width:186px;text-align:center;font-size:10px;font-weight:700;color:var(--bad-fg);background:var(--tint-red);
   border-radius:999px;padding:2px 6px;margin-top:-3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sf-shot.sf-dim{opacity:.62;filter:saturate(.55)}
 .sf-cnt b.sf-na{font-size:12px;font-weight:700;letter-spacing:0;opacity:.9}
-.sf-orerr span{border-color:#fecaca !important;background:#fef2f2 !important;color:#b91c1c !important}
-.sf-orerr::before{border-color:#fecaca !important}
+.sf-orerr span{border-color:var(--red-line) !important;background:var(--tint-red) !important;color:var(--bad-fg) !important}
+.sf-orerr::before{border-color:var(--red-line) !important}
 .sf-codes{width:186px;display:flex;flex-direction:column;gap:2px;margin-top:2px}
 .sf-crow{display:flex;align-items:center;gap:4px;font-size:9.5px;color:var(--muted)}
 .sf-ccode{flex:0 0 auto;min-width:20px;text-align:center;color:#fff;font-weight:800;font-size:9px;
@@ -112,7 +112,7 @@
 .sf-tbl td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 .sf-tbl td.r,.sf-tbl th.r{text-align:right}
 .sf-tbl td.mono{font-family:ui-monospace,Menlo,monospace;font-size:10.5px}
-.sf-tbl tr.on{background:#fef2f2}
+.sf-tbl tr.on{background:var(--tint-red)}
 .sf-btn{cursor:pointer;border:1px solid var(--line);background:transparent;border-radius:7px;
   padding:2px 8px;font-size:10.5px;font-weight:700;color:var(--blue)}
 .sf-mdnote{margin-top:10px;font-size:10px;color:var(--muted)}
@@ -141,13 +141,13 @@
 .sf-exg{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px}
 @media(max-width:900px){.sf-exg{grid-template-columns:1fr}}
 .sf-exl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px}
-.sf-json{margin:0;max-height:280px;overflow:auto;background:#0f172a;color:#e2e8f0;border-radius:8px;
+.sf-json{margin:0;max-height:280px;overflow:auto;background:var(--panel-dark);color:var(--panel-dark-fg);border-radius:8px;
   padding:9px 11px;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;line-height:1.5;white-space:pre-wrap;
   word-break:break-word}
 .sf-json .jk{color:#7dd3fc}.sf-json .js{color:#86efac}.sf-json .jn{color:#fca5a5}.sf-json .jb{color:#c4b5fd}
 .sf-or{flex:0 0 auto;width:74px;align-self:stretch;display:flex;align-items:center;justify-content:center;
   position:relative;margin:0 6px}
-.sf-or::before{content:'';position:absolute;top:18px;bottom:96px;left:50%;border-left:2px dashed #cbd5e1}
+.sf-or::before{content:'';position:absolute;top:18px;bottom:96px;left:50%;border-left:2px dashed var(--line)}
 .sf-or span{position:relative;z-index:1;background:var(--card,#fff);border:1px solid var(--line);
   border-radius:999px;padding:3px 9px;font-size:9.5px;font-weight:700;text-transform:uppercase;
   letter-spacing:.06em;color:var(--muted);text-align:center;line-height:1.25;max-width:70px}
@@ -173,7 +173,7 @@
 .sf-arr[disabled]{opacity:.15 !important;pointer-events:none}
 .sf-arr.l{left:6px}.sf-arr.r{right:6px}
 .sf-dots{display:flex;gap:5px;align-items:center;justify-content:center;padding:7px 0 2px;flex-wrap:wrap}
-.sf-dot{width:9px;height:9px;border-radius:50%;background:#d5ddd9;border:none;cursor:pointer;
+.sf-dot{width:9px;height:9px;border-radius:50%;background:var(--line);border:none;cursor:pointer;
   padding:0;transition:transform .12s, background .12s}
 .sf-dot:hover{transform:scale(1.5)}
 .sf-dot.err{background:#fca5a5}
@@ -305,7 +305,7 @@
           <span class="sf-lstate">${esc(L.state)}</span>
           ${extra || ''}
           <span class="sf-lsum"><b>${fmt(tot.att)}</b> attempts → <b>${fmt(tot.done)}</b> completed
-            ${tot.iss ? ` &nbsp;·&nbsp; <b style="color:#b91c1c">${fmt(tot.iss)}</b> issues` : ''}</span>
+            ${tot.iss ? ` &nbsp;·&nbsp; <b style="color:var(--bad-fg)">${fmt(tot.iss)}</b> issues` : ''}</span>
         </div>
         ${L.flows.map(flowRow).join('')}
         ${L.note ? `<div class="sf-note">${esc(L.note)}</div>` : ''}
@@ -452,7 +452,7 @@
     card.innerHTML = `<div class="sf-md">
       <div class="sf-mdh"><b>Voucher failures</b>
         <span class="sf-mdsub">${esc(ksa(d.from))} → ${esc(ksa(d.to))} <b>KSA</b> ·
-          ${fmt(d.total)} attempts · <b style="color:#b91c1c">${fmt(d.failed)}</b> failed · ${fmt(ok)} ok</span>
+          ${fmt(d.total)} attempts · <b style="color:var(--bad-fg)">${fmt(d.failed)}</b> failed · ${fmt(ok)} ok</span>
         <span class="x" id="sfX">✕</span></div>
       <div class="sf-mdb">
         <div class="sf-mdt">Response codes — what BSS returned</div>${codeTbl}
@@ -536,7 +536,7 @@
     card.innerHTML = `<div class="sf-md">
       <div class="sf-mdh"><b>${esc(jname)} — ${esc(B.t)}</b>
         <span class="sf-mdsub">${esc(ksa(d.from))} → ${esc(ksa(d.to))} <b>KSA</b> ·
-          <b style="color:#b91c1c">${fmt(d.total)}</b> payments</span>
+          <b style="color:var(--bad-fg)">${fmt(d.total)}</b> payments</span>
         <span class="x" id="sfX">✕</span></div>
       <div class="sf-mdb">
         <div class="sf-empty" style="margin-bottom:8px">${esc(B.d)}
@@ -674,7 +674,7 @@
     card.innerHTML = `<div class="sf-md">
       <div class="sf-mdh"><b>${esc(laneName)} — ${esc(d.title || cat)}</b>
         <span class="sf-mdsub">${esc(ksa(d.from))} → ${esc(ksa(d.to))} <b>KSA</b> ·
-          <b style="color:#b91c1c">${fmt(d.total || 0)}</b> in window</span>
+          <b style="color:var(--bad-fg)">${fmt(d.total || 0)}</b> in window</span>
         <span class="x" id="sfX">✕</span></div>
       <div class="sf-mdb">
         <div class="sf-empty" style="margin-bottom:8px">${esc(d.desc || '')}
@@ -731,7 +731,7 @@
     const appRows = d.app || [];
     const ph = d.platformAtTime;
     const healthLine = ph ? `<div class="sf-mdnote">Platform at that moment (${esc(ph.window)}): ${fmt(ph.total)} API calls captured ·
-        <b style="color:${ph.technical ? '#b91c1c' : 'inherit'}">${fmt(ph.technical)}</b> technical · ${fmt(ph.business)} business.
+        <b style="color:${ph.technical ? 'var(--bad-fg)' : 'inherit'}">${fmt(ph.technical)}</b> technical · ${fmt(ph.business)} business.
         These are platform-wide counts, not this payment's calls.</div>` : '';
     const appTbl = (appRows.length ? `<div class="sf-mdnote" style="margin:0 0 6px">Linked by: ${esc(d.appLinkedBy || 'identifier match')}</div>
       <table class="sf-tbl"><thead><tr><th>When (KSA)</th><th>Endpoint</th><th>Code</th>
@@ -790,7 +790,7 @@
       };
       const rows = Object.entries(facts).filter(([, v]) => v != null && v !== '');
       return `<div class="sf-ex">
-        <div class="sf-exh"><span class="m" style="background:${String(x.status).toUpperCase() === 'PAID' ? '#0e9f5a' : '#b91c1c'}">${esc(x.status || 'attempt')}</span>
+        <div class="sf-exh"><span class="m" style="background:${String(x.status).toUpperCase() === 'PAID' ? '#0e9f5a' : 'var(--bad-fg)'}">${esc(x.status || 'attempt')}</span>
           <span class="mono u">${esc(x.transaction_id || x.id || ('attempt ' + (i + 1)))}</span>
           <span class="sf-mdsub">${esc(KT.dts(x.created_at))} ·
             ${x.amount == null ? '' : (Number(x.amount) / 100).toFixed(2) + ' SAR'}</span></div>

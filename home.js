@@ -138,7 +138,7 @@
     const hasErrSplit = d.errorsBusiness!=null || d.errorsTechnical!=null;
     const errCards = hasErrSplit
       ? card("Business errors", num(d.errorsBusiness), `<span style="color:#3b82f6;font-weight:700">expected — API said no</span>`, null, null)+
-        card("Technical errors", num(d.errorsTechnical), (d.errorsTechnical? `<span style="color:#ef4444;font-weight:700">needs a look →</span>`:`<span class="rl" style="font-weight:700;color:#16a34a">all clear</span>`), null, sp.errors)
+        card("Technical errors", num(d.errorsTechnical), (d.errorsTechnical? `<span style="color:#ef4444;font-weight:700">needs a look →</span>`:`<span class="rl" style="font-weight:700;color:var(--good)">all clear</span>`), null, sp.errors)
       : card("Errors", num(d.errorsToday), (d.errorsToday? `<span style="color:#dc2626;font-weight:700">needs a look →</span>`:``), null, sp.errors);
     box.innerHTML=
       card("Orders", num(d.orders), null, "accent", sp.orders, d.orders, pv.orders)+
@@ -284,7 +284,7 @@
       if(!sb){ sb=document.createElement("div"); sb.id="staleBanner"; host.parentNode.insertBefore(sb, host); }
       // upstream-frozen is always critical — every figure on the page is stale but looks normal
       const crit=oldest.lagMin>=STALE_CRIT || !!oldest.upstream;
-      const bg=crit?"#fee2e2":"#fef3c7", fg=crit?"#991b1b":"#92400e", bd=crit?"#dc2626":"#d97706";
+      const bg=crit?"var(--tint-red)":"var(--tint-amber)", fg=crit?"var(--tint-red-fg)":"var(--tint-amber-fg)", bd=crit?"#dc2626":"#d97706";
       sb.style.cssText=`display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:10px 14px;border-radius:10px;border-left:4px solid ${bd};background:${bg};color:${fg};font-size:13px;cursor:pointer`;
       sb.innerHTML=`<span style="font-size:16px">⚠</span>`+
         `<span style="flex:1"><b>Data may be stale</b> — ${
@@ -354,8 +354,10 @@
   const FLOW_EDGES=[['total','elig_pass'],['total','elig_fail'],['total','pre_elig'],['elig_pass','total_payment'],['elig_pass','no_payment'],['total_payment','pay_success'],['total_payment','pay_pending'],['total_payment','pay_fail'],['pay_success','esim'],['pay_success','physical'],['esim','esim_activated'],['esim','esim_not_activated'],['physical','assigned'],['physical','not_assigned'],['physical','courier_not_created'],['physical','shop_pickup'],['assigned','delivered'],['assigned','not_delivered'],['delivered','phys_activated'],['delivered','phys_not_activated']];
   // 'info' = neither good nor bad, just handled elsewhere (partner-fulfilled). Violet keeps it
   // visually distinct from both the green success path and the red exception boxes.
-  const FLOW_KC={ok:{f:'#e7f8ef',s:'#10b981',t:'#065f46'},warn:{f:'#fdf3dc',s:'#f59e0b',t:'#92400e'},bad:{f:'#fdeceb',s:'#ef4444',t:'#991b1b'},info:{f:'#f3f0fe',s:'#8b5cf6',t:'#5b21b6'}};
-  const FLOW_KC_MNP={ok:{f:'#e9f1fe',s:'#3b82f6',t:'#1e40af'},warn:{f:'#fdf3dc',s:'#f59e0b',t:'#92400e'},bad:{f:'#fdeceb',s:'#ef4444',t:'#991b1b'},info:{f:'#f3f0fe',s:'#8b5cf6',t:'#5b21b6'}};
+  // theme-aware via the console tokens (SVG presentation attributes accept var()) — the flow tree used to paint
+  // light pastel boxes with dark text inside the dark theme
+  const FLOW_KC={ok:{f:'var(--tint-green)',s:'#10b981',t:'var(--tint-green-fg)'},warn:{f:'var(--tint-amber)',s:'#f59e0b',t:'var(--tint-amber-fg)'},bad:{f:'var(--tint-red)',s:'#ef4444',t:'var(--tint-red-fg)'},info:{f:'var(--tint-violet)',s:'#8b5cf6',t:'var(--tint-violet-fg)'}};
+  const FLOW_KC_MNP={ok:{f:'var(--tint-blue)',s:'#3b82f6',t:'var(--tint-blue-fg)'},warn:{f:'var(--tint-amber)',s:'#f59e0b',t:'var(--tint-amber-fg)'},bad:{f:'var(--tint-red)',s:'#ef4444',t:'var(--tint-red-fg)'},info:{f:'var(--tint-violet)',s:'#8b5cf6',t:'var(--tint-violet-fg)'}};
   const kcFor=(kind,laneKey)=>((laneKey==='mnp'?FLOW_KC_MNP:FLOW_KC)[kind]||FLOW_KC.ok);
   const F_COLW=156,F_BOXW=112,F_BOXH=46,F_ROWH=70,F_PADX=18,F_LANEH=470,F_PHASEH=34; // F_PHASEH = header band for phase labels; lane holds up to row 5 (shop-pickup)
   // customer-journey phases (visual grouping only) — x-ranges derived from column indices
@@ -432,7 +434,7 @@
     const lanes=data.lanes||[]; const total=lanes.reduce((a,l)=>a+(l.nodes.orders||0),0);
     const W=F_PADX*2+7*F_COLW+F_BOXW+10, H=lanes.length*F_LANEH+10+F_PHASEH;   // extra top band for phase labels (cols 0..7)
     const recon = (kpiOrders==null)?'' : (Number(kpiOrders)===total
-      ? ` · <span style="color:#16a34a;font-weight:700" title="Both count onboarding orders in this window — same definition">✓ reconciles to Orders KPI (${num(kpiOrders)})</span>`
+      ? ` · <span style="color:var(--good);font-weight:700" title="Both count onboarding orders in this window — same definition">✓ reconciles to Orders KPI (${num(kpiOrders)})</span>`
       : ` · <span style="color:#d97706;font-weight:700" title="Same definition — any gap is a window/timing difference">Orders KPI here: ${num(kpiOrders)}</span>`);
     const ksa=iso=>{ try{ return KT.dt(iso); }catch(_){ return ''; } };
     const legend=`<span class="flow-legend">`
@@ -502,15 +504,15 @@
       return;
     }
     const box=(c,extra)=>{const ep=c.calls?100*c.faults/Math.max(1,Number(c.calls)):0;
-      return `<div style="border:1.5px solid #d9a7a7;background:#f8ecec;border-radius:8px;padding:10px 12px;min-width:150px;flex:1">
-        <div style="font-weight:800;font-size:12px;color:#7a2e2e">${esc(c.label)}</div>
+      return `<div style="border:1.5px solid var(--red-line);background:var(--tint-red);border-radius:8px;padding:10px 12px;min-width:150px;flex:1">
+        <div style="font-weight:800;font-size:12px;color:var(--tint-red-fg)">${esc(c.label)}</div>
         <div style="font-size:20px;font-weight:800;margin-top:2px">${n(c.calls)}</div>
         <div class="rl" style="font-size:10.5px;color:var(--muted)">${c.avg_ms!=null&&c.calls?`avg ${n(c.avg_ms)}ms · max ${n(c.max_ms)}ms`:(c.pipeline_records?`${n(c.pipeline_records)} pipeline record(s)`:'—')}</div>
-        ${c.faults?`<div style="margin-top:4px"><span style="background:#fee2e2;color:#b91c1c;border-radius:5px;padding:0 6px;font-weight:700;font-size:10.5px">✖ ${n(c.faults)} fault(s)</span></div>`:''}
+        ${c.faults?`<div style="margin-top:4px"><span style="background:var(--tint-red);color:var(--bad-fg);border-radius:5px;padding:0 6px;font-weight:700;font-size:10.5px">✖ ${n(c.faults)} fault(s)</span></div>`:''}
         ${extra||''}</div>`;};
     host.innerHTML=`
       <div class="rl" style="margin:2px 0 8px;color:var(--muted)">POC · <b>selected range</b> ${esc(String(d.from||'').slice(0,10))} → ${esc(String(d.to||'').slice(0,10))} · archive covers ${esc(win)} (both OSB nodes) · faults = OSB-382000 / SOAP faults in pipeline payloads · goes live day-1-lagged once the daily SFTP feed lands</div>
-      <div style="background:var(--tint-green,#dcfce7);border:1.5px solid #86efac;border-radius:8px;padding:8px 14px;display:flex;align-items:center;gap:14px;margin-bottom:6px">
+      <div style="background:var(--tint-green,#dcfce7);border:1.5px solid var(--green-line);border-radius:8px;padding:8px 14px;display:flex;align-items:center;gap:14px;margin-bottom:6px">
         <b style="font-size:12.5px">App / Web / DMS → API GW → UIL</b>
         <span class="rl">→</span>
         <b style="font-size:14px">OSB entry: ${n(d.entry.calls)} transactions</b>
@@ -524,7 +526,7 @@
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
           <div style="border:1px dashed #d9a7a7;border-radius:8px;padding:6px 12px" class="rl">SADAD biller notifications: <b>${n(d.sadad_notifications)}</b></div>
-          <div style="border:1px dashed #d9a7a7;border-radius:8px;padding:6px 12px" class="rl">Total OSB transactions: <b>${n(d.totals.access)}</b> · pipeline records: <b>${n(d.totals.pipeline)}</b> · total faults: <b style="color:#b91c1c">${n(d.totals.faults)}</b></div>
+          <div style="border:1px dashed #d9a7a7;border-radius:8px;padding:6px 12px" class="rl">Total OSB transactions: <b>${n(d.totals.access)}</b> · pipeline records: <b>${n(d.totals.pipeline)}</b> · total faults: <b style="color:var(--bad-fg)">${n(d.totals.faults)}</b></div>
         </div>
       </div>`;
   }
@@ -570,20 +572,20 @@
       const lines=seriesDefs.map(s2=>`<polyline fill="none" stroke="${s2.color}" stroke-width="${s2.w||1.8}" ${s2.dash?`stroke-dasharray="${s2.dash}"`:''} points="${buckets.map((t,i)=>`${x(i).toFixed(1)},${y(s2.get(t)||0).toFixed(1)}`).join(' ')}"><title>${esc(s2.label)}</title></polyline>`).join('');
       const every=Math.max(1,Math.ceil(n_/24));
       const ticks=buckets.map((t,i)=>i%every===0?`<text x="${x(i).toFixed(1)}" y="${H-10}" font-size="8" fill="#94a3b8" text-anchor="middle">${KSAt(t)}</text>`:'').join('');
-      const grid=[0.25,0.5,0.75,1].map(f=>`<line x1="${P}" x2="${Wd-P}" y1="${y(maxV*f).toFixed(1)}" y2="${y(maxV*f).toFixed(1)}" stroke="#e2e8f0" stroke-width=".6"/><text x="${P-4}" y="${(y(maxV*f)+3).toFixed(1)}" font-size="8" fill="#94a3b8" text-anchor="end">${Math.round(maxV*f)}</text>`).join('');
+      const grid=[0.25,0.5,0.75,1].map(f=>`<line x1="${P}" x2="${Wd-P}" y1="${y(maxV*f).toFixed(1)}" y2="${y(maxV*f).toFixed(1)}" stroke="var(--line)" stroke-width=".6"/><text x="${P-4}" y="${(y(maxV*f)+3).toFixed(1)}" font-size="8" fill="#94a3b8" text-anchor="end">${Math.round(maxV*f)}</text>`).join('');
       return `<svg viewBox="0 0 ${Wd} ${H}" style="width:100%;height:auto">${grid}${lines}${ticks}</svg>`;
     }
     const lg=items=>`<div class="rl" style="font-size:10.5px;color:var(--muted);padding:0 6px">${items.map(i2=>`<span style="color:${i2.color};font-weight:700">— ${esc(i2.label)}</span>`).join(' · ')}</div>`;
     // chart 1 — success vs failures (+ attempts context + -10001)
     const c1=[
       {label:'attempts',color:'#94a3b8',w:1.1,get:t=>(bySer[t]||{}).n},
-      {label:'success',color:'#16a34a',w:2.2,get:t=>(bySer[t]||{}).ok},
+      {label:'success',color:'var(--good)',w:2.2,get:t=>(bySer[t]||{}).ok},
       {label:'failures',color:'#dc2626',w:2.2,get:t=>(bySer[t]||{}).fl},
       {label:'-10001 app errors',color:'#7c3aed',w:1.3,dash:'4 3',get:t=>(byErr[t]||{}).n}
     ];
     // chart 2 — failures per method/brand
     const brands=[...new Set((d.brand_fails||[]).map(r=>r.brand))];
-    const PAL=['#7c3aed','#2563eb','#d97706','#0891b2','#db2777','#16a34a','#64748b','#dc2626','#a16207'];
+    const PAL=['#7c3aed','#2563eb','#d97706','#0891b2','#db2777','var(--good)','#64748b','#dc2626','#a16207'];
     const bmap={}; for(const r of (d.brand_fails||[])){ (bmap[r.brand]=bmap[r.brand]||{})[new Date(r.b).getTime()]=r.n; }
     const c2=brands.map((br,i)=>({label:br,color:PAL[i%PAL.length],w:1.8,get:t=>(bmap[br]||{})[t]}));
     // chart 3 — failures per platform (ios / android / web)
@@ -598,7 +600,7 @@
       <div class="rl" style="margin:2px 0 8px;color:var(--muted)">HyperPay is the ONLY enabled customer gateway — <b>live since 3 Sep 16:27 KSA</b> (view clamped to the cutover; no UPG/Tap data included). ${stepLbl} buckets · ${esc(String(d.from).slice(0,16))} → ${esc(String(d.to).slice(0,16))} · KSA times.</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
         ${chip('HYPERPAY ATTEMPTS',n(tN),'#2563eb')}
-        ${chip('SUCCESS',`${n(tOK)} · ${pct(tOK,tN)}`, tN&&tOK/tN<.5?'#dc2626':'#16a34a')}
+        ${chip('SUCCESS',`${n(tOK)} · ${pct(tOK,tN)}`, tN&&tOK/tN<.5?'#dc2626':'var(--good)')}
         ${chip('FAILURES',`${n(tFL)} · ${pct(tFL,tN)}`, tFL?'#dc2626':'#94a3b8')}
         ${chip('STC PAY',`${n(sN)} · ok ${pct(sOK,sN)}`, sN&&sOK/sN<.5?'#dc2626':'#7c3aed')}
         ${chip('✖ -10001 ERRORS',n(tE), tE?'#dc2626':'#94a3b8')}
@@ -628,7 +630,7 @@
             <tr><th>PLATFORM</th><th>STC ATTEMPTS</th><th>OK</th><th>%</th><th>FAILED</th></tr>
             ${d.stc_plat_table.map(r2=>{const p2=r2.n?100*r2.ok/r2.n:0;
               return `<tr><td>${esc(r2.plat)}</td><td>${n(r2.n)}</td><td>${n(r2.ok)}</td>
-              <td style="font-weight:700;color:${p2<50?'#dc2626':'#16a34a'}">${p2.toFixed(1)}%</td><td>${n(r2.failed)}</td></tr>`;}).join('')}</table>`:''}
+              <td style="font-weight:700;color:${p2<50?'#dc2626':'var(--good)'}">${p2.toFixed(1)}%</td><td>${n(r2.failed)}</td></tr>`;}).join('')}</table>`:''}
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -636,7 +638,7 @@
           <tr><th>RAIL / BRAND</th><th>ATTEMPTS</th><th>SUCCESS</th><th>%</th><th>FAILED</th></tr>
           ${(d.rails||[]).map(r2=>{const p2=r2.n?100*r2.ok/r2.n:0;
             return `<tr${/stc/.test(r2.rail)?' style="background:var(--tint-green,#f0fdf4)"':''}><td class="mono">${esc(r2.rail)}</td><td>${n(r2.n)}</td><td>${n(r2.ok)}</td>
-            <td style="font-weight:700;color:${p2<50?'#dc2626':p2<75?'#d97706':'#16a34a'}">${p2.toFixed(1)}%</td><td>${n(r2.failed)}</td></tr>`;}).join('')}</table>
+            <td style="font-weight:700;color:${p2<50?'#dc2626':p2<75?'#d97706':'var(--good)'}">${p2.toFixed(1)}%</td><td>${n(r2.failed)}</td></tr>`;}).join('')}</table>
           <div class="rl" style="font-size:10px;color:var(--muted);padding:4px 8px">Brand = the GATEWAY's answer (a "Credit Card" app payment lands under its real brand: mada/visa/master). "(initiated — no gateway answer)" = checkout opened but never completed — abandonment, not failures.</div></div>
         <div style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;max-height:240px;overflow:auto">
           <div class="rl" style="font-weight:700;margin-bottom:4px">TOP FAIL REASONS (HyperPay, window)</div>
@@ -687,7 +689,7 @@
     const hits=_flowHits||[];
     const ksa=iso=>{ try{ return KT.dt(iso); }catch(_){ return ''; } };
     if(!hits.length){ box.innerHTML=`<div class="lrow muted">No order found for “${esc(_flowKey)}” in this period — widen the date range if the order is older.</div>`; return; }
-    const head=`<div class="lrow" style="border-left-color:#16a34a"><b>Filtered to ${esc(_flowKey)}</b> · <span>${hits.length} order${hits.length>1?'s':''} — the path each took is lit up in the tree above (ends at the glowing box)</span></div>`;
+    const head=`<div class="lrow" style="border-left-color:var(--good)"><b>Filtered to ${esc(_flowKey)}</b> · <span>${hits.length} order${hits.length>1?'s':''} — the path each took is lit up in the tree above (ends at the glowing box)</span></div>`;
     box.innerHTML=head+hits.map(h=>`<div class="lrow"><b>${h.lane==='mnp'?'MNP':'New SIM'}</b> · ends at <span>${esc(FLOW_NM[h.node]||h.node)}</span>`
       +` <span class="muted">${esc(h.mobile||h.nationality_id_number||'—')}${h.id?` · order ${esc(h.id)}`:''} · ${esc(h.plan||('plan '+(h.plan_id||'—')))} · state ${esc(h.state||'—')} · pay ${esc(h.pay||'none')} · ${esc(ksa(h.at))} KSA</span>`
       +`<button class="fbtn ghost" data-tl="${esc(h.id)}">Timeline →</button></div>`).join('');
@@ -861,7 +863,7 @@
     advanced_postpaid:'Advanced postpaid',voucher:'Voucher recharge'};
   const svcName=l=>SVC_NM[l]||l;
   const SVC_PAL={recharge:'#0d9488',bill:'#2563eb',renewal:'#7c3aed',change_plan:'#ea580c',change_plan_journey:'#d97706',
-    sim_replacement:'#0891b2',ownership:'#4f46e5',advanced_postpaid:'#db2777',voucher:'#16a34a'};
+    sim_replacement:'#0891b2',ownership:'#4f46e5',advanced_postpaid:'#db2777',voucher:'var(--good)'};
   async function renderServicing(holder, R){
     holder.innerHTML=`<div class="rl" style="padding:6px 0">Loading servicing journeys…</div>`;
     let win; if(R&&R.from&&R.to){ win={from:R.from,to:R.to}; } else { const d=new Date(); d.setUTCMinutes(0,0,0); d.setUTCHours(d.getUTCHours()+1); win={to:d.toISOString(),from:new Date(d.getTime()-((R&&R.hours)||24)*3600e3).toISOString()}; }
@@ -901,9 +903,9 @@
       const rate=l.total?Math.round(100*(l.ok||0)/l.total):null;
       return `<div class="svc-card" data-lane="${esc(l.lane)}" title="${esc(l.source_note||'click to filter')}" style="flex:1;min-width:158px;cursor:pointer;background:var(--card2,rgba(148,163,184,.06));border:1px solid ${on?c:'var(--line)'};${on?`box-shadow:0 0 0 1px ${c};`:''}border-radius:10px;padding:8px 12px">
         <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:18px;font-weight:800;color:${c}">${n(l.total)}</span>
-          <span style="font-size:11px;font-weight:700;color:${rate==null?'var(--muted)':rate>=90?'#16a34a':rate>=60?'#d97706':'#dc2626'}">${rate==null?'':rate+'%✓'}</span></div>
+          <span style="font-size:11px;font-weight:700;color:${rate==null?'var(--muted)':rate>=90?'var(--good)':rate>=60?'#d97706':'#dc2626'}">${rate==null?'':rate+'%✓'}</span></div>
         <div class="rl" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.03em">${esc(svcName(l.lane))}</div>
-        <div class="rl" style="font-size:10px;margin-top:2px"><span style="color:#16a34a">${n(l.ok)} ok</span> · <span style="color:#dc2626">${n(l.fail)} fail</span>${l.pending?` · <span style="color:#d97706">${n(l.pending)} pend</span>`:''}${l.rate_limited?` · <span style="color:#e11d48">${n(l.rate_limited)} blocked</span>`:''}</div>
+        <div class="rl" style="font-size:10px;margin-top:2px"><span style="color:var(--good)">${n(l.ok)} ok</span> · <span style="color:#dc2626">${n(l.fail)} fail</span>${l.pending?` · <span style="color:#d97706">${n(l.pending)} pend</span>`:''}${l.rate_limited?` · <span style="color:#e11d48">${n(l.rate_limited)} blocked</span>`:''}</div>
       </div>`; };
     // stacked chart over time for the selected lane (or all)
     const S=(d.series||[]).filter(r=>!_svcLane||r.lane===_svcLane);
@@ -931,7 +933,7 @@
     // table + status filter
     const stChip=(v,lbl)=>`<button class="pill svc-st" data-st="${esc(v)}" style="padding:2px 10px;font-size:10.5px;${_svcStatus===v?'border-left-color:var(--blue);font-weight:800;':''}">${esc(lbl)}</button>`;
     const rows=(d.rows||[]).filter(r=>(!_svcLane||r.lane===_svcLane)&&(!_svcStatus||String(r.status)===_svcStatus)).slice(0,40);
-    const stCol=s=>s==='success'?'#16a34a':/fail/.test(s)?'#dc2626':s==='rate-limited'?'#e11d48':s==='technical'?'#dc2626':s==='business'?'#3b82f6':'#d97706';
+    const stCol=s=>s==='success'?'var(--good)':/fail/.test(s)?'#dc2626':s==='rate-limited'?'#e11d48':s==='technical'?'#dc2626':s==='business'?'#3b82f6':'#d97706';
     const ksa=iso=>{ try{ return KT.md(iso); }catch(_){ return ''; } };
     const table=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px">
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">

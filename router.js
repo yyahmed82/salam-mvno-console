@@ -44,7 +44,7 @@
   function showDeniedBiz(pageBiz,userBiz){
     let d=document.getElementById("accessDenied");
     if(!d){ d=document.createElement("div"); d.id="accessDenied";
-      d.style.cssText="position:fixed;inset:0;top:64px;z-index:900;background:var(--bg,#f6f8f7);display:flex;align-items:center;justify-content:center";
+      d.style.cssText="position:fixed;inset:0;top:var(--hdr);z-index:900;background:var(--bg);display:flex;align-items:center;justify-content:center";
       document.body.appendChild(d); }
     const P={mobile:"📱 Mobile",fixed:"🏠 Fixed"};
     d.innerHTML=`<div style="text-align:center;max-width:440px;padding:32px;background:var(--panel,#fff);border:1px solid var(--line,#e5e9e7);border-radius:14px">
@@ -59,7 +59,7 @@
   function showDenied(need){
     let d=document.getElementById("accessDenied");
     if(!d){ d=document.createElement("div"); d.id="accessDenied";
-      d.style.cssText="position:fixed;inset:0;top:64px;z-index:900;background:var(--bg,#f6f8f7);display:flex;align-items:center;justify-content:center";
+      d.style.cssText="position:fixed;inset:0;top:var(--hdr);z-index:900;background:var(--bg);display:flex;align-items:center;justify-content:center";
       document.body.appendChild(d); }
     const me=sess().me||{}; const role=String(me.role||"your role").replace(/_/g," ");
     d.innerHTML=`<div style="text-align:center;max-width:440px;padding:32px;background:var(--panel,#fff);border:1px solid var(--line,#e5e9e7);border-radius:14px">

@@ -124,7 +124,7 @@
     let d; try{ d=await api(`/api/workbench/replay?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`); }
     catch(e){ b.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
     if(window.audit) window.audit("APPLY_FILTER","workbench:replay");
-    const sev=(d.bySeverity||[]).map(s=>`<span style="display:inline-block;background:${SEV[s.severity]||"#64748b"}18;color:${SEV[s.severity]||"#64748b"};border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;margin-right:6px">${esc(s.severity)} · ${num(s.n)}</span>`).join("")||`<span class="rl" style="color:#16a34a;font-weight:700">No incidents in this window ✅</span>`;
+    const sev=(d.bySeverity||[]).map(s=>`<span style="display:inline-block;background:${SEV[s.severity]||"#64748b"}18;color:${SEV[s.severity]||"#64748b"};border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;margin-right:6px">${esc(s.severity)} · ${num(s.n)}</span>`).join("")||`<span class="rl" style="color:var(--good);font-weight:700">No incidents in this window ✅</span>`;
     const rows=(d.alerts||[]).map(a=>`<tr style="border-top:1px solid var(--line)">
         <td class="mono" style="padding:4px 6px;white-space:nowrap">${esc(ksa(a.fired_at))}</td>
         <td><span style="color:${SEV[a.severity]||"#64748b"};font-weight:700">${esc(a.severity)}</span></td>
@@ -136,7 +136,7 @@
     const metrics=(d.metrics||[]).map(m=>`<span style="display:inline-block;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin:3px 4px 0 0;font-size:11px" title="${num(m.points)} snapshots ${esc(ksa(m.first_at))}–${esc(ksa(m.last_at))}"><span class="mono">${esc(m.metric_key)}</span> <span class="rl" style="color:var(--muted)">${esc(m.window_hours)}h · ${num(m.points)} pts</span></span>`).join("")||`<span class="rl" style="color:var(--muted)">No metric snapshots recorded in this window.</span>`;
     b.innerHTML=`<div style="margin-bottom:10px">${sev}</div>
       <div class="apanel" style="margin-bottom:12px"><div class="ah"><b>Incidents active in window <span class="rl" style="font-weight:600;color:var(--muted);font-size:11px">· ${num((d.alerts||[]).length)}</span></b></div>
-        <div class="abody" style="overflow:auto;max-height:420px">${rows?`<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="text-align:left;color:var(--muted)"><th style="padding:4px 6px">Fired (KSA)</th><th>Sev</th><th>Incident</th><th>Team</th><th>Metric</th><th>Outcome</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="rl" style="padding:8px;color:#16a34a">No incidents fired in this window.</div>`}</div></div>
+        <div class="abody" style="overflow:auto;max-height:420px">${rows?`<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="text-align:left;color:var(--muted)"><th style="padding:4px 6px">Fired (KSA)</th><th>Sev</th><th>Incident</th><th>Team</th><th>Metric</th><th>Outcome</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:`<div class="rl" style="padding:8px;color:var(--good)">No incidents fired in this window.</div>`}</div></div>
       <div class="apanel"><div class="ah"><b>Chartable metrics for this window <span class="rl" style="font-weight:600;color:var(--muted);font-size:11px">· metric_snapshots</span></b></div>
         <div class="abody">${metrics}<div class="rl" style="font-size:10.5px;color:var(--muted);margin-top:8px">Series API: <span class="mono">/api/metrics/series?key=&lt;metric&gt;&amp;window=&lt;h&gt;</span> — the Analytics and Alerts boards chart the same source.</div></div></div>`;
   }
@@ -182,10 +182,10 @@
       }catch(e){ out.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; }
     };
     $("#wbFireTest").onclick=async()=>{ const o=$("#wbFireOut"); o.textContent="Firing…";
-      try{ const d=await api("/api/workbench/test-alert",{method:"POST",body:"{}"}); const ch=(d.notify&&d.notify.channels)||[]; o.innerHTML=`<span style="color:#16a34a;font-weight:700">Test alert #${esc(d.alert&&d.alert.id)} raised &amp; auto-resolved.</span> ${ch.length?"Routed to: "+ch.map(esc).join(", "):"(no ChatOps channels configured)"}`; }
+      try{ const d=await api("/api/workbench/test-alert",{method:"POST",body:"{}"}); const ch=(d.notify&&d.notify.channels)||[]; o.innerHTML=`<span style="color:var(--good);font-weight:700">Test alert #${esc(d.alert&&d.alert.id)} raised &amp; auto-resolved.</span> ${ch.length?"Routed to: "+ch.map(esc).join(", "):"(no ChatOps channels configured)"}`; }
       catch(e){ o.innerHTML=`<span style="color:#dc2626">${esc(e.message)}</span>`; } };
     $("#wbNotifyTest").onclick=async()=>{ const o=$("#wbNotifyOut"); o.textContent="Sending…";
-      try{ const d=await api("/api/workbench/notify-test",{method:"POST",body:"{}"}); const ch=d.channels||[]; o.innerHTML=ch.length?`<span style="color:#16a34a;font-weight:700">Sent to: ${ch.map(esc).join(", ")}</span>`:`<span style="color:#d97706">No channels configured (Settings → Notifications).</span>`; }
+      try{ const d=await api("/api/workbench/notify-test",{method:"POST",body:"{}"}); const ch=d.channels||[]; o.innerHTML=ch.length?`<span style="color:var(--good);font-weight:700">Sent to: ${ch.map(esc).join(", ")}</span>`:`<span style="color:#d97706">No channels configured (Settings → Notifications).</span>`; }
       catch(e){ o.innerHTML=`<span style="color:#dc2626">${esc(e.message)}</span>`; } };
     $("#wbSynthRun").onclick=async()=>{ const o=$("#wbSynthOut"); o.innerHTML=`<span class="rl">Running…</span>`;
       try{ const d=await api("/api/workbench/synthetic"); o.innerHTML=synthCard(d); }
@@ -239,7 +239,7 @@
           const b64=String(reader.result).split(",").pop();
           out.textContent="Uploading…";
           const d=await api("/api/workbench/docs",{method:"POST",body:JSON.stringify({ name:file.name, mime:file.type||"", title:$("#wbDocTitle").value.trim()||undefined, shared:$("#wbDocShared").checked, dataB64:b64 })});
-          out.innerHTML=`<span style="color:#16a34a;font-weight:700">Uploaded "${esc(d.doc.title)}"</span> ${d.extracted?"· text indexed":"· "+esc(d.note||"stored")}`;
+          out.innerHTML=`<span style="color:var(--good);font-weight:700">Uploaded "${esc(d.doc.title)}"</span> ${d.extracted?"· text indexed":"· "+esc(d.note||"stored")}`;
           fi.value=""; $("#wbDocTitle").value=""; loadDocs();
         }catch(e){ out.innerHTML=`<span style="color:#dc2626">${esc(e.message)}</span>`; } };
       reader.onerror=()=>{ out.innerHTML=`<span style="color:#dc2626">Could not read the file.</span>`; };
@@ -263,7 +263,7 @@
         <td class="rl">${num(Math.round((x.size||0)/1024))} KB</td>
         <td class="mono" style="font-size:10.5px">${esc(x.uploaded_by||"—")}</td>
         <td class="rl" style="font-size:10.5px;white-space:nowrap">${esc(ksa(x.at))}</td>
-        <td>${x.shared?`<span style="color:#16a34a;font-weight:700;font-size:11px">shared</span>`:`<span class="rl" style="color:var(--muted);font-size:11px">private</span>`}</td>
+        <td>${x.shared?`<span style="color:var(--good);font-weight:700;font-size:11px">shared</span>`:`<span class="rl" style="color:var(--muted);font-size:11px">private</span>`}</td>
         <td style="text-align:right;white-space:nowrap">${canEdit?`<button class="pill wb-doc-share" data-id="${x.id}" data-sh="${x.shared?0:1}" style="padding:2px 8px;border-left-color:${x.shared?"#94a3b8":"#16a34a"}">${x.shared?"Unshare":"Share"}</button>
           <button class="pill wb-doc-del" data-id="${x.id}" style="padding:2px 8px;border-left-color:#dc2626">✕</button>`:""}</td></tr>`).join("")}</tbody></table>`;
     document.querySelectorAll(".wb-doc-share").forEach(btn=>btn.onclick=async()=>{ try{ await api(`/api/workbench/docs/${btn.dataset.id}`,{method:"PATCH",body:JSON.stringify({shared:btn.dataset.sh==="1"})}); loadDocs(); }catch(e){ alert(e.message); } });

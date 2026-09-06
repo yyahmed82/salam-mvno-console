@@ -18,7 +18,7 @@
     manager:   { label: "Manager / facade (lib)", color: "#0d9488" },
     model:     { label: "ActiveRecord model", color: "#475569" },
     gateway:   { label: "Gateway client (service)", color: "#ea580c" },
-    external:  { label: "External provider", color: "#b45309" },
+    external:  { label: "External provider", color: "var(--warn-fg)" },
     worker:    { label: "Sidekiq worker", color: "#7c3aed" },
     compliance:{ label: "ZATCA / compliance", color: "#dc2626" }
   };

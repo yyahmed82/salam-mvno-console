@@ -131,7 +131,7 @@
 .td-h4{font-size:12.5px;font-weight:700;margin:12px 0 4px}
 #view-tapdocs p{font-size:12.5px;line-height:1.65;margin:6px 0}
 .td-ul{font-size:12.5px;line-height:1.65;margin:6px 0 6px 18px}
-.td-code{background:#0f172a;color:#e2e8f0;border-radius:9px;padding:12px 14px;overflow-x:auto;
+.td-code{background:var(--panel-dark);color:var(--panel-dark-fg);border-radius:9px;padding:12px 14px;overflow-x:auto;
   font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.6;margin:8px 0;max-height:420px}
 #view-tapdocs code{background:var(--bg,#f1f5f9);border-radius:4px;padding:1px 5px;
   font-family:ui-monospace,Menlo,monospace;font-size:11.5px}

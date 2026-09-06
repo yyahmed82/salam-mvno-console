@@ -76,7 +76,7 @@
   const segsOf=(rows,view)=>{ if(view) return [view]; const ks=[]; for(const k of ["ftth","fttb","5g","other"]) if(has(rows,k)) ks.push(k); return ks.length?ks:["ftth"]; };
   const absent=(rows)=>["ftth","fttb","5g"].filter(k=>!has(rows,k));
   const twoCol=(cols)=>`<div class="fxc-cols" style="grid-template-columns:repeat(${cols.length},minmax(0,1fr))">${cols.join("")}</div>`;
-  const spark=(series,color,h)=>{ const H=h||40; const max=Math.max(1,...series.map(x=>x.n)); return `<div class="fxc-spark" style="height:${H}px">${series.map(x=>`<div title="${x.day} · ${num(x.n)} attempts · ${num(x.completed)} completed" style="height:${Math.max(2,Math.round(H*x.n/max))}px;background:linear-gradient(180deg,${color} ${x.n?Math.round(100*x.completed/x.n):0}%,#e2e8f0 0)"></div>`).join("")}</div>`; };
+  const spark=(series,color,h)=>{ const H=h||40; const max=Math.max(1,...series.map(x=>x.n)); return `<div class="fxc-spark" style="height:${H}px">${series.map(x=>`<div title="${x.day} · ${num(x.n)} attempts · ${num(x.completed)} completed" style="height:${Math.max(2,Math.round(H*x.n/max))}px;background:linear-gradient(180deg,${color} ${x.n?Math.round(100*x.completed/x.n):0}%,var(--line) 0)"></div>`).join("")}</div>`; };
   const hbar=(v,max,c)=>`<div class="fxc-hbar"><div style="width:${max?Math.min(100,Math.round(100*v/max)):0}%;background:${c||"var(--green,#0e9f5a)"}"></div></div>`;
   const dayKey=d=>String(d).slice(0,10);
   const split2=(label,parts)=>{ const tot=parts.reduce((a,p)=>a+(Number(p[1])||0),0); return `<div class="fxc-split"><div class="fxc-kpi-l">${label}</div><div class="fxc-splitbar">${parts.map(p=>`<div title="${p[0]} ${num(p[1])}" style="width:${tot?Math.round(100*(Number(p[1])||0)/tot):0}%;background:${p[2]}"></div>`).join("")}</div><div class="fxc-splitl">${parts.map(p=>`<span><i style="background:${p[2]}"></i>${p[0]} <b>${num(p[1])}</b>${tot?` <span style="color:var(--muted)">${Math.round(100*(Number(p[1])||0)/tot)}%</span>`:""}</span>`).join("")}</div></div>`; };
@@ -254,7 +254,7 @@
       .fxc-fstep.hot{background:rgba(220,38,38,.07)}.fxc-fstep.done{border-top:1px dashed var(--line);margin-top:2px;padding-top:6px}
       .fxc-fname{font-family:ui-monospace,monospace;font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fxc-fn{text-align:right;font-weight:700}.fxc-fd{text-align:right;color:#dc2626;font-size:10.5px;font-weight:700}
       .fxc-flist{display:flex;flex-direction:column;gap:6px}.fxc-find{display:flex;gap:8px;align-items:center;font-size:12px;color:inherit;text-decoration:none;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card,#fff)}.fxc-find:hover{border-color:var(--green,#0e9f5a)}
-      .fxc-kl{font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px}.fxc-kl.b{background:rgba(148,163,184,.18);color:#475569}.fxc-kl.t{background:rgba(220,38,38,.12);color:#b91c1c}
+      .fxc-kl{font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px}.fxc-kl.b{background:rgba(148,163,184,.18);color:var(--ink-soft)}.fxc-kl.t{background:rgba(220,38,38,.12);color:var(--bad-fg)}
       .fxc-err{color:#dc2626;font-size:12px;padding:6px 0}
       .fxc-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:1400;display:flex;align-items:center;justify-content:center;padding:20px}
       .fxc-modal{background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;padding:18px 20px;width:640px;max-width:100%;max-height:90vh;overflow:auto;box-shadow:0 30px 80px rgba(15,23,42,.35)}

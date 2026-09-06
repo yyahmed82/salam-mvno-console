@@ -3,6 +3,31 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.12] — 2026-09-06 — dark mode complete · phone / tablet app shell
+### Changed
+- **Dark mode, every page.** New tokens in `index.html` (`--violet`, `--indigo*`, `--good`, `--warn-fg`, `--bad-fg`,
+  `--*-line`, `--solid`, `--tip-bg`, `--switch-off`, `--overlay`, `--scrim`, `--panel/--panel2/--fg` aliases) and every
+  hard-coded light pair (`#fee2e2/#b91c1c`, `#dcfce7/#166534`, `#fef3c7/#92400e`, indigo doc blocks, `#64748b`
+  muted text, `#0f172a` code panes, `#fff` backgrounds …) in `index.html` and in 25 modules now reads a token, so
+  chips, badges, tint boxes, doc blocks, tooltips, switches, the dashboard order-flow tree (SVG fills), inverted
+  "All" chips (`var(--solid)` — never `var(--ink)` as a background) and native controls render correctly in both
+  themes. Zero-specificity `:where()` base for `input / select / textarea / button` (no browser-default grey
+  anywhere, custom select arrow, dark date pickers, themed scrollbars, `::selection`, `color-scheme`).
+- **App shell for phones and tablets** (`adaptive.js` + the "ADAPTIVE UI LAYER" in `index.html`):
+  ≤1140 px the nav becomes a slide-in drawer (header + close, scrim, Esc, grouped Mobile / Fixed sections in their
+  accent colours, Theme / Arabic / Guide / Settings shortcuts); ≤700 px a bottom tab bar (Home · Mobile · Fixed · 360
+  · Menu) mirrors the nav — a tab is hidden exactly when the role / business scope hides the nav entry — and the
+  header collapses to logo + icons. Modals and the ticket form open as bottom sheets (above header and tabs), the
+  side drawer and Yusr go full screen, the guided-tour card fits the width, safe-area insets are honoured
+  (`viewport-fit=cover`, `theme-color`, home-screen capable).
+- **Layouts that measure instead of guess**: inline grids are stacked only when a column would drop under 150 px
+  (`fitGrids` → `.g-stack` / `.g-two`), overflowing tables get a horizontal-scroll wrapper (`wrapTables` →
+  `.tscroll`) after every render, grid children get `min-width:0` (no blow-outs), the page itself never scrolls
+  sideways (`main{overflow-x:clip}`). Hub sticky bars (Fixed, DMS, Monitoring, Customer 360) sit under the header
+  (`top:var(--hdr)`) instead of behind it. SDA map / QR pages: tablet = filters on top, map + detail side by side;
+  phone = one column with a 56 vh map. Touch targets ≥ 36 px on coarse pointers, 16 px inputs on phones (no iOS zoom).
+- Drawer CSS is scoped to `header>nav` (the Monitoring sub-tabs are a `<nav>` too).
+
 ## [2.0.0-alpha.11] — 2026-09-06 — business scope per user
 ### Added
 - **Business scope** — every user is Mobile (MVNO team), Fixed or both (`console_users.business`, default both).

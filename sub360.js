@@ -144,7 +144,7 @@
     const rows=lines.map((l,i)=>`<tr class="sb-line" data-oid="${esc(l.id)}" data-ln="ln${i}" role="button" tabindex="0" title="Click for this order's full journey">
       <td>${esc(l.mobile_number||'—')}</td><td>${esc(l.plan||'—')}</td>
       <td>${esc(l.line_type||'—')}</td><td>${esc(l.sim||'—')}</td>
-      <td>${(v=>{const c=stClass(v);return `<span class="mono" style="${c==='ok'?'color:#16a34a;font-weight:700':c==='bad'?'color:#dc2626;font-weight:700':c==='mid'?'color:#d97706;font-weight:700':''}">${esc(v)}</span>`;})(l.status||l.aasm_state||'—')}</td>
+      <td>${(v=>{const c=stClass(v);return `<span class="mono" style="${c==='ok'?'color:var(--good);font-weight:700':c==='bad'?'color:#dc2626;font-weight:700':c==='mid'?'color:#d97706;font-weight:700':''}">${esc(v)}</span>`;})(l.status||l.aasm_state||'—')}</td>
       <td>${l.activated?'✓':'—'}</td><td class="rl">${day(l.created_at)}<span class="sb-chev">▸</span></td></tr>
       <tr class="sb-line-x" id="ln${i}" hidden><td colspan="7"><div class="sb-line-tl" id="ln${i}tl"><div class="sub">…</div></div></td></tr>`).join('');
     return `<div class="sb-block"><h3>Lines / SIMs <span class="rl">(${lines.length} · click a line for its full journey)</span></h3>
@@ -191,7 +191,7 @@
     if(/pending|progress|await|initial|processing|created|sent|new/.test(x)) return 'mid';
     return ''; };
   const stChip=(k,v)=>{ if(v==null||v==='') return '';
-    const c=stClass(v), col=c==='ok'?'background:var(--tint-green,#dcfce7);color:var(--tint-green-fg,#166534)':c==='bad'?'background:#fee2e2;color:#b91c1c':c==='mid'?'background:var(--tint-amber,#fef3c7);color:var(--tint-amber-fg,#b45309)':'background:var(--panel2,#f1f5f9);color:var(--muted,#64748b)';
+    const c=stClass(v), col=c==='ok'?'background:var(--tint-green,#dcfce7);color:var(--tint-green-fg,#166534)':c==='bad'?'background:var(--tint-red);color:var(--bad-fg)':c==='mid'?'background:var(--tint-amber,#fef3c7);color:var(--tint-amber-fg,#b45309)':'background:var(--panel2,#f1f5f9);color:var(--muted,#64748b)';
     return `<span class="sb-x-kv"><b>${esc(k)}</b> <span class="mono" style="${col};border-radius:6px;padding:1px 8px;font-weight:700">${esc(v)}</span></span>`; };
   const xblock=(label,body,id)=>`<div class="sb-x-h"><span>${esc(label)}</span><button class="pill sb-copy" data-copy="${id}" style="border-left-color:var(--blue,#1d4ed8)">Copy</button></div><pre id="${id}">${esc(body)}</pre>`;
 
@@ -239,7 +239,7 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px">
         <button class="pill" id="sbLogSms" style="border-left-color:#8b5cf6">✉ OTP / SMS log</button>
         <button class="pill" id="sbLogLogin" style="border-left-color:#0ea5e9">◔ Login &amp; session</button>
-        <button class="pill" id="sbLogTl" style="border-left-color:#16a34a">⇄ Full cross-system timeline</button>
+        <button class="pill" id="sbLogTl" style="border-left-color:var(--good)">⇄ Full cross-system timeline</button>
       </div>
       <div id="sbLogOut"></div></div>`;
   }
@@ -256,7 +256,7 @@
         out().innerHTML=`<div style="border:1px solid var(--line);border-radius:8px;max-height:260px;overflow:auto"><table class="sb-tbl">
           <thead><tr><th>Sent (KSA)</th><th>Channel</th><th>Type</th><th>Status</th><th>Message</th></tr></thead><tbody>
           ${rows.map(r=>`<tr><td class="rl">${esc(KSA(r.sent_at))}</td><td>${esc(r.channel||'—')}</td><td>${esc(r.message_type||'—')}</td>
-            <td style="font-weight:700;color:${r.status==='verified'?'#16a34a':/expired|fail/.test(r.status||'')?'#dc2626':'#d97706'}">${esc(r.status||'—')}</td>
+            <td style="font-weight:700;color:${r.status==='verified'?'var(--good)':/expired|fail/.test(r.status||'')?'#dc2626':'#d97706'}">${esc(r.status||'—')}</td>
             <td style="max-width:420px">${esc(r.body_en||r.body_note||'')}</td></tr>`).join('')}
           </tbody></table></div>`;
       }catch(e){ out().innerHTML=`<div class="albanner">${esc(e.message)}</div>`; }
@@ -318,11 +318,11 @@
     // ORDER/SIM SELECTOR — every line attempt is traceable, not just the latest (3 Sep pm):
     // chips carry the order uuid; the timeline endpoint accepts it directly (Lines-drill contract)
     const chips=(curLines||[]).slice(0,8).map((l,i)=>`<button class="pill obSel${i===0?' obSelOn':''}" data-obid="${esc(l.id)}"
-        style="padding:3px 10px;font-size:11px;border-left-color:${l.activated?'#16a34a':/fail|reject/i.test(l.status||'')?'#dc2626':'#d97706'}"
+        style="padding:3px 10px;font-size:11px;border-left-color:${l.activated?'var(--good)':/fail|reject/i.test(l.status||'')?'#dc2626':'#d97706'}"
         title="${esc((l.plan||'')+' · '+(l.aasm_state||''))}">${esc(KSAd(l.created_at))} · ${esc(l.channel||'salam')} · ${esc(l.sim||'')}${l.activated?' ✓':''}</button>`).join('');
     return `<div class="sb-block"><h3>Onboarding journey <span class="rl">(screen by screen — until the SIM is active)</span></h3>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="pill" id="obTrace" style="padding:4px 12px;border-left-color:#16a34a">▶ Trace the exact journey</button>
+        <button class="pill" id="obTrace" style="padding:4px 12px;border-left-color:var(--good)">▶ Trace the exact journey</button>
         ${chips?`<span class="rl" style="font-weight:700;font-size:10.5px">SIM / ORDER:</span> ${chips}`:''}
         <span class="rl" style="color:var(--muted)">from the backend events each screen fires (app · gov checks · payment · delivery · BSS/OSB)</span>
       </div><div id="obOut" style="margin-top:8px"></div></div>`;
@@ -336,7 +336,7 @@
     return `<div style="border:1px solid var(--line);border-radius:10px;background:var(--card);padding:10px 14px;margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <b style="font-size:12px">SIM provisioning</b>
-        <span style="background:${chan==='salam'?'var(--tint-green,#dcfce7)':'#ede9fe'};color:${chan==='salam'?'#166534':'#5b21b6'};border-radius:5px;padding:0 8px;font-weight:800;font-size:10.5px">${esc(chan.toUpperCase())}</span>
+        <span style="background:${chan==='salam'?'var(--tint-green,#dcfce7)':'var(--tint-violet)'};color:${chan==='salam'?'var(--tint-green-fg)':'var(--tint-violet-fg)'};border-radius:5px;padding:0 8px;font-weight:800;font-size:10.5px">${esc(chan.toUpperCase())}</span>
         <span class="rl" style="color:var(--muted);font-size:10.5px">provider / sales channel (order origin)</span>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap">
@@ -398,13 +398,13 @@
             <b style="font-size:12px">Journey ${segIdx+1} of ${segs.length}</b>
             <span class="rl">${fmt(sev[0].at)} → ${fmt(sev[sev.length-1].at)}</span>
             <button class="pill" id="obNext" ${isLatest?'disabled':''} style="padding:2px 10px">▶</button>
-            ${!isLatest?'<span style="background:#fef3c7;color:#92400e;border-radius:5px;padding:0 8px;font-weight:700;font-size:10px">EARLIER LIFECYCLE — this number is recycled; these events may belong to a PREVIOUS owner</span>':''}
+            ${!isLatest?'<span style="background:var(--tint-amber);color:var(--tint-warn-fg);border-radius:5px;padding:0 8px;font-weight:700;font-size:10px">EARLIER LIFECYCLE — this number is recycled; these events may belong to a PREVIOUS owner</span>':''}
           </div>`:'';
           let prev=null;
           out.innerHTML=obProvisioning(isLatest?line:null)+nav
-            +`<div class="rl" style="margin-bottom:6px"><b>${reached.length}</b> of ${OB_STEPS.length} stages touched · journey ${doneAct&&doneAct.state==='done'?'<b style="color:#16a34a">COMPLETED — SIM ACTIVE</b>':'<b style="color:#d97706">NOT COMPLETED</b>'} · started ${fmt(sev[0].at)}</div>`
+            +`<div class="rl" style="margin-bottom:6px"><b>${reached.length}</b> of ${OB_STEPS.length} stages touched · journey ${doneAct&&doneAct.state==='done'?'<b style="color:var(--good)">COMPLETED — SIM ACTIVE</b>':'<b style="color:#d97706">NOT COMPLETED</b>'} · started ${fmt(sev[0].at)}</div>`
             +steps.map(s=>{
-              const col=s.state==='done'?'#16a34a':s.state==='failed'?'#dc2626':s.state==='partial'?'#d97706':'#cbd5e1';
+              const col=s.state==='done'?'#16a34a':s.state==='failed'?'#dc2626':s.state==='partial'?'#d97706':'#94a3b8';
               const gap=prev&&s.first_at?dur(prev,s.first_at):'';
               if(s.first_at) prev=s.last_at;
               return `<div style="display:flex;gap:10px;align-items:flex-start;position:relative;padding:0 0 2px 0">
@@ -414,15 +414,15 @@
                 </div>
                 <div style="flex:1;padding-bottom:8px">
                   <div style="font-weight:800;font-size:12.5px;color:${s.state==='untouched'?'var(--muted)':'var(--ink)'}">${esc(s.name)}
-                    ${s.state==='failed'?'<span style="background:#fee2e2;color:#b91c1c;border-radius:5px;padding:0 6px;font-weight:700;font-size:10px">FAILED</span>':''}
-                    ${s.state==='done'?'<span style="color:#16a34a;font-weight:700;font-size:10.5px">✓</span>':''}
+                    ${s.state==='failed'?'<span style="background:var(--tint-red);color:var(--bad-fg);border-radius:5px;padding:0 6px;font-weight:700;font-size:10px">FAILED</span>':''}
+                    ${s.state==='done'?'<span style="color:var(--good);font-weight:700;font-size:10.5px">✓</span>':''}
                     ${gap?`<span class="rl" style="color:var(--muted);font-size:10px">· +${gap} after previous</span>`:''}</div>
                   ${s.state==='untouched'?'<div class="rl" style="font-size:10.5px;color:var(--muted)">not reached</div>'
                     :`<div class="rl" style="font-size:11px">${fmt(s.first_at)}${s.last_at!==s.first_at?' → '+fmt(s.last_at):''} · ${s.n} event(s)${s.fail?` · <b style="color:#dc2626">${s.fail} failed</b>`:''}
                       <div style="color:var(--muted)">${esc(s.last_detail)}</div>
                       <details><summary style="cursor:pointer;font-size:10px;color:var(--muted)">all ${s.n} event(s)</summary>
                         ${s.mine.map(e=>`<div style="border-bottom:1px solid var(--line);padding:2px 0;font-size:10.5px">
-                          <span class="mono">${fmt(e.at)}</span> · ${e.ok===false?'<b style="color:#dc2626">✖</b>':e.ok===true?'<span style="color:#16a34a">✓</span>':'·'} ${esc((e.source||'')+' — '+(e.detail||e.kind||'').slice(0,140))}</div>`).join('')}
+                          <span class="mono">${fmt(e.at)}</span> · ${e.ok===false?'<b style="color:#dc2626">✖</b>':e.ok===true?'<span style="color:var(--good)">✓</span>':'·'} ${esc((e.source||'')+' — '+(e.detail||e.kind||'').slice(0,140))}</div>`).join('')}
                       </details></div>`}
                 </div></div>`;}).join('')
             +`<div class="rl" style="font-size:10px;color:var(--muted)">Screens inferred from the backend calls each screen fires. Journeys split on 90-day gaps (recycled-number protection). Full raw view: the cross-system timeline.</div>`;
@@ -556,7 +556,7 @@
           const hops=(p.ecid&&acc[p.ecid])||[];
           return `<tr><td class="rl mono" style="white-space:nowrap">${esc(KSA(p.ts))}</td>
             <td><b>${esc(String(p.pipeline||''))}</b>${p.stage?` <span class="rl" style="color:var(--muted);font-size:10px">${esc(p.stage)}</span>`:''}${p.direction?` <span class="rl" style="font-size:10px">${esc(p.direction)}</span>`:''}</td>
-            <td>${p.fault?`<span style="background:#fee2e2;color:#b91c1c;border-radius:4px;padding:0 6px;font-weight:700;font-size:10px">✖ ${esc(p.fault_kind||'FAULT')}</span>`:'<span style="color:#16a34a;font-weight:700;font-size:10.5px">OK</span>'}</td>
+            <td>${p.fault?`<span style="background:var(--tint-red);color:var(--bad-fg);border-radius:4px;padding:0 6px;font-weight:700;font-size:10px">✖ ${esc(p.fault_kind||'FAULT')}</span>`:'<span style="color:var(--good);font-weight:700;font-size:10.5px">OK</span>'}</td>
             <td class="rl" style="font-size:10.5px">${hops.length?hops.map(h=>`${esc(h.uri.split('/').filter(Boolean).pop()||h.uri)} <b>${h.ms}ms</b>`).join(' · '):'—'}</td>
             <td>${p.payload?`<details><summary class="rl" style="cursor:pointer;font-size:10px;color:var(--muted)">payload</summary><pre style="font-size:10px;max-height:180px;overflow:auto;white-space:pre-wrap">${esc(p.payload)}</pre></details>`:'—'}</td></tr>`;}).join('');
         const qsRows=qs.slice(0,10).map(a=>`<tr><td class="rl mono" style="white-space:nowrap">${esc(KSA(a.ts))}</td>
@@ -570,7 +570,7 @@
       if(k==='vas'){
         const Y=v=>v===true||v==='t'||v==='true'||v===1||v==='1'||String(v).toLowerCase()==='yes';
         const chip=(v,lbl)=>v==null?'<span class="rl" style="color:var(--muted)">—</span>'
-          :`<span style="background:${Y(v)?'#3b82f6':'#e2e8f0'};color:${Y(v)?'#fff':'#475569'};border-radius:4px;padding:0 6px;font-weight:700;font-size:10px">${Y(v)?'YES':'NO'}</span>`;
+          :`<span style="background:${Y(v)?'#3b82f6':'var(--line)'};color:${Y(v)?'#fff':'var(--ink-soft)'};border-radius:4px;padding:0 6px;font-weight:700;font-size:10px">${Y(v)?'YES':'NO'}</span>`;
         if(!(d.rows||[]).length) return `<div class="rl" style="color:var(--muted)">No VAS/addon activity recorded for this customer.</div>`
           +((d.skipped||[]).length?`<div class="rl" style="font-size:10.5px;color:var(--muted);margin-top:4px">${esc(d.skipped.join(' · '))}</div>`:'');
         return `<div style="overflow-x:auto;max-height:320px;overflow-y:auto;border:1px solid var(--line,#e2e8f0);border-radius:8px"><table class="sb-tbl" style="min-width:760px;font-size:11.5px"><thead><tr>
@@ -580,8 +580,8 @@
             return `<tr><td class="rl mono" style="white-space:nowrap">${esc(KSA(x.at))}</td>
             <td><b>${esc(String(x.service))}</b> <span class="rl" style="color:var(--muted);font-size:10px">${esc(String(x.service_type||''))}</span></td>
             <td>${esc(String(x.group||'—'))}</td>
-            <td>${x.op?`<span style="background:${act?'#16a34a':'#94a3b8'};color:#fff;border-radius:4px;padding:0 6px;font-weight:700;font-size:10px">${esc(String(x.op).toUpperCase())}</span>`:'—'}</td>
-            <td style="font-weight:700;color:${added?'#16a34a':x.state?'#d97706':'inherit'}">${esc(String(x.state||'—'))}</td>
+            <td>${x.op?`<span style="background:${act?'var(--good)':'#94a3b8'};color:#fff;border-radius:4px;padding:0 6px;font-weight:700;font-size:10px">${esc(String(x.op).toUpperCase())}</span>`:'—'}</td>
+            <td style="font-weight:700;color:${added?'var(--good)':x.state?'#d97706':'inherit'}">${esc(String(x.state||'—'))}</td>
             <td style="white-space:nowrap">${chip(x.req_sent)}→${chip(x.res_received)}</td>
             <td>${esc(String(x.platform||'—'))}</td><td class="rl" style="font-size:10.5px">${esc(String(x.plan||'—'))}</td></tr>`;}).join('')}</tbody></table></div>`
           +`<div class="rl" style="color:var(--muted);margin-top:4px">same records as CMS → Service Logs${(d.skipped||[]).length?` · ${esc(d.skipped.join(' · '))}`:''}${(d.errors||[]).length?` · <span style="color:#dc2626">${esc(d.errors.join(' · '))}</span>`:''}</div>`;
@@ -591,7 +591,7 @@
         d.rows.map(x=>{const TL={advanced_postpaid_payment:'Bill payment (advance)',OnboardingOrder:'New line order',Checkout:'Store checkout',Recharge:'Recharge',Invoice:'Invoice payment'};
         return `<tr ${x.pid?`data-pay="${esc(x.pid)}" style="cursor:pointer" title="Click for the full trace — app record, request/response to the gateway (Tap), ⇄ UPG correlation"`:''}><td class="rl mono" style="white-space:nowrap">${esc(KSA(x.created_at))}</td><td>${esc(TL[x.payment_on_type]||x.payment_on_type||'—')}</td>
         <td class="mono" style="text-align:end">${lvMoney(x.amount)}</td>
-        <td style="font-weight:700;color:${x.status==='success'?'#16a34a':/fail/.test(x.status||'')?'#dc2626':x.status==='refunded'?'#7c3aed':'#d97706'}">${esc(x.status)}</td>
+        <td style="font-weight:700;color:${x.status==='success'?'var(--good)':/fail/.test(x.status||'')?'#dc2626':x.status==='refunded'?'#7c3aed':'#d97706'}">${esc(x.status)}</td>
         <td>${esc(x.vendor||'—')}</td><td>${esc(x.payment_method||'—')}</td>
         <td class="mono" style="font-size:10.5px">${esc(x.payment_reference_id||'—')}</td>
         <td style="max-width:220px;font-size:11px;color:var(--muted)">${esc(x.fail_reason||'—')}</td></tr>`;}).join('')}</tbody></table></div>`
@@ -647,7 +647,7 @@
           // Optiva::Responses::Bill#total — halalas, due = max(0, last_invoice + payments_since)/100
           const total=Math.max(0,(Number(lia)+Number(psli||0))/100);
           return `<div class="rl" style="font-weight:700;color:var(--muted)">DUE AMOUNT</div>
-            <span style="font-size:19px;font-weight:800;color:${total>0?'#b45309':'#16a34a'}">${lvMoney(total.toFixed(2))} <small>SAR</small></span>
+            <span style="font-size:19px;font-weight:800;color:${total>0?'var(--warn-fg)':'var(--good)'}">${lvMoney(total.toFixed(2))} <small>SAR</small></span>
             ${dueMs?`<div class="rl">to be paid before <b>${esc(KSAd(dueMs))}</b></div>`:''}
             <div class="rl" style="margin-top:5px;color:var(--muted)">last invoice ${lvMoney(Number(lia)/100)} · payments since ${lvMoney(Number(psli||0)/100)} · adj ${lvMoney(Number(g('adjustments_since_last_invoice','ADJUSTMENTS_SINCE_LAST_INVOICE')||0)/100)}</div>`;
         }
@@ -669,7 +669,7 @@
             const dt=[x.activationDate,x.startDate,x.created,x.createdDate].find(v=>v!=null&&v!=='');
             return `<div class="rl" style="display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line,#eef2f0);padding:4px 0">
               <span style="flex:1">➕ <b>${esc(String(nameOf(x)))}</b>${idOf(x)?` <span class="mono" style="font-size:10px;color:var(--muted)">${esc(String(idOf(x)))}</span>`:''}</span>
-              ${st!=null?`<span style="background:${active?'var(--tint-green,#dcfce7)':'#fee2e2'};color:${active?'#166534':'#b91c1c'};border-radius:5px;padding:0 6px;font-weight:700;font-size:10.5px">${esc(active?'ACTIVE':st)}</span>`:''}
+              ${st!=null?`<span style="background:${active?'var(--tint-green,#dcfce7)':'var(--tint-red)'};color:${active?'var(--tint-green-fg)':'var(--bad-fg)'};border-radius:5px;padding:0 6px;font-weight:700;font-size:10.5px">${esc(active?'ACTIVE':st)}</span>`:''}
               ${dt?`<span class="rl mono" style="font-size:10px;color:var(--muted)">${esc(KSAd(String(dt)))}</span>`:''}</div>`;}).join('')
           +`<div class="rl" style="color:var(--muted);margin-top:3px">every subscription under the BSS account — addons appear alongside the main line; unknown fields: open { }</div>`;
       }
@@ -683,8 +683,8 @@
           let paid=null;
           if(outst!=null) paid=Number(outst)<=0;
           else if(stRaw!=null) paid=/paid|closed|settled|^1$|true/i.test(String(stRaw))&&!/un|not/i.test(String(stRaw));
-          const badge=paid===true?'<span style="background:var(--tint-green,#dcfce7);color:#166534;border-radius:5px;padding:0 6px;font-weight:700;font-size:10.5px">PAID</span>'
-            :paid===false?'<span style="background:#fee2e2;color:#b91c1c;border-radius:5px;padding:0 6px;font-weight:700;font-size:10.5px">NOT PAID</span>'
+          const badge=paid===true?'<span style="background:var(--tint-green,#dcfce7);color:var(--tint-green-fg);border-radius:5px;padding:0 6px;font-weight:700;font-size:10.5px">PAID</span>'
+            :paid===false?'<span style="background:var(--tint-red);color:var(--bad-fg);border-radius:5px;padding:0 6px;font-weight:700;font-size:10.5px">NOT PAID</span>'
             :'<span class="rl" style="color:var(--muted);font-size:10px" title="BSS answer carries no paid flag — open { } and send me the field name">—</span>';
           return `<div class="rl" style="display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line,#eef2f0);padding:4px 0">
             <span style="flex:1">≣ ${esc(KSAd(dt))}</span>${badge}
@@ -712,7 +712,7 @@
     if(d.not_configured){ el.textContent='not configured'; return; }
     const src=d.contact_only?` · <b style="color:#d97706">⚠ contact number used</b>`:(d.line_source?` · via ${esc(d.line_source)}`:'');
     if(d.error||d.ok===false){ el.innerHTML='<b style="color:#dc2626">failed</b>'+(d.ms!=null?' · '+d.ms+'ms':'')+src; return; }
-    const t=d.taken_at?KSA(d.taken_at):''; el.innerHTML=`${d.cached?'cached':'<b style="color:#16a34a">LIVE</b>'} · ${esc(t)}${d.ms!=null?' · '+d.ms+'ms':''}${src}`;
+    const t=d.taken_at?KSA(d.taken_at):''; el.innerHTML=`${d.cached?'cached':'<b style="color:var(--good)">LIVE</b>'} · ${esc(t)}${d.ms!=null?' · '+d.ms+'ms':''}${src}`;
   }
   function lvTrace(k,d){
     const el=document.getElementById('lvt_'+k); if(!el) return;
@@ -757,7 +757,7 @@
       const usedPct=lim?Math.max(0,Math.min(100,100*(lim-rem)/lim)):0;
       rows.push({grp:T.grp,html:`<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:12px;gap:8px">
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span>
-        <span style="white-space:nowrap">${unlim?'<b style=\"color:#16a34a\">Unlimited</b>':`<b>${(T.cv(rem)).toFixed(T.dp).replace(/\.00$/,'')}</b> | ${(T.cv(lim)).toFixed(0)} ${T.unit}`}</span></div>
+        <span style="white-space:nowrap">${unlim?'<b style=\"color:var(--good)\">Unlimited</b>':`<b>${(T.cv(rem)).toFixed(T.dp).replace(/\.00$/,'')}</b> | ${(T.cv(lim)).toFixed(0)} ${T.unit}`}</span></div>
         <div style="height:7px;background:var(--line,#e2e8f0);border-radius:4px;margin-top:3px"><div style="height:7px;border-radius:4px;background:#0e9f5a;width:${unlim?100:usedPct.toFixed(0)}%"></div></div></div>`});
     }
     rows.sort((a,z)=>a.grp-z.grp);
@@ -776,12 +776,12 @@
     const planTxt=planName||(_lvLines.find(l=>l.ref===_lvLine)||{}).plan||(p.rating&&p.rating.primaryPricePlanID?'BSS plan '+p.rating.primaryPricePlanID:'—');
     return `<div style="display:flex;justify-content:space-between;align-items:baseline">
         <div><div class="rl" style="color:var(--muted)">Active Plan</div><b style="font-size:15px">${esc(planTxt)}</b></div>
-        <div style="text-align:end"><b style="color:${pf.ok?'#16a34a':'#d97706'}">${pf.ok?'Active':'check profile'}</b>
+        <div style="text-align:end"><b style="color:${pf.ok?'var(--good)':'#d97706'}">${pf.ok?'Active':'check profile'}</b>
         ${days!=null?`<div class="rl" style="color:var(--muted)">expires in ${days} day${days===1?'':'s'}</div>`:''}</div></div>
       ${bars.join('')||'<div class="rl" style="margin-top:6px;color:var(--muted)">No active bundles returned.</div>'}
       ${due!=null?`<div style="margin-top:10px;padding:8px 10px;background:var(--panel2,#f4f8f6);border-radius:8px;display:flex;justify-content:space-between;align-items:baseline">
         <span class="rl" style="font-weight:700;color:var(--muted)">DUE AMOUNT</span>
-        <span><b style="font-size:16px;color:${due>0?'#b45309':'#16a34a'}">${lvMoney(due.toFixed(2))} SAR</b>${dueMs?`<span class="rl" style="color:var(--muted)"> · before ${esc(KSAd(dueMs))}</span>`:''}</span></div>`
+        <span><b style="font-size:16px;color:${due>0?'var(--warn-fg)':'var(--good)'}">${lvMoney(due.toFixed(2))} SAR</b>${dueMs?`<span class="rl" style="color:var(--muted)"> · before ${esc(KSAd(dueMs))}</span>`:''}</span></div>`
       :(bl&&bl.error?`<div class="rl" style="margin-top:8px;color:var(--muted)">due amount: ${esc(bl.error)}</div>`:'')}`;
   }
   async function lvLoad(k,refresh){
@@ -792,7 +792,7 @@
         const [pf,bd,bl,pl]=await Promise.all([one('profile'),one('bundles'),one('bill'),one('plan')]);
         if(body) body.innerHTML=lvAppView(pf,bd,bl,pl);
         const el=document.getElementById('lvs_'+k);
-        if(el) el.innerHTML=`${(pf.cached&&bd.cached)?'cached':'<b style="color:#16a34a">LIVE</b>'} · ${esc(KSA(new Date().toISOString()))} · profile+bundles+bill${pf.line_source?' · via '+esc(pf.line_source):''}`;
+        if(el) el.innerHTML=`${(pf.cached&&bd.cached)?'cached':'<b style="color:var(--good)">LIVE</b>'} · ${esc(KSA(new Date().toISOString()))} · profile+bundles+bill${pf.line_source?' · via '+esc(pf.line_source):''}`;
         const tr=document.getElementById('lvt_'+k);
         if(tr) tr.innerHTML=`<div class="sb-x-h"><span>Raw answers (4 calls)</span></div><pre style="max-height:240px;overflow:auto">${esc(JSON.stringify({profile:pf.response,bundles:bd.response,bill:bl.response||bl.error,plan:pl.response||pl.error},null,1))}</pre>`;
       }catch(e){ if(body) body.innerHTML=`<div class="rl" style="color:#dc2626">${esc(e.message)}</div>`; }
@@ -831,7 +831,7 @@
     LIVE_PANELS.filter(pn=>pn.auto).forEach(pn=>lvLoad(pn.k,false));
     // health chip: is the live gateway configured/reachable? (cheap, cached server-side by TTL)
     api('/api/subscriber/live/health').then(h=>{ const el=box.querySelector('#lvHealth'); if(!el) return;
-      el.innerHTML=h.configured?(h.reachable?`<span style="color:#16a34a">● live gateway OK · ${h.ms}ms</span>`:`<span style="color:#dc2626">● gateway unreachable: ${esc(h.error||('HTTP '+h.http))}</span>`)
+      el.innerHTML=h.configured?(h.reachable?`<span style="color:var(--good)">● live gateway OK · ${h.ms}ms</span>`:`<span style="color:#dc2626">● gateway unreachable: ${esc(h.error||('HTTP '+h.http))}</span>`)
         :`<span style="color:#d97706">● live BSS not configured (LIVE_UIL_KEY)</span>`; }).catch(()=>{});
   }
   function timelineCard(events){
@@ -848,9 +848,9 @@
       .sb-open .sb-chev{transform:rotate(90deg)}
       .sb-ev-x{border:1px solid var(--line,#e2e8f0);background:var(--panel,#f8fafc);border-radius:8px;padding:10px 14px;margin:2px 0 10px 26px}
       .sb-x-grid{display:flex;flex-wrap:wrap;gap:4px 20px;font-size:12px;margin-bottom:4px}
-      .sb-x-kv b{color:#64748b;font-weight:600;margin-right:5px}
-      .sb-x-h{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
-      .sb-ev-x pre{background:#0f172a;color:#e2e8f0;padding:10px 12px;border-radius:6px;overflow:auto;max-height:300px;font-size:11px;line-height:1.45;margin:6px 0 2px;white-space:pre-wrap;word-break:break-word}
+      .sb-x-kv b{color:var(--muted);font-weight:600;margin-right:5px}
+      .sb-x-h{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+      .sb-ev-x pre{background:var(--panel-dark);color:var(--panel-dark-fg);padding:10px 12px;border-radius:6px;overflow:auto;max-height:300px;font-size:11px;line-height:1.45;margin:6px 0 2px;white-space:pre-wrap;word-break:break-word}
       .sb-copy{font-size:10px;padding:2px 10px}
       .sb-ev-src{overflow:hidden}
       .sb-ev-src small{display:block;color:#94a3b8;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -860,7 +860,7 @@
       tr.sb-line-x>td{background:var(--panel,#f8fafc);border-left:3px solid var(--green,#008a47);padding:8px 12px}
       .sb-line-tl .sb-ev-x{margin-left:0}
       /* --- 4 Sep 2026 call-center redesign: sticky customer header + tabs --- */
-      .sbt-head{position:sticky;top:55px;z-index:35;background:var(--card,#fff);border:1px solid var(--line,#e2e8f0);border-radius:14px;padding:10px 16px 8px;margin:10px 0 12px;box-shadow:0 6px 18px rgba(15,23,42,.07)}
+      .sbt-head{position:sticky;top:var(--hdr);z-index:35;background:var(--card,#fff);border:1px solid var(--line,#e2e8f0);border-radius:14px;padding:10px 16px 8px;margin:10px 0 12px;box-shadow:0 6px 18px rgba(15,23,42,.07)}
       .sbt-head-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
       .sbt-avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--green,#0e9f5a),#065f46);color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;box-shadow:0 2px 6px rgba(6,95,70,.35)}
       .sbt-who{min-width:0;flex:1}
@@ -883,7 +883,7 @@
       .svc-ic{font-size:16px;line-height:1;flex:none} .svc-body{display:flex;flex-direction:column;gap:1px;min-width:0}
       .svc-body b{font-size:12.5px;letter-spacing:.2px} .svc-sub{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
       .svc-st{margin-left:auto;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;padding:2px 7px;border-radius:999px;flex:none}
-      .svc-st.ok{color:#166534;background:rgba(22,163,74,.12)} .svc-st.warn{color:#b45309;background:rgba(217,119,6,.12)} .svc-st.bad{color:#b91c1c;background:rgba(220,38,38,.12)} .svc-st.muted{color:var(--muted);background:var(--card2,#f1f5f9)}
+      .svc-st.ok{color:var(--tint-green-fg);background:rgba(22,163,74,.12)} .svc-st.warn{color:var(--warn-fg);background:rgba(217,119,6,.12)} .svc-st.bad{color:var(--bad-fg);background:rgba(220,38,38,.12)} .svc-st.muted{color:var(--muted);background:var(--card2,#f1f5f9)}
       [data-theme="dark"] .svc-st.ok{color:#86efac} [data-theme="dark"] .svc-st.warn{color:#fcd34d} [data-theme="dark"] .svc-st.bad{color:#fca5a5}
       .sbt-linebar:empty{display:none}
       .sbt-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;border-top:1px solid var(--line,#eef2f0);padding-top:8px}
