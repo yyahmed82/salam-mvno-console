@@ -458,6 +458,28 @@
    * ACTIVATED Salam MSISDNs come from the server (activation_logs / mnp_number). Every BSS panel
    * queries the SELECTED line; refs are order ids (opaque), numbers arrive masked. */
   let _lvLine=null, _lvLines=[];
+  /* ---- Services strip (6 Sep 2026): everything the customer has, both businesses, in the sticky header.
+   *  📱 one card per Salam line (click = the line every BSS panel reads) · 🏠 one card per fixed subscription
+   *  from the BSS inventory (click = Fixed services tab). Journeys/attempts are NOT services and stay in their tabs. */
+  const fixedServices=()=>((curFixed&&curFixed.inventory&&curFixed.inventory.subscriptions)||[]);
+  function servicesStrip(lines){
+    const inv=(curFixed&&curFixed.inventory)||{}; const fx=fixedServices();
+    const ST={active:"ok",suspended:"warn",frozen:"warn",terminated:"bad",deactivated:"bad"};
+    const mob=lines.map(l=>`<button type="button" class="svc mob${l.ref===_lvLine?' sel':''}" data-lvline="${esc(l.ref)}" title="${esc(l.source)}${l.at?' · '+KSA(l.at):''} — click to make this the line BSS panels read">
+        <span class="svc-ic">📱</span><span class="svc-body"><b class="mono">${esc(l.msisdn)}</b><span class="svc-sub">${esc(l.plan||l.source||'Salam line')}</span></span>
+        <span class="svc-st ok">${l.ref===_lvLine?'selected':'line'}</span></button>`).join('');
+    const fixed=fx.map(x=>{ const st=(x.state_label||x.state||'').toLowerCase(); const owed=inv.owed&&inv.owed[x.account]; return `<button type="button" class="svc fix" data-svcfixed="${esc(x.account||'')}" title="Open Fixed services">
+        <span class="svc-ic">🏠</span><span class="svc-body"><b class="mono">${esc(x.account||'—')}</b><span class="svc-sub">${esc(x.plan||x.offer||'—')}${x.speed_mbps?' · '+x.speed_mbps+' Mbps':''}${owed&&owed.amount_sar>0?` · <span style="color:#dc2626">owes ${owed.amount_sar.toFixed(2)} SAR</span>`:''}</span></span>
+        <span class="svc-st ${ST[st]||'muted'}">${esc(x.state_label||x.state||'—')}</span></button>`; }).join('');
+    const nM=lines.length, nF=fx.length;
+    const invNote=curFixed&&curFixed.found&&!inv.available?`<span class="rl svc-note" style="color:#d97706">fixed inventory unavailable${inv.reason?' — '+esc(inv.reason):''}</span>`:'';
+    return `<div class="svc-strip"><div class="svc-head"><span class="svc-title">Services</span><span class="svc-count">${nM+nF}</span>
+        <span class="rl svc-legend">📱 ${nM} mobile · 🏠 ${nF} fixed${nM?' · BSS reads use the selected line':''}</span>${invNote}</div>
+      <div class="svc-cards">${mob}${fixed}${!nM&&!nF?'<span class="rl" style="color:var(--muted)">no active service found on either side</span>':''}</div></div>`;
+  }
+  function wireServicesStrip(bar){
+    bar.querySelectorAll('[data-svcfixed]').forEach(b=>b.addEventListener('click',()=>{ const t=document.querySelector('.sbt-tab[data-sbt="fixed"]'); if(t) t.click(); }));
+  }
   async function lvLoadLines(box){
     const bar=box.querySelector('#lvLineBar'); if(!bar) return;
     try{
@@ -470,17 +492,17 @@
           The order's contact number may belong to another operator — BSS reads will likely fail. If the customer has a Salam number, search with it directly.</div>`;
         const lc=document.getElementById('sbLineCount'); if(lc) lc.textContent=String(_lvLines.length);
       const sn=document.getElementById('sbSalamNums'); if(sn) sn.textContent='— none found —';
+        if(fixedServices().length) bar.innerHTML+=servicesStrip([]);
+        wireServicesStrip(bar);
         return;
       }
       if(!_lvLine) _lvLine=_lvLines[0].ref;
-      bar.innerHTML=`<span class="rl" style="font-weight:700;margin-right:6px">SALAM LINE</span>`+_lvLines.map(l=>
-        `<button class="pill ${l.ref===_lvLine?'':'ghost'}" data-lvline="${esc(l.ref)}" style="padding:3px 12px;font-size:11.5px;border-left-color:${l.ref===_lvLine?'var(--green,#0e9f5a)':'var(--muted)'}"
-           title="${esc(l.source)}${l.at?' · '+KSA(l.at):''}">${esc(l.msisdn)} <small style="color:var(--muted)">· ${esc(l.plan||l.source)}</small></button>`).join(' ')
-        +`<span class="rl" style="margin-left:8px;color:var(--muted)">${_lvLines.length} line(s) · BSS reads use the selected line</span>`;
+      bar.innerHTML=servicesStrip(_lvLines);
       // surface the Salam number(s) INSIDE the Identity card too — the first thing an agent reads
       const lc=document.getElementById('sbLineCount'); if(lc) lc.textContent=String(_lvLines.length);
       const sn=document.getElementById('sbSalamNums');
       if(sn) sn.innerHTML=_lvLines.map(l=>`<span class="mono" title="${esc(l.source)}" style="background:var(--tint-green,#dcfce7);color:var(--tint-green-fg,#166534);border-radius:6px;padding:1px 8px;font-weight:700;font-size:11.5px;white-space:nowrap">${esc(l.msisdn)}</span>`).join('')||'—';
+      wireServicesStrip(bar);
       bar.querySelectorAll('[data-lvline]').forEach(b=>b.addEventListener('click',()=>{
         _lvLine=b.getAttribute('data-lvline');
         lvLoadLines(box);
@@ -846,7 +868,24 @@
       .sbt-nums{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-weight:700;min-height:18px}
       .sbt-sub{margin-top:3px;font-size:11.5px}
       .sbt-health{white-space:nowrap}
-      .sbt-linebar{margin-top:6px}
+      .sbt-linebar{margin-top:8px}
+      .svc-strip{border-top:1px dashed var(--line);padding-top:8px}
+      .svc-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+      .svc-title{font-size:10.5px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+      .svc-count{font-size:10.5px;font-weight:800;color:#fff;background:var(--green,#0e9f5a);border-radius:999px;padding:1px 7px;line-height:1.5}
+      .svc-legend{font-size:11px;color:var(--muted)} .svc-note{font-size:11px;margin-left:auto}
+      .svc-cards{display:flex;gap:8px;flex-wrap:wrap}
+      .svc{display:inline-flex;align-items:center;gap:9px;padding:7px 11px 7px 9px;border:1px solid var(--line);border-radius:12px;background:var(--card,#fff);color:var(--ink);font:inherit;cursor:pointer;text-align:left;min-width:220px;transition:transform .15s cubic-bezier(.2,.8,.2,1),box-shadow .15s,border-color .15s,background .15s;position:relative;overflow:hidden}
+      .svc::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line)}
+      .svc.mob::before{background:#2563eb} .svc.fix::before{background:var(--green,#0e9f5a)}
+      .svc:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(2,6,23,.10);border-color:color-mix(in srgb,var(--green,#0e9f5a) 45%,var(--line))}
+      .svc:active{transform:none} .svc:focus-visible{outline:2px solid var(--green,#0e9f5a);outline-offset:2px}
+      .svc.sel{background:var(--green-bg,#e8f7f0);border-color:var(--green,#0e9f5a);box-shadow:0 0 0 3px rgba(14,159,90,.12)}
+      .svc-ic{font-size:16px;line-height:1;flex:none} .svc-body{display:flex;flex-direction:column;gap:1px;min-width:0}
+      .svc-body b{font-size:12.5px;letter-spacing:.2px} .svc-sub{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+      .svc-st{margin-left:auto;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;padding:2px 7px;border-radius:999px;flex:none}
+      .svc-st.ok{color:#166534;background:rgba(22,163,74,.12)} .svc-st.warn{color:#b45309;background:rgba(217,119,6,.12)} .svc-st.bad{color:#b91c1c;background:rgba(220,38,38,.12)} .svc-st.muted{color:var(--muted);background:var(--card2,#f1f5f9)}
+      [data-theme="dark"] .svc-st.ok{color:#86efac} [data-theme="dark"] .svc-st.warn{color:#fcd34d} [data-theme="dark"] .svc-st.bad{color:#fca5a5}
       .sbt-linebar:empty{display:none}
       .sbt-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;border-top:1px solid var(--line,#eef2f0);padding-top:8px}
       .sbt-tab{border:1px solid var(--line,#e2e8f0);background:var(--panel,#fff);border-radius:999px;padding:5px 15px;font-size:12px;font-weight:700;cursor:pointer;color:var(--muted,#64748b);transition:all .12s}
@@ -885,6 +924,7 @@
         <div class="sbt-nums">Fixed customer · ${esc(c.cust_code||c.customer_id||curKey)}</div>
         <div class="rl sbt-sub">${f.inventory_summary?`<b>${f.inventory_summary.active} active fixed service(s)</b> in BSS · `:""}${c.attempts||0} journey attempt(s) · ${c.orders||0} order(s)${(c.channels||[]).length?" · "+(c.channels||[]).map(esc).join(" / "):""}${c.first_seen?` · first seen ${fts(c.first_seen)} · last ${fts(c.last_seen)}`:""}
           <span style="color:var(--muted)">· no mobile-side record for this key</span></div></div>${unmaskBtn}</div>
+      <div class="sbt-linebar">${servicesStrip([])}</div>
       <div class="sbt-tabs"><button class="sbt-tab on" data-sbt="fixed">🏠 Fixed services</button></div></div>`;
   }
   function fixedPane(f){

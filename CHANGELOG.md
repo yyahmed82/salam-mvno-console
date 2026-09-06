@@ -8,6 +8,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
 - **Fixed hub bar carries no filters any more** — the Channel / Range chips under the page title are gone. Channel is always
   "All" (Errors and Reports own their channel controls); the range is chosen inside the page that uses it — Overview
   (top right), SDA map and QR codes (sidebar "Range"), Reports (toolbar) — via `fx.rangeChips()` / `fx.bindRange()`.
+- **Customer 360 — Services strip** in the sticky header: every service the customer has, both businesses, as cards —
+  📱 one per Salam line (click = the line BSS panels read) · 🏠 one per fixed subscription from the BSS inventory
+  (account, plan, speed, state, amount owed; click = Fixed services tab) — with a total and a mobile / fixed count.
 - Errors board: fixed `CSS.escape is not a function` (a local `CSS` constant shadowed the browser object), row toggle
   reads the DOM, auto-refresh keeps the open row, stale category filter dropped and shown as a removable chip.
 - **SDA map · QR codes — one design system** (`fixed-maps-ui.js`, shared stylesheet injected once): filter chips with
