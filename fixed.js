@@ -24,7 +24,13 @@
     const r=await fetch((window.API_BASE||window.CONSOLE_BASE||"")+path,{headers:{"Content-Type":"application/json","X-Console-Role":SES.role,"X-Console-User":SES.email}});
     const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||("HTTP "+r.status)); return j;
   }
-  const state={ range:localStorage.getItem("fixed_range")||"7d", channel:localStorage.getItem("fixed_channel")||"", find:"", outcome:"" };
+  // The hub carries no filters (Yosri, 6 Sep): channel is always "All" — pages that need one (Errors, Reports) own it —
+  // and the range is chosen inside the page that uses it via fx.rangeChips()/fx.bindRange().
+  const state={ range:localStorage.getItem("fixed_range")||"7d", channel:"", find:"", outcome:"" };
+  try{ localStorage.removeItem("fixed_channel"); }catch(e){}
+  const RANGES=[["24h","24h"],["7d","7d"],["30d","30d"],["90d","90d"]];
+  const rangeChips=(label="Range")=>`<span class="fx-range" style="display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap">${label?`<span class="rl" style="font-size:10.5px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase">${label}</span>`:""}${RANGES.map(([m,l])=>`<button type="button" class="fx-r${state.range===m?" on":""}" data-m="${m}" style="cursor:pointer;font:inherit;font-size:11.5px;font-weight:700;padding:5px 12px;border:1px solid ${state.range===m?"var(--green,#0e9f5a)":"var(--line)"};border-radius:999px;background:${state.range===m?"var(--green,#0e9f5a)":"var(--card,#fff)"};color:${state.range===m?"#fff":"inherit"};transition:transform .14s,box-shadow .14s,border-color .14s">${l}</button>`).join("")}</span>`;
+  const bindRange=(root,onChange)=>{ (root||document).querySelectorAll(".fx-r").forEach(b=>b.onclick=()=>{ state.range=b.dataset.m; localStorage.setItem("fixed_range",state.range); if(onChange) onChange(state.range); else render(curTab); }); };
   const qs=()=>`range=${state.range}${state.channel?`&channel=${state.channel}`:""}`;
 
   const OUT_COLOR={COMPLETED:"var(--green,#0e9f5a)",STALLED:"#d97706",CANCELLED:"#dc2626",EXPIRED:"#64748b",IN_PROGRESS:"#2563eb"};
@@ -34,8 +40,9 @@
   const tbl=(head,rows)=>`<table class="mono" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr>${head.map(h=>`<th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:700;font-size:10px;letter-spacing:.6px;border-bottom:1px solid var(--line)">${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td style="padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top">${c}</td>`).join("")}</tr>`).join("")||`<tr><td colspan="${head.length}" style="padding:10px;color:var(--muted)">nothing in this window</td></tr>`}</tbody></table>`;
 
   async function renderOverview(host){
-    host.innerHTML=`<div id="fxFresh"></div>
+    host.innerHTML=`<div style="display:flex;justify-content:flex-end;margin-bottom:10px">${rangeChips()}</div><div id="fxFresh"></div>
       <div id="fxBody"><div style="padding:30px;text-align:center;color:var(--muted)">${window.salamLoader?window.salamLoader("Reading Fixed data…"):"Loading…"}</div></div>`;
+    bindRange(host);
     try{
       const [d,b2c]=await Promise.all([api("/api/fixed/summary?"+qs()), api("/api/fixed/b2c?range="+state.range).catch(()=>null)]);
       drawFresh(d.freshness,d.source);
@@ -55,8 +62,6 @@
     // page-level scope: a deep link to a Fixed page the role lacks falls back to the first page the role holds
     const held=window.FIXED_VIEWS_HELD, ftv=window.FIXED_TAB_VIEWS||{};
     if(held && held.length && !held.includes(ftv[curTab]||"fixed")){ const ok=TAB_ORDER.map(t=>t[0]).find(k=>window.FIXED_PAGES[k]&&held.includes(ftv[k]||"fixed")); if(ok) curTab=ok; }
-    const rbtn=(m,l)=>`<button class="fx-r" data-m="${m}" style="cursor:pointer;font:inherit;font-size:12px;font-weight:${state.range===m?"800":"600"};padding:6px 14px;border:1px solid ${state.range===m?"var(--green,#0e9f5a)":"var(--line)"};border-radius:999px;background:${state.range===m?"var(--green,#0e9f5a)":"var(--card,#fff)"};color:${state.range===m?"#fff":"inherit"}">${l}</button>`;
-    const cbtn=(m,l)=>`<button class="fx-c" data-c="${m}" style="cursor:pointer;font:inherit;font-size:11.5px;font-weight:700;padding:5px 12px;border:1px solid ${state.channel===m?"#2563eb":"var(--line)"};border-radius:999px;background:${state.channel===m?"#2563eb":"var(--card,#fff)"};color:${state.channel===m?"#fff":"inherit"}">${l}</button>`;
     const tabs=TAB_ORDER.map(([k,l,sub])=>{ const on=k===curTab, has=!!window.FIXED_PAGES[k];
       return `<button class="fx-tab" data-t="${k}" ${has?"":"disabled"} title="${esc(sub)}${has?"":" — coming in the next drop"}" style="cursor:${has?"pointer":"default"};font:inherit;font-size:12.5px;font-weight:${on?"800":"600"};padding:7px 13px;border:1px solid ${on?"var(--green,#0e9f5a)":"var(--line)"};border-bottom:${on?"3px solid var(--green,#0e9f5a)":"1px solid var(--line)"};border-radius:10px;background:${on?"var(--card,#fff)":"transparent"};color:${has?"inherit":"var(--muted)"};opacity:${has?1:.55}">${l}</button>`; }).join("");
     const cur=TAB_ORDER.find(t=>t[0]===curTab)||TAB_ORDER[0];
@@ -65,18 +70,10 @@
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <div><h2 style="margin:0;font-size:16px"><span style="color:var(--muted);font-weight:600">Fixed ›</span> ${esc(cur[1])}</h2>
             <div class="rl" style="font-size:10.5px;color:var(--muted)">${esc(cur[2])} · FTTH · 5G home · e-purchase / QR · Salam Home app — Operations Console data, stage 1 · other pages: <b>Fixed ▾</b> menu</div></div>
-          <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            ${["epurchase","salamhome"].includes(curTab)?"":`<span class="rl" style="font-size:11px;color:var(--muted);font-weight:700">Channel</span>
-            ${cbtn("","All")}${cbtn("sda","SDA dealers")}${cbtn("epurchase","e-purchase / QR")}${cbtn("salamhome","Salam Home app")}`}
-            <span class="rl" style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">Range</span>
-            ${rbtn("24h","24h")}${rbtn("7d","7d")}${rbtn("30d","30d")}${rbtn("90d","90d")}
-          </div>
         </div>
       </div>
       <div id="fxPage"></div>
     </div>`;
-    host.querySelectorAll(".fx-r").forEach(b=>b.onclick=()=>{ state.range=b.dataset.m; localStorage.setItem("fixed_range",state.range); render(curTab); });
-    host.querySelectorAll(".fx-c").forEach(b=>b.onclick=()=>{ state.channel=b.dataset.c; localStorage.setItem("fixed_channel",state.channel); render(curTab); });
     const page=$("#fxPage");
     try{ await window.FIXED_PAGES[curTab].render(page, window.FX); }
     catch(e){ page.innerHTML=`<div class="albanner" style="border-left:4px solid #dc2626;padding:14px 16px"><b>${esc(curTab)} failed</b> — ${esc(e.message)}</div>`; }
@@ -147,5 +144,5 @@
 
   document.querySelectorAll(".navtab").forEach(b=>{ if(b.dataset.view==="fixed") b.addEventListener("click", ()=>render(curTab)); });
   window.openFixed=render;   // openFixed("map") deep-links a sub-tab
-  window.FX={ api, esc, ts, fmt, tbl, card, chip, bar, state, qs, OUT_COLOR, KSA, rerender:()=>render(curTab) };
+  window.FX={ api, esc, ts, fmt, tbl, card, chip, bar, state, qs, OUT_COLOR, KSA, rangeChips, bindRange, rerender:()=>render(curTab) };
 })();

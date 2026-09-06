@@ -117,6 +117,7 @@
         <input id="fxmQ" placeholder="search staff · code · dealer · city" value="${esc(S.dealerName)}" autocomplete="off" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit">
         <div id="fxmQList" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--card,#fff);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgba(2,6,23,.18);display:none;max-height:260px;overflow:auto"></div></div>
         ${S.dealerId?`<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11.5px"><b style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(S.dealerName||S.dealerId)}</b><button class="fxchip" id="fxmClearDealer">✕ clear</button></div>`:""}</div>
+      <div class="grp"><h4>Range</h4>${fx.rangeChips?fx.rangeChips(""):""}</div>
       <div class="grp"><h4>Map view</h4><div class="chips">${chip("blue",'data-mode="cluster"',S.mode==="cluster","Clusters")}${chip("blue",'data-mode="dealers"',S.mode==="dealers","All dealers")}</div></div>
       <div class="grp"><h4>Region / Group</h4><div class="chips">${REGIONS.map(r=>chip("",`data-f="regions" data-v="${esc(r)}"`,S.regions.includes(r),r)).join("")}</div></div>
       <div class="grp"><h4>Role</h4><div class="chips">${ROLES.map(([v,l])=>chip("",`data-f="roles" data-v="${v}"`,S.roles.includes(v),l)).join("")}</div></div>
@@ -148,6 +149,7 @@
         list.querySelectorAll("[data-id]").forEach(x=>x.onclick=()=>{ S.dealerId=x.dataset.id; S.dealerName=x.dataset.name; save(); list.style.display="none"; drawSide(); load(); });
       }catch(e){ list.innerHTML=`<div style="padding:8px;font-size:11.5px;color:#dc2626">${esc(e.message)}</div>`; list.style.display="block"; } },250); };
     inp.onblur=()=>setTimeout(()=>{ list.style.display="none"; },200);
+    if(fx.bindRange) fx.bindRange(side,()=>{ drawSide(); load(); });
     drawKpis(); drawFunnel();
   }
   function describe(st){ const p=[]; if(st.regions.length) p.push(st.regions.join("/")); if(st.roles.length) p.push(st.roles.join("/")); if(st.plans.length) p.push(st.plans.map(x=>PLAN_LABEL[x]||x).join("/"));

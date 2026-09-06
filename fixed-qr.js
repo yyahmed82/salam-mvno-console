@@ -102,6 +102,7 @@
         <input id="fxqQ" placeholder="search referral code" value="${esc(S.ref||"")}" autocomplete="off" style="width:100%;box-sizing:border-box;font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit">
         <div id="fxqQList" style="position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--card,#fff);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgba(2,6,23,.18);display:none;max-height:260px;overflow:auto"></div></div>
         ${S.ref?`<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11.5px"><b class="mono" style="flex:1">${esc(S.ref)}</b><button class="fxchip" id="fxqClearRef">✕ clear</button></div>`:""}</div>
+      <div class="grp"><h4>Range</h4>${fx.rangeChips?fx.rangeChips(""):""}</div>
       <div class="grp"><h4>Map view</h4><div class="chips">${chip("blue",'data-mode="codes"',S.mode==="codes","QR codes")}${chip("blue",'data-mode="orders"',S.mode==="orders","Orders")}</div></div>
       <div class="grp"><h4>Consent</h4><div class="chips">${CONSENT.map(([v,l])=>chip("",`data-one="consent" data-v="${v}"`,S.consent===v,l)).join("")}</div></div>
       <div class="grp"><h4>Region / Group</h4><div class="chips">${REGIONS.map(r=>chip("",`data-f="regions" data-v="${esc(r)}"`,S.regions.includes(r),r)).join("")}</div></div>
@@ -125,6 +126,7 @@
       list.querySelectorAll("[data-ref]").forEach(x=>x.onclick=()=>{ list.style.display="none"; selectCode(x.dataset.ref); }); };
     inp.onkeydown=e=>{ if(e.key==="Enter"&&inp.value.trim()){ list.style.display="none"; selectCode(inp.value.trim()); } };
     inp.onblur=()=>setTimeout(()=>{ list.style.display="none"; },200);
+    if(fx.bindRange) fx.bindRange(side,()=>{ drawSide(); load(); });
     drawKpis();
   }
   function drawKpis(){

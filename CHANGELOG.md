@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
 
 ## [2.0.0-alpha.10] — 2026-09-06 — map pages redesigned
 ### Changed
+- **Fixed hub bar carries no filters any more** — the Channel / Range chips under the page title are gone. Channel is always
+  "All" (Errors and Reports own their channel controls); the range is chosen inside the page that uses it — Overview
+  (top right), SDA map and QR codes (sidebar "Range"), Reports (toolbar) — via `fx.rangeChips()` / `fx.bindRange()`.
+- Errors board: fixed `CSS.escape is not a function` (a local `CSS` constant shadowed the browser object), row toggle
+  reads the DOM, auto-refresh keeps the open row, stale category filter dropped and shown as a removable chip.
 - **SDA map · QR codes — one design system** (`fixed-maps-ui.js`, shared stylesheet injected once): filter chips with
   hover lift / press / check mark and a page accent (green dealers, violet QR); KPI tiles with accent bar and hover
   elevation; sidebar groups with accent headers; glass legend and map note; restyled ⌂ KSA control; skeleton loaders
