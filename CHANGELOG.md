@@ -3,6 +3,21 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.10] — 2026-09-06 — map pages redesigned
+### Changed
+- **SDA map · QR codes — one design system** (`fixed-maps-ui.js`, shared stylesheet injected once): filter chips with
+  hover lift / press / check mark and a page accent (green dealers, violet QR); KPI tiles with accent bar and hover
+  elevation; sidebar groups with accent headers; glass legend and map note; restyled ⌂ KSA control; skeleton loaders
+  instead of "loading…"; export / reset / refresh / back as real buttons.
+- **Recent orders** in the dealer and QR panels are a clickable list (outcome pill with live pulse for in-progress,
+  plan / consent / error tags, step reached, order number, chevron on hover) instead of a raw monospace table.
+- **Order trace modal** rebuilt: sticky header with outcome colour stripe, outcome pill, circular close button and an
+  amber "Unmask · audited" button; fact cards; journey steps as a timeline with connector line and a pulsing current
+  step; API calls as an accordion (status badge, latency, request / response side by side); Esc closes; open animation.
+### Fixed
+- Fixed › Overview with Salam Home app selected: the Live banner named `sda_ops.public` and Error categories were empty
+  — both now follow the channel pool (beta schema).
+
 ## [2.0.0-alpha.8] — 2026-09-06 — tickets by business · Fixed pages in user management · guided tour rebuilt
 ### Fixed
 - **Salam Home app channel returned "No data" on Fixed › Reports / Overview / SDA map / Errors** — those pages always read

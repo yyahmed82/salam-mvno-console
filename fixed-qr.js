@@ -86,20 +86,10 @@
         <div id="fxqMapNote" class="rl" style="position:absolute;right:10px;top:10px;background:var(--card,#fff);border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:10.5px;color:var(--muted)"></div>
       </div>
       <aside id="fxqRight" class="topo-card" style="padding:12px;overflow:auto;display:flex;flex-direction:column"></aside>
-    </div>
-    <style>
-      #fxq .fxchip{cursor:pointer;font:inherit;font-size:11px;font-weight:600;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:inherit}
-      #fxq .fxchip.on{background:#7c3aed;border-color:#7c3aed;color:#fff} #fxq .fxchip.blue.on{background:#2563eb;border-color:#2563eb}
-      #fxq h4{margin:0 0 6px;font-size:10.5px;letter-spacing:.6px;color:var(--muted);text-transform:uppercase}
-      #fxq .grp{display:flex;flex-direction:column;gap:2px} #fxq .chips{display:flex;gap:5px;flex-wrap:wrap}
-      #fxq .kpi{border:1px solid var(--line);border-radius:10px;padding:7px 9px} #fxq .kpi b{font-size:17px;display:block} #fxq .kpi span{font-size:10px;color:var(--muted);letter-spacing:.5px}
-      #fxq th.sortable{cursor:pointer;user-select:none} #fxq tr.rowc{cursor:pointer} #fxq tr.rowc:hover td{background:rgba(148,163,184,.10)}
-      .fxq-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:-1px}
-      @media (max-width:1100px){ #fxq{grid-template-columns:1fr !important;height:auto !important} #fxqMapWrap{height:460px} }
-    </style>`;
+    </div>`;
     mapEl=host.querySelector("#fxqMap"); gmap=null; markers=[]; cluster=null;
     drawSide();
-    host.querySelector("#fxqRight").innerHTML=`<div style="color:var(--muted);font-size:12px;padding:10px">loading…</div>`;
+    host.querySelector("#fxqRight").innerHTML=window.FXUI?window.FXUI.skeleton(8):"loading…";
     await load();
   }
 
@@ -119,7 +109,7 @@
         <div class="rl" style="font-size:10px;color:var(--muted)">QR orders ride the e-purchase FTTH journey — the FTTH chip matches them</div></div>
       <div class="grp"><h4>Outcome</h4><div class="chips">${OUTCOMES.map(([v,l])=>chip("",`data-f="outcomes" data-v="${v}"`,S.outcomes.includes(v),l)).join("")}</div></div>
       <div class="grp" id="fxqMix"></div>
-      <div style="display:flex;gap:6px;margin-top:auto;flex-wrap:wrap"><button class="fxchip" id="fxqReset">Reset filters</button><button class="fxchip" id="fxqReload">↻ refresh</button></div>`;
+      <div style="display:flex;gap:6px;margin-top:auto;flex-wrap:wrap"><button class="fxbtn" id="fxqReset" style="padding:6px 11px;font-size:11px">⟲ Reset filters</button><button class="fxbtn" id="fxqReload" style="padding:6px 11px;font-size:11px" title="Reload from the read model">↻ Refresh</button></div>`;
     side.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ const k=b.dataset.f, v=b.dataset.v; const i=S[k].indexOf(v); if(i>=0) S[k].splice(i,1); else S[k].push(v); save(); drawSide(); load(); });
     side.querySelectorAll("[data-one]").forEach(b=>b.onclick=()=>{ S[b.dataset.one]=b.dataset.v; save(); drawSide(); load(); });
     side.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{ S.mode=b.dataset.mode; save(); drawSide(); load(); });
@@ -169,7 +159,7 @@
       document.addEventListener("fxmaps:authfail", ()=>{ if(note) note.textContent="Google rejected the key for "+location.origin+" — static view (add it to the key's website restrictions)"; drawSvg(ps); }, {once:true});
       if(!gmap||!mapEl.isConnected){ mapEl.innerHTML=""; gmap=new google.maps.Map(mapEl,{center:KSA_CENTER,zoom:KSA_ZOOM,mapTypeControl:false,streetViewControl:false,fullscreenControl:false,gestureHandling:"greedy",
           zoomControlOptions:{position:google.maps.ControlPosition.RIGHT_BOTTOM},styles:isDark()?DARK_STYLE:undefined});
-        const rb=document.createElement("button"); rb.textContent="⌂ KSA"; rb.style.cssText="margin:0 10px 24px 0;background:#fff;border:0;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,.3);padding:7px 12px;font:600 12px/1 Roboto,Arial,sans-serif;cursor:pointer;color:#333";
+        const rb=document.createElement("button"); rb.textContent="⌂ KSA"; rb.title="Reset view to Saudi Arabia"; rb.className="fx-ksa-btn";
         rb.onclick=()=>{ gmap.setCenter(KSA_CENTER); gmap.setZoom(KSA_ZOOM); }; gmap.controls[google.maps.ControlPosition.RIGHT_BOTTOM].push(rb); }
       if(cluster){ cluster.clear(); cluster=null; } markers.forEach(m=>m.setMap(null)); markers=[];
       const icon=(c,scale)=>({path:google.maps.SymbolPath.CIRCLE,scale,fillColor:c,fillOpacity:.92,strokeWeight:1.2,strokeColor:isDark()?"#0d1117":"#fff"});
@@ -224,7 +214,7 @@
     const th=(x,l,right)=>`<th class="sortable" data-k="${x}" style="text-align:${right?"right":"left"};padding:4px 6px;color:var(--muted);font-weight:700;font-size:10px;letter-spacing:.6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card,#fff)">${esc(l)}${arrow(x)}</th>`;
     const maxc=Math.max(1,...rows.map(x=>x.completed));
     el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:12.5px">QR leaderboard</b><span class="rl" style="font-size:10.5px;color:var(--muted)">${rows.length} codes · ${esc(fx.state.range)}</span>
-        ${rows.length?`<button class="fxchip" id="fxqCsv" style="margin-left:auto">⬇ ${window.opsXlsx?"XLSX":"CSV"}</button>`:""}</div>
+        ${rows.length?`<button class="fxbtn" id="fxqCsv" style="margin-left:auto;padding:5px 10px;font-size:11px" title="Download this list">⬇ ${window.opsXlsx?"XLSX":"CSV"}</button>`:""}</div>
       <div style="overflow:auto;flex:1"><table class="mono" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr>${th("referralCode","CODE")}${th("orders","ORDERS",1)}${th("completed","DONE",1)}${th("conv","CONV%",1)}${th("consentRate","CONSENT",1)}</tr></thead>
       <tbody>${rows.map(x=>`<tr class="rowc" data-ref="${esc(x.referralCode)}" style="border-top:1px solid var(--line)">
         <td style="padding:4px 6px;font-weight:600">${esc(x.referralCode)}<div class="rl" style="font-size:9.5px;color:var(--muted)">${esc(x.region||"")}${x.lastSeen?" · "+esc(fx.ts(x.lastSeen).slice(5,16)):""}</div></td>
@@ -246,16 +236,16 @@
   function clearCode(){ S.ref=null; D.code=null; save(); drawSide(); drawBoard(); drawMap(); }
   async function openCode(ref,quiet){
     const el=host.querySelector("#fxqRight"); if(!el) return;
-    if(!quiet||!D.code||D.code.referralCode!==ref) el.innerHTML=`<div style="color:var(--muted);font-size:12px;padding:10px">loading QR ${esc(ref)}…</div>`;
+    if(!quiet||!D.code||D.code.referralCode!==ref) el.innerHTML=`<div class="rl" style="font-size:11px;color:var(--muted);padding:4px 2px">loading QR ${esc(ref)}…</div>`+(window.FXUI?window.FXUI.skeleton(8):"");
     try{ D.code=await fx.api(`/api/fixed/qr/code?ref=${encodeURIComponent(ref)}&`+qs()); }
-    catch(e){ el.innerHTML=`<div style="color:#dc2626;font-size:12px;padding:10px">${esc(e.message)}</div><button class="fxchip" id="fxqBack">← leaderboard</button>`; el.querySelector("#fxqBack").onclick=clearCode; return; }
+    catch(e){ el.innerHTML=`<div style="color:#dc2626;font-size:12px;padding:10px">${esc(e.message)}</div><button class="fxbtn back" id="fxqBack">← leaderboard</button>`; el.querySelector("#fxqBack").onclick=clearCode; return; }
     if(S.ref!==ref) return; drawCode(); drawMap();
   }
   function drawCode(){
     const el=host.querySelector("#fxqRight"), c=D.code; if(!el||!c) return; const k=c.kpis, om=c.outcomeMix, tot=Math.max(1,om.completed+om.stalled+om.cancelled+om.expired+(om.in_progress||0));
     const dMax=Math.max(1,...c.daily.map(x=>x.count)), fMax=Math.max(1,(c.funnel.steps[0]||{}).count||0);
     const tile=(l,v,col)=>`<div class="kpi"><b style="${col?"color:"+col:""}">${v}</b><span>${esc(l)}</span></div>`;
-    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button class="fxchip" id="fxqBack">←</button><div style="flex:1;min-width:0"><b class="mono" style="font-size:13px">QR ${esc(c.referralCode)}</b><div class="rl" style="font-size:10.5px;color:var(--muted)">${esc(c.funnel.label)} · ${fx.ts(c.window.from).slice(0,10)} → ${fx.ts(c.window.to).slice(0,10)}</div></div></div>
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button class="fxbtn back" id="fxqBack" title="Back to the leaderboard">←</button><div style="flex:1;min-width:0"><b class="mono" style="font-size:13px">QR ${esc(c.referralCode)}</b><div class="rl" style="font-size:10.5px;color:var(--muted)">${esc(c.funnel.label)} · ${fx.ts(c.window.from).slice(0,10)} → ${fx.ts(c.window.to).slice(0,10)}</div></div></div>
       <div class="kpi" style="border-left:3px solid ${consentColor(k.consentRate)};margin-bottom:6px"><b style="color:${consentColor(k.consentRate)};font-size:22px">${pc(k.consentRate)}</b><span>MARKETING CONSENT · ${fmt(k.consented)} of ${fmt(k.attempts)}</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">${tile("ATTEMPTS",fmt(k.attempts))}${tile("COMPLETED",fmt(k.completed),COLOR.COMPLETED)}${tile("CONVERSION",k.conversion+"%",k.conversion>=60?COLOR.COMPLETED:k.conversion>=30?COLOR.STALLED:COLOR.CANCELLED)}${tile("PER WEEK",k.perWeek)}${tile("AREAS",fmt(k.areas))}</div>
       <h4>Funnel · ${esc(c.funnel.label)}</h4><div style="margin-bottom:10px">${c.funnel.steps.map(s=>`<div style="display:grid;grid-template-columns:1fr 40px;gap:6px;align-items:center;font-size:10.5px"><div><span class="rl" style="color:var(--muted)">${esc(s.step)}${s.drop?` <span style="color:${COLOR.CANCELLED}">−${fmt(s.drop)}</span>`:""}</span>${fx.bar(s.count,fMax,"#7c3aed")}</div><b class="mono" style="text-align:right">${fmt(s.count)}</b></div>`).join("")}</div>
@@ -263,10 +253,9 @@
       <div class="rl" style="font-size:10px;color:var(--muted);margin-bottom:10px">${fmt(om.completed)} completed · ${fmt(om.in_progress||0)} in progress · ${fmt(om.stalled)} stalled · ${fmt(om.cancelled)} cancelled · ${fmt(om.expired)} expired</div>
       <h4>Daily orders</h4><div style="display:flex;align-items:flex-end;gap:2px;height:44px;margin-bottom:10px">${c.daily.map(x=>`<div title="${esc(x.date)} · ${fmt(x.count)}" style="flex:1;min-width:3px;height:${Math.max(2,Math.round(42*x.count/dMax))}px;background:#7c3aed;border-radius:2px 2px 0 0"></div>`).join("")||`<span style="font-size:11px;color:var(--muted)">none</span>`}</div>
       <h4>Areas</h4>${fx.tbl(["REGION","ORDERS","DONE"],c.areas.map(a=>[esc(a.region),fmt(a.n),fmt(a.completed)]))}
-      <h4 style="margin-top:10px">Recent orders · newest ${c.recent.length} · click for the trace</h4>
-      <div style="overflow:auto"><table class="mono" style="width:100%;border-collapse:collapse;font-size:11px"><tbody>${c.recent.map((a,i)=>`<tr class="rowc" data-att="${esc(a.id)}" style="border-top:1px solid var(--line)"><td style="padding:4px 5px;color:var(--muted)">${i+1}</td><td style="padding:4px 5px">${esc(fx.ts(a.started_at).slice(5,16))}</td>
-        <td style="padding:4px 5px;color:${COLOR[a.outcome]||"inherit"};font-weight:700">${esc(a.outcome)}</td><td style="padding:4px 5px;color:${a.consent?COLOR.COMPLETED:"var(--muted)"}">${a.consent===true?"consent ✓":a.consent===false?"no consent":"—"}</td>
-        <td style="padding:4px 5px;color:var(--muted)">${esc(a.step_reached||"")}${a.last_error_category?` <span class="pill" style="font-size:9px;padding:1px 6px">${esc(a.last_error_category)}</span>`:""}</td><td style="padding:4px 5px">${esc(a.order_number||a.odb||"")}</td></tr>`).join("")||`<tr><td style="padding:8px;color:var(--muted)">none in window</td></tr>`}</tbody></table></div>`;
+      <h4 style="margin-top:12px">Recent orders · newest ${c.recent.length}</h4>
+      ${window.FXUI.orderList(c.recent.map((a,i)=>({id:a.id,idx:i+1,time:fx.ts(a.started_at).slice(5,16),outcome:a.outcome,color:COLOR[a.outcome],
+        tags:[{t:a.consent===true?"consent ✓":a.consent===false?"no consent":"consent —"}].concat(a.last_error_category?[{t:a.last_error_category,err:true}]:[]),line2:a.step_reached||"",ref:a.order_number||a.odb||""})),"no orders in this window")}`;
     el.querySelector("#fxqBack").onclick=clearCode;
     el.querySelectorAll("[data-att]").forEach(tr=>tr.onclick=()=>openTrace(tr.dataset.att));
   }

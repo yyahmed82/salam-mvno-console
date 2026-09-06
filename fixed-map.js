@@ -101,21 +101,10 @@
         <div id="fxmMapNote" class="rl" style="position:absolute;right:10px;top:10px;background:var(--card,#fff);border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:10.5px;color:var(--muted)"></div>
       </div>
       <aside id="fxmRight" class="topo-card" style="padding:12px;overflow:auto;display:flex;flex-direction:column"></aside>
-    </div>
-    <style>
-      #fxm .fxchip{cursor:pointer;font:inherit;font-size:11px;font-weight:600;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:inherit}
-      #fxm .fxchip.on{background:var(--green,#0e9f5a);border-color:var(--green,#0e9f5a);color:#fff}
-      #fxm .fxchip.blue.on{background:#2563eb;border-color:#2563eb}
-      #fxm h4{margin:0 0 6px;font-size:10.5px;letter-spacing:.6px;color:var(--muted);text-transform:uppercase}
-      #fxm .grp{display:flex;flex-direction:column;gap:2px} #fxm .chips{display:flex;gap:5px;flex-wrap:wrap}
-      #fxm .kpi{border:1px solid var(--line);border-radius:10px;padding:7px 9px} #fxm .kpi b{font-size:17px;display:block} #fxm .kpi span{font-size:10px;color:var(--muted);letter-spacing:.5px}
-      #fxm th.sortable{cursor:pointer;user-select:none} #fxm tr.rowc{cursor:pointer} #fxm tr.rowc:hover td{background:rgba(148,163,184,.10)}
-      #fxm .vs{font-size:10px;font-weight:700;margin-left:4px} .fxm-legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:-1px}
-      @media (max-width:1100px){ #fxm{grid-template-columns:1fr !important;height:auto !important} #fxmMapWrap{height:460px} }
-    </style>`;
+    </div>`;
     mapEl=host.querySelector("#fxmMap"); gmap=null; markers=[]; cluster=null; poly=null;
     drawSide();
-    host.querySelector("#fxmRight").innerHTML=`<div style="color:var(--muted);font-size:12px;padding:10px">loading…</div>`;
+    host.querySelector("#fxmRight").innerHTML=window.FXUI?window.FXUI.skeleton(8):"loading…";
     await load();
   }
 
@@ -135,9 +124,9 @@
       <div class="grp"><h4>Outcome</h4><div class="chips">${OUTCOMES.map(([v,l])=>chip("",`data-f="outcomes" data-v="${v}"`,S.outcomes.includes(v),l)).join("")}
         ${NAFATH.map(([v,l])=>chip("",`data-one="nafath" data-v="${v}"`,S.nafath===v,l)).join("")}${SEMATI.map(([v,l])=>chip("",`data-one="semati" data-v="${v}"`,S.semati===v,l)).join("")}</div></div>
       <div class="grp"><h4>Saved views</h4><div class="chips" id="fxmViews">${views().map((v,i)=>`<span class="fxchip" data-view="${i}" title="${esc(v.desc||"")}" style="display:inline-flex;gap:6px;align-items:center">${esc(v.name)}<i data-rmview="${i}" style="font-style:normal;color:var(--muted);cursor:pointer">✕</i></span>`).join("")}
-        <button class="fxchip" id="fxmSaveView">+ save current</button></div></div>
+        <button class="fxchip ghost" id="fxmSaveView">＋ save current view</button></div></div>
       <div class="grp" id="fxmFunnel"></div>
-      <div style="display:flex;gap:6px;margin-top:auto;flex-wrap:wrap"><button class="fxchip" id="fxmReset">Reset filters${activeCount()?` (${activeCount()})`:""}</button><button class="fxchip" id="fxmReload">↻ refresh</button></div>`;
+      <div style="display:flex;gap:6px;margin-top:auto;flex-wrap:wrap"><button class="fxbtn" id="fxmReset" style="padding:6px 11px;font-size:11px">⟲ Reset filters${activeCount()?` (${activeCount()})`:""}</button><button class="fxbtn" id="fxmReload" style="padding:6px 11px;font-size:11px" title="Reload from the read model">↻ Refresh</button></div>`;
     side.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ const k=b.dataset.f, v=b.dataset.v; const i=S[k].indexOf(v); if(i>=0) S[k].splice(i,1); else S[k].push(v); save(); drawSide(); load(); });
     side.querySelectorAll("[data-one]").forEach(b=>b.onclick=()=>{ const k=b.dataset.one, v=b.dataset.v; S[k]=S[k]===v?"all":v; save(); drawSide(); load(); });
     side.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{ S.mode=b.dataset.mode; save(); drawSide(); drawKpis(); drawMap(); });
@@ -205,8 +194,7 @@
       if(!gmap||!mapEl.isConnected){ mapEl.innerHTML="";
         gmap=new google.maps.Map(mapEl,{center:KSA_CENTER,zoom:KSA_ZOOM,mapTypeControl:false,streetViewControl:false,fullscreenControl:false,gestureHandling:"greedy",
           zoomControlOptions:{position:google.maps.ControlPosition.RIGHT_BOTTOM},styles:isDark()?DARK_STYLE:undefined});
-        const rb=document.createElement("button"); rb.textContent="⌂ KSA"; rb.title="Reset view to Saudi Arabia";
-        rb.style.cssText="margin:0 10px 24px 0;background:#fff;border:0;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,.3);padding:7px 12px;font:600 12px/1 Roboto,Arial,sans-serif;cursor:pointer;color:#333";
+        const rb=document.createElement("button"); rb.textContent="⌂ KSA"; rb.title="Reset view to Saudi Arabia"; rb.className="fx-ksa-btn";
         rb.onclick=()=>{ gmap.setCenter(KSA_CENTER); gmap.setZoom(KSA_ZOOM); };
         gmap.controls[google.maps.ControlPosition.RIGHT_BOTTOM].push(rb);
       }
@@ -287,7 +275,7 @@
     const rows=rosterRows(); const arrow=k=>S.sortKey===k?(S.sortDir===1?" ▲":" ▼"):"";
     const th=(k,l,right)=>`<th class="${k?"sortable":""}" data-k="${k||""}" style="text-align:${right?"right":"left"};padding:4px 6px;color:var(--muted);font-weight:700;font-size:10px;letter-spacing:.6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card,#fff)">${esc(l)}${k?arrow(k):""}</th>`;
     el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:12.5px">All dealers</b><span class="rl" style="font-size:10.5px;color:var(--muted)">${D.window?fx.ts(D.window.from).slice(0,10)+" → "+fx.ts(D.window.to).slice(0,10)+" · ":""}${rows.length} active</span>
-        ${rows.length?`<button class="fxchip" id="fxmCsv" style="margin-left:auto" title="Download this list">⬇ ${window.opsXlsx?"XLSX":"CSV"}</button>`:""}</div>
+        ${rows.length?`<button class="fxbtn" id="fxmCsv" style="margin-left:auto;padding:5px 10px;font-size:11px" title="Download this list">⬇ ${window.opsXlsx?"XLSX":"CSV"}</button>`:""}</div>
       <div style="overflow:auto;flex:1"><table class="mono" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr>${th("name","DEALER")}${th("role","ROLE")}${th("city","CITY")}${th("placed","PLACED",1)}${th("done","DONE",1)}${th("conv","CONV%",1)}${th("last_seen","LAST",1)}</tr></thead>
       <tbody>${rows.map(r=>`<tr class="rowc" data-id="${esc(r.id)}" data-name="${esc(r.name)}" style="border-top:1px solid var(--line)">
         <td style="padding:4px 6px;font-weight:600">${esc(r.name)}<div class="rl" style="font-size:9.5px;color:var(--muted)">${esc(r.staff_code||"")}${r.dealer_name&&r.dealer_name!==r.name?" · "+esc(r.dealer_name):""}</div></td>
@@ -312,9 +300,9 @@
   function selectDealer(id,name){ if(!id) return; S.dealerId=id; S.dealerName=name||""; save(); drawSide(); openDealer(id,name); }
   async function openDealer(id,name,quiet){
     const el=host.querySelector("#fxmRight"); if(!el) return;
-    if(!quiet||!D.dealer||D.dealer.dealer.id!==id) el.innerHTML=`<div style="color:var(--muted);font-size:12px;padding:10px">loading ${esc(name||id)}…</div>`;
+    if(!quiet||!D.dealer||D.dealer.dealer.id!==id) el.innerHTML=`<div class="rl" style="font-size:11px;color:var(--muted);padding:4px 2px">loading ${esc(name||id)}…</div>`+(window.FXUI?window.FXUI.skeleton(8):"");
     try{ D.dealer=await fx.api(`/api/fixed/map/dealer?id=${encodeURIComponent(id)}&`+fx.qs()+filterQs().replace(/&dealerId=[^&]*/,"")); }
-    catch(e){ el.innerHTML=`<div style="color:#dc2626;font-size:12px;padding:10px">${esc(e.message)}</div><button class="fxchip" id="fxmBack">← all dealers</button>`; el.querySelector("#fxmBack").onclick=clearDealer; return; }
+    catch(e){ el.innerHTML=`<div style="color:#dc2626;font-size:12px;padding:10px">${esc(e.message)}</div><button class="fxbtn back" id="fxmBack">← all dealers</button>`; el.querySelector("#fxmBack").onclick=clearDealer; return; }
     if(S.dealerId!==id) return;
     drawDealer(); drawMap();
   }
@@ -325,7 +313,7 @@
     const k=d.kpis, p=d.prevKpis||{}, dl=d.dealer||{};
     const wkMax=Math.max(1,...d.weekly.map(w=>w.n)); const om=d.outcomeMix; const omTot=Math.max(1,om.completed+om.stalled+om.cancelled+om.expired+(om.in_progress||0));
     const tile=(l,v,sub,c)=>`<div class="kpi"><b style="${c?"color:"+c:""}">${v}</b><span>${esc(l)}</span>${sub?`<div>${sub}</div>`:""}</div>`;
-    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button class="fxchip" id="fxmBack">←</button><div style="flex:1;min-width:0"><b style="font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(dl.staff_name||S.dealerName||dl.id)}</b>
+    el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button class="fxbtn back" id="fxmBack" title="Back to all dealers">←</button><div style="flex:1;min-width:0"><b style="font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(dl.staff_name||S.dealerName||dl.id)}</b>
         <div class="rl" style="font-size:10.5px;color:var(--muted)">${esc(dl.staff_code||"")} · ${esc(dl.role||"")} · ${esc(dl.dealer_name||dl.dealer_code||"")} · ${esc(dl.city||"")}${dl.region?" · "+esc(dl.region):""}${dl.is_active===false?" · <span style='color:#dc2626'>inactive</span>":""}</div></div></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
         ${tile("ATTEMPTS",fmt(k.attempts),vs(k.attempts,p.attempts))}${tile("COMPLETED",fmt(k.completed),vs(k.completed,p.completed),COLOR.COMPLETED)}
@@ -341,11 +329,9 @@
       ${d.funnel&&d.funnel.steps.length?`<h4 style="margin:0 0 4px;font-size:10.5px;letter-spacing:.6px;color:var(--muted)">FUNNEL · ${esc(d.funnel.label)}</h4><div style="margin-bottom:10px">${d.funnel.steps.map(s=>`<div style="display:grid;grid-template-columns:1fr 40px;gap:6px;align-items:center;font-size:10.5px"><div><span class="rl" style="color:var(--muted)">${esc(s.step)}</span>${fx.bar(s.count,Math.max(1,d.funnel.steps[0].count),"#4d8af0")}</div><b class="mono" style="text-align:right">${fmt(s.count)}</b></div>`).join("")}</div>`:""}
       <h4 style="margin:0 0 4px;font-size:10.5px;letter-spacing:.6px;color:var(--muted)">AREAS</h4>
       ${fx.tbl(["REGION","ATTEMPTS","DONE"],d.areas.map(a=>[esc(a.region),fmt(a.n),fmt(a.completed)]))}
-      <h4 style="margin:10px 0 4px;font-size:10.5px;letter-spacing:.6px;color:var(--muted)">RECENT ATTEMPTS · newest ${d.recent.length} · click for the trace</h4>
-      <div style="overflow:auto"><table class="mono" style="width:100%;border-collapse:collapse;font-size:11px"><tbody>${d.recent.map((a,i)=>`<tr class="rowc" data-att="${esc(a.id)}" style="border-top:1px solid var(--line)">
-        <td style="padding:4px 5px;color:var(--muted)">${i+1}</td><td style="padding:4px 5px">${esc(fx.ts(a.started_at).slice(5,16))}</td><td style="padding:4px 5px">${esc(PLAN_LABEL[a.workflow]||a.workflow||"")}</td>
-        <td style="padding:4px 5px;color:${outcomeColor(a.outcome,a.workflow)};font-weight:700">${esc(a.outcome)}</td><td style="padding:4px 5px;color:var(--muted)">${esc(a.step_reached||"")}${a.last_error_category?` <span class="pill" style="font-size:9px;padding:1px 6px">${esc(a.last_error_category)}</span>`:""}</td>
-        <td style="padding:4px 5px">${esc(a.order_number||a.odb||a.service_no||"")}</td></tr>`).join("")||`<tr><td style="padding:8px;color:var(--muted)">none in window</td></tr>`}</tbody></table></div>`;
+      <h4 style="margin:12px 0 6px">Recent attempts · newest ${d.recent.length}</h4>
+      ${window.FXUI.orderList(d.recent.map((a,i)=>({id:a.id,idx:i+1,time:fx.ts(a.started_at).slice(5,16),outcome:a.outcome,color:outcomeColor(a.outcome,a.workflow),
+        tags:[{t:PLAN_LABEL[a.workflow]||a.workflow||""}].concat(a.last_error_category?[{t:a.last_error_category,err:true}]:[]),line2:a.step_reached||"",ref:a.order_number||a.odb||a.service_no||""})),"no attempts in this window")}`;
     el.querySelector("#fxmBack").onclick=clearDealer;
     el.querySelectorAll("[data-att]").forEach(tr=>tr.onclick=()=>openTrace(tr.dataset.att));
   }
@@ -353,42 +339,46 @@
   /* ---- trace modal (TraceModal.tsx) ---- */
   function modalEl(){ let ov=document.getElementById("fxmModal"); if(!ov){ ov=document.createElement("div"); ov.id="fxmModal"; ov.className="modal-overlay"; ov.style.zIndex="300"; document.body.appendChild(ov); } return ov; }
   async function openTrace(id,unmask){
-    if(!fx) fx=window.FX; const ov=modalEl(); if(!ov||!id||!fx) return;
-    ov.classList.add("open");
-    ov.innerHTML=`<div style="background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;width:min(1080px,96vw);max-height:92vh;overflow:auto;padding:16px 18px"><div style="color:var(--muted);font-size:12px">loading trace ${esc(id)}…</div></div>`;
-    ov.onclick=e=>{ if(e.target===ov) ov.classList.remove("open"); };
+    if(!fx) fx=window.FX; const ov=modalEl(); if(!ov||!id||!fx) return; const UI=window.FXUI;
+    ov.classList.add("open"); if(UI) UI.armModal(ov);
+    ov.innerHTML=`<div class="fxt"><div class="fxt-head"><span class="fxt-title">Order trace</span><span class="fxt-id mono">${esc(id)}</span><span style="margin-left:auto"><button class="fxbtn icon" id="fxmClose" title="Close (Esc)">✕</button></span></div><div class="fxt-body">${UI?UI.skeleton(7):"loading…"}</div></div>`;
+    ov.onclick=e=>{ if(e.target===ov) (UI?UI.closeModal(ov):ov.classList.remove("open")); };
+    const close=()=>UI?UI.closeModal(ov):ov.classList.remove("open");
+    ov.querySelector("#fxmClose").onclick=close;
     let t; try{ t=await fx.api(`/api/fixed/map/trace?id=${encodeURIComponent(id)}${unmask?"&unmask=1":""}`); }
-    catch(e){ ov.firstElementChild.innerHTML=`<div style="color:#dc2626;font-size:12px">${esc(e.message)}</div><button class="fxchip" onclick="this.closest('.modal-overlay').classList.remove('open')">close</button>`; return; }
-    const a=t.attempt; const canUnmask=!!caps().unmaskPII;
-    const st={ok:COLOR.COMPLETED,fail:COLOR.CANCELLED,skip:"var(--muted)"};
-    const fact=(l,v)=>v==null||v===""?"":`<div><span class="rl" style="font-size:9.5px;color:var(--muted);letter-spacing:.5px">${esc(l)}</span><div class="mono" style="font-size:11.5px">${esc(v)}</div></div>`;
+    catch(e){ ov.querySelector(".fxt-body").innerHTML=`<div class="fxt-empty" style="color:#dc2626">${esc(e.message)}</div>`; return; }
+    const a=t.attempt; const canUnmask=!!caps().unmaskPII; const oc=outcomeColor(a.outcome,a.workflow);
+    const st={ok:COLOR.COMPLETED,fail:COLOR.CANCELLED,skip:"#94a3b8"};
+    const fact=(l,v)=>v==null||v===""?"":`<div class="fxt-fact"><span>${esc(l)}</span><div class="mono">${esc(v)}</div></div>`;
     const j=v=>{ if(v==null) return ""; if(typeof v==="string"){ try{ return JSON.stringify(JSON.parse(v),null,2); }catch(e){ return v; } } return JSON.stringify(v,null,2); };
-    ov.firstElementChild.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-        <b style="font-size:14px">Order trace</b><span class="mono" style="font-size:11px;color:var(--muted)">${esc(a.id)}</span>
-        <span class="pill" style="font-size:10.5px;padding:2px 9px;border-left-color:${outcomeColor(a.outcome,a.workflow)}">${esc(a.outcome)}</span>
-        <span class="pill" style="font-size:10.5px;padding:2px 9px">${esc(a.label||a.workflow)}</span>${a.outsideKsa?`<span class="pill" style="font-size:10.5px;padding:2px 9px;border-left-color:#dc2626">⚠ pin outside KSA</span>`:""}
-        ${t.unmasked?`<span class="pill" style="font-size:10.5px;padding:2px 9px;border-left-color:#dc2626">UNMASKED · audited</span>`:""}
-        <span style="margin-left:auto;display:flex;gap:6px">${canUnmask&&!t.unmasked?`<button class="fxchip" id="fxmUnmask" title="Fetch the live workflow context from nexus — every use is written to the audit log">🔓 Unmask (audited)</button>`:""}<button class="fxchip" id="fxmClose">✕ close</button></span></div>
-      ${t.unmaskNote?`<div class="albanner" style="border-left:4px solid #d97706;padding:8px 12px;font-size:11.5px;margin-bottom:10px">${esc(t.unmaskNote)}</div>`:""}
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 14px;margin-bottom:12px">
-        ${fact("STARTED (KSA)",fx.ts(a.started_at,true))}${fact("COMPLETED",a.completed_at?fx.ts(a.completed_at,true):null)}${fact("DURATION",a.duration_s?Math.round(a.duration_s/60)+" min":null)}
-        ${fact("CHANNEL",a.channel)}${fact("DEALER",a.staff_name?`${a.staff_name} · ${a.staff_code||""}`:null)}${fact("OUTLET",a.dealer_name||a.dealer_code)}${fact("CITY / REGION",[a.city,a.region].filter(Boolean).join(" · "))}
-        ${fact("QR / REFERRAL",a.referral_code)}${fact("PLAN",a.plan)}${fact("ORDER #",a.order_number)}${fact("ODB",a.odb)}${fact("ICCID",a.iccid)}${fact("CPE",a.cpe)}${fact("MSISDN",a.msisdn)}
-        ${fact("SERVICE #",a.service_no)}${fact("CUSTOMER",a.cust_code||a.customer_id)}${fact("NAFATH",a.nafath_outcome)}${fact("MANAFITH",a.dealer_validation)}${fact("LAST ERROR",a.last_error_category)}${fact("STEP REACHED",a.step_reached)}</div>
-      <div style="display:grid;grid-template-columns:260px minmax(0,1fr);gap:14px">
-        <div><h4 style="margin:0 0 6px;font-size:10.5px;letter-spacing:.6px;color:var(--muted)">JOURNEY STEPS</h4>
-          ${t.steps.map((s,i)=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-top:1px solid var(--line);font-size:11.5px"><span style="width:16px;height:16px;border-radius:50%;flex:none;background:${st[s.status]};color:#fff;font-size:9px;font-weight:800;display:inline-flex;align-items:center;justify-content:center">${s.status==="ok"?"✓":s.status==="fail"?"✕":i+1}</span><div style="min-width:0"><div style="font-weight:600;color:${s.status==="skip"?"var(--muted)":"inherit"}">${esc(s.step)}</div>${s.detail?`<div class="rl mono" style="font-size:10.5px;color:var(--muted);word-break:break-word">${esc(s.detail)}</div>`:""}</div></div>`).join("")||`<div style="font-size:11.5px;color:var(--muted)">no canonical steps for this workflow</div>`}
-          ${Object.keys(t.stepDetail||{}).length?`<details style="margin-top:8px"><summary style="font-size:11px;cursor:pointer;color:var(--muted)">step_detail (${Object.keys(t.stepDetail).length})</summary><pre class="mono" style="font-size:10.5px;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto">${esc(j(t.stepDetail))}</pre></details>`:""}</div>
-        <div><h4 style="margin:0 0 6px;font-size:10.5px;letter-spacing:.6px;color:var(--muted)">API CALLS · ${t.apiCalls.length} · bodies masked at rest</h4>
-          <div style="overflow:auto;max-height:52vh">${t.apiCalls.map((c,i)=>{ const ok=c.status!=null&&c.status<400&&!c.error_class; return `<details style="border-top:1px solid var(--line);padding:3px 0">
-            <summary style="cursor:pointer;display:flex;gap:8px;align-items:center;font-size:11.5px;list-style:none"><span class="mono" style="color:var(--muted);width:22px">${i+1}</span><span class="rl" style="color:var(--muted);width:82px;flex:none">${esc(fx.ts(c.created_at,true).slice(11))}</span>
-              <b class="mono" style="width:44px;flex:none">${esc(c.method||"")}</b><span class="mono" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.endpoint)}">${esc(c.endpoint)}</span>
-              <span class="mono" style="font-weight:700;color:${ok?COLOR.COMPLETED:COLOR.CANCELLED}">${esc(c.status==null?"—":c.status)}</span><span class="mono rl" style="color:var(--muted);width:56px;text-align:right">${c.duration_ms!=null?fmt(c.duration_ms)+" ms":""}</span></summary>
-            ${c.error_class||c.error_msg?`<div style="font-size:11px;color:${COLOR.CANCELLED};margin:3px 0 3px 30px">${esc(c.error_class||"")} ${esc(c.error_msg||"")}</div>`:""}${c.info?`<div class="rl" style="font-size:11px;color:var(--muted);margin:2px 0 3px 30px">${esc(c.info)}</div>`:""}
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 6px 30px"><div><div class="rl" style="font-size:9.5px;color:var(--muted)">REQUEST</div><pre class="mono" style="margin:0;font-size:10.5px;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;background:rgba(148,163,184,.08);padding:6px;border-radius:6px">${esc(j(c.req_body)||"—")}</pre></div>
-              <div><div class="rl" style="font-size:9.5px;color:var(--muted)">RESPONSE</div><pre class="mono" style="margin:0;font-size:10.5px;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto;background:rgba(148,163,184,.08);padding:6px;border-radius:6px">${esc(j(c.res_body)||"—")}</pre></div></div></details>`; }).join("")||`<div style="font-size:11.5px;color:var(--muted)">no api_calls captured for this attempt</div>`}</div>
-          ${t.unmasked?`<h4 style="margin:10px 0 6px;font-size:10.5px;letter-spacing:.6px;color:#dc2626">RAW WORKFLOW CONTEXT · live from nexus · not stored</h4><pre class="mono" style="font-size:10.5px;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;background:rgba(220,38,38,.06);padding:8px;border-radius:6px">${esc(j(t.rawContext))}</pre>`:""}</div></div>`;
-    ov.querySelector("#fxmClose").onclick=()=>ov.classList.remove("open");
+    const lastOk=(()=>{ let k=-1; t.steps.forEach((s,i)=>{ if(s.status==="ok") k=i; }); return k; })();
+    const live=String(a.outcome||"").toUpperCase()==="IN_PROGRESS";
+    ov.firstElementChild.style.setProperty("--oc",oc);
+    ov.firstElementChild.innerHTML=`<div class="fxt-head">
+        <span class="fxt-title">Order trace</span><span class="fxt-id mono">${esc(a.id)}</span>
+        ${UI?UI.outcomePill(a.outcome,oc):esc(a.outcome)}
+        <span class="fxtag" style="font-size:10.5px">${esc(a.label||a.workflow)}</span>${a.outsideKsa?`<span class="fxtag err">⚠ pin outside KSA</span>`:""}
+        ${t.unmasked?`<span class="fxtag err">🔓 UNMASKED · audited</span>`:""}
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center">${canUnmask&&!t.unmasked?`<button class="fxbtn warn" id="fxmUnmask" title="Fetch the live workflow context from nexus — every use is written to the audit log">🔓 Unmask <small style="font-weight:600;opacity:.8">audited</small></button>`:""}<button class="fxbtn icon" id="fxmClose" title="Close (Esc)">✕</button></span></div>
+      <div class="fxt-body">
+      ${t.unmaskNote?`<div class="fxt-note">${esc(t.unmaskNote)}</div>`:""}
+      <div class="fxt-facts">
+        ${fact("Started (KSA)",fx.ts(a.started_at,true))}${fact("Completed",a.completed_at?fx.ts(a.completed_at,true):null)}${fact("Duration",a.duration_s?Math.round(a.duration_s/60)+" min":null)}
+        ${fact("Channel",a.channel)}${fact("Dealer",a.staff_name?`${a.staff_name} · ${a.staff_code||""}`:null)}${fact("Outlet",a.dealer_name||a.dealer_code)}${fact("City / region",[a.city,a.region].filter(Boolean).join(" · "))}
+        ${fact("QR / referral",a.referral_code)}${fact("Plan",a.plan)}${fact("Order #",a.order_number)}${fact("ODB",a.odb)}${fact("ICCID",a.iccid)}${fact("CPE",a.cpe)}${fact("MSISDN",a.msisdn)}
+        ${fact("Service #",a.service_no)}${fact("Customer",a.cust_code||a.customer_id)}${fact("Nafath",a.nafath_outcome)}${fact("Manafith",a.dealer_validation)}${fact("Last error",a.last_error_category)}${fact("Step reached",a.step_reached)}</div>
+      <div class="fxt-cols">
+        <div><h4>Journey steps</h4><div class="fxt-steps">
+          ${t.steps.map((s,i)=>`<div class="fxt-step ${s.status}${live&&i===lastOk?" cur":""}" style="--sc:${st[s.status]||"#94a3b8"}"><span class="fxt-dot">${s.status==="ok"?"✓":s.status==="fail"?"✕":i+1}</span><b>${esc(s.step)}</b>${s.detail?`<div class="d mono">${esc(s.detail)}</div>`:""}</div>`).join("")||`<div class="fxt-empty">no canonical steps for this workflow</div>`}</div>
+          ${Object.keys(t.stepDetail||{}).length?`<details class="sd" style="margin-top:10px"><summary>step_detail (${Object.keys(t.stepDetail).length})</summary><pre class="mono">${esc(j(t.stepDetail))}</pre></details>`:""}</div>
+        <div><h4>API calls · ${t.apiCalls.length} <span style="font-weight:500;letter-spacing:0;text-transform:none;color:var(--muted)">· bodies masked at rest · click a call for request / response</span></h4>
+          <div class="fxt-calls" style="max-height:56vh;overflow:auto">${t.apiCalls.map((c,i)=>{ const ok=c.status!=null&&c.status<400&&!c.error_class; const sc=ok?COLOR.COMPLETED:COLOR.CANCELLED; return `<details class="fxt-call">
+            <summary><span class="i">${i+1}</span><span class="tm">${esc(fx.ts(c.created_at,true).slice(11))}</span><span class="me">${esc(c.method||"")}</span><span class="ep" title="${esc(c.endpoint)}">${esc(c.endpoint)}</span>
+              <span class="fxt-st" style="--oc:${sc}">${esc(c.status==null?"—":c.status)}</span><span class="ms">${c.duration_ms!=null?fmt(c.duration_ms)+" ms":""}</span></summary>
+            ${c.error_class||c.error_msg?`<div class="err">${esc(c.error_class||"")} ${esc(c.error_msg||"")}</div>`:""}${c.info?`<div class="info">${esc(c.info)}</div>`:""}
+            <div class="fxt-io"><div><span>Request</span><pre class="mono">${esc(j(c.req_body)||"—")}</pre></div><div><span>Response</span><pre class="mono">${esc(j(c.res_body)||"—")}</pre></div></div></details>`; }).join("")||`<div class="fxt-empty">no api_calls captured for this attempt</div>`}</div>
+          ${t.unmasked?`<h4 style="margin-top:12px;color:#dc2626">Raw workflow context · live from nexus · not stored</h4><pre class="mono fxt-raw">${esc(j(t.rawContext))}</pre>`:""}</div></div></div>`;
+    ov.querySelector("#fxmClose").onclick=close;
     const um=ov.querySelector("#fxmUnmask"); if(um) um.onclick=()=>{ if(confirm("Fetch the raw (unmasked) workflow context for this attempt? This access is written to the audit log with your name.")) openTrace(id,true); };
   }
 
