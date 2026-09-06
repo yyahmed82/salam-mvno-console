@@ -22,6 +22,13 @@ const WORKFLOW_LABEL = {
 function notConfigured() { const e = new Error('Fixed data source not configured (OPS_DATABASE_URL)'); e.status = 503; return e; }
 
 /* ---- window + scope parsing (shared by every route) ---- */
+/* Which sda_ops schema answers a request: Salam Home app rows exist only in the beta schema (stage 1),
+ * dealers / e-purchase live in prod public. Channel-aware so every Fixed page can be scoped to Salam Home. */
+function poolFor(channel) {
+  if (channel === 'salamhome') return db.opsBeta || db.ops;
+  return db.ops;
+}
+
 function parseScope(q = {}) {
   const now = Date.now();
   const H = 3600e3;
@@ -71,10 +78,10 @@ async function freshness() {
 
 /* ---- the dashboard ---- */
 async function summary(q) {
-  if (!db.ops) throw notConfigured();
   const s = parseScope(q);
+  const pool = poolFor(s.channel); if (!pool) throw notConfigured();
   const P = s.params, W = s.where;
-  const Q = (sql, extra = []) => db.ops.query(sql, P.concat(extra));
+  const Q = (sql, extra = []) => pool.query(sql, P.concat(extra));
   const [kpi, outcomes, byWf, byCh, byRegion, byDay, topDealers, naf, dv, errs, fresh] = await Promise.all([
     Q(`SELECT count(*)::int AS attempts, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed,
               count(DISTINCT oa.dealer_id)::int AS active_dealers,
@@ -154,8 +161,8 @@ async function b2cOverview(q) {
 
 /* ---- lists ---- */
 async function attempts(q) {
-  if (!db.ops) throw notConfigured();
   const s = parseScope(q);
+  const pool = poolFor(s.channel); if (!pool) throw notConfigured();
   const lim = Math.min(500, Math.max(10, Number(q.limit) || 100));
   const P = s.params.slice(); let extra = '';
   if (q.outcome) { P.push(String(q.outcome).toUpperCase()); extra += ` AND oa.outcome::text = $${P.length}`; }
@@ -164,7 +171,7 @@ async function attempts(q) {
     extra += ` AND (oa.order_number ILIKE $${i} OR oa.odb ILIKE $${i} OR oa.service_no ILIKE $${i} OR oa.iccid ILIKE $${i} OR oa.msisdn ILIKE $${i} OR oa.cust_code ILIKE $${i} OR oa.id ILIKE $${i})`;
   }
   P.push(lim);
-  const r = await db.ops.query(`SELECT oa.id, oa.workflow::text AS workflow, oa.plan, oa.channel, oa.referral_code, oa.order_number, oa.odb,
+  const r = await pool.query(`SELECT oa.id, oa.workflow::text AS workflow, oa.plan, oa.channel, oa.referral_code, oa.order_number, oa.odb,
         oa.iccid, oa.cpe, oa.msisdn, oa.service_no, oa.cust_code, oa.customer_id, oa.nafath_outcome, oa.dealer_validation,
         oa.outcome::text AS outcome, oa.step_reached, oa.last_error_category, oa.last_error_at, oa.lat, oa.lng,
         COALESCE(oa.region, d.region) AS region, oa.started_at, oa.completed_at, oa.duration_s,
@@ -186,17 +193,17 @@ async function dealers(q) {
 }
 
 async function errorFeed(q) {
-  if (!db.ops) throw notConfigured();
   const s = parseScope(q);
+  const pool = poolFor(s.channel); if (!pool) throw notConfigured();
   const lim = Math.min(300, Math.max(10, Number(q.limit) || 80));
   const P = [s.from.toISOString(), s.to.toISOString()]; let extra = '';
   if (s.channel) { P.push(s.channel); extra += ` AND channel = $${P.length}`; }
   if (q.category) { P.push(String(q.category)); extra += ` AND category = $${P.length}`; }
   P.push(lim);
-  const r = await db.ops.query(`SELECT id, attempt_id, order_number, acct_masked, cust_masked, category, code, message, client_side,
+  const r = await pool.query(`SELECT id, attempt_id, order_number, acct_masked, cust_masked, category, code, message, client_side,
         channel, dealer_code, referral_code, region, step, occurred_at, resolved, signature
       FROM error_events WHERE occurred_at >= $1 AND occurred_at < $2 ${extra} ORDER BY occurred_at DESC LIMIT $${P.length}`, P);
   return { window: { from: s.from, to: s.to }, rows: r.rows };
 }
 
-module.exports = { summary, b2cOverview, attempts, dealers, errorFeed, freshness, parseScope, WORKFLOW_LABEL };
+module.exports = { summary, b2cOverview, attempts, dealers, errorFeed, freshness, parseScope, poolFor, WORKFLOW_LABEL };

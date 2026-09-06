@@ -359,6 +359,10 @@ CREATE TABLE IF NOT EXISTS console_tickets (
   updated_at  timestamptz NOT NULL DEFAULT now(),
   closed_at   timestamptz
 );
+-- business segment (unified console, alpha.8): mobile | fixed. Every ticket raised before the Fixed side existed was
+-- about the MVNO console, so the default backfills them as 'mobile'.
+ALTER TABLE console_tickets ADD COLUMN IF NOT EXISTS segment text NOT NULL DEFAULT 'mobile';
+CREATE INDEX IF NOT EXISTS idx_console_tickets_segment ON console_tickets (segment, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_console_tickets_status ON console_tickets (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_console_tickets_creator ON console_tickets (created_by, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_console_tickets_created ON console_tickets (created_at DESC);

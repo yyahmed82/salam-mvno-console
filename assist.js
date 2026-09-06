@@ -13,11 +13,11 @@ const AB=(window.API_BASE!==undefined)?window.API_BASE:window.CONSOLE_BASE;
 
   /* ---------- styles ---------- */
   const css = `
-  #assistFab{position:fixed;right:22px;bottom:22px;z-index:400;width:56px;height:56px;border-radius:50%;
+  #assistFab{position:fixed;right:22px;bottom:22px;z-index:1250;width:56px;height:56px;border-radius:50%;
     background:var(--green);color:#fff;border:none;cursor:pointer;box-shadow:0 6px 24px rgba(14,159,90,.45);
     display:flex;align-items:center;justify-content:center;font-size:24px;transition:transform .15s}
   #assistFab:hover{transform:scale(1.07)}
-  #assistPanel{position:fixed;right:22px;bottom:90px;z-index:401;width:380px;max-width:calc(100vw - 40px);
+  #assistPanel{position:fixed;right:22px;bottom:90px;z-index:1251;width:380px;max-width:calc(100vw - 40px);
     height:540px;max-height:calc(100vh - 130px);background:var(--card);border:1px solid var(--line);
     border-radius:16px;box-shadow:0 18px 60px rgba(0,0,0,.28);display:none;flex-direction:column;overflow:hidden}
   #assistPanel.open{display:flex}
@@ -72,14 +72,14 @@ const AB=(window.API_BASE!==undefined)?window.API_BASE:window.CONSOLE_BASE;
       <div class="mark">${YUSR_MARK}</div>
       <div>
         <div class="t">Yusr <span class="ar">يُسر</span></div>
-        <div class="s"><span class="dot"></span><span id="asStatus">Online · troubleshoot faster</span></div>
+        <div class="s"><span class="dot"></span><span id="asStatus">Checking…</span></div>
       </div>
       <button class="x" id="asClose" title="Close">×</button>
     </div>
     <div class="as-body" id="asBody"></div>
     <div class="as-sugs" id="asSugs"></div>
     <div class="as-foot">
-      <input id="asInput" type="text" placeholder="Ask me anything… (MSISDN, incident, how-to)" autocomplete="off"/>
+      <input id="asInput" type="text" placeholder="Ask me anything… (MSISDN, FTTH account, incident, how-to)" autocomplete="off"/>
       <button id="asSend" title="Send">➤</button>
     </div>`;
   document.body.appendChild(fab); document.body.appendChild(panel);
@@ -182,15 +182,27 @@ const AB=(window.API_BASE!==undefined)?window.API_BASE:window.CONSOLE_BASE;
 
   function greet(){
     if(body.childElementCount) return;
-    addBot({reply:"أهلاً! I'm **Yusr (يُسر)** — your fast track to any answer in the console.\nI can:\n• Look up a subscriber — just paste an MSISDN (05xxxxxxxx) or National ID\n• Search a **log reference ID** (the code in the customer's error dialog) live on the DMS nodes\n• Tell you what incidents are open right now\n• Explain any integration, and search the runbooks / error codes for fixes"});
+    addBot({reply:"أهلاً! I'm **Yusr (يُسر)** — your fast track to any answer in the console, Mobile and Fixed.\nI can:\n• Look up a customer — paste an MSISDN (05xxxxxxxx), a National ID, an **FTTH account**, a BSS order number or a customer code\n• Tell you what is going on in Fixed — \"fixed issues today\", \"top FTTH errors this week\"\n• Search a **log reference ID** (the code in the customer's error dialog) live on the DMS nodes\n• Tell you what incidents are open right now\n• Explain any integration, and search the runbooks / error codes for fixes"});
     // NOTE: no real MSISDN here — the subscriber chip only prefills (agent completes the number)
-    setSugs(['Search a log reference','What incidents are open?','How do I handle a stuck UPG payment?','Check subscriber 05…']);
+    setSugs(['Fixed issues today','What incidents are open?','Search a log reference','Check subscriber 05…']);
   }
 
   function toggle(open){
     const on = open!=null ? open : !panel.classList.contains('open');
     panel.classList.toggle('open', on);
-    if(on){ greet(); setTimeout(()=>input.focus(),50); }
+    if(on){ greet(); probeStatus(); setTimeout(()=>input.focus(),50); }
+  }
+  // header status = the real state of the model host (was a hard-coded "Online" that contradicted
+  // the "LLM offline" shown after the first answer). Cheap: /api/assist/status pings Ollama (5 s cap).
+  let probed=0;
+  function probeStatus(){
+    if(Date.now()-probed<60000) return; probed=Date.now();
+    const stEl=panel.querySelector('#asStatus'); if(!stEl) return;
+    fetch(AB+'/api/assist/status').then(r=>r.json()).then(j=>{
+      stEl.textContent = j && j.llm ? 'Online · troubleshoot faster' : 'Data-only mode · LLM offline';
+      stEl.title = j && j.hint ? j.hint : '';
+      const dot=panel.querySelector('.as-head .dot'); if(dot) dot.style.background = j && j.llm ? '' : '#f59e0b';
+    }).catch(()=>{ stEl.textContent='Data-only mode · LLM offline'; });
   }
   // public entry — used by the "Ask Yusr" hint chips across the console
   window.openYusr=function(prefill, opts){

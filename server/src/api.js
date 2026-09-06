@@ -306,7 +306,7 @@ app.get('/api/me', async (req, res) => {
     // While ROOT_ADMINS is unset it reports true so the client falls back to today's role-based
     // visibility (matches the server-side failsafe in requireRoot).
     root: ROOT_SET.size ? !!req.isRoot : true,
-    views: req.views, caps: req.caps, features });
+    views: req.views, caps: req.caps, features, fixedTabViews: roles.FIXED_TAB_VIEW || {} });
 });
 // interface feature flags — read (any signed-in user) + update (admins)
 app.get('/api/settings/features', async (req, res) => { res.json((await settings.getSetting('features')) || {}); });
@@ -3513,6 +3513,18 @@ app.get('/api/assist/enabled', async (req, res) => {
   try { res.json({ enabled: !!(await assist.getConfig()).enabled }); }
   catch (e) { res.json({ enabled: true }); }   // fail open: widget shows, chat call reports the real error
 });
+/* Widget header status: is the model host reachable and the model present? No secrets in the
+ * answer (the URL stays server-side) — just a boolean + a human hint. */
+app.get('/api/assist/status', async (req, res) => {
+  try {
+    const cfg = await assist.getConfig();
+    if (!cfg.enabled) return res.json({ enabled: false, llm: false, hint: 'Yusr is disabled in Settings' });
+    const p = await assist.ping();
+    const llm = !!(p.ok && p.modelAvailable !== false);
+    res.json({ enabled: true, llm, model: cfg.model,
+      hint: !p.ok ? 'model host unreachable (' + (p.error || '') + ')' : p.modelAvailable === false ? 'model "' + cfg.model + '" not installed on the host' : 'model ' + cfg.model + ' ready' });
+  } catch (e) { res.json({ enabled: true, llm: false, hint: e.message }); }
+});
 app.get('/api/assist/config', requireCap('manageSync'), requireRoot('assist_config'), async (req, res) => {
   try { res.json(await assist.getConfig()); } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3702,7 +3714,8 @@ app.get('/api/ready', async (req, res) => { const r = await reliability.ready();
 app.get('/api/version', (req, res) => res.json({ ...reliability.version(),
   console: 'unified', publicUrl: process.env.CONSOLE_PUBLIC_URL || null,
   fixedEnabled: roles.FIXED_ENABLED, fixedViews: roles.FIXED_VIEWS,
-  pools: { upg: db.upgConfigured, ops: db.opsConfigured, opsBeta: db.opsBetaConfigured, nexus: db.nexusConfigured, payments: db.paymentsConfigured } }));
+  pools: { upg: db.upgConfigured, ops: db.opsConfigured, opsBeta: db.opsBetaConfigured, nexus: db.nexusConfigured, payments: db.paymentsConfigured },
+  fixedInventory: (() => { try { const fi = require('./fixedInventory'); return { live: fi.liveConfigured(), recorded: fi.recordedConfigured() }; } catch (_) { return null; } })() }));
 app.get('/api/errors/log', requireCap('manageUsers'), async (req, res) => {
   try {
     const rows = (await C.query(`SELECT id, at, level, message, route, actor, ip FROM console_errors ORDER BY at DESC LIMIT 200`)).rows;

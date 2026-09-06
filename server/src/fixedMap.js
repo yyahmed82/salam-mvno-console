@@ -82,7 +82,7 @@ const perWeekOf = (total, minTs, maxTs) => {
 
 function mount(app, deps) {
   const { gate, wrap, audit, db, f360 } = deps;
-  const ops = () => { if (!db.ops) throw notConfigured(); return db.ops; };
+  const ops = (q) => { const p = f360.poolFor(q && q.channel); if (!p) throw notConfigured(); return p; };   // Salam Home app → beta schema
 
   /* scope = parseScope + the map/QR filter dimensions (filters.ts attemptWhereSql) */
   function scope(q, opt = {}) {
@@ -117,7 +117,7 @@ function mount(app, deps) {
     const s = scope(q, opt);
     const lim = Math.min(2000, Math.max(50, Number(q.limit) || 2000));
     const P = s.params.concat([lim]);
-    const r = await ops().query(`SELECT oa.id, oa.lat, oa.lng, oa.outcome::text AS outcome, oa.workflow::text AS workflow, oa.plan, oa.channel,
+    const r = await ops(q).query(`SELECT oa.id, oa.lat, oa.lng, oa.outcome::text AS outcome, oa.workflow::text AS workflow, oa.plan, oa.channel,
           oa.dealer_id, d.dealer_code, d.dealer_name, d.staff_name, d.staff_code, d.role::text AS role, d.city, oa.referral_code, oa.consent,
           COALESCE(oa.region, d.region) AS region, oa.started_at, oa.duration_s, oa.step_reached, oa.last_error_category, oa.nafath_outcome,
           oa.dealer_validation, oa.order_number
@@ -129,7 +129,7 @@ function mount(app, deps) {
   /* ---- roster: dealers active in the window (Roster.tsx placed/done, computed in SQL over ALL rows, not the 2000 cap) ---- */
   async function roster(q) {
     const s = scope(q);
-    const r = await ops().query(`SELECT d.id, d.staff_code, d.staff_name, d.dealer_code, d.dealer_name, d.role::text AS role, d.city, d.region,
+    const r = await ops(q).query(`SELECT d.id, d.staff_code, d.staff_name, d.dealer_code, d.dealer_name, d.role::text AS role, d.city, d.region,
           count(*)::int AS placed, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS done, max(oa.started_at) AS last_seen,
           (array_agg(oa.lat ORDER BY oa.started_at DESC) FILTER (WHERE oa.lat IS NOT NULL AND oa.lng IS NOT NULL))[1] AS lat,
           (array_agg(oa.lng ORDER BY oa.started_at DESC) FILTER (WHERE oa.lat IS NOT NULL AND oa.lng IS NOT NULL))[1] AS lng
@@ -140,7 +140,7 @@ function mount(app, deps) {
 
   /* ---- per-dealer summary (activity.dealerSummary, current + previous window for the deltas) ---- */
   async function dealerKpis(s) {
-    const Q = (sql, extra = []) => ops().query(sql, s.params.concat(extra));
+    const Q = (sql, extra = []) => ops(q).query(sql, s.params.concat(extra));
     const [k, wf, outc] = await Promise.all([
       Q(`SELECT count(*)::int AS total, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed, avg(oa.duration_s) AS avg_duration,
                 count(DISTINCT d.city)::int AS areas, min(oa.started_at) AS min_started, max(oa.started_at) AS max_started ${FROM} ${s.where}`),
@@ -158,10 +158,10 @@ function mount(app, deps) {
     const s = scope({ ...q, dealerId: id });
     const prevFrom = new Date(s.from.getTime() - (s.to.getTime() - s.from.getTime()));
     const sPrev = scope({ ...q, dealerId: id, from: prevFrom.toISOString(), to: s.from.toISOString() });
-    const Q = (sql, extra = []) => ops().query(sql, s.params.concat(extra));
+    const Q = (sql, extra = []) => ops(q).query(sql, s.params.concat(extra));
     const [cur, prev, drow, weekly, daily, areas, recent] = await Promise.all([
       dealerKpis(s), dealerKpis(sPrev),
-      ops().query(`SELECT id, staff_code, staff_name, dealer_code, dealer_name, role::text AS role, city, region, is_active FROM dealers WHERE id = $1`, [id]),
+      ops(q).query(`SELECT id, staff_code, staff_name, dealer_code, dealer_name, role::text AS role, city, region, is_active FROM dealers WHERE id = $1`, [id]),
       Q(`SELECT to_char(date_trunc('week', oa.started_at AT TIME ZONE 'Asia/Riyadh'), 'YYYY-MM-DD') AS week, count(*)::int AS n,
                 count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed ${FROM} ${s.where} GROUP BY 1 ORDER BY 1`),
       Q(`SELECT to_char(date_trunc('day', oa.started_at AT TIME ZONE 'Asia/Riyadh'), 'YYYY-MM-DD') AS date, count(*)::int AS count ${FROM} ${s.where} GROUP BY 1 ORDER BY 1`),
@@ -187,7 +187,7 @@ function mount(app, deps) {
   /* ---- step funnel for the scope (activity.funnel) ---- */
   async function funnel(q, opt) {
     const s = scope(q, opt);
-    const g = await ops().query(`SELECT oa.workflow::text AS workflow, oa.step_reached, oa.outcome::text AS outcome, count(*)::int AS count
+    const g = await ops(q).query(`SELECT oa.workflow::text AS workflow, oa.step_reached, oa.outcome::text AS outcome, count(*)::int AS count
         ${FROM} ${s.where} GROUP BY 1,2,3`, s.params);
     const byWf = {}; for (const r of g.rows) byWf[r.workflow] = (byWf[r.workflow] || 0) + r.count;
     let wf = q.workflow && STEPS[String(q.workflow)] ? String(q.workflow) : null;
@@ -201,14 +201,16 @@ function mount(app, deps) {
   /* ---- attempt trace (trace.order): attempt + api_calls (masked at rest) + step status; optional audited unmask ---- */
   async function trace(q, req) {
     const id = String(q.id || '').slice(0, 80); if (!id) throw bad('id required');
-    const a = await ops().query(`SELECT oa.id, oa.plan, oa.plan_id, oa.workflow::text AS workflow, oa.outcome::text AS outcome, oa.step_reached, oa.started_at,
+    const TSQL = `SELECT oa.id, oa.plan, oa.plan_id, oa.workflow::text AS workflow, oa.outcome::text AS outcome, oa.step_reached, oa.started_at,
           oa.completed_at, oa.duration_s, oa.channel, oa.referral_code, oa.consent, oa.order_number, oa.odb, oa.iccid, oa.cpe, oa.msisdn, oa.service_no,
           oa.cust_code, oa.customer_id, oa.step_detail, oa.nafath_outcome, oa.dealer_validation, oa.last_error_category, oa.last_error_at, oa.lat, oa.lng,
           COALESCE(oa.region, d.region) AS region, oa.dealer_id, d.staff_name, d.staff_code, d.city, d.dealer_code, d.dealer_name, d.role::text AS role
-        ${FROM} WHERE oa.id = $1`, [id]);
+        ${FROM} WHERE oa.id = $1`;
+    let a = await ops(q).query(TSQL, [id]);
+    if (!a.rows.length && db.opsBeta && ops(q) !== db.opsBeta) { q = { ...q, channel: 'salamhome' }; a = await ops(q).query(TSQL, [id]); }
     if (!a.rows.length) { const e = new Error('Attempt not found'); e.status = 404; throw e; }
     const att = a.rows[0];
-    const calls = await ops().query(`SELECT id, method, endpoint, status, duration_ms, error_class, error_msg, info, req_body, res_body, created_at
+    const calls = await ops(q).query(`SELECT id, method, endpoint, status, duration_ms, error_class, error_msg, info, req_body, res_body, created_at
         FROM api_calls WHERE attempt_id = $1 ORDER BY created_at ASC LIMIT 500`, [id]);
     let stepDetail = {};
     if (att.step_detail) { try { const p = typeof att.step_detail === 'string' ? JSON.parse(att.step_detail) : att.step_detail; if (p && typeof p === 'object') stepDetail = p; } catch (e) { /* malformed */ } }
@@ -248,7 +250,7 @@ function mount(app, deps) {
   /* ---- QR (dashboards.qr + activity.aggregate qr + referrals.summary) ---- */
   async function qrSummary(q) {
     const s = scope(q, { qr: true });
-    const Q = sql => ops().query(sql, s.params);
+    const Q = sql => ops(q).query(sql, s.params);
     const [k, outc, ts, lb, plan, region] = await Promise.all([
       Q(`SELECT count(*)::int AS total, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed, count(*) FILTER (WHERE oa.consent = true)::int AS consented,
                 count(DISTINCT oa.referral_code)::int AS qr_codes ${FROM} ${s.where}`),
@@ -276,7 +278,7 @@ function mount(app, deps) {
   async function qrCode(q) {
     const ref = String(q.ref || q.referral || '').slice(0, 60); if (!ref) throw bad('ref required');
     const s = scope({ ...q, referral: ref }, { qr: true });
-    const Q = sql => ops().query(sql, s.params);
+    const Q = sql => ops(q).query(sql, s.params);
     const [k, outc, daily, g, areas, recent] = await Promise.all([
       Q(`SELECT count(*)::int AS total, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed, count(*) FILTER (WHERE oa.consent = true)::int AS consented,
                 count(DISTINCT (round(oa.lat::numeric,1), round(oa.lng::numeric,1))) FILTER (WHERE oa.lat IS NOT NULL AND oa.lng IS NOT NULL)::int AS areas,

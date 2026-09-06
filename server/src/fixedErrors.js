@@ -96,7 +96,7 @@ const parseJson = s => { if (s == null) return null; if (typeof s === 'object') 
 
 function mount(app, deps) {
   const { gate, wrap, audit, db } = deps;
-  const ops = () => { if (!db.ops) { const e = new Error('Fixed data source not configured (OPS_DATABASE_URL)'); e.status = 503; throw e; } return db.ops; };
+  const ops = (q) => { const p = (q && q.channel === 'salamhome') ? (db.opsBeta || db.ops) : db.ops; if (!p) { const e = new Error('Fixed data source not configured (OPS_DATABASE_URL)'); e.status = 503; throw e; } return p; };   // Salam Home app → beta schema
 
   /* acks live in the console DB — sda_ops stays read-only */
   let ackReady = null;
@@ -114,8 +114,8 @@ function mount(app, deps) {
   }
 
   /* per-category last-3h volume → effective priority (same escalation as the prod board) */
-  async function effByCategory() {
-    const r = await ops().query(`SELECT category, count(*)::int AS n FROM error_events e
+  async function effByCategory(q) {
+    const r = await ops(q).query(`SELECT category, count(*)::int AS n FROM error_events e
       WHERE e.occurred_at >= now() - interval '3 hours' AND NOT (e.channel = 'epurchase' AND e.referral_code IS NULL) GROUP BY 1`);
     const last3h = Object.fromEntries(r.rows.map(x => [x.category, n(x.n)]));
     const eff = {}; for (const c of TAXONOMY) eff[c.key] = effectiveSeverity(c.severity, last3h[c.key] || 0, c.moneyAtRisk);
@@ -126,7 +126,7 @@ function mount(app, deps) {
   // ---- GET /api/fixed/errors/summary ----
   async function summary(q) {
     const s = baseWhere(q);
-    const r = await ops().query(`SELECT e.category, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open,
+    const r = await ops(q).query(`SELECT e.category, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open,
         count(*) FILTER (WHERE e.occurred_at >= now() - interval '3 hours')::int AS last3h
       FROM error_events e ${s.where} GROUP BY 1 ORDER BY 2 DESC LIMIT 100`, s.P);
     const openOnly = q.openOnly === '1' || q.openOnly === 'true';
@@ -149,7 +149,7 @@ function mount(app, deps) {
     if (q.category) { P.push(String(q.category).slice(0, 60)); extra.push(`e.category = $${P.length}`); }
     let cats = null;
     if (q.team && TEAMS.includes(q.team)) cats = TAXONOMY.filter(c => c.team === q.team).map(c => c.key);
-    const eff = await effByCategory();
+    const eff = await effByCategory(q);
     if (q.priority !== undefined && q.priority !== '') {
       const p = Number(q.priority);
       const pc = Object.keys(eff).filter(k => eff[k] === p);
@@ -161,7 +161,7 @@ function mount(app, deps) {
     if (q.cursor) { P.push(String(q.cursor)); extra.push(`e.occurred_at < (SELECT occurred_at FROM error_events WHERE id = $${P.length})`); }
     const lim = Math.min(200, Math.max(10, Number(q.limit) || 100));
     P.push(lim + 1);
-    const r = await ops().query(`SELECT e.id, e.attempt_id, e.order_number, e.acct_masked, e.cust_masked, e.category, e.code, e.message, e.client_side,
+    const r = await ops(q).query(`SELECT e.id, e.attempt_id, e.order_number, e.acct_masked, e.cust_masked, e.category, e.code, e.message, e.client_side,
         e.channel, e.dealer_id, e.dealer_code, e.referral_code, e.region, e.step, e.occurred_at, e.resolved, e.resolved_at, e.signature
       FROM error_events e ${s.where} ${extra.length ? 'AND ' + extra.join(' AND ') : ''} ORDER BY e.occurred_at DESC LIMIT $${P.length}`, P);
     const rows = r.rows.slice(0, lim);
@@ -174,12 +174,12 @@ function mount(app, deps) {
   }
 
   // ---- "Similar cases" (errors.ts history) ----
-  async function similar(signature, category, excludeId) {
+  async function similar(signature, category, excludeId, q) {
     const key = signature ? 'signature = $1' : 'category = $1';
     const P = [signature || category]; let ex = '';
     if (excludeId) { P.push(excludeId); ex = ` AND id <> $${P.length}`; }
     const [rows, biggest] = await Promise.all([
-      ops().query(`SELECT count(*)::int AS "all",
+      ops(q).query(`SELECT count(*)::int AS "all",
           count(*) FILTER (WHERE occurred_at >= now() - interval '30 days')::int AS d30,
           count(*) FILTER (WHERE occurred_at >= now() - interval '7 days')::int AS d7,
           max(occurred_at) AS last_seen,
@@ -187,7 +187,7 @@ function mount(app, deps) {
           (percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (resolved_at - occurred_at)) / 60.0)
              FILTER (WHERE resolved AND resolved_at IS NOT NULL))::int AS median_resolve_mins
         FROM error_events WHERE ${key}${ex}`, P),
-      ops().query(`SELECT occurred_at::date AS day, count(*)::int AS n FROM error_events WHERE ${key}${ex} GROUP BY 1 ORDER BY n DESC LIMIT 1`, P),
+      ops(q).query(`SELECT occurred_at::date AS day, count(*)::int AS n FROM error_events WHERE ${key}${ex} GROUP BY 1 ORDER BY n DESC LIMIT 1`, P),
     ]);
     const r = rows.rows[0] || {}; const b = biggest.rows[0];
     return { all: n(r.all), d30: n(r.d30), d7: n(r.d7), lastSeen: r.last_seen || null, affectedToday: n(r.affected_today),
@@ -218,12 +218,14 @@ function mount(app, deps) {
   // ---- GET /api/fixed/errors/detail ----
   async function detail(q, req) {
     const id = String(q.id || '').slice(0, 80); if (!id) { const e = new Error('id required'); e.status = 400; throw e; }
-    const r = await ops().query(`SELECT e.*, d.dealer_name, d.staff_name, d.staff_code FROM error_events e LEFT JOIN dealers d ON d.id = e.dealer_id WHERE e.id = $1 LIMIT 1`, [id]);
+    const DSQL = `SELECT e.*, d.dealer_name, d.staff_name, d.staff_code FROM error_events e LEFT JOIN dealers d ON d.id = e.dealer_id WHERE e.id = $1 LIMIT 1`;
+    let r = await ops(q).query(DSQL, [id]);
+    if (!r.rows.length && db.opsBeta && ops(q) !== db.opsBeta) { q = { ...q, channel: 'salamhome' }; r = await ops(q).query(DSQL, [id]); }
     const ev = r.rows[0]; if (!ev) { const e = new Error('error event not found'); e.status = 404; throw e; }
     const m = meta(ev.category);
     const [sim, calls, acks] = await Promise.all([
-      similar(ev.signature, ev.category, ev.id),
-      ev.attempt_id ? ops().query(`SELECT id, method, endpoint, status, duration_ms, error_class, error_msg, info, created_at
+      similar(ev.signature, ev.category, ev.id, q),
+      ev.attempt_id ? ops(q).query(`SELECT id, method, endpoint, status, duration_ms, error_class, error_msg, info, created_at
           FROM api_calls WHERE attempt_id = $1 ORDER BY created_at ASC LIMIT 200`, [ev.attempt_id]) : { rows: [] },
       acksFor([ev.id]),
     ]);

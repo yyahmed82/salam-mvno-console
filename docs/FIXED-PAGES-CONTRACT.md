@@ -28,3 +28,7 @@ LIMITs, `statement_timeout` is 15 s. Reuse `f360.parseScope(q)` for the window/c
 `{ from, to, where, params }` with alias `oa` for order_attempts LEFT JOIN dealers d). PII: identifiers → last digits only
 (`tail()` pattern in fixed360.js) unless `req.caps.unmaskPII` AND `q.unmask==='1'`, and then `audit(req,'pii.unmask',…)`.
 Port the SQL 1:1 from salam-dealer-ops `packages/api/src/routers/*.ts` so numbers match the prod console.
+
+
+## Channel pages (alpha.7)
+`fixed-channel.js` registers two keys from one renderer — `epurchase` and `salamhome` — backed by `server/src/fixedChannel.js`. See `docs/FIXED-CHANNEL-PAGES.md` for sections, the FTTH/5G segment rule and the Grafana mapping.

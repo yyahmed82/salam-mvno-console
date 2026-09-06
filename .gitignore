@@ -22,3 +22,4 @@ dist/
 
 # local dev
 .local-uploads/
+tools/local/probe-out*.txt

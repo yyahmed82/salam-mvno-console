@@ -239,7 +239,24 @@
     }).catch(e=>{ if(note) note.textContent="Google Maps failed ("+e.message+") — static view"; drawSvg(ps); });
   }
   function drawSvg(ps){
-    // no Maps key: same pins on a static KSA projection (same as the DMS map fallback)
+    // Google unavailable → OpenStreetMap via Leaflet (no key). Static SVG only if even that cannot load.
+    if(window.fxLeaflet){
+      const max=Math.max(1,...(ps.kind==="dealers"?ps.rows.map(r=>Number(r.placed||0)):[1]));
+      const pins=ps.rows.filter(a=>a.lat!=null&&a.lng!=null).map((a,i)=>({ lat:a.lat, lng:a.lng,
+        color: ps.kind==="dealers"?(ROLE_COLOR[a.role]||"#3fb6f5"):outcomeColor(a.outcome,a.workflow),
+        r: ps.kind==="dealers"?4+Math.round(8*Math.sqrt(Number(a.placed||0)/max)):5,
+        label: ps.kind==="orders"?String(i+1):null,
+        title: ps.kind==="dealers"?`${a.staff_name||a.staff_code||""} · ${a.role||""} · ${a.placed} placed / ${a.done} done`:`${a.staff_name||a.dealer_name||a.referral_code||""} · ${PLAN_LABEL[a.workflow]||a.workflow||""} · ${a.outcome||""}`,
+        onClick: ()=>{ if(ps.kind==="orders") openTrace(a.id); else if(ps.kind==="dealers") selectDealer(a.id,a.staff_name||a.dealer_name||a.staff_code); else if(a.dealer_id) selectDealer(a.dealer_id,a.staff_name||a.dealer_name||a.dealer_code); else openTrace(a.id); } }));
+      gmap=null;
+      window.fxLeaflet.render(mapEl,pins,{dark:isDark(),cluster:S.mode!=="dealers"&&ps.kind!=="orders",polyline:ps.kind==="orders"?pins.map(p=>[p.lat,p.lng]):null,fit:ps.kind==="orders"})
+        .then(ok=>{ if(!ok) drawSvgStatic(ps); else { const note=host.querySelector("#fxmMapNote"); if(note) note.textContent=note.textContent.replace(/ — static view.*$/,"")+" · OpenStreetMap (Google key not usable here)"; } });
+      return;
+    }
+    drawSvgStatic(ps);
+  }
+  function drawSvgStatic(ps){
+    // last resort: same pins on a static KSA projection (same as the DMS map fallback)
     const W=1000,H=620, X=lng=>((lng-34)/(56-34))*W, Y=lat=>((33-lat)/(33-16))*H;
     const dark=isDark();
     let g=`<rect width="${W}" height="${H}" fill="${dark?"#0d1722":"#eef4fb"}"/><path d="M ${KSA_OUTLINE.map(([lg,lt])=>X(lg)+" "+Y(lt)).join(" L ")} Z" fill="${dark?"#16202e":"#f8fafc"}" stroke="${dark?"#3fb6f5":"#94a3b8"}" stroke-width="1.2"/>`;

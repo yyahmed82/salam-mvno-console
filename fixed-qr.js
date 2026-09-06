@@ -186,6 +186,21 @@
     }).catch(e=>{ if(note) note.textContent="Google Maps failed ("+e.message+") — static view"; drawSvg(ps); });
   }
   function drawSvg(ps){
+    if(window.fxLeaflet){
+      const max=Math.max(1,...(ps.kind==="codes"?ps.rows.map(x=>x.orders):[1]));
+      const pins=ps.rows.filter(x=>x.lat!=null&&x.lng!=null).map(x=>({ lat:x.lat, lng:x.lng,
+        color: ps.kind==="codes"?consentColor(x.consentRate):(COLOR[x.outcome]||"#3fb6f5"),
+        r: ps.kind==="codes"?5+Math.round(10*Math.sqrt(x.orders/max)):5,
+        title: ps.kind==="codes"?`QR ${x.referralCode} · ${x.orders} orders · consent ${pc(x.consentRate)}`:`QR ${x.referral_code} · ${x.outcome}`,
+        onClick: ()=>{ if(ps.kind==="codes") selectCode(x.referralCode); else openTrace(x.id); } }));
+      gmap=null;
+      window.fxLeaflet.render(mapEl,pins,{dark:isDark(),cluster:ps.kind!=="codes"})
+        .then(ok=>{ if(!ok) drawSvgStatic(ps); else { const note=host.querySelector("#fxqMapNote"); if(note) note.textContent=note.textContent.replace(/ — static view.*$/,"")+" · OpenStreetMap (Google key not usable here)"; } });
+      return;
+    }
+    drawSvgStatic(ps);
+  }
+  function drawSvgStatic(ps){
     const W=1000,H=620, X=lng=>((lng-34)/(56-34))*W, Y=lat=>((33-lat)/(33-16))*H, dark=isDark();
     let g=`<rect width="${W}" height="${H}" fill="${dark?"#0d1722":"#eef4fb"}"/><path d="M ${KSA_OUTLINE.map(([lg,lt])=>X(lg)+" "+Y(lt)).join(" L ")} Z" fill="${dark?"#16202e":"#f8fafc"}" stroke="${dark?"#3fb6f5":"#94a3b8"}" stroke-width="1.2"/>`;
     [["Riyadh",46.7,24.7],["Jeddah",39.2,21.5],["Dammam",50.1,26.4],["Madinah",39.6,24.5],["Abha",42.5,18.2],["Tabuk",36.6,28.4]].forEach(([c,lg,lt])=>{ g+=`<text x="${X(lg)+5}" y="${Y(lt)-4}" font-size="10" fill="${dark?"#8b97a7":"#64748b"}">${esc(c)}</text>`; });

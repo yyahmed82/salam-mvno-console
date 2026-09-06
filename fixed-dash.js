@@ -67,7 +67,7 @@
       ${anyFilter()?`<div><button id="fdClear" class="btn" style="font-size:11px;padding:3px 10px">Clear ✕</button></div>`:""}</div>`;
     host.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         ${chipBtn("fd-v","dealers","Dealers",st.view==="dealers")}${chipBtn("fd-v","qr","QR codes",st.view==="qr")}
-        <span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:6px">${st.view==="dealers"?"SDA dealer channel · same definitions as /operations-console → Dashboards":"e-purchase journeys carrying a referral (QR) code"}</span>
+        <span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:6px">${(()=>{const ch=localStorage.getItem("fixed_channel")||"";if(st.view==="dealers"){if(ch==="salamhome")return "🏠 Salam Home app journeys (beta data, stage 1) · Role / Region chips are dealer-only and do not apply here";if(ch==="epurchase")return "e-purchase / QR journeys · Role chips do not apply";return "SDA dealer channel · same definitions as /operations-console → Dashboards";}return "e-purchase journeys carrying a referral (QR) code";})()}</span>
         <span style="margin-left:auto;display:flex;gap:6px">
           <button class="btn fd-x" data-f="csv" style="font-size:11.5px;padding:5px 12px" ${st.busy?"disabled":""}>${st.busy==="csv"?"Exporting…":"Export CSV"}</button>
           <button class="btn fd-x" data-f="json" style="font-size:11.5px;padding:5px 12px" ${st.busy?"disabled":""}>${st.busy==="json"?"Exporting…":"Export JSON"}</button></span></div>

@@ -17,10 +17,10 @@
   function shell(){
     const host=$("#view-sub360"); if(!host) return;
     host.innerHTML=`<div class="panel">
-      <h2>Subscriber 360</h2>
-      <div class="sub">One unified profile per subscriber — identity, lines/SIMs, plan, and the full journey timeline across every system. Search by MSISDN or National ID. PII is masked unless you can unmask.</div>
+      <h2>Customer 360</h2>
+      <div class="sub">One customer, both businesses — <b>Mobile</b> (identity, lines/SIMs, plan, payments, journey) and <b>Fixed</b> (FTTH / 5G home services, orders, dealer, errors, payments). Search by MSISDN or National ID for mobile; by service/account number (FTTH…), customer code, customer ID, BSS order number, 5G number or ICCID for fixed. PII is masked unless you can unmask.</div>
       <div class="sb-search">
-        <input id="sbKey" placeholder="MSISDN (9665…) or National ID" value="${esc(curKey||'')}">
+        <input id="sbKey" placeholder="MSISDN · National ID · FTTH account · customer code / ID · order no · ICCID" value="${esc(curKey||'')}">
         <button class="pill" id="sbGo" style="border-left-color:var(--green)">Look up</button>
       </div>
       <div id="sbBody" style="margin-top:14px"></div>
@@ -33,9 +33,18 @@
 
   async function load(){
     const box=$("#sbBody"); if(!box) return; box.innerHTML=`<div class="sub">Loading profile…</div>`;
-    let d; try{ d=await api("/api/subscriber?key="+encodeURIComponent(curKey)+(unmasked?"&unmask=1":"")); }
-    catch(e){ box.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
-    if(!d.found){ box.innerHTML=`<div class="okbox">No subscriber found for “${esc(curKey)}”. Try the MSISDN in intl format (9665…) or the National ID.</div>`; return; }
+    // both businesses in parallel — the Fixed lookup is optional (feature-gated on the server)
+    const [dr,fr]=await Promise.allSettled([
+      api("/api/subscriber?key="+encodeURIComponent(curKey)+(unmasked?"&unmask=1":"")),
+      api("/api/fixed/customer?key="+encodeURIComponent(curKey)+(unmasked?"&unmask=1":""))
+    ]);
+    if(dr.status!=="fulfilled"){ box.innerHTML=`<div class="albanner">${esc(dr.reason&&dr.reason.message||"lookup failed")}</div>`; return; }
+    const d=dr.value; curFixed=(fr.status==="fulfilled")?fr.value:{found:false,error:(fr.reason&&fr.reason.message)||""};
+    hasFixed=!!(curFixed&&curFixed.found);
+    if(!d.found){
+      if(hasFixed){ box.innerHTML=fixedHead(curFixed)+`<div class="sbt-pane" data-tab="fixed">${fixedPane(curFixed)}</div>`; wireFixed(box);
+        const ub=$("#sbUnmask"); if(ub) ub.addEventListener("click",()=>{ unmasked=!unmasked; load(); }); return; }
+      box.innerHTML=`<div class="okbox">No customer found for “${esc(curKey)}” on either side. Mobile: MSISDN in intl format (9665…) or National ID. Fixed: service/account number, customer code or ID, order number, 5G number or ICCID.${curFixed&&curFixed.error?`<div class="rl" style="color:var(--muted);margin-top:6px">Fixed lookup: ${esc(curFixed.error)}</div>`:""}</div>`; return; }
     curLines = d.lines || [];
     /* CALL-CENTER LAYOUT (4 Sep 2026 redesign): one STICKY header (who is this + line selector +
      * gateway health + tabs — always visible while scrolling) over five task-focused tabs.
@@ -45,8 +54,12 @@
       + `<div class="sbt-pane" data-tab="billing" hidden>${liveCard('billing')}</div>`
       + `<div class="sbt-pane" data-tab="usage" hidden>${liveCard('usage')}</div>`
       + `<div class="sbt-pane" data-tab="journey" hidden>${onboardingCard()+linesCard(d.lines)+timelineCard(d.events)}</div>`
-      + `<div class="sbt-pane" data-tab="diag" hidden>${logsCard()+liveCard('diag')}</div>`;
-    wireTabs(box); wireTimeline(box); wireLines(box); wireLogs(box); wireLive(box); wireOnboarding(box);
+      + `<div class="sbt-pane" data-tab="diag" hidden>${logsCard()+liveCard('diag')}</div>`
+      + (hasFixed?`<div class="sbt-pane" data-tab="fixed" hidden>${fixedPane(curFixed)}</div>`:'');
+    wireTabs(box); wireTimeline(box); wireLines(box); wireLogs(box); wireLive(box); wireOnboarding(box); if(hasFixed) wireFixed(box);
+    if(!hasFixed&&curFixed){ const l=curFixed.link; const note=document.createElement("div"); note.className="rl"; note.style.cssText="font-size:11px;color:var(--muted);margin:6px 0 10px";
+      note.textContent="Fixed services: "+(curFixed.error?"lookup failed — "+curFixed.error:(l&&l.reason?"could not link through nexus — "+l.reason:(l?"none found for this customer (nexus checked "+(l.ids?l.ids.length:0)+" workflow(s))":"none found for this key")));
+      const head=box.querySelector(".sbt-head"); if(head) head.insertAdjacentElement("afterend",note); }
     const ub=$("#sbUnmask"); if(ub) ub.addEventListener("click",()=>{ unmasked=!unmasked; load(); });
   }
 
@@ -58,7 +71,8 @@
     {k:'journey',  ic:'🧭', name:'Journey & Orders'},
     {k:'diag',     ic:'🩺', name:'Logs & Diagnostics'}
   ];
-  let curTab='overview';
+  let curTab='overview', curFixed=null, hasFixed=false;
+  const tabsNow=()=>hasFixed?TABS.concat([{k:'fixed',ic:'🏠',name:'Fixed services'}]):TABS;
   function headCard(i){
     i=i||{};
     const unmaskBtn = canUnmask()? `<button class="pill" id="sbUnmask" style="border-left-color:var(--purple)">${unmasked?'Mask PII':'Unmask PII'}</button>` : '';
@@ -76,7 +90,7 @@
         ${unmaskBtn}
       </div>
       <div id="lvLineBar" class="sbt-linebar"></div>
-      <div class="sbt-tabs">${TABS.map(t=>`<button class="sbt-tab${t.k===curTab?' on':''}" data-sbt="${t.k}">${t.ic} ${esc(t.name)}${t.k==='journey'&&nJourney?` <span class="sbt-n">${nJourney}</span>`:''}</button>`).join('')}</div>
+      <div class="sbt-tabs">${tabsNow().map(t=>`<button class="sbt-tab${t.k===curTab?' on':''}" data-sbt="${t.k}">${t.ic} ${esc(t.name)}${t.k==='journey'&&nJourney?` <span class="sbt-n">${nJourney}</span>`:''}${t.k==='fixed'&&curFixed?` <span class="sbt-n">${curFixed.inventory_summary?curFixed.inventory_summary.active:(curFixed.services||[]).length}</span>`:''}</button>`).join('')}</div>
     </div>`;
   }
   function wireTabs(box){
@@ -86,7 +100,7 @@
       box.querySelectorAll('.sbt-pane').forEach(p=>{ p.hidden=(p.dataset.tab!==k); });
     };
     box.querySelectorAll('.sbt-tab').forEach(b=>b.addEventListener('click',()=>show(b.dataset.sbt)));
-    if(!TABS.some(t=>t.k===curTab)) curTab='overview';
+    if(!tabsNow().some(t=>t.k===curTab)) curTab='overview';
     show(curTab);
   }
 
@@ -860,7 +874,59 @@
   }
 
   // public entry (nav click, deep link, or "open profile" from Troubleshoot)
-  window.openSub360=function(key){ if(key){ curKey=String(key); unmasked=false; curTab='overview'; } shell(); };
+
+  /* ---- FIXED SIDE (Customer 360, 5 Sep 2026) — data from /api/fixed/customer ---- */
+  const fxOut={COMPLETED:"var(--green,#0e9f5a)",STALLED:"#d97706",CANCELLED:"#dc2626",EXPIRED:"#64748b",IN_PROGRESS:"#2563eb"};
+  const fts=v=>{ if(!v) return "—"; const d=new Date(v); if(isNaN(d)) return esc(v); return new Date(d.getTime()+3*3600e3).toISOString().replace("T"," ").slice(0,16); };
+  const ftbl=(head,rows,empty)=>`<table class="mono" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr>${head.map(h=>`<th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:700;font-size:10px;letter-spacing:.6px;border-bottom:1px solid var(--line)">${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td style="padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top">${c}</td>`).join("")}</tr>`).join("")||`<tr><td colspan="${head.length}" style="padding:10px;color:var(--muted)">${empty||"nothing"}</td></tr>`}</tbody></table>`;
+  function fixedHead(f){
+    const c=f.customer||{}; const unmaskBtn=canUnmask()?`<button class="pill" id="sbUnmask" style="border-left-color:var(--purple)">${unmasked?'Mask PII':'Unmask PII'}</button>`:'';
+    return `<div class="sbt-head"><div class="sbt-head-row"><div class="sbt-avatar">🏠</div><div class="sbt-who">
+        <div class="sbt-nums">Fixed customer · ${esc(c.cust_code||c.customer_id||curKey)}</div>
+        <div class="rl sbt-sub">${f.inventory_summary?`<b>${f.inventory_summary.active} active fixed service(s)</b> in BSS · `:""}${c.attempts||0} journey attempt(s) · ${c.orders||0} order(s)${(c.channels||[]).length?" · "+(c.channels||[]).map(esc).join(" / "):""}${c.first_seen?` · first seen ${fts(c.first_seen)} · last ${fts(c.last_seen)}`:""}
+          <span style="color:var(--muted)">· no mobile-side record for this key</span></div></div>${unmaskBtn}</div>
+      <div class="sbt-tabs"><button class="sbt-tab on" data-sbt="fixed">🏠 Fixed services</button></div></div>`;
+  }
+  function fixedPane(f){
+    const c=f.customer||{};
+    const svc=(f.services||[]).map(s=>[`<b>${esc(s.service_no||"(no service no yet)")}</b>${s.order_number?`<div class="rl" style="color:var(--muted);font-size:10px">order ${esc(s.order_number)}</div>`:""}`,
+      `${esc(s.label)}<div class="rl" style="color:var(--muted);font-size:10px">${esc(s.plan||"")}</div>`, esc(s.channel||""),
+      `<b style="color:${fxOut[s.outcome]||"inherit"}">${esc(s.outcome)}</b><div class="rl" style="color:var(--muted);font-size:10px">${esc(s.step_reached||"")}</div>`,
+      `${esc(s.odb||"—")}`, esc(s.region||"—"), s.dealer?`${esc(s.dealer)}<div class="rl" style="color:var(--muted);font-size:10px">${esc(s.staff||"")}</div>`:(s.referral_code?`QR ${esc(s.referral_code)}`:"—"), fts(s.started_at), s.completed_at?fts(s.completed_at):"—"]);
+    const att=(f.attempts||[]).map(a=>[`<a href="#" class="sb-fxtrace" data-id="${esc(a.id)}" style="color:var(--green,#0e9f5a)">${fts(a.started_at)}</a>`, esc((window.FIXED_WF&&window.FIXED_WF[a.workflow])||a.workflow), esc(a.channel),
+      `<b style="color:${fxOut[a.outcome]||"inherit"}">${esc(a.outcome)}</b>`, esc(a.step_reached||"—"), a.last_error_category?`<span class="pill" style="font-size:10px">${esc(a.last_error_category)}</span>`:"", esc(a.order_number||"—"), esc(a.service_no||"—"), esc(a.nafath_outcome||"—"), a.duration_s?Math.round(a.duration_s/60)+"m":"—"]);
+    const errs=(f.errors||[]).map(e=>[fts(e.occurred_at),`<span class="pill" style="font-size:10px">${esc(e.category)}</span>`,esc(e.code||""),esc(e.message||"").slice(0,160),esc(e.step||""),e.resolved?"✓":"<span style='color:#dc2626'>open</span>"]);
+    const pay=f.payments||{}; const payRows=(pay.rows||[]).map(p=>[fts(p.created_at),`<b style="color:${/PAID|CAPTURED/.test(p.status)?"var(--green,#0e9f5a)":"#dc2626"}">${esc(p.status)}</b>`,(p.amount_sar||0).toFixed(2)+" SAR",esc(p.method||p.source||""),esc(p.ftth_number||p.customer_id||""),esc(p.order_number||p.reference_id||"—"),esc(p.transaction_id||""),esc(p.bank_message||"").slice(0,80)]);
+    const links=f.links||{}; const ms=(links.msisdn_full||[]);
+    const xlink=ms.length?`<div style="margin-top:8px;font-size:12px">5G number(s) on this customer: ${ms.map(m=>`<button class="pill sb-xmob" data-m="${esc(m)}" style="font-size:11px;border-left-color:#2563eb">${esc(m)} → look up mobile side</button>`).join(" ")}</div>`
+      :((links.msisdn||[]).length?`<div class="rl" style="margin-top:8px;font-size:11px;color:var(--muted)">5G number(s): ${links.msisdn.map(esc).join(", ")} — unmask to cross-search the mobile side</div>`:"");
+    // INVENTORY — what the customer HAS in the fixed BSS (ZSmart), live or as last recorded by the app's own journeys
+    const inv=f.inventory||{}; const invSt={active:"var(--green,#0e9f5a)",suspended:"#d97706",frozen:"#d97706",terminated:"#dc2626",deactivated:"#dc2626"};
+    const invRows=(inv.subscriptions||[]).map(x=>[`<b>${esc(x.account||"—")}</b><div class="rl" style="color:var(--muted);font-size:10px">acct ${esc(x.acct_nbr||"—")}</div>`,
+      `${esc(x.plan||x.offer||"—")}<div class="rl" style="color:var(--muted);font-size:10px">${esc(x.offer&&x.plan?x.offer:"")}${x.plan_id?" · plan "+esc(String(x.plan_id)):""}</div>`,
+      x.speed_mbps?x.speed_mbps+" Mbps":"—", `<b style="color:${invSt[x.state_label]||"inherit"}">${esc(x.state_label||x.state||"—")}</b>${x.suspension_reason?`<div class="rl" style="font-size:10px;color:#d97706">${esc(x.suspension_reason)}</div>`:""}`,
+      esc(x.provider||"—"), x.eff_date?esc(x.eff_date):"—", x.exp_date?esc(x.exp_date):"—", x.paid?"✓ paid":"unpaid",
+      inv.owed&&inv.owed[x.account]?`<b style="color:${inv.owed[x.account].amount_sar>0?"#dc2626":"inherit"}">${inv.owed[x.account].amount_sar.toFixed(2)} SAR</b>`:"—"]);
+    const invOrders=(inv.open_orders||[]).map(o=>[esc(o.created||""),esc(o.event||""),`<b>${esc(o.state_label||o.state||"")}</b>`,esc(o.channel||""),esc(o.payment||""),o.amount_sar!=null?o.amount_sar.toFixed(2)+" SAR":"—",esc(o.service||""),esc(o.order||"")]);
+    const invNote=inv.available?`· <b>${inv.tier==="live"?"live BSS":"recorded"}</b>${inv.as_of?" · as of "+fts(inv.as_of):""}${inv.cached?" · cached":""}${inv.customer?` · BSS customer ${esc(inv.customer.cust_code||"—")} (${esc(inv.customer.state==="A"?"active":inv.customer.state||"—")}${inv.customer.since?", since "+esc(inv.customer.since):""})`:""}${inv.accounts&&inv.accounts.length?` · ${inv.accounts.length} billing account(s)`:""}${inv.live_reason?` · live unavailable: ${esc(inv.live_reason)}`:""}`
+      :`· <span style="color:#d97706">BSS inventory unavailable${inv.reason?" — "+esc(inv.reason):""}</span>`;
+    const invCard=`<div class="card" style="padding:14px 16px;margin-bottom:12px;border-left:3px solid var(--green,#0e9f5a)"><h3 style="margin:0 0 8px;font-size:13.5px">🏠 Fixed services — what the customer has <span class="rl" style="font-weight:400;color:var(--muted);font-size:11px">${invNote}</span></h3>
+        ${ftbl(["ACCOUNT","PLAN · OFFER","SPEED","STATE","PROVIDER","SINCE","UNTIL","BILLING","OWED"],invRows,inv.available?"the fixed BSS lists no subscription for this customer":"connect FIXED_BSS_BASE (live) or NEXUS (recorded) to see the subscription inventory")}
+        ${invOrders.length?`<div style="margin-top:10px;font-size:12px;font-weight:600">Open BSS orders (${invOrders.length})</div>${ftbl(["CREATED","EVENT","STATE","CHANNEL","PAYMENT","AMOUNT","SERVICE","ORDER"],invOrders,"")}`:""}</div>`;
+    return invCard+`<div class="card" style="padding:14px 16px;margin-bottom:12px"><h3 style="margin:0 0 8px;font-size:13.5px">Fixed journeys <span class="rl" style="font-weight:400;color:var(--muted);font-size:11px">· orders attempted through the app / dealers · customer code ${esc(c.cust_code||"—")} · customer id ${esc(c.customer_id||"—")} · sources ${(f.sources||[]).join("+")}</span></h3>
+        ${ftbl(["SERVICE / ACCOUNT","JOURNEY · PLAN","CHANNEL","STATUS","ODB","REGION","DEALER / QR","STARTED","COMPLETED"],svc,"no journeys — the customer never ordered through the app / dealers (inventory above is the authority)")}${xlink}</div>
+      <div class="card" style="padding:14px 16px;margin-bottom:12px"><h3 style="margin:0 0 8px;font-size:13.5px">Payments <span class="rl" style="font-weight:400;color:var(--muted);font-size:11px">· payments_v2 ${pay.configured?(pay.error?"— "+esc(pay.error):"· live"):"— not configured"}</span></h3>
+        ${ftbl(["WHEN","STATUS","AMOUNT","METHOD","SERVICE / CUST","ORDER / REF","TXN","BANK MESSAGE"],payRows,pay.configured?"no payments for this customer's keys":"payments_v2 grant pending")}</div>
+      <div class="card" style="padding:14px 16px;margin-bottom:12px"><h3 style="margin:0 0 8px;font-size:13.5px">Errors <span class="rl" style="font-weight:400;color:var(--muted);font-size:11px">· error control board events for this customer's attempts / orders</span></h3>
+        ${ftbl(["WHEN","CATEGORY","CODE","MESSAGE","STEP","STATE"],errs,"no error events")}</div>
+      <div class="card" style="padding:14px 16px"><h3 style="margin:0 0 8px;font-size:13.5px">Attempts <span class="rl" style="font-weight:400;color:var(--muted);font-size:11px">· newest 60 · click a time for the API trace</span></h3>
+        ${ftbl(["STARTED (KSA)","JOURNEY","CHANNEL","OUTCOME","STEP","LAST ERROR","ORDER","SERVICE","NAFATH","⏱"],att,"no attempts")}</div>`;
+  }
+  function wireFixed(box){
+    box.querySelectorAll(".sb-fxtrace").forEach(a=>a.addEventListener("click",e=>{ e.preventDefault(); if(window.fixedMapOpenTrace) window.fixedMapOpenTrace(a.dataset.id); else location.hash="fixed?tab=map"; }));
+    box.querySelectorAll(".sb-xmob").forEach(b=>b.addEventListener("click",()=>{ curKey=b.dataset.m; unmasked=false; curTab='overview'; $("#sbKey").value=curKey; load(); }));
+  }
+  window.openSub360=function(key,tab){ if(key){ curKey=String(key); unmasked=false; curTab=tab||'overview'; } shell(); };
   document.querySelectorAll('.navtab[data-view="sub360"]').forEach(b=>b.addEventListener("click",()=>shell()));
   document.addEventListener("themechange",()=>{ if($("#view-sub360")&&$("#view-sub360").classList.contains("active")) shell(); });
   // ⇄ UPG buttons inside event drawers (delegated: works for main + nested per-line timelines)

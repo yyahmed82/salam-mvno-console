@@ -8,13 +8,21 @@
  * (dealers + QR maps), b2c (Salam Home app journeys). Off → the views do not exist anywhere in the
  * console (nav, matrix, router), so /digital-console keeps its exact pre-unified shape. */
 const FIXED_ENABLED = /^(1|true|yes)$/i.test(String(process.env.FIXED_ENABLED || ''));
-const FIXED_VIEWS = FIXED_ENABLED ? ['fixed','maps','b2c'] : [];
+/* Fixed pages are gated one by one (5 Sep 2026): the matrix shows every Fixed page like the Mobile ones.
+ * 'fixed' = the hub itself + Overview; the rest map 1:1 to the Fixed ▾ menu. Old overrides saved with
+ * 'maps' / 'b2c' are translated (FIXED_LEGACY). */
+const FIXED_VIEWS = FIXED_ENABLED ? ['fixed','fixed_epurchase','fixed_salamhome','fixed_maps','fixed_reports','fixed_errors','fixed_alerts','fixed_explore'] : [];
+const FIXED_LEGACY = { maps: 'fixed_maps', b2c: 'fixed_salamhome' };
+// which view each Fixed hub tab needs (shared with the frontend via /api/me → fixedTabViews)
+const FIXED_TAB_VIEW = { overview:'fixed', epurchase:'fixed_epurchase', salamhome:'fixed_salamhome', map:'fixed_maps', qr:'fixed_maps',
+  dash:'fixed_reports', report:'fixed_reports', errors:'fixed_errors', alerts:'fixed_alerts', playbook:'fixed_explore', diagrams:'fixed_explore' };
 const ALL_VIEWS = ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','explore','settings','users'];
 const CAPS = ['editRules','manageSync','manageUsers','unmaskPII','export','ackErrors','useYusr','customizeDashboard'];
 // human labels for the permissions matrix UI
 const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS', workbench:'L2 Workbench', alerts:'Alerts',
   errors:'Troubleshoot', analytics:'Analytics / SLA', explore:'Explore links', settings:'Settings', users:'User management',
-  fixed:'Fixed / Salam Home', maps:'Dealers & QR maps', b2c:'B2C (Salam Home app)' };
+  fixed:'Fixed · Overview', fixed_epurchase:'Fixed · E-purchase', fixed_salamhome:'Fixed · Salam Home app', fixed_maps:'Fixed · SDA map & QR codes',
+  fixed_reports:'Fixed · Reports & KPI digest', fixed_errors:'Fixed · Errors', fixed_alerts:'Fixed · Alerts', fixed_explore:'Fixed · Playbook & Diagrams' };
 const CAP_LABELS = { editRules:'Edit rules', manageSync:'Manage sync', manageUsers:'Manage users',
   unmaskPII:'Unmask PII', export:'Export data', ackErrors:'Ack incidents',
   useYusr:'Use Yusr AI', customizeDashboard:'Customize dashboards' };
@@ -41,10 +49,23 @@ const ROLES = {
   },
   report_manager: {
     label: 'Sales Ops', team: 'Sales Ops', rank: 3,
-    views: ['dashboard','monitoring','dms','explore'],
+    views: ['dashboard','monitoring','dms','explore', ...(FIXED_ENABLED ? ['fixed','fixed_maps','fixed_reports'] : [])],
     caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false },
-    note: 'Sales Operations — Dashboard, Monitoring, DMS (dealers) and the Explore pages, with export. PII masked.'
+    note: 'Sales Operations — Dashboard, Monitoring, DMS (dealers), Fixed dealer maps & reports and the Explore pages, with export. PII masked.'
   },
+  ...(FIXED_ENABLED ? {
+  fixed_ops: {
+    label: 'Fixed Ops', team: 'Fixed Ops', rank: 3,
+    views: ['dashboard', ...FIXED_VIEWS, 'explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    note: 'Owns the Fixed side (FTTH · FTTB · 5G home): every Fixed page, Fixed alert rules, Customer 360. No Mobile operate pages. PII masked.'
+  },
+  b2c_admin: {
+    label: 'Salam Home (B2C)', team: 'Fixed Ops', rank: 3,
+    views: ['dashboard','fixed','fixed_epurchase','fixed_salamhome','fixed_reports','fixed_errors','explore'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:true },
+    note: 'Salam Home app & e-purchase owners — the two channel dashboards, Reports, Errors and Customer 360. PII masked.'
+  } } : {}),
   errors_manager: {
     label: 'Errors Manager', team: 'OSS Ops', rank: 3,
     views: ['dashboard','monitoring','errors','alerts','explore'],
@@ -124,7 +145,7 @@ function mergeOverrides(overrides, custom) {
   // translate a saved views array that may predate the 2 Sep 2026 view split
   const xlate = (vs) => {
     const set = new Set();
-    for (const v of vs) { if (ALL_VIEWS.includes(v)) set.add(v); else if (LEGACY_VIEW[v]) set.add(LEGACY_VIEW[v]); }
+    for (const v of vs) { if (ALL_VIEWS.includes(v)) set.add(v); else if (LEGACY_VIEW[v]) set.add(LEGACY_VIEW[v]); else if (FIXED_LEGACY[v] && ALL_VIEWS.includes(FIXED_LEGACY[v])) set.add(FIXED_LEGACY[v]); }
     // legacy overrides (any old key present) predate dashboard/dms/explore as gates:
     // dashboard was visible to everyone, dms rode on monitoring — preserve that behavior
     if (vs.some(v => LEGACY_VIEW[v] !== undefined)) {
@@ -202,4 +223,4 @@ function maskDeep(obj, allowUnmask) {
   return walk(obj);
 }
 
-module.exports = { ROLES, LEGACY_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS, FIXED_ENABLED, FIXED_VIEWS };
+module.exports = { ROLES, LEGACY_VIEW, FIXED_LEGACY, FIXED_TAB_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS, FIXED_ENABLED, FIXED_VIEWS };

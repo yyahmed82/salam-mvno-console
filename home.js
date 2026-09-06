@@ -26,9 +26,11 @@
     "Business":    [FLOW_KEY,"growth_resellers","growth_campaigns","mnp_donors","overview","funnel_newsim","funnel_mnp","plan_change","channels"]
   };
   // dashboards available on the home page = the analytics boards + the order-flow pseudo-section
+  const hasFixedView=()=>{ try{ const m=window.opsSession&&window.opsSession().me; return !!(m&&Array.isArray(m.views)&&m.views.includes('fixed')); }catch(e){ return false; } };
   function homeDashList(){ const a=window.anaDashboards?window.anaDashboards():[]; return [
     {key:FLOW_KEY,name:'Order status flow',builtin:true,_flow:true},
     {key:SCREENS_KEY,name:'App screens flow',builtin:true,_screens:true},
+    ...(hasFixedView()?[{key:'fixed_today',name:'Home · Fixed (FTTH · 5G · dealers)',builtin:true,_fixed:true}]:[]),
     {key:'growth_resellers',name:'Resellers',builtin:true,_growth:'resellers'},
     {key:'growth_campaigns',name:'Campaigns',builtin:true,_growth:'campaigns'},
     {key:'mnp_donors',name:'Port-ins by donor operator',builtin:true,_mnp:true},
@@ -227,7 +229,7 @@
     let all=[]; try{ all=await window.anaEnsureLoaded(); }catch(e){}
     all=homeDashList();
     let sections=savedSections().filter(k=>all.find(d=>d.key===k));
-    if(!sections.length){ sections=[FLOW_KEY,SCREENS_KEY,"servicing"]; if(all.find(d=>d.key==="overview")) sections.push("overview"); }   // default view
+    if(!sections.length){ sections=[FLOW_KEY,"fixed_today",SCREENS_KEY,"servicing"]; if(all.find(d=>d.key==="overview")) sections.push("overview"); }   // default view (both businesses)
     if(!sections.length){ grid.style.opacity=""; grid.innerHTML=`<div class="home-empty">No dashboards available yet.</div>`; return; }
     // "Today" → intra-day same-day window (clamped at 00:00 KSA); 7d/30d → plain hours window.
     const R=currentRange();
@@ -244,6 +246,7 @@
         if(d._flow){ holder.style.cssText="grid-column:span 12"; await renderFlow(holder); }
         else if(d._screens){ holder.style.cssText="grid-column:span 12"; await window.screensFlowRender(holder, R); }
         else if(d._growth){ holder.style.cssText="grid-column:span 12"; await renderGrowthSection(holder, d._growth, R); }
+        else if(d._fixed){ holder.style.cssText="grid-column:span 12"; await renderFixedSection(holder, R); }
         else if(d._mnp){ holder.style.cssText="grid-column:span 12"; await renderMnpSection(holder, R); }
         else if(d._servicing){ holder.style.cssText="grid-column:span 12"; await renderServicing(holder, R); }
         else if(d._oracle){ holder.style.cssText="grid-column:span 12"; await renderOracleStack(holder, R); }
@@ -750,6 +753,27 @@
   }
 
   // ---- Growth summary cards (resellers + campaigns) linking into the Growth dashboard ----
+
+  /* ---- Home · Fixed strip (5 Sep 2026): the shared Dashboard shows BOTH businesses. Same numbers as Home › Overview. ---- */
+  async function renderFixedSection(holder, R){
+    const q=R&&R.from?`from=${encodeURIComponent(R.from)}&to=${encodeURIComponent(R.to)}`:`range=${(R&&R.hours)>=720?"30d":(R&&R.hours)>=168?"7d":"24h"}`;
+    holder.innerHTML=`<div class="rl" style="padding:8px 2px;color:var(--muted)">Loading Fixed…</div>`;
+    let d; try{ d=await fetch(`${window.API_BASE||""}/api/fixed/summary?${q}`).then(r=>r.ok?r.json():r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));})); }
+    catch(e){ holder.innerHTML=`<div class="rl" style="color:#d97706;padding:8px 2px">Fixed data unavailable — ${esc(e.message)}</div>`; return; }
+    const k=d.kpis||{}, naf=(d.integrations||{}).nafath||{}, man=(d.integrations||{}).manafith||{}, f=d.freshness||{};
+    const stale=f.stale; const tile=(l,v,c,sub,href)=>`<a href="${href}" class="stat" style="min-width:140px;text-decoration:none;color:inherit;display:block"><b style="${c?`color:${c}`:""}">${v}</b><span>${esc(l)}</span>${sub?`<div class="rl" style="font-size:10.5px;color:var(--muted);margin-top:3px">${sub}</div>`:""}</a>`;
+    const topErr=(d.errors||[]).slice(0,3).map(e=>`<span class="pill" style="font-size:10.5px">${esc(e.category)} <b style="color:#dc2626">${e.open}</b></span>`).join(" ");
+    holder.innerHTML=`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch">
+      ${tile("ATTEMPTS",Number(k.attempts||0).toLocaleString(),null,`FTTH · 5G · e-purchase / QR`,"#fixed")}
+      ${tile("COMPLETED",Number(k.completed||0).toLocaleString(),"var(--green,#0e9f5a)",`${k.conversion||0}% conversion`,"#fixed?tab=dash")}
+      ${tile("BSS ORDERS",Number(k.withOrder||0).toLocaleString(),null,`${k.attempts?Math.round(100*k.withOrder/k.attempts):0}% of attempts`,"#fixed?tab=dash")}
+      ${tile("ACTIVE DEALERS",Number(k.activeDealers||0).toLocaleString(),null,"SDA staff · map",'#fixed?tab=map')}
+      ${tile("NAFATH FAIL",naf.total?naf.failRate+"%":"—",naf.failRate>25?"#dc2626":null,`${Number(naf.total||0).toLocaleString()} 5G checks`,"#fixed?tab=dash")}
+      ${tile("MANAFITH DENIED",man.total?man.deniedRate+"%":"—",man.deniedRate>10?"#d97706":null,`${man.denied||0} of ${man.total||0}`,"#fixed?tab=dash")}
+      ${tile("OPEN ERRORS",Number((d.errors||[]).reduce((a,e)=>a+Number(e.open||0),0)).toLocaleString(),(d.errors||[]).some(e=>e.open>0)?"#dc2626":null,topErr||"error control board","#fixed?tab=errors")}
+      <div class="stat" style="min-width:200px;border-left:4px solid ${stale?"#d97706":"var(--green,#0e9f5a)"}"><b style="font-size:13px">${stale?"⚠ data may be stale":"● live"}</b><span>OPS DATA · ${esc(String(d.source||""))}</span><div class="rl" style="font-size:10.5px;color:var(--muted);margin-top:3px">watcher ${f.lag_min==null?"—":f.lag_min+" min ago"} · <a href="#fixed" style="color:var(--green,#0e9f5a)">open Home ›</a></div></div>
+    </div>`;
+  }
   async function renderGrowthCards(){
     const anchor=$("#nocAnoms"); if(!anchor||!anchor.parentNode) return;   // right after the P1/P2 anomaly notifs, before the range picker
     let box=document.getElementById("homeGrowth");

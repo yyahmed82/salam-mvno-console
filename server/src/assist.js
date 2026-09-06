@@ -37,7 +37,12 @@ const DEFAULTS = {
 
 async function getConfig() {
   const c = (await settings.getSetting('assist')) || {};
-  return { ...DEFAULTS, ...c };
+  const cfg = { ...DEFAULTS, ...c };
+  // local kit: the console DB is a clone of prod, whose setting points at host.docker.internal —
+  // OLLAMA_URL_OVERRIDE (set by tools/local/env-from-152.sh) redirects to the SSH tunnel instead
+  if (process.env.OLLAMA_URL_OVERRIDE) cfg.ollamaUrl = process.env.OLLAMA_URL_OVERRIDE;
+  if (process.env.OLLAMA_MODEL_OVERRIDE) cfg.model = process.env.OLLAMA_MODEL_OVERRIDE;
+  return cfg;
 }
 async function setConfig(patch) {
   const cur = await getConfig();
@@ -223,8 +228,43 @@ function extractPaymentKey(q) {
 const SMS_WORDS = /\b(sms|otp|message|messages|text|code|رسالة|رسائل|كود)\b/i;
 function isSmsAsk(q) { return SMS_WORDS.test(String(q || '')) && !!extractIdentifier(q); }
 
+/* FIXED (FTTH / 5G home / SDA dealers / Salam Home app) — 5 Sep 2026. Keys the agent pastes: an FTTH account
+ * (FTTH123456), a BSS order number, a customer code / id, an ODB plate, an ICCID; or a question about fixed issues. */
+const FIXED_WORDS = /\b(fixed|ftth|fttb|fiber|fibre|5g\s*(home|fwa|wl|white)?|home\s*internet|salam\s*home|relocation|relocat|freeze|unfreeze|odb|feasibility|appointment|installation|cpe|ont|dealer|sda|promoter|manafith|e-?purchase|qr)\b/i
+  , FIXED_WORDS_AR = /(ثابت|فايبر|ألياف|الياف|إنترنت منزلي|انترنت منزلي|سلام هوم|نقل الخدمة|تجميد|موزع|وكيل)/;
+const FIXED_KEY = /\b(FTTH\w*\d{4,}|FTTB\w*\d{4,})\b/i;
+const FIXED_ISSUE_WORDS = /\b(issue|issues|problem|problems|error|errors|fail|failing|failed|stuck|status|health|how (is|are)|what'?s (wrong|happening)|open|today|now)\b|(مشكلة|مشاكل|خطأ|أخطاء|فشل|وضع|حالة)/i;
+function extractFixedKey(q) {
+  const s = String(q || '');
+  const m = s.match(FIXED_KEY); if (m) return { key: m[1], kind: 'service' };
+  const o = s.match(/\b(ODB[-_ ]?[A-Z0-9-]{3,})\b/i); if (o) return { key: o[1], kind: 'odb' };
+  if (!FIXED_WORDS.test(s) && !FIXED_WORDS_AR.test(s)) return null;
+  const ic = s.match(/\b(\d{18,22})\b/); if (ic) return { key: ic[1], kind: 'iccid' };
+  // a 5–12 digit number that is NOT a msisdn / national id → order number or customer code/id
+  const n = s.replace(/(?:\+?966|0)?5\d{8}/g, ' ').match(/(?<![0-9])(?![12]\d{9}(?![0-9]))\d{5,12}(?![0-9])/);
+  if (n) return { key: n[0], kind: 'code' };
+  return null;
+}
+function isFixedAsk(q) { return FIXED_WORDS.test(String(q || '')) || FIXED_WORDS_AR.test(String(q || '')); }
+/* Follow-ups ("where is the ftth service for THIS customer?", "why did the last step fail?") carry
+ * no key — recover the last one the agent typed from the short history the widget sends. */
+const FOLLOWUP_REF = /\b(this|that|the same|his|her|their)\s+(customer|subscriber|user|number|account|service|line|id)\b|\b(for|of)\s+(him|her|them)\b/i;
+function lastKeyFromHistory(history) {
+  const turns = (history || []).filter(h => h && h.role === 'user').reverse();
+  for (const h of turns) {
+    const t = String(h.content || '');
+    const id = extractIdentifier(t); if (id) return { key: id, kind: 'identifier' };
+    const fk = extractFixedKey(t); if (fk) return { key: fk.key, kind: fk.kind };
+    if (/^\s*\d{5,12}\s*$/.test(t)) return { key: t.trim(), kind: 'code' };
+  }
+  return null;
+}
+
 function detectIntent(q) {
   if (SMALL_TALK.test(q)) return 'smalltalk';
+  // a fixed service / order key → the Fixed customer view (FTTH…, ODB…, or a code in a fixed sentence)
+  if (extractFixedKey(q) && !extractIdentifier(q)) return 'fixed_customer';
+  if (isFixedAsk(q) && !extractIdentifier(q) && FIXED_ISSUE_WORDS.test(q)) return 'fixed_issues';
   // a payment identifier beats a subscriber lookup: the agent asked about THAT payment
   if (extractPaymentKey(q) && !extractIdentifier(q)) return 'payment';
   if (isSmsAsk(q)) return 'sms';
@@ -232,6 +272,41 @@ function detectIntent(q) {
   if (ALERT_WORDS.test(q)) return 'alerts';
   if (CUSTOMER_TOPICS.test(q) || CUSTOMER_TOPICS_AR.test(q)) return 'knowledge';
   return 'out_of_scope';
+}
+
+/* FIXED contexts — read the Operations Console read model through fixedCustomer / fixed360 (masked). */
+async function fixedCustomerContext(key, allowUnmask) {
+  try {
+    const fc = require('./fixedCustomer');
+    const r = await fc.lookup({ key, unmask: allowUnmask ? '1' : '0' }, { caps: { unmaskPII: !!allowUnmask } });
+    if (!r.found) return { found: false, key, hint: r.link && r.link.reason ? 'nexus link: ' + r.link.reason : (r.inventory && r.inventory.reason) || undefined,
+      inventory: r.inventory && r.inventory.available === false ? { available: false, reason: r.inventory.reason } : undefined };
+    return { found: true, key, customer: r.customer,
+      /* what the customer HAS (fixed BSS) — authoritative for "does he have FTTH / is it active / what plan" */
+      inventory: r.inventory && r.inventory.available ? { tier: r.inventory.tier, as_of: r.inventory.as_of, customer_state: r.inventory.customer && r.inventory.customer.state,
+        accounts: (r.inventory.accounts || []).length,
+        services: (r.inventory.subscriptions || []).map(x => ({ account: x.account, plan: x.plan, offer: x.offer, speed_mbps: x.speed_mbps, state: x.state_label, since: x.eff_date, until: x.exp_date, provider: x.provider, paid: x.paid, owed_sar: r.inventory.owed && r.inventory.owed[x.account] ? r.inventory.owed[x.account].amount_sar : undefined })),
+        open_bss_orders: (r.inventory.open_orders || []).slice(0, 5) } : { available: false, reason: (r.inventory && r.inventory.reason) || 'no inventory source' },
+      services: (r.services || []).slice(0, 8).map(x => ({ service: x.service_no, order: x.order_number, journey: x.label, plan: x.plan, channel: x.channel,
+        status: x.outcome, step: x.step_reached, odb: x.odb, region: x.region, dealer: x.dealer, started: x.started_at, completed: x.completed_at })),
+      recent_attempts: (r.attempts || []).slice(0, 6).map(a => ({ when: a.started_at, journey: a.workflow, status: a.outcome, step: a.step_reached, last_error: a.last_error_category, order: a.order_number, nafath: a.nafath_outcome })),
+      errors: (r.errors || []).slice(0, 8).map(e => ({ when: e.occurred_at, category: e.category, code: e.code, message: String(e.message || '').slice(0, 160), step: e.step, resolved: e.resolved })),
+      payments: r.payments && r.payments.configured ? (r.payments.rows || []).slice(0, 5).map(p => ({ when: p.created_at, status: p.status, amount_sar: p.amount_sar, method: p.method, order: p.order_number })) : 'payments_v2 not available',
+      links: r.links };
+  } catch (e) { return { found: false, key, error: e.message }; }
+}
+async function fixedIssuesContext(q) {
+  try {
+    const f360 = require('./fixed360');
+    const range = /\b(week|7d|7 days)\b/i.test(q) ? '7d' : /\b(month|30d)\b/i.test(q) ? '30d' : '24h';
+    const d = await f360.summary({ range });
+    const feed = await f360.errorFeed({ range, limit: 12 }).catch(() => ({ rows: [] }));
+    return { window: range, source: d.source, freshness: { stale: d.freshness && d.freshness.stale, watcher_lag_min: d.freshness && d.freshness.lag_min, newest_attempt: d.freshness && d.freshness.newest_attempt },
+      kpis: d.kpis, by_journey: (d.byWorkflow || []).slice(0, 8).map(w => ({ journey: w.label, attempts: w.n, completed: w.completed, conversion_pct: w.conversion })),
+      by_channel: d.byChannel, nafath: d.integrations && d.integrations.nafath, manafith: d.integrations && d.integrations.manafith,
+      error_categories: (d.errors || []).slice(0, 8), top_dealers: (d.topDealers || []).slice(0, 5).map(t => ({ dealer: t.dealer_name || t.dealer_code, staff: t.staff_name, attempts: t.n, conversion_pct: t.conversion })),
+      recent_errors: (feed.rows || []).slice(0, 8).map(e => ({ when: e.occurred_at, category: e.category, code: e.code, message: String(e.message || '').slice(0, 140), dealer: e.dealer_code, region: e.region })) };
+  } catch (e) { return { error: e.message }; }
 }
 
 /* Everything the console's payment drill knows, assembled for the model: our record, every
@@ -301,6 +376,31 @@ async function paymentContext(q, allowUnmask) {
 }
 
 /* ------------------------------ context gathering ------------------------------ */
+async function serviceLines(key, allowUnmask) {
+  try {
+    const live = require('./liveBss');
+    const lf = await live.linesFor(key);
+    const lines = (lf.lines || []).slice(0, 6).map(l => ({ msisdn: allowUnmask ? l.msisdn : String(l.msisdn).replace(/^(\d{4})\d+(\d{3})$/, '$1*****$2'),
+      source: l.source, since: l.at ? String(l.at).slice(0, 10) : null, plan_id: l.plan_id || null }));
+    const out = { count: lines.length, lines, live_bss: live.configured() ? 'available' : 'not configured (replica sources only)' };
+    if (lf.note) out.note = lf.note; if (lf.error) out.error = lf.error;
+    // current plan / status of the primary line from BSS, when the gateway is reachable (10-min snapshot cache)
+    if (live.configured() && lines.length) {
+      try {
+        const prof = await live.panel(key, 'profile', {});
+        const env = (prof && prof.response) || {};
+        const d = env.data && typeof env.data === 'object' ? env.data : env;
+        const pr = d && (d.profile || d);
+        if (prof && prof.ok && pr && typeof pr === 'object')
+          out.primary_line_bss = { status: pr.status || pr.subscriptionStatus || pr.state || null, plan: pr.pricePlan || pr.pricePlanName || pr.planName || pr.plan || null,
+            type: pr.subscriptionType || pr.paymentType || null, taken_at: prof.taken_at || null, cached: !!prof.cached };
+        else if (prof && prof.ok === false) out.primary_line_bss = { error: 'BSS profile call failed (HTTP ' + (prof.http || '—') + ')' };
+      } catch (e) { out.primary_line_bss = { error: e.message }; }
+    }
+    return out;
+  } catch (e) { return { count: 0, lines: [], error: e.message }; }
+}
+
 async function customerContext(q, allowUnmask) {
   const key = extractIdentifier(q);
   if (!key) return null;
@@ -353,6 +453,12 @@ async function customerContext(q, allowUnmask) {
   const pack = {
     key, found: true,
     identity: p.identity,
+    /* ACTIVE SERVICE LINES — the authoritative answer to "what does this customer HAVE". Resolved by
+     * the same chain Customer 360 uses (app account → activation → MNP → partner DMS → live BSS).
+     * Yusr used to see only onboarding attempts and concluded "none activated" for customers whose
+     * line predates the ledger or came via another channel (Yosri's own line, 5 Sep). */
+    service_lines: await serviceLines(key, allowUnmask),
+    onboarding_attempts_note: 'lines below are onboarding JOURNEY ATTEMPTS (one row per order, incl. abandoned checkouts) — NOT the subscription inventory; activation state comes from service_lines',
     lines: (p.lines || []).slice(0, 6).map(l => ({
       mobile: l.mobile_number, plan: l.plan, state: l.aasm_state, status: l.status,
       sim: l.sim, line_type: l.line_type, flow: l.flow, completed: l.completed,
@@ -479,6 +585,7 @@ SCOPE — you ONLY handle:
 IF case_analysis IS PRESENT IN CONTEXT, NEVER refuse — this is always in scope. Answer with: what happened (known_case.title + explanation if present, else the exception/message), how many occurrences and when (first/last), the failing endpoint and code frame, and the recommended action (known_case.action). If case_analysis.found is false, say no stored events matched and suggest checking the id or the api hosts' logs.
 6. Partner and platform API DOCUMENTATION that has been imported into the knowledge base: Tap / UPG (the payment gateway — charges, refunds, tokens, webhooks, response codes, STC Pay / Apple Pay / mada / KNET rails), OTO and the other couriers, and the Salam selfcare API. Answering "what does this gateway code mean", "how does this endpoint work", "what does the webhook send" IS in scope.
 7. A SPECIFIC PAYMENT: the agent pastes a payment reference (e.g. umoxmoh2zt4l), a gateway id (pay_… / chg_…) or a payment uuid. CONTEXT.payment then holds our record, every gateway attempt on that reference, the raw charge object and the official Tap code. NEVER ask the agent to supply data — it is already there. Answer with: what the customer tried (amount, rail, app), what the gateway answered (official code + message), whether MONEY WAS TAKEN (money_taken), how many attempts, and the next action. If payment.found is false, say the reference is not in our data and suggest checking it or searching Subscriber 360.
+9. FIXED (FTTH / 5G home / SDA dealers / Salam Home app): CONTEXT.fixed_customer holds a Fixed customer's services, orders, recent attempts, error events and payments (read from the Operations Console data; identifiers masked); CONTEXT.fixed_issues holds the Fixed-side status for a window (KPIs, per-journey conversion, Nafath/Manafith, error categories, recent errors, data freshness). Answer Fixed questions from these only; if a Mobile customer also has fixed_customer, mention both businesses.
 8. SMS / OTP HISTORY for one customer: the agent asks "SMS details 9665…", "did he receive the OTP", "رسائل". CONTEXT.sms then holds every OTP message the platform recorded for that number — when it was sent, the message type, the template text, whether the customer entered the code and how long it took. Answer from it directly. Three things must be stated correctly and never blurred:
   · ONLY OTP messages exist as records. Order, delivery and campaign SMS are sent fire-and-forget with no row written — if asked about those, say the platform keeps no record rather than implying none were sent.
   · A message type shown as "not recorded" is NOT a fault: the type lives in the app cache for 10 minutes only, so anything older simply cannot be identified. Where type_source is "inferred", say it was deduced from surrounding activity, not recorded.
@@ -492,6 +599,7 @@ Rules:
 - Each incident carries trigger_codes (which error codes/conditions define that alert) and alert_class (business = the API answered "no" · technical = the platform failed to answer). When asked why an alert fired or what it means, QUOTE the trigger_codes verbatim and state the class. If trigger_codes is empty, say it is not documented yet rather than guessing codes.
 - Masked values like 05*****290 are intentional PII masking — never try to guess them.
 - When a subscriber has failed steps, explain the most likely cause in plain words, quote the relevant response/error from the trace, and give the next troubleshooting step.
+- ACTIVE vs ATTEMPTED: customer.service_lines lists the lines the customer actually HOLDS (app account / activation / MNP / BSS). customer.lines are onboarding ATTEMPTS (many are abandoned checkouts in state "payment"). NEVER say a customer has "no active line" or "none activated" when service_lines.count > 0 — say which line(s) are active and, separately, that N attempts exist. If service_lines is empty AND live_bss is "not configured", say the live inventory is unavailable rather than concluding the customer has nothing. For Fixed: fixed_customer.inventory.services is what the customer HAS in the fixed BSS (account e.g. FTTH09071297, plan, state active/suspended, since, owed amount) — answer "does he have FTTH / is it active / which plan / what does he owe" from it, quoting tier (live vs recorded as_of date). fixed_customer.services are journey records (orders attempted through the app/dealers) — a different thing; a customer can have an active FTTH with zero journeys, or 20 journeys and no service. When inventory.available is false, say the BSS inventory is unavailable and why — never conclude "no Fixed service" from the journeys alone.
 - The customer pack includes 'recent_failures' — a scan of THIS subscriber's failed / stuck payments, activation, eligibility, delivery, etc. over recent months. If it is non-empty, ALWAYS surface it (category · date · reason, most recent first) and explain the likely cause. NEVER answer "no incidents" / "all clear" for a subscriber whose recent_failures is non-empty. A subscriber's recent_failures are SEPARATE from open metric incidents (open_alerts) — a subscriber can have real failures while there are zero open incidents; state both correctly and don't conflate them.
 - The customer pack may include 'cst_tickets' — CST / ServiceNow incidents that name THIS subscriber (number, priority, state, title). If present, ALWAYS cite them prominently by number + state (e.g. "Open CST ticket INC0014074 (P2) — login issue"). These are authoritative support tickets; they, recent_failures, and open metric incidents are three different things — report each accurately.
 - If the pack has existing_no_onboarding=true, this is an EXISTING subscriber (recharge / plan upgrade / etc.) with no onboarding order in the console's data. Say so briefly, then report recent_failures and cst_tickets. Do NOT reply "subscriber not found".
@@ -504,12 +612,62 @@ Rules:
 - 'past_cases' are problems THIS TEAM already solved (saved from 👍-rated answers; identifiers masked). If one matches the current question, follow and cite its resolution ("we solved a similar case: …") — it reflects proven local practice. Ignore cases that don't actually match.
 - Keep answers under 150 words. Use short bullet lines when listing steps.`;
 
+/* One line per Fixed service / journey — shared by the customer and fixed_customer fallbacks. */
+function fixedLines(f) {
+  if (!f || !f.found) return '';
+  const inv = f.inventory && f.inventory.tier ? f.inventory : null;
+  const invLines = inv ? [`Fixed services in BSS (${inv.tier}${inv.as_of ? ', as of ' + String(inv.as_of).slice(0, 10) : ''}): ${inv.services.length} — ` + (inv.services.length ? '' : 'none'),
+    ...inv.services.map(x => `• ${x.account || '?'} · ${x.plan || x.offer || ''}${x.speed_mbps ? ' · ' + x.speed_mbps + ' Mbps' : ''} · ${x.state || '—'}${x.since ? ' since ' + x.since : ''}${x.provider ? ' · ' + x.provider : ''}${x.owed_sar != null ? ' · owed ' + x.owed_sar + ' SAR' : ''}`)] : [];
+  if (inv) { const rest = fixedLinesJourneys(f); return invLines.concat(rest ? ['Journeys in the Fixed console:', rest] : []).join('\n'); }
+  return fixedLinesJourneys(f);
+}
+function fixedLinesJourneys(f) {
+  const svc = (f.services || []).map(x => `• ${x.service || '(no service no)'} · ${x.journey || ''}${x.plan ? ' · ' + x.plan : ''} · ${x.status || '—'}${x.step ? ' @ ' + x.step : ''}${x.channel ? ' · ' + x.channel : ''}${x.dealer ? ' · dealer ' + x.dealer : ''}${x.started ? ' · ' + String(x.started).slice(0, 10) : ''}`);
+  if (!svc.length && (f.recent_attempts || []).length) svc.push(...f.recent_attempts.slice(0, 5).map(a => `• ${a.journey || ''} · ${a.status || '—'}${a.step ? ' @ ' + a.step : ''}${a.order ? ' · order ' + a.order : ''} · ${String(a.when || '').slice(0, 10)}`));
+  const head = f.customer ? `${f.customer.services || 0} service(s), ${f.customer.orders || 0} order(s), ${f.customer.attempts || 0} journey attempt(s)` : '';
+  const er = (f.errors || []).slice(0, 3).map(e => `  ⚠ ${e.category || ''}${e.code ? ' ' + e.code : ''}: ${e.message || ''}`);
+  return [head, ...svc, ...(er.length ? ['  Recent Fixed errors:', ...er] : [])].filter(Boolean).join('\n');
+}
+/* VERIFIED FACTS — what the customer HAS, computed deterministically from the packs. Goes FIRST in the model
+ * context and is PREPENDED to the reply for identity lookups, so the LLM can narrate but never contradict
+ * (5 Sep: the model read 3 app-account lines + 13 onboarding attempts as "three lines, none activated"). */
+function identityFacts(ctx) {
+  const L = [];
+  const c = ctx.customer, sl = c && c.service_lines;
+  if (c && c.found) {
+    if (sl && (sl.lines || []).length) L.push(`📱 Mobile — ${sl.lines.length} active line(s): ` + sl.lines.map(l => `${l.msisdn} (${l.source}${l.since ? ', since ' + l.since : ''})`).join(', ')
+      + (sl.primary_line_bss && sl.primary_line_bss.plan ? ` · BSS plan ${sl.primary_line_bss.plan}${sl.primary_line_bss.status ? ' · ' + sl.primary_line_bss.status : ''}` : ''));
+    else L.push(`📱 Mobile — no active line resolved${sl && /not configured/.test(sl.live_bss || '') ? ' (live BSS not configured here)' : ''}`);
+    const att = (c.lines || []).length; if (att) L.push(`   ${att} onboarding attempt(s) on record (${(c.lines || []).filter(l => l.completed || l.activated).length} completed) — attempts, not the inventory`);
+  } else if (c && c.found === false) L.push('📱 Mobile — no customer for this key');
+  const f = ctx.fixed_customer;
+  if (f && f.found) {
+    const inv = f.inventory && f.inventory.tier ? f.inventory : null;
+    if (inv) {
+      const act = inv.services.filter(x => x.state === 'active');
+      L.push(`🏠 Fixed — ${act.length} active service(s) in BSS (${inv.tier}${inv.as_of ? ', as of ' + String(inv.as_of).slice(0, 10) : ''})${inv.services.length > act.length ? `, ${inv.services.length - act.length} other` : ''}:`);
+      inv.services.forEach(x => L.push(`   • ${x.account || '?'} · ${x.plan || x.offer || ''}${x.speed_mbps ? ' · ' + x.speed_mbps + ' Mbps' : ''} · ${x.state || '—'}${x.since ? ' since ' + x.since : ''}${x.provider ? ' · ' + x.provider : ''}${x.owed_sar != null ? ' · owed ' + x.owed_sar + ' SAR' : ''}`));
+      if ((inv.open_bss_orders || []).length) L.push(`   ${inv.open_bss_orders.length} open BSS order(s)`);
+    } else L.push(`🏠 Fixed — BSS inventory unavailable${f.inventory && f.inventory.reason ? ' (' + f.inventory.reason + ')' : ''}; ${f.customer ? f.customer.attempts + ' journey attempt(s) in the Fixed console' : ''}`);
+    if (inv && f.customer && f.customer.attempts) L.push(`   ${f.customer.attempts} Fixed journey attempt(s) (${f.customer.orders || 0} order(s)) — journeys, not the inventory`);
+  } else if (f && f.found === false && ctx.customer && ctx.customer.found) L.push(`🏠 Fixed — no Fixed journey or BSS record linked to this identity${f.hint ? ' (' + f.hint + ')' : ''}`);
+  return L.join('\n');
+}
 function fallbackAnswer(intent, ctx, hint) {
-  if (intent === 'smalltalk') return 'أهلاً! I\'m Yusr — I can look up a subscriber (send an MSISDN like 05xxxxxxxx or a National ID), search a log reference ID on the DMS nodes, check open incidents, or search the runbooks. How can I help?';
+  if (intent === 'smalltalk') return 'أهلاً! I\'m Yusr — I can look up a customer on Mobile (MSISDN 05xxxxxxxx or National ID) or Fixed (FTTH account, order number, customer code), check open incidents on either side ("fixed issues today"), search a log reference ID, or search the runbooks. How can I help?';
   if (intent === 'customer') {
-    if (!ctx.customer || ctx.customer.found === false) return 'I could not find a subscriber for that number/ID. Double-check the MSISDN (05xxxxxxxx) or National ID and try again.';
+    const fx = fixedLines(ctx.fixed_customer);
+    if (!ctx.customer || ctx.customer.found === false) {
+      if (fx) return `No Mobile subscriber for ${ctx.customerKey || 'that number/ID'}, but the same person has Fixed services:\n${fx}\n(LLM offline — open Customer 360 → Fixed services for the full picture.)`;
+      return 'I could not find a customer for that number/ID on Mobile or Fixed. Double-check the MSISDN (05xxxxxxxx), National ID, FTTH account or order number and try again.';
+    }
     const c = ctx.customer;
-    const lines = (c.lines || []).map(l => `• ${l.mobile || '—'} — ${l.plan || 'no plan'} — state: ${l.state || l.status || '—'} (${l.sim || ''} ${l.line_type || ''})`).join('\n');
+    const sl = c.service_lines || {};
+    const active = (sl.lines || []).length
+      ? `📱 Active line(s): ` + sl.lines.map(l => `${l.msisdn} (${l.source}${l.since ? ', since ' + l.since : ''})`).join(', ')
+        + (sl.primary_line_bss && sl.primary_line_bss.plan ? ` · BSS: ${sl.primary_line_bss.plan} ${sl.primary_line_bss.status || ''}` : '')
+      : `📱 No active line resolved${sl.live_bss && /not configured/.test(sl.live_bss) ? ' (live BSS not configured here — replica sources only)' : ''}`;
+    const lines = (c.lines || []).length ? `Onboarding attempts (${(c.lines || []).length}, not the inventory):\n` + (c.lines || []).map(l => `• ${l.mobile || '—'} — ${l.plan || 'no plan'} — state: ${l.state || l.status || '—'} (${l.sim || ''} ${l.line_type || ''})`).join('\n') : 'No onboarding attempts on record.';
     const rf = c.recent_failures || [];
     const stepFails = (c.recent_events || []).filter(e => e.ok === false);
     let failTxt;
@@ -521,7 +679,8 @@ function fallbackAnswer(intent, ctx, hint) {
       ? `\nCST tickets:\n` + tix.slice(0, 4).map(t => `• ${t.number}${t.priority ? ` (${t.priority})` : ''} — ${t.title || ''} [${t.state || ''}]`).join('\n')
       : (c.cst_configured === false ? '' : '\nNo linked CST tickets.');
     const note = c.existing_no_onboarding ? ' (existing subscriber — no onboarding order in the console)' : '';
-    return `Subscriber found${note}.\n${lines}${failTxt}${tixTxt}\n(LLM offline — showing raw profile. Open Subscriber 360 for the full timeline.)`;
+    const fxTxt = fx ? `\n🏠 Fixed services for the same person:\n${fx}` : (db.opsConfigured ? '\n🏠 No Fixed services found for this person.' : '');
+    return `Mobile subscriber found${note}.\n${active}\n${lines}${failTxt}${tixTxt}${fxTxt}\n(LLM offline — showing raw profile. Open Customer 360 for the full timeline.)`;
   }
   /* SMS answers must survive the LLM being offline — this is a support question asked under
    * time pressure, and the facts are already assembled. */
@@ -549,6 +708,20 @@ function fallbackAnswer(intent, ctx, hint) {
     L.push(p.money_taken ? '⚠ The gateway shows the money WAS captured — reconcile with the app record.' : 'No money was taken.');
     return L.join('\n') + '\n(LLM offline — raw payment facts.)';
   }
+  if (intent === 'fixed_customer') {
+    const f = ctx.fixed_customer || {};
+    if (!f.found) {
+      const mob = ctx.customer && ctx.customer.found ? ' The Mobile side is there (see Customer 360), but no Fixed journey is linked to this identity in the last 24 months.' : '';
+      return `No Fixed services found for ${ctx.fixedKey || 'that key'}${f.hint ? ' (' + f.hint + ')' : ''}.${mob}\nWhat I can search: FTTH account (FTTH…), BSS order number, customer code, National ID or mobile (linked through the Salam Home journeys). Live BSS inventory is not wired yet — Customer 360 → Fixed services shows the journeys.`;
+    }
+    return `🏠 Fixed customer ${f.customer && (f.customer.cust_code || f.customer.customer_id) || ctx.fixedKey}: ${fixedLines(f)}\n(LLM offline — open Customer 360 → Fixed services for the full picture.)`;
+  }
+  if (intent === 'fixed_issues') {
+    const f = ctx.fixed_issues || {};
+    if (f.error) return `I could not read the Fixed data (${f.error}).`;
+    const k = f.kpis || {}; const cats = (f.error_categories || []).slice(0, 4).map(c => `• ${c.category}: ${c.open} open / ${c.n}`).join('\n');
+    return `Fixed · last ${f.window}: ${k.attempts} attempts, ${k.completed} completed (${k.conversion}%), ${k.activeDealers} active dealers${f.nafath && f.nafath.total ? `, Nafath fail ${f.nafath.failRate}%` : ''}${f.freshness && f.freshness.stale ? ' — ⚠ data may be stale' : ''}.\nOpen error categories:\n${cats}\n(LLM offline — open Fixed → Errors for the board.)`;
+  }
   if (intent === 'alerts') {
     const a = ctx.alerts || {};
     if (!a.open_count) return 'No open incidents right now. All quiet ✅';
@@ -567,9 +740,13 @@ function fallbackAnswer(intent, ctx, hint) {
 
 function suggestionsFor(intent, ctx) {
   if (intent === 'customer' && ctx.customer && ctx.customer.found) {
-    return ['Why did the last step fail?', 'Show payment history', 'Is this subscriber eligible?'];
+    return ctx.fixed_customer && ctx.fixed_customer.found
+      ? ['Why did the last step fail?', 'Show the fixed services for this customer', 'Show payment history']
+      : ['Why did the last step fail?', 'Show payment history', 'Is this subscriber eligible?'];
   }
   if (intent === 'payment') return ['What does that gateway code mean?', 'Did the customer retry?', 'Was the money taken?'];
+  if (intent === 'fixed_customer') return ['Why did the last attempt stop?', 'Which dealer handled it?', 'Any payment for this service?'];
+  if (intent === 'fixed_issues') return ['Which region has most Nafath failures?', 'Top FTTH errors this week', 'Is the Fixed data live?'];
   if (intent === 'alerts') return ['Which incident is most severe?', 'What is the runbook for payment stuck?', 'Show SLO status'];
   if (intent === 'smalltalk') return ['Check subscriber 05… ', 'What incidents are open?', 'How do I handle a stuck UPG payment?'];
   return ['What incidents are open?', 'How do I handle a stuck UPG payment?', 'Why would eligibility fail?'];
@@ -578,7 +755,11 @@ function suggestionsFor(intent, ctx) {
 function actionsFor(intent, ctx) {
   const acts = [];
   if (intent === 'customer' && ctx.customer && ctx.customer.found && ctx.customerKey) {
-    acts.push({ label: 'Open Subscriber 360', href: '#sub360?key=' + encodeURIComponent(ctx.customerKey) });
+    acts.push({ label: 'Open Customer 360', href: '#sub360?key=' + encodeURIComponent(ctx.customerKey) });
+    if (ctx.fixed_customer && ctx.fixed_customer.found) acts.push({ label: '🏠 Fixed services', href: '#sub360?key=' + encodeURIComponent(ctx.customerKey) + '&tab=fixed' });
+  }
+  if (intent === 'fixed_customer' && ctx.fixed_customer && ctx.fixed_customer.found && ctx.fixedKey) {
+    acts.push({ label: 'Open Customer 360 → Fixed', href: '#sub360?key=' + encodeURIComponent(ctx.fixedKey) + '&tab=fixed' });
   }
   if (intent === 'payment' && ctx.payment && ctx.payment.found) acts.push({ label: 'Open payments dashboard', href: '#dashboard' });
   /* TKT-000008: "while searching on SMS, add link after results" — every SMS/OTP answer carries
@@ -588,7 +769,7 @@ function actionsFor(intent, ctx) {
   if (intent === 'sms' && ctx.sms && (ctx.sms.messages || []).length) {
     const k = ctx.customerKey || ctx.sms.msisdn;
     if (k && !String(k).includes('*'))
-      acts.push({ label: '✉ Full SMS details — Subscriber 360', href: '#sub360?key=' + encodeURIComponent(k) });
+      acts.push({ label: '✉ Full SMS details — Customer 360', href: '#sub360?key=' + encodeURIComponent(k) });
     acts.push({ label: 'SMS gateways health', href: '#monitoring?tab=sms' });
   }
   if (intent === 'alerts') acts.push({ label: 'Open Alerts board', href: '#alerts' });
@@ -607,6 +788,19 @@ async function chat({ message, history, allowUnmask }) {
 
   let intent = detectIntent(q);
   const ctx = {};
+
+  // Follow-up on the customer/service from a previous turn (no key in this question)
+  if (!extractIdentifier(q) && !extractFixedKey(q) && !extractPaymentKey(q)) {
+    const last = lastKeyFromHistory(history);
+    if (last && (isFixedAsk(q) || FOLLOWUP_REF.test(q))) {
+      if (isFixedAsk(q) && !FIXED_ISSUE_WORDS.test(q.replace(/\b(status|open|now|today)\b/gi, ''))) { intent = 'fixed_customer'; ctx.fixedKey = last.key; ctx.followup = true; }
+      else if (isFixedAsk(q) && last.kind !== 'identifier') { intent = 'fixed_customer'; ctx.fixedKey = last.key; ctx.followup = true; }
+      else if (!isFixedAsk(q) && last.kind === 'identifier') { intent = 'customer'; ctx.customerKey = last.key; ctx.followup = true; }
+    } else if (!last && isFixedAsk(q) && FOLLOWUP_REF.test(q)) {
+      return { intent: 'fixed_customer', reply: 'Which customer? Paste the **FTTH account** (FTTH…), the BSS **order number**, the **customer code**, or the **National ID / mobile** and I will pull the Fixed services and journeys.',
+        suggestions: ['Fixed issues today', 'Check subscriber 05…'], actions: [], sources: [], degraded: false };
+    }
+  }
 
   /* CHECKOUT / GATEWAY-REF lookup (Yosri, 2 Sep): "checkout 2wk2wrk2" (the CMS admin Order ID),
    * a bare checkout uuid, or a gateway reference (chg_…/pay_…/UPG invoice id) → the FULL picture,
@@ -909,9 +1103,20 @@ async function chat({ message, history, allowUnmask }) {
       actions: [], sources: [], degraded: false };
   }
 
+  if (intent === 'fixed_customer') {
+    if (!ctx.fixedKey) { const fk = extractFixedKey(q); ctx.fixedKey = fk && fk.key; }
+    ctx.fixed_customer = await fixedCustomerContext(ctx.fixedKey, allowUnmask);
+    // a National ID / MSISDN typed in a Fixed sentence also has a Mobile side — show both
+    if (ctx.followup && /^(?:0?5\d{8}|[12]\d{9})$/.test(String(ctx.fixedKey))) { ctx.customerKey = ctx.fixedKey; ctx.customer = await customerContext(ctx.fixedKey, allowUnmask); }
+    ctx.kb = searchKb(q, 2);
+  } else if (intent === 'fixed_issues') {
+    ctx.fixed_issues = await fixedIssuesContext(q);
+  }
   if (intent === 'customer') {
-    ctx.customerKey = extractIdentifier(q);
-    { const __tc=Date.now(); ctx.customer = await customerContext(q, allowUnmask); ctx.__packMs = Date.now()-__tc; }
+    if (!ctx.customerKey) ctx.customerKey = extractIdentifier(q);
+    { const __tc=Date.now(); ctx.customer = await customerContext(ctx.followup ? ctx.customerKey : q, allowUnmask); ctx.__packMs = Date.now()-__tc; }
+    // the same person may hold Fixed services — resolved through the nexus bridge (NID / mobile) when configured
+    if (db.opsConfigured) { ctx.fixed_customer = await fixedCustomerContext(ctx.customerKey, allowUnmask); if (!ctx.fixed_customer.found) delete ctx.fixed_customer; }
     ctx.kb = searchKb(q, 2);
     ctx.cases = await searchCases(q, 3);        // team's past resolved cases — "learning from use"
   } else if (intent === 'alerts') {
@@ -928,6 +1133,8 @@ async function chat({ message, history, allowUnmask }) {
     .concat((ctx.kb || []).map(k => ({ type: 'runbook', doc: k.doc, section: k.title })))
     .concat(ctx.customer && ctx.customer.found ? [{ type: 'subscriber', key: ctx.customerKey }] : [])
     .concat(ctx.alerts ? [{ type: 'alerts', open: ctx.alerts.open_count }] : [])
+    .concat(ctx.fixed_customer && ctx.fixed_customer.found ? [{ type: 'fixed_customer', key: ctx.fixedKey || ctx.customerKey }] : [])
+    .concat(ctx.fixed_issues && !ctx.fixed_issues.error ? [{ type: 'fixed_issues', window: ctx.fixed_issues.window }] : [])
     .concat((ctx.errorCodes || []).length ? [{ type: 'error_codes', matches: ctx.errorCodes.length }] : []);
 
   // small talk never needs the LLM round-trip
@@ -935,17 +1142,26 @@ async function chat({ message, history, allowUnmask }) {
     return { intent, reply: fallbackAnswer(intent, ctx), suggestions: suggestionsFor(intent, ctx), actions: [], sources: [], degraded: false };
   }
 
+  const facts = (intent === 'customer' || intent === 'fixed_customer') ? identityFacts(ctx) : '';
+  // keep the customer pack small when the Fixed side is present too — the inventory must survive the size cap
+  if (ctx.customer && ctx.customer.found && ctx.fixed_customer) {
+    ctx.customer = { ...ctx.customer, recent_events: (ctx.customer.recent_events || []).slice(-5).map(e => ({ ...e, request: undefined, response: e.ok === false ? String(e.response || '').slice(0, 160) : undefined })),
+      lines: (ctx.customer.lines || []).slice(0, 4) };
+  }
   const contextBlock = JSON.stringify({
+    VERIFIED_FACTS: facts || undefined,
     payment: ctx.payment || undefined,
     sms: ctx.sms || undefined,
     customer: ctx.customer || undefined,
+    fixed_customer: ctx.fixed_customer || undefined,
+    fixed_issues: ctx.fixed_issues || undefined,
     open_alerts: ctx.alerts || undefined,
     // imported partner docs (Tap/OTO) have long sections — send a trimmed slice: enough to
     // answer from, small enough to keep prompt-eval inside the timeout on CPU inference
     runbook_sections: (ctx.kb || []).slice(0, 2).map(k => ({ doc: k.doc, title: k.title, content: String(k.text || '').slice(0, 900) })),
     error_codes: ctx.errorCodes && ctx.errorCodes.length ? ctx.errorCodes : undefined,
     past_cases: (ctx.cases || []).length ? ctx.cases.map(c => ({ problem: c.problem, resolution: c.resolution, votes: c.helpful_votes })) : undefined
-  }, null, 1).slice(0, 3500);   // CPU inference: this is the only non-cacheable part of the prompt — every char here is paid on every question
+  }, null, 1).slice(0, facts ? 4800 : 3500);   // CPU inference: this is the only non-cacheable part of the prompt — every char here is paid on every question
 
   let reply = null, degraded = false, llmError = null, llmHint = null;
   const promptChars = SYSTEM_BASE.length + contextBlock.length +
@@ -959,7 +1175,7 @@ async function chat({ message, history, allowUnmask }) {
        * the per-question context rides in the user turn instead. Same information, same model
        * behaviour — but only the new tokens get evaluated. */
       system: SYSTEM_BASE,
-      history, user: 'CONTEXT (live data for this question):\n' + contextBlock + '\n\nQUESTION: ' + q
+      history, user: 'CONTEXT (live data for this question):\n' + contextBlock + (facts ? '\n\nVERIFIED_FACTS above are already computed from authoritative sources and will be shown to the agent verbatim. Do NOT restate or contradict them; add only what they lack (failures, next step).' : '') + '\n\nQUESTION: ' + q
     });
     if (!reply) throw new Error('empty LLM reply');
   } catch (e) {
@@ -978,6 +1194,7 @@ async function chat({ message, history, allowUnmask }) {
     reply = fallbackAnswer(intent, ctx, llmHint);
   }
 
+  if (facts && !degraded && reply) reply = facts + '\n\n' + reply;
   return { intent, reply, suggestions: suggestionsFor(intent, ctx), actions: actionsFor(intent, ctx), sources, degraded, llmError, llmHint, prompt_chars: promptChars,
     t_llm_ms: Date.now() - tLlm0, t_pack_ms: ctx.__packMs || null };
 }

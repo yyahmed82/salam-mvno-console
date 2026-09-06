@@ -72,6 +72,10 @@ PROD_DATABASE_URL=''
 SOURCE_POOL_MAX='4'
 OPS_POOL_MAX='1'
 ROLLUP_BACKFILL_DAYS='7'
+# Yusr: the cloned console DB points at host.docker.internal (prod docker) — use 152's Ollama through the tunnel
+OLLAMA_URL_OVERRIDE='http://127.0.0.1:21434'
+# Fixed BSS inventory (ZSmart) — uncomment once `ssh 152 curl http://172.20.53.30:8080/...` answers; until then Customer 360 uses the RECORDED tier (nexus api_logs)
+# FIXED_BSS_BASE='http://127.0.0.1:18080/api/transferRest/wsc/prod'
 # Fixed / Salam Home read side (stage 1: the dealer-ops read model, still written by opsb-ingest-watch on 152)
 OPS_DATABASE_URL='$OPS_PROD'
 # beta schema (Salam Home app / B2C rows live only here; watcher opsb-ingest-watch)

@@ -48,7 +48,7 @@
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Kufi Arabic","Geeza Pro",Tahoma,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
   html[dir=rtl] body{font-family:"Noto Kufi Arabic","Geeza Pro","Segoe UI",Tahoma,-apple-system,BlinkMacSystemFont,sans-serif}
-  header{background:var(--card);border-bottom:1px solid var(--line);padding:10px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:50}
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:10px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:1200}
   .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:16px;color:var(--green-dark)}
   .logo .dot{width:26px;height:26px;border-radius:8px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px}
   .logo small{display:block;font-size:9.5px;letter-spacing:1.6px;color:var(--muted);font-weight:700}
@@ -68,6 +68,41 @@
   .navtab{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px 14px;cursor:pointer;display:flex;gap:9px;align-items:center;font-size:12.5px;font-weight:600;color:var(--ink)}
   .navtab .num{width:20px;height:20px;border-radius:50%;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--muted)}
   .navtab small{display:block;font-weight:400;color:var(--muted);font-size:10.5px}
+  /* ---- salam.sa-style dropdown groups (Mobile / Home) — 5 Sep 2026 ---- */
+  nav{flex-wrap:nowrap}
+  nav>.navtab,.navdrop-btn{transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+  nav>.navtab:hover,.navdrop-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(15,23,42,.08);border-color:var(--green)}
+  nav>.navtab.active{box-shadow:inset 0 -3px 0 var(--green)}
+  .navdrop{position:relative}
+  .navdrop-btn{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:8px 14px;cursor:pointer;display:flex;gap:9px;align-items:center;font-size:12.5px;font-weight:700;color:var(--ink);font-family:inherit;position:relative}
+  .navdrop-btn small{display:block;font-weight:400;color:var(--muted);font-size:10.5px;white-space:nowrap}
+  .navdrop-btn .chev{font-style:normal;color:var(--muted);font-size:11px;margin-left:2px;transition:transform .2s ease}
+  .navdrop.open>.navdrop-btn .chev{transform:rotate(180deg)}
+  .navdrop-cur{font-style:normal;font-size:10.5px;font-weight:700;color:#fff;background:linear-gradient(135deg,#0e9f5a,#019c20);padding:3px 9px;border-radius:999px;white-space:nowrap;box-shadow:0 2px 8px rgba(14,159,90,.35)}
+  .navdrop.on>.navdrop-btn,.navdrop.open>.navdrop-btn{border-color:var(--green);background:var(--green-bg);box-shadow:inset 0 -3px 0 var(--green)}
+  .navdrop.on>.navdrop-btn .num{background:var(--green);border-color:var(--green);color:#fff}
+  .navdrop-panel{display:none;position:absolute;left:0;top:calc(100% + 10px);z-index:1300;min-width:320px;background:color-mix(in srgb,var(--card) 88%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,.18),0 2px 8px rgba(15,23,42,.06);padding:10px;flex-direction:column;gap:2px;transform-origin:top left}
+  .navdrop-panel::before{content:"";position:absolute;left:26px;top:-7px;width:12px;height:12px;background:var(--card);border-left:1px solid var(--line);border-top:1px solid var(--line);transform:rotate(45deg)}
+  .navdrop.open>.navdrop-panel{display:flex;animation:navdropIn .18s cubic-bezier(.2,.8,.2,1)}
+  @keyframes navdropIn{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+  .navdrop-panel .navgroup{padding:8px 12px 4px;font-size:9px}
+  .navdrop-panel .navtab{width:100%;justify-content:flex-start;border-color:transparent;background:transparent;border-radius:11px;padding:8px 12px;transition:background .15s ease,transform .15s ease,border-color .15s ease}
+  .navdrop-panel .navtab .num{width:30px;height:30px;border-radius:10px;transition:background .15s ease,color .15s ease}
+  .navdrop-panel .navtab:hover,.navdrop-panel .navtab:focus-visible{background:var(--bg);border-color:var(--line);transform:translateX(3px);outline:none}
+  .navdrop-panel .navtab:hover .num{background:var(--green);border-color:var(--green);color:#fff}
+  .navdrop-panel .navtab.active{border-color:var(--green);background:var(--green-bg);box-shadow:inset 3px 0 0 var(--green)}
+  .navdrop-panel .navtab.active .num{background:linear-gradient(135deg,#0e9f5a,#019c20);border-color:transparent;color:#fff}
+  .navdrop-panel .navtab.hidden{display:none}
+  .navdrop.hidden{display:none}
+  nav .navtab small,.navdrop-btn small{display:none}                  /* descriptions live in tooltips now */
+  nav>.navtab,.navdrop-btn{padding:9px 16px;font-size:13px}
+  .navdrop-panel .navtab{padding:9px 12px}
+  .navdrop-panel{min-width:250px}
+  #navTip{position:fixed;z-index:5000;pointer-events:none;background:var(--ink,#0f172a);color:#fff;font-size:11.5px;font-weight:500;line-height:1.35;padding:7px 10px;border-radius:9px;max-width:280px;box-shadow:0 10px 30px rgba(15,23,42,.25);opacity:0;transform:translateY(4px);transition:opacity .14s ease,transform .14s ease}
+  #navTip.on{opacity:1;transform:none}
+  #navTip::before{content:"";position:absolute;left:14px;top:-5px;border:5px solid transparent;border-top:0;border-bottom-color:var(--ink,#0f172a)}
+  #navTip.below::before{top:auto;bottom:-5px;border-bottom:0;border-top:5px solid var(--ink,#0f172a)}
+  @media (max-width:980px){ nav{flex-wrap:wrap} .navdrop-panel{position:static;display:flex;box-shadow:none;border:0;padding:0 0 0 10px;min-width:0;backdrop-filter:none;background:transparent} .navdrop-panel::before{display:none} .navdrop-btn .chev{display:none} }
   .navtab.active{border-color:var(--green);outline:2px solid var(--green-bg)}
   .navtab.active .num{background:var(--green);border-color:var(--green);color:#fff}
   main{padding:18px 24px;max-width:1500px;margin:0 auto}
@@ -407,13 +442,14 @@
   .ffull{margin-top:10px}
   .testbox{margin-top:12px;border:1px dashed var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
   /* guided tour */
-  #tourOverlay{position:fixed;inset:0;z-index:500;display:none}
+  #tourOverlay{position:fixed;inset:0;z-index:1400;display:none}   /* above the sticky header (1200) and the open dropdown (1300) so the card is never hidden behind a menu */
   #tourOverlay.show{display:block}
   #tourSpot{position:absolute;border-radius:10px;box-shadow:0 0 0 4000px rgba(15,23,42,.62);transition:all .25s;pointer-events:none}
   #tourPop{position:absolute;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:15px 17px;width:320px;transition:all .25s}
   #tourPop h4{font-size:14px;margin-bottom:5px}
   #tourPop p{font-size:12.5px;color:var(--muted);line-height:1.5}
-  #tourPop .tnav{display:flex;align-items:center;gap:8px;margin-top:12px}
+  #tourPop .ticon{font-size:16px;margin-right:6px}#tourPop .tbody{font-size:12.5px;color:var(--muted);line-height:1.5}#tourPop .tlist{list-style:none;margin:6px 0 0;padding:0}#tourPop .tlist li{padding:3px 0;border-top:1px dashed var(--line)}#tourPop .tlist li:first-child{border-top:0}#tourPop .tlist b{color:var(--ink)}
+  #tourPop .tkeys{margin-left:auto;font-size:10px;color:var(--muted);opacity:.8}#tourPop .tnav{display:flex;align-items:center;gap:8px;margin-top:12px}
   #tourPop .tstep{font-size:11px;color:var(--muted);font-weight:700}
   #tourPop button{margin-left:auto;border:0;background:var(--green);color:#fff;font-weight:700;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer}
   #tourPop button.ghost{background:transparent;color:var(--muted);margin-left:0;border:1px solid var(--line)}
@@ -626,6 +662,8 @@
   .rm-wrap{overflow-x:auto}
   .rm-tbl{border-collapse:collapse;font-size:12px;min-width:100%}
   .rm-tbl th,.rm-tbl td{padding:6px 8px;text-align:center;border-bottom:1px solid var(--line-soft)}
+  .tk-seg{display:inline-block;font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 7px;white-space:nowrap}.tk-seg-mobile{background:rgba(37,99,235,.1);color:#1d4ed8}.tk-seg-fixed{background:rgba(14,159,90,.12);color:#0e9f5a}
+  .rm-sep-fixed{background:rgba(14,159,90,.08)!important;color:var(--green)!important}.rm-col-fixed{background:rgba(14,159,90,.04)}
   .rm-tbl th.rm-role,.rm-tbl td.rm-role{text-align:left;white-space:nowrap;position:sticky;left:0;background:var(--card);z-index:1}
   .rm-tbl td.rm-role small{display:block;color:var(--muted);font-size:10px;font-weight:600}
   .rm-tbl th.rm-sep{font-size:9px;letter-spacing:1px;color:var(--muted);border-bottom:1px solid var(--line);background:var(--card2)}
@@ -890,16 +928,48 @@
   <span class="beta" data-i18n="beta">BETA</span>
   <button id="navBurger" title="Menu" data-i18n-title="title.menu">☰</button>
   <nav>
-    <span class="navgroup" data-i18n="group.operate">OPERATE</span>
-    <button class="navtab active" data-view="home"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4 20 11"/><path d="M6 10v9h12v-9"/></svg></span><span data-i18n-html="nav.home">Dashboard<small>Your home &amp; today's KPIs</small></span></button>
+    <button class="navtab active" data-view="landing"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4 20 11"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></svg></span><span>Home<small>Mobile &amp; Fixed · global KPIs</small></span></button>
+    <!-- salam.sa-style structure (5 Sep 2026): two equal businesses, each a dropdown — Mobile (MVNO) and Home
+         (Fixed). The buttons inside are ordinary .navtab elements, so role scoping (ops.js), routing (router.js)
+         and the tour keep working unchanged; the dropdown is only presentation (navdrop.js). -->
+    <div class="navdrop" data-drop="mobile">
+      <button class="navdrop-btn" type="button"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></span><span>Mobile<small>MVNO · selfcare, DMS, payments</small></span><i class="chev">▾</i></button>
+      <div class="navdrop-panel">
+        <div class="navgroup">OPERATE</div>
+      <button class="navtab" data-view="home"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4 20 11"/><path d="M6 10v9h12v-9"/></svg></span><span data-i18n-html="nav.home">Dashboard<small>MVNO · today's KPIs &amp; order flow</small></span></button>
     <button class="navtab" data-view="monitoring"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg></span><span>Monitoring<small>Connectivity &amp; API health</small></span></button>
     <button class="navtab" data-view="dms"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V8l7-5 7 5v13"/><path d="M8 21v-6h4v6"/><path d="M17 13h4v8h-4"/></svg></span><span>DMS<small>Dealers · activity &amp; health</small></span></button>
-    <button class="navtab" data-view="fixed"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg></span><span>Fixed<small>Salam Home · FTTH &amp; 5G dealers</small></span></button>
-<!-- Growth moved into Monitoring → Resellers (one place per topic). The section element below
-     is relocated into that sub-tab at runtime, so growth.js keeps rendering into #view-growth
-     unchanged and every existing #growth link still resolves (router.js redirects it). -->
     <button class="navtab" data-view="errors"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-6 4 12 2-6h5"/></svg></span><span data-i18n-html="nav.errors">Troubleshoot<small>Live failures &amp; timelines</small></span></button>
     <button class="navtab" data-view="alerts"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 18a2 2 0 0 0 4 0"/></svg></span><span data-i18n-html="nav.alerts">Alerts<small>Rules &amp; notifications</small></span></button>
+        <div class="navgroup">EXPLORE</div>
+        <button class="navtab hm-nav" data-view="topology2"><span class="num">◈</span><span>Topology <small>Source-linked map · API docs · code refs</small></span></button>
+        <button class="navtab hm-nav" data-view="apigw"><span class="num">⬡</span><span>API Gateway<small>Full HLD — DMS integration &amp; infra topology (IPs) · live</small></span></button>
+        <button class="navtab hm-nav" data-view="otodocs"><span class="num">⌘</span><span>OTO Courier API<small>Full imported reference · linked from journeys</small></span></button>
+        <button class="navtab hm-nav" data-view="tapdocs"><span class="num">₮</span><span>Tap / UPG API<small>Payment-gateway reference · response codes · webhooks</small></span></button>
+        <button class="navtab hm-nav" data-view="salamdocs"><span class="num">◫</span><span>Salam API docs<small>Selfcare/Apollo API reference (from the app repo)</small></span></button>
+        <button class="navtab hm-nav" data-view="explorer"><span class="num">↦</span><span data-i18n-html="nav.journeys">Journeys<small>Every journey, step by step</small></span></button>
+        <button class="navtab hm-nav" data-view="integrations"><span class="num">⋈</span><span data-i18n-html="nav.integrations">Integrations<small>Catalogue &amp; workers</small></span></button>
+      </div>
+    </div>
+    <div class="navdrop" data-drop="home">
+      <button class="navdrop-btn" type="button"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></span><span>Fixed<small>FTTH · 5G home · SDA dealers · Salam Home app</small></span><i class="chev">▾</i></button>
+      <div class="navdrop-panel">
+        <div class="navgroup">OPERATE</div>
+      <button class="navtab" data-view="fixed" data-fxtab="overview"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg></span><span>Overview<small>KPIs · funnel · dealers</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="epurchase"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg></span><span>E-purchase<small>web / QR channel · journeys · payments · findings</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="salamhome"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></span><span>Salam Home<small>app channel · buy + manage-line · payments · findings</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="map"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4z"/><path d="M8 2v16M16 6v16"/></svg></span><span>SDA map<small>dealers · pins · trace</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="qr"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h2v2h-2zM19 15h2v2h-2zM15 19h2v2h-2zM19 19h2v2h-2z"/></svg></span><span>QR codes<small>referral orders · consent</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="dash"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M8 17V9M12 17v-4M16 17V7"/></svg></span><span>Reports<small>KPIs · trends · dealers &amp; QR</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="errors"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span><span>Errors<small>error control board</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="alerts"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg></span><span>Alerts<small>rules · history</small></span></button>
+        <div class="navgroup">EXPLORE</div>
+      <button class="navtab" data-view="fixed" data-fxtab="playbook"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4z"/><path d="M8 8h8M8 12h8"/></svg></span><span>Playbook<small>SLA / OLA / action plans</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="diagrams"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 14h6v6h-6z"/><path d="M10 7h4v10"/></svg></span><span>Diagrams<small>payments · journeys</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="report"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></span><span>KPI digest<small>branded e-mail report</small></span></button>
+</div>
+    </div>
+    <button class="navtab" data-view="sub360"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span data-i18n-html="nav.sub360">Customer 360<small>One customer · mobile &amp; fixed</small></span></button>
   </nav>
   <div class="setwrap">
     <button id="settingsBtn" title="Settings — user management &amp; sync engine" data-i18n-title="title.settings">⚙</button>
@@ -922,18 +992,6 @@
     <div class="helpmenu" id="helpMenu">
       <div class="hm-group" data-i18n="group.guide">GUIDE</div>
       <button class="hm-tour" id="hmTour"><span class="hm-ic">▶</span><span data-i18n-html="menu.tour">Guided tour<small>Replay the 60-second walkthrough</small></span></button>
-      <div class="hm-group" data-i18n="group.explore">EXPLORE</div>
-      <!-- old static topology page hidden 31 Aug 2026 (kept routable for old deep links);
-           the source-linked map is now THE Topology entry -->
-      <button class="navtab hm-nav active" data-view="topology" style="display:none"><span class="num">◱</span><span data-i18n-html="nav.topology">Topology<small>The full system map</small></span></button>
-      <button class="navtab hm-nav" data-view="topology2"><span class="num">◈</span><span>Topology <small>Source-linked map · API docs · code refs</small></span></button>
-      <button class="navtab hm-nav" data-view="apigw"><span class="num">⬡</span><span>API Gateway<small>Full HLD — DMS integration &amp; infra topology (IPs) · live</small></span></button>
-      <button class="navtab hm-nav" data-view="otodocs"><span class="num">⌘</span><span>OTO Courier API<small>Full imported reference · linked from journeys</small></span></button>
-      <button class="navtab hm-nav" data-view="tapdocs"><span class="num">₮</span><span>Tap / UPG API<small>Payment-gateway reference · response codes · webhooks</small></span></button>
-      <button class="navtab hm-nav" data-view="salamdocs"><span class="num">◫</span><span>Salam API docs<small>Selfcare/Apollo API reference (from the app repo)</small></span></button>
-      <button class="navtab hm-nav" data-view="explorer"><span class="num">↦</span><span data-i18n-html="nav.journeys">Journeys<small>Every journey, step by step</small></span></button>
-      <button class="navtab hm-nav" data-view="integrations"><span class="num">⋈</span><span data-i18n-html="nav.integrations">Integrations<small>Catalogue &amp; workers</small></span></button>
-      <button class="navtab hm-nav" data-view="sub360"><span class="num">◉</span><span data-i18n-html="nav.sub360">Subscriber 360<small>Unified profile by MSISDN / NID</small></span></button>
       <button class="hm-tour" id="hmOncall"><span class="hm-ic">◔</span><span>On-call view<small>Mobile incident snapshot</small></span></button>
       <div class="hm-group" data-i18n="group.feedback">FEEDBACK</div>
       <button class="hm-tour" id="hmRaiseTicket"><span class="hm-ic">✎</span><span data-i18n-html="menu.raiseTicket">Raise a ticket<small>Suggest an improvement or report an issue</small></span></button>
@@ -941,9 +999,6 @@
   </div>
   <!-- 360 quick-access (3 Sep 2026): Subscriber 360 is the call-center workstation — one loud,
        always-visible entry instead of digging through the ? menu. Active state synced on hash. -->
-  <button id="nav360" class="nav360" title="Subscriber 360 — one customer, everything: identity, live BSS, payments, journey">
-    <span class="n360-ic">◉</span><span class="n360-txt">360</span>
-  </button>
   <button id="liveBtn" class="livepill" title="Live updates"></button>
   <button id="langToggle" title="العربية">ع</button>
   <button id="themeToggle" title="Toggle light / dark" data-i18n-title="title.theme">☾</button>
@@ -982,7 +1037,7 @@
   </div>
 </div>
 <main>
-  <section id="view-home" class="view active">
+  <section id="view-home" class="view">
     <div id="homeGreeting" class="home-greet"></div>
     <div class="home-bar-lbl" style="margin:0 0 6px">TODAY · KSA <span id="homeDay"></span> <span id="homeKpiRange" class="rl" style="font-weight:600;color:var(--muted)"></span></div>
     <div id="homeJourneys" class="home-journeys" style="display:none;margin:0 0 10px"></div>
@@ -1071,6 +1126,7 @@
   <section id="view-oncall" class="view"></section>
   <section id="view-growth" class="view"></section>
   <section id="view-dms" class="view"></section>
+  <section id="view-landing" class="view active"></section>
   <section id="view-fixed" class="view"></section>
   <section id="view-otodocs" class="view"></section>
   <section id="view-tapdocs" class="view"></section>
@@ -1279,60 +1335,64 @@
 <div id="ruleModal" class="modal-overlay"><div class="modal-card" id="ruleModalCard" style="max-width:560px"></div></div>
 <div id="panelModal" class="modal-overlay"><div class="modal-card" id="panelModalCard" style="max-width:720px"></div></div>
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
-<script src="base.js?v=20260905u"></script>
-<script src="ksatime.js?v=20260904a"></script>
-<script src="data.js?v=20260904a"></script>
-<script src="data2.js?v=20260904a"></script>
-<script src="samples.js?v=20260904a"></script>
-<script src="samples2.js?v=20260904a"></script>
-<script src="apidocs.js?v=20260904a"></script>
-<script src="xlsxout.js?v=20260904a"></script>
-<script src="persist.js?v=20260904a"></script>
-<script src="app.js?v=20260904a"></script>
-<script src="uinav.js?v=20260904a"></script>
-<script src="alertsview.js?v=20260904a"></script>
-<script src="ops.js?v=20260904a"></script>
-<script src="opsbar.js?v=20260904a"></script>
-<script src="analytics.js?v=20260904a"></script>
-<script src="topo2data.js?v=20260904a"></script>
-<script src="topology2.js?v=20260904a"></script>
-<script src="tapdocs.js?v=20260904a"></script>
-<script src="screensflow.js?v=20260904a"></script>
-<script src="home.js?v=20260904a"></script>
-<script src="monitoring.js?v=20260904a"></script>
-<script src="workbench.js?v=20260904a"></script>
-<script src="growth.js?v=20260904a"></script>
-<script src="dmsjourney.js?v=20260904a"></script>
-<script src="dms.js?v=20260904a"></script>
-<script src="fixed.js?v=20260905u"></script>
-<script src="fixed-map.js?v=20260905u"></script>
-<script src="fixed-qr.js?v=20260905u"></script>
-<script src="fixed-dash.js?v=20260905u"></script>
-<script src="fixed-errors.js?v=20260905u"></script>
-<script src="fixed-alerts.js?v=20260905u"></script>
-<script src="fixed-playbook.js?v=20260905u"></script>
-<script src="fixed-diagrams.js?v=20260905u"></script>
-<script src="fixed-report.js?v=20260905u"></script>
-<script src="otodocs.js?v=20260904a"></script>
-<script src="salamdocs.js?v=20260904a"></script>
-<script src="slo.js?v=20260904a"></script>
-<script src="audit.js?v=20260904a"></script>
-<script src="notifycfg.js?v=20260904a"></script>
-<script src="notifyclone.js?v=20260904a"></script>
+<script src="base.js?v=20260906c"></script>
+<script src="navdrop.js?v=20260906c" defer></script>
+<script src="ksatime.js?v=20260906c"></script>
+<script src="data.js?v=20260906c"></script>
+<script src="data2.js?v=20260906c"></script>
+<script src="samples.js?v=20260906c"></script>
+<script src="samples2.js?v=20260906c"></script>
+<script src="apidocs.js?v=20260906c"></script>
+<script src="xlsxout.js?v=20260906c"></script>
+<script src="persist.js?v=20260906c"></script>
+<script src="app.js?v=20260906c"></script>
+<script src="uinav.js?v=20260906c"></script>
+<script src="alertsview.js?v=20260906c"></script>
+<script src="ops.js?v=20260906c"></script>
+<script src="opsbar.js?v=20260906c"></script>
+<script src="analytics.js?v=20260906c"></script>
+<script src="topo2data.js?v=20260906c"></script>
+<script src="topology2.js?v=20260906c"></script>
+<script src="tapdocs.js?v=20260906c"></script>
+<script src="screensflow.js?v=20260906c"></script>
+<script src="home.js?v=20260906c"></script>
+<script src="monitoring.js?v=20260906c"></script>
+<script src="workbench.js?v=20260906c"></script>
+<script src="growth.js?v=20260906c"></script>
+<script src="dmsjourney.js?v=20260906c"></script>
+<script src="dms.js?v=20260906c"></script>
+<script src="landing.js?v=20260906c"></script>
+<script src="fixed.js?v=20260906c"></script>
+<script src="fixed-leaflet.js?v=20260906c"></script>
+<script src="fixed-map.js?v=20260906c"></script>
+<script src="fixed-qr.js?v=20260906c"></script>
+<script src="fixed-channel.js?v=20260906c"></script>
+<script src="fixed-dash.js?v=20260906c"></script>
+<script src="fixed-errors.js?v=20260906c"></script>
+<script src="fixed-alerts.js?v=20260906c"></script>
+<script src="fixed-playbook.js?v=20260906c"></script>
+<script src="fixed-diagrams.js?v=20260906c"></script>
+<script src="fixed-report.js?v=20260906c"></script>
+<script src="otodocs.js?v=20260906c"></script>
+<script src="salamdocs.js?v=20260906c"></script>
+<script src="slo.js?v=20260906c"></script>
+<script src="audit.js?v=20260906c"></script>
+<script src="notifycfg.js?v=20260906c"></script>
+<script src="notifyclone.js?v=20260906c"></script>
 <script src="sub360.js?v=20260904b"></script>
-<script src="rolesmatrix.js?v=20260904a"></script>
-<script src="i18n.js?v=20260904a"></script>
-<script src="settingsmenu.js?v=20260904a"></script>
-<script src="tour.js?v=20260904a"></script>
-<script src="helpmenu.js?v=20260904a"></script>
-<script src="assist.js?v=20260904a"></script>
-<script src="assistcfg.js?v=20260904a"></script>
-<script src="assistclone.js?v=20260904a"></script>
-<script src="navcfg.js?v=20260904a"></script>
-<script src="tickets.js?v=20260904a"></script>
-<script src="theme.js?v=20260904a"></script>
-<script src="router.js?v=20260904a"></script>
-<script src="live.js?v=20260904a"></script>
-<script src="oncall.js?v=20260904a"></script>
+<script src="rolesmatrix.js?v=20260906c"></script>
+<script src="i18n.js?v=20260906c"></script>
+<script src="settingsmenu.js?v=20260906c"></script>
+<script src="tour.js?v=20260906c"></script>
+<script src="helpmenu.js?v=20260906c"></script>
+<script src="assist.js?v=20260906c"></script>
+<script src="assistcfg.js?v=20260906c"></script>
+<script src="assistclone.js?v=20260906c"></script>
+<script src="navcfg.js?v=20260906c"></script>
+<script src="tickets.js?v=20260906c"></script>
+<script src="theme.js?v=20260906c"></script>
+<script src="router.js?v=20260906c"></script>
+<script src="live.js?v=20260906c"></script>
+<script src="oncall.js?v=20260906c"></script>
 </body>
 </html>

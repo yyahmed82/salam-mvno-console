@@ -9,9 +9,9 @@
    *   window.FIXED_PAGES[key] = { label, sub, render(hostEl, ctx) }      (render is idempotent; ctx = window.FX)
    * and gets its data from /api/fixed/<key>/... (server: server/src/fixed<Key>.js mounted by fixed.js).
    * Shared helpers live on window.FX (api, esc, ts, fmt, tbl, card, chip, bar, state, qs). Keys and order below. */
-  const TAB_ORDER=[["overview","Overview","KPIs · funnel · dealers"],["map","SDA map","dealers · pins · trace"],["qr","QR codes","referral orders · consent"],
-    ["dash","Dashboards","KPIs & trends"],["errors","Errors","error control board"],["alerts","Alerts","rules · history"],
-    ["playbook","Playbook","SLA / OLA / action plans"],["diagrams","Diagrams","payments · journeys"],["report","Report","branded KPI digest"]];
+  const TAB_ORDER=[["overview","Overview","KPIs · funnel · dealers"],["epurchase","E-purchase","web / QR channel · journeys · payments · findings"],["salamhome","Salam Home","app channel · buy + manage-line · payments · findings"],["map","SDA map","dealers · pins · trace"],["qr","QR codes","referral orders · consent"],
+    ["dash","Reports","KPIs · trends · dealers & QR"],["errors","Errors","error control board"],["alerts","Alerts","rules · history"],
+    ["playbook","Playbook","SLA / OLA / action plans"],["diagrams","Diagrams","payments · journeys"],["report","KPI digest","branded e-mail report"]];
   window.FIXED_PAGES = window.FIXED_PAGES || {};
   const $=s=>document.querySelector(s);
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -52,29 +52,31 @@
   async function render(tab){
     const host=$("#view-fixed"); if(!host) return;
     if(tab && window.FIXED_PAGES[tab]) curTab=tab; else if(tab && !window.FIXED_PAGES[tab]) curTab="overview";
+    // page-level scope: a deep link to a Fixed page the role lacks falls back to the first page the role holds
+    const held=window.FIXED_VIEWS_HELD, ftv=window.FIXED_TAB_VIEWS||{};
+    if(held && held.length && !held.includes(ftv[curTab]||"fixed")){ const ok=TAB_ORDER.map(t=>t[0]).find(k=>window.FIXED_PAGES[k]&&held.includes(ftv[k]||"fixed")); if(ok) curTab=ok; }
     const rbtn=(m,l)=>`<button class="fx-r" data-m="${m}" style="cursor:pointer;font:inherit;font-size:12px;font-weight:${state.range===m?"800":"600"};padding:6px 14px;border:1px solid ${state.range===m?"var(--green,#0e9f5a)":"var(--line)"};border-radius:999px;background:${state.range===m?"var(--green,#0e9f5a)":"var(--card,#fff)"};color:${state.range===m?"#fff":"inherit"}">${l}</button>`;
     const cbtn=(m,l)=>`<button class="fx-c" data-c="${m}" style="cursor:pointer;font:inherit;font-size:11.5px;font-weight:700;padding:5px 12px;border:1px solid ${state.channel===m?"#2563eb":"var(--line)"};border-radius:999px;background:${state.channel===m?"#2563eb":"var(--card,#fff)"};color:${state.channel===m?"#fff":"inherit"}">${l}</button>`;
     const tabs=TAB_ORDER.map(([k,l,sub])=>{ const on=k===curTab, has=!!window.FIXED_PAGES[k];
       return `<button class="fx-tab" data-t="${k}" ${has?"":"disabled"} title="${esc(sub)}${has?"":" — coming in the next drop"}" style="cursor:${has?"pointer":"default"};font:inherit;font-size:12.5px;font-weight:${on?"800":"600"};padding:7px 13px;border:1px solid ${on?"var(--green,#0e9f5a)":"var(--line)"};border-bottom:${on?"3px solid var(--green,#0e9f5a)":"1px solid var(--line)"};border-radius:10px;background:${on?"var(--card,#fff)":"transparent"};color:${has?"inherit":"var(--muted)"};opacity:${has?1:.55}">${l}</button>`; }).join("");
+    const cur=TAB_ORDER.find(t=>t[0]===curTab)||TAB_ORDER[0];
     host.innerHTML=`<div style="padding:0 18px 40px;max-width:1440px;margin:0 auto">
       <div style="position:sticky;top:0;z-index:26;background:var(--card,#fff);border-bottom:1px solid var(--line);box-shadow:0 4px 14px rgba(15,23,42,.05);margin:0 -18px 14px;padding:10px 18px;display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <div><h2 style="margin:0;font-size:16px">Fixed · Salam Home &amp; SDA dealers</h2>
-            <div class="rl" style="font-size:10.5px;color:var(--muted)">FTTH · 5G home · e-purchase / QR · Salam Home app — Operations Console data, stage 1</div></div>
+          <div><h2 style="margin:0;font-size:16px"><span style="color:var(--muted);font-weight:600">Fixed ›</span> ${esc(cur[1])}</h2>
+            <div class="rl" style="font-size:10.5px;color:var(--muted)">${esc(cur[2])} · FTTH · 5G home · e-purchase / QR · Salam Home app — Operations Console data, stage 1 · other pages: <b>Fixed ▾</b> menu</div></div>
           <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <span class="rl" style="font-size:11px;color:var(--muted);font-weight:700">Channel</span>
-            ${cbtn("","All")}${cbtn("sda","SDA dealers")}${cbtn("epurchase","e-purchase / QR")}${cbtn("salamhome","Salam Home app")}
+            ${["epurchase","salamhome"].includes(curTab)?"":`<span class="rl" style="font-size:11px;color:var(--muted);font-weight:700">Channel</span>
+            ${cbtn("","All")}${cbtn("sda","SDA dealers")}${cbtn("epurchase","e-purchase / QR")}${cbtn("salamhome","Salam Home app")}`}
             <span class="rl" style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">Range</span>
             ${rbtn("24h","24h")}${rbtn("7d","7d")}${rbtn("30d","30d")}${rbtn("90d","90d")}
           </div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${tabs}</div>
       </div>
       <div id="fxPage"></div>
     </div>`;
     host.querySelectorAll(".fx-r").forEach(b=>b.onclick=()=>{ state.range=b.dataset.m; localStorage.setItem("fixed_range",state.range); render(curTab); });
     host.querySelectorAll(".fx-c").forEach(b=>b.onclick=()=>{ state.channel=b.dataset.c; localStorage.setItem("fixed_channel",state.channel); render(curTab); });
-    host.querySelectorAll(".fx-tab:not([disabled])").forEach(b=>b.onclick=()=>{ const t=b.dataset.t; const h="fixed"+(t==="overview"?"":"?tab="+t); if(location.hash!=="#"+h) location.hash="#"+h; render(t); });
     const page=$("#fxPage");
     try{ await window.FIXED_PAGES[curTab].render(page, window.FX); }
     catch(e){ page.innerHTML=`<div class="albanner" style="border-left:4px solid #dc2626;padding:14px 16px"><b>${esc(curTab)} failed</b> — ${esc(e.message)}</div>`; }

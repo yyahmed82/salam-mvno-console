@@ -4,7 +4,7 @@
 (function(){
   "use strict";
   const ROUTES={
-    "":{home:true}, dashboard:{home:true}, home:{home:true},
+    "":{view:"landing"}, home:{view:"landing"}, landing:{view:"landing"}, dashboard:{home:true},
     monitoring:{view:"monitoring"},
     workbench:{workbench:true},
     // Growth was absorbed into Monitoring → Resellers. Old links keep working.
@@ -17,7 +17,7 @@
     "settings-assist":{assistClone:true}, "settings-assist-clone":{assistClone:true},
     audit:{audit:true}, tickets:{tickets:true}
   };
-  const VIEW_HASH={monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
+  const VIEW_HASH={landing:"home",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
   let _cur=null;
 
   /* ---- ROLE GUARD (2 Sep 2026) ---------------------------------------------------------------
@@ -25,10 +25,10 @@
    * view (page permission) it needs under the v2 model; a role without it gets a full
    * ACCESS DENIED panel — same message the API would 403 with — instead of a half-broken page.
    * The server gates the data regardless; this makes the denial clear instead of confusing. */
-  const VIEW_REQ={ monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts",
+  const VIEW_REQ={ landing:"dashboard", monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts",
     home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", otodocs:"explore",
     tapdocs:"explore", salamdocs:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
-  const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed / Salam Home", errors:"Troubleshoot", alerts:"Alerts",
+  const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed", errors:"Troubleshoot", alerts:"Alerts",
     analytics:"Analytics / SLA", explore:"Explore", workbench:"L2 Workbench", settings:"Settings" };
   function sess(){ try{ return (window.opsSession&&window.opsSession())||{}; }catch(e){ return {}; } }
   function lacks(need){ const me=sess().me; if(!me||!Array.isArray(me.views)) return false;  // session not ready → don't block boot
@@ -60,7 +60,7 @@
   }
   function hideDenied(){ const d=document.getElementById("accessDenied"); if(d) d.style.display="none"; }
 
-  function clickNav(view){ const b=document.querySelector(`.navtab[data-view="${view}"]`); if(!b) return; if(!b.classList.contains("active")) b.click(); }
+  function clickNav(view){ const b=document.querySelector(`.navtab[data-view="${view}"].active`)||document.querySelector(`.navtab[data-view="${view}"]`); if(!b) return; if(!b.classList.contains("active")) b.click(); }
   // per-segment renderers that normally run on menu-button click — the router must call them too,
   // or a direct deep link (#settings-assist etc.) opens an empty segment
   const SEG_RENDER={assist:"renderAssistCfg",notify:"renderNotifyCfg",nav:"renderNavCfg"};
@@ -108,11 +108,11 @@
       /* clickNav is a no-op when the tab is already active, so any view that only renders on a
        * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
-      const OPENER={ alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics" };
+      const OPENER={ landing:"openLanding", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics" };
       const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{
         if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); window[fn](m?m[1]:"overview"); } else window[fn](); }catch(e){} }
       // Subscriber 360 deep link: #subscriber?key=966...
-      if(r.view==="sub360" && window.openSub360){ const m=/key=([^&]+)/.exec(qs||""); window.openSub360(m?decodeURIComponent(m[1]):undefined); }
+      if(r.view==="sub360" && window.openSub360){ const m=/key=([^&]+)/.exec(qs||""); const t=/(?:^|&)tab=([a-z]+)/.exec(qs||""); window.openSub360(m?decodeURIComponent(m[1]):undefined, t?t[1]:undefined); }
       // Troubleshoot deep link: #troubleshoot?from=..&to=..&cls=technical&cat=semati
       // carries the dashboard period + class + category so a shared/refreshed link matches the drill-down
       if(r.view==="errors"){
@@ -128,7 +128,8 @@
   function setHash(h){ if(_cur===h) return; _cur=h; if(location.hash!=="#"+h) location.hash="#"+h; }
 
   // reflect user navigation into the URL (activation is handled by the existing modules)
-  document.querySelectorAll(".navtab").forEach(b=>b.addEventListener("click",()=>{ const v=b.dataset.view; setHash(VIEW_HASH[v]||v); }));
+  document.querySelectorAll(".navtab").forEach(b=>b.addEventListener("click",()=>{ if(b.dataset.fxtab) return;   // Home sub-tabs set their own hash (navdrop.js)
+    const v=b.dataset.view; setHash(VIEW_HASH[v]||v); }));
   const logo=document.querySelector(".logo"); if(logo) logo.addEventListener("click",()=>setHash("dashboard"));
   document.querySelectorAll("#settingsMenu [data-seg]").forEach(b=>b.addEventListener("click",()=>setHash("settings-"+b.dataset.seg)));
   const auditItem=document.querySelector("#settingsMenu [data-audit]"); if(auditItem) auditItem.addEventListener("click",()=>setHash("audit"));

@@ -17,11 +17,17 @@
     try{ DATA=await api("/api/roles/matrix"); }
     catch(e){ host.innerHTML=`<div class="okbox">${esc(e.message)}</div>`; return; }
     const edit=isSuper();
-    const cols=[...DATA.views.map(v=>({...v,grp:"page"})),...DATA.caps.map(c=>({...c,grp:"feat"}))];
+    // pages in three families so the matrix reads like the nav: shared (Home · Customer 360 · Settings) · Mobile · Fixed
+    const isFixed=v=>/^fixed/.test(v.key), isShared=v=>["explore","settings","users"].includes(v.key);
+    const mob=DATA.views.filter(v=>!isFixed(v)&&!isShared(v)), fix=DATA.views.filter(isFixed), shr=DATA.views.filter(isShared);
+    const views=[...mob,...fix,...shr];
+    const cols=[...views.map(v=>({...v,grp:"page"})),...DATA.caps.map(c=>({...c,grp:"feat"}))];
     const head=`<tr><th class="rm-role">Role</th>`+
-      `<th class="rm-sep" colspan="${DATA.views.length}">PAGES</th>`+
+      (mob.length?`<th class="rm-sep" colspan="${mob.length}">📱 MOBILE PAGES</th>`:"")+
+      (fix.length?`<th class="rm-sep rm-sep-fixed" colspan="${fix.length}">🏠 FIXED PAGES</th>`:"")+
+      (shr.length?`<th class="rm-sep" colspan="${shr.length}">SHARED</th>`:"")+
       `<th class="rm-sep" colspan="${DATA.caps.length}">FEATURES</th></tr>`+
-      `<tr><th class="rm-role"></th>`+cols.map(c=>`<th class="rm-col"><span>${esc(c.label)}</span></th>`).join("")+`</tr>`;
+      `<tr><th class="rm-role"></th>`+cols.map(c=>`<th class="rm-col ${/^fixed/.test(c.key)&&c.grp==="page"?"rm-col-fixed":""}"><span>${esc(String(c.label).replace(/^Fixed · /,""))}</span></th>`).join("")+`</tr>`;
     const rows=DATA.roles.map(r=>{
       const cells=cols.map(c=>{
         const on = c.grp==="page" ? r.views[c.key] : r.caps[c.key];

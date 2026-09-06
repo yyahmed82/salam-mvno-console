@@ -16,6 +16,10 @@
 
   const MAX_FILES=4, MAX_MB=5, ALLOWED=["image/png","image/jpeg","image/webp","image/gif"];
   const KIND_LABEL={enhancement:"Suggestion / enhancement",issue:"Issue"};
+  const SEG_LABEL={mobile:"Mobile",fixed:"Fixed"};
+  const segPill=sg=>sg==="fixed"?`<span class="tk-seg tk-seg-fixed">🏠 Fixed</span>`:`<span class="tk-seg tk-seg-mobile">📱 Mobile</span>`;
+  // default business = where the user is: any Fixed page → Fixed, else Mobile
+  const guessSegment=()=>/^#fixed/.test(location.hash||"")?"fixed":"mobile";
   const STATUSES=["open","under_evaluation","in_progress","closed","rejected"];
   const STATUS_LABEL={open:"Open",under_evaluation:"Under evaluation",in_progress:"In progress",closed:"Closed",rejected:"Rejected"};
   const STATUS_COLOR={open:"#2563eb",under_evaluation:"#7c3aed",in_progress:"#0891b2",closed:"#16a34a",rejected:"#b91c1c"};
@@ -56,6 +60,15 @@
           <label class="tkKind" style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;gap:8px;align-items:flex-start">
             <input type="radio" name="tkKind" value="enhancement" style="margin-top:2px">
             <span><b>Suggestion</b><div class="sub" style="font-size:11px">An enhancement or new idea</div></span></label>
+        </div>
+        <h5>Business <span class="sub" style="font-weight:400">— which side of the console is this about?</span></h5>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <label class="tkSeg" style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;gap:8px;align-items:flex-start">
+            <input type="radio" name="tkSeg" value="mobile" ${guessSegment()==="mobile"?"checked":""} style="margin-top:2px">
+            <span><b>📱 Mobile</b><div class="sub" style="font-size:11px">MVNO · selfcare, DMS, payments, activation</div></span></label>
+          <label class="tkSeg" style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;gap:8px;align-items:flex-start">
+            <input type="radio" name="tkSeg" value="fixed" ${guessSegment()==="fixed"?"checked":""} style="margin-top:2px">
+            <span><b>🏠 Fixed</b><div class="sub" style="font-size:11px">FTTH · FTTB · 5G home · SDA dealers · Salam Home app</div></span></label>
         </div>
         <h5>Title</h5>
         <input id="tkTitle" type="text" maxlength="300" placeholder="Short summary" style="${inp}">
@@ -108,6 +121,7 @@
   async function submit(){
     const ov=document.getElementById("ticketModalOv");
     const kind=(ov.querySelector('input[name="tkKind"]:checked')||{}).value||"issue";
+    const segment=(ov.querySelector('input[name="tkSeg"]:checked')||{}).value||"mobile";
     const title=ov.querySelector("#tkTitle").value.trim();
     const description=ov.querySelector("#tkDesc").value.trim();
     const msg=ov.querySelector("#tkMsg"), btn=ov.querySelector("#tkSubmit");
@@ -115,7 +129,7 @@
     btn.disabled=true; msg.textContent="Submitting…";
     const files=PICKED.map(f=>({name:f.name,mime:f.mime,dataB64:f.dataUrl}));
     try{
-      const out=await api("/api/tickets",{method:"POST",body:JSON.stringify({kind,title,description,files})});
+      const out=await api("/api/tickets",{method:"POST",body:JSON.stringify({kind,segment,title,description,files})});
       ov.querySelector("#ticketModalCard").innerHTML=`<div class="modal-head"><span class="path">Ticket raised</span><span class="x" id="tkX2">×</span></div>
         <div class="modal-body" style="text-align:center;padding:26px 22px">
           <div style="font-size:34px">✅</div>
@@ -131,7 +145,7 @@
   }
 
   /* ============================ (b) Admin board (manageUsers) ============================ */
-  let FILT={status:"",kind:"",search:""};
+  let FILT={status:"",kind:"",segment:"",search:""};
   function ensureBoard(){
     let v=document.getElementById("view-tickets");
     if(v) return v;
@@ -159,7 +173,7 @@
     const box=document.getElementById("ticketsBoard"); if(!box) return;
     box.innerHTML=`<div class="sub">Loading…</div>`;
     let data;
-    const qs=[]; if(FILT.status) qs.push("status="+encodeURIComponent(FILT.status)); if(FILT.kind) qs.push("kind="+encodeURIComponent(FILT.kind)); if(FILT.search) qs.push("search="+encodeURIComponent(FILT.search));
+    const qs=[]; if(FILT.status) qs.push("status="+encodeURIComponent(FILT.status)); if(FILT.kind) qs.push("kind="+encodeURIComponent(FILT.kind)); if(FILT.segment) qs.push("segment="+encodeURIComponent(FILT.segment)); if(FILT.search) qs.push("search="+encodeURIComponent(FILT.search));
     try{ data=await api("/api/tickets"+(qs.length?"?"+qs.join("&"):"")); }
     catch(e){ box.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
     const c=data.counts||{};
@@ -167,6 +181,8 @@
     let h=`<div class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       ${chip("","All")}${STATUSES.map(s=>chip(s,STATUS_LABEL[s],STATUS_COLOR[s])).join("")}
       <span style="margin-inline-start:auto;display:flex;gap:8px;align-items:center">
+        <select id="tkSegFilt" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card2);color:var(--ink)">
+          <option value="">📱🏠 Both businesses</option><option value="mobile"${FILT.segment==="mobile"?" selected":""}>📱 Mobile${data.bySegment&&data.bySegment.mobile!=null?" ("+data.bySegment.mobile+" open)":""}</option><option value="fixed"${FILT.segment==="fixed"?" selected":""}>🏠 Fixed${data.bySegment&&data.bySegment.fixed!=null?" ("+data.bySegment.fixed+" open)":""}</option></select>
         <select id="tkKindFilt" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card2);color:var(--ink)">
           <option value="">All types</option><option value="issue"${FILT.kind==="issue"?" selected":""}>Issues</option><option value="enhancement"${FILT.kind==="enhancement"?" selected":""}>Suggestions</option></select>
         <input id="tkSearch" type="text" placeholder="Search ref / title / user" value="${esc(FILT.search)}" style="font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card2);color:var(--ink);width:200px">
@@ -174,19 +190,21 @@
       </span></div>`;
     const rows=data.tickets||[];
     h+=`<table style="width:100%;margin-top:12px;font-size:12.5px;border-collapse:collapse">
-      <tr style="color:var(--muted);text-align:left"><th style="padding:6px 8px">Ref</th><th>Type</th><th>Title</th><th>Status</th><th>Priority</th><th>Raised by</th><th>When (KSA)</th><th></th></tr>`
+      <tr style="color:var(--muted);text-align:left"><th style="padding:6px 8px">Ref</th><th>Business</th><th>Type</th><th>Title</th><th>Status</th><th>Priority</th><th>Raised by</th><th>When (KSA)</th><th></th></tr>`
       +(rows.length?rows.map(t=>`<tr class="tkRow" data-ref="${esc(t.ref)}" style="border-top:1px solid var(--line);cursor:pointer">
         <td style="padding:7px 8px;font-family:var(--mono);font-weight:700;white-space:nowrap">${esc(t.ref)}</td>
+        <td>${segPill(t.segment)}</td>
         <td>${t.kind==="enhancement"?"💡 Suggestion":"🐞 Issue"}</td>
         <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title)}${t.file_count?` <span class="sub">📎${t.file_count}</span>`:""}</td>
         <td>${statusPill(t.status)}</td><td>${esc(t.priority)}</td>
         <td>${esc(t.created_by||"—")}</td><td style="white-space:nowrap">${esc(ksaT(t.created_at))}</td>
         <td style="text-align:right;color:var(--muted)">›</td></tr>`).join("")
-      :`<tr><td colspan="8" class="sub" style="padding:14px 8px">No tickets match this filter.</td></tr>`)
+      :`<tr><td colspan="9" class="sub" style="padding:14px 8px">No tickets match this filter.</td></tr>`)
       +`</table></div>`;
     box.innerHTML=h;
     box.querySelectorAll(".tkChip").forEach(b=>b.onclick=()=>{ FILT.status=b.dataset.status; renderBoard(); });
     box.querySelector("#tkKindFilt").onchange=e=>{ FILT.kind=e.target.value; renderBoard(); };
+    box.querySelector("#tkSegFilt").onchange=e=>{ FILT.segment=e.target.value; renderBoard(); };
     const s=box.querySelector("#tkSearch"); s.onkeydown=e=>{ if(e.key==="Enter"){ FILT.search=s.value.trim(); renderBoard(); } };
     box.querySelector("#tkRefresh").onclick=()=>{ FILT.search=(box.querySelector("#tkSearch").value||"").trim(); renderBoard(); };
     box.querySelectorAll(".tkRow").forEach(r=>r.onclick=()=>openDrawer(r.dataset.ref));
@@ -219,7 +237,7 @@
     let h=`<div class="drawer-hd"><span style="font-family:var(--mono);font-weight:700">${esc(t.ref)}</span> ${statusPill(t.status)}<span class="x" id="tdX">×</span></div>
       <div style="padding:16px 18px">
         <div style="font-size:16px;font-weight:700">${t.kind==="enhancement"?"💡 ":"🐞 "}${esc(t.title)}</div>
-        <div class="sub" style="margin-top:4px">${esc(KIND_LABEL[t.kind]||t.kind)} · raised by <b>${esc(t.created_by||"—")}</b> · ${esc(ksaT(t.created_at))} KSA</div>
+        <div class="sub" style="margin-top:4px">${segPill(t.segment)} · ${esc(KIND_LABEL[t.kind]||t.kind)} · raised by <b>${esc(t.created_by||"—")}</b> · ${esc(ksaT(t.created_at))} KSA</div>
         ${t.description?`<div style="${lbl}">DESCRIPTION</div><div style="white-space:pre-wrap;font-size:13px;line-height:1.55;background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">${esc(t.description)}</div>`:""}`;
     if((t.files||[]).length){
       h+=`<div style="${lbl}">SCREENSHOTS (${t.files.length})</div><div id="tdImgs" style="display:flex;gap:8px;flex-wrap:wrap"></div>`;
@@ -229,6 +247,7 @@
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <label style="font-size:11.5px;color:var(--muted)">Status<br><select id="tdStatus" style="${sel};margin-top:3px">${STATUSES.map(s=>`<option value="${s}"${t.status===s?" selected":""}>${STATUS_LABEL[s]}</option>`).join("")}</select></label>
         <label style="font-size:11.5px;color:var(--muted)">Priority<br><select id="tdPriority" style="${sel};margin-top:3px">${PRIORITIES.map(p=>`<option value="${p}"${t.priority===p?" selected":""}>${p}</option>`).join("")}</select></label>
+        <label style="font-size:11.5px;color:var(--muted)">Business<br><select id="tdSegment" style="${sel};margin-top:3px"><option value="mobile"${(t.segment||"mobile")==="mobile"?" selected":""}>📱 Mobile</option><option value="fixed"${t.segment==="fixed"?" selected":""}>🏠 Fixed</option></select></label>
       </div>
       <div style="${lbl}">RESOLUTION / NOTE</div>
       <textarea id="tdResolution" rows="3" placeholder="Outcome, decision, or next step (emailed to the raiser on status change)" style="${sel};width:100%;resize:vertical">${esc(t.resolution||"")}</textarea>
@@ -257,7 +276,7 @@
       const msg=body.querySelector("#tdMsg"); msg.textContent="Saving…";
       try{
         const out=await api("/api/tickets/"+encodeURIComponent(t.ref),{method:"PATCH",body:JSON.stringify({
-          status:body.querySelector("#tdStatus").value, priority:body.querySelector("#tdPriority").value,
+          status:body.querySelector("#tdStatus").value, priority:body.querySelector("#tdPriority").value, segment:body.querySelector("#tdSegment").value,
           resolution:body.querySelector("#tdResolution").value })});
         msg.textContent="Saved ✓"+(out.emailed?" · creator notified":"");
         renderBoard();

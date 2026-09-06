@@ -61,9 +61,9 @@ function outcomeMixOf(rows) {
 
 /* ---- dashboards.summary + dashboards.integrations (one payload) ---- */
 async function dealers(db, f360, q) {
-  if (!db.ops) throw notConfigured();
   const s = buildScope(f360, q, 'dealers');
-  const Q = (sql, extra) => db.ops.query(sql, extra ? s.params.concat(extra) : s.params);
+  const pool = f360.poolFor(s.channel); if (!pool) throw notConfigured();   // Salam Home app → beta schema
+  const Q = (sql, extra) => pool.query(sql, extra ? s.params.concat(extra) : s.params);
   const W = s.where;
   const SDA = `AND oa.channel = 'sda'`, FIVEG = `AND oa.workflow::text IN ('fiveGWhiteLabel','fiveGFWA')`;
   const [kpi, outcomes, ts, lb, plans, regions, nafTotal, nafBreak, dv, nafRegion, dvRegion, nafDealer, dvDealer] = await Promise.all([
@@ -134,9 +134,9 @@ async function dealers(db, f360, q) {
 
 /* ---- dashboards.qr ---- */
 async function qr(db, f360, q) {
-  if (!db.ops) throw notConfigured();
   const s = buildScope(f360, q, 'qr');
-  const Q = sql => db.ops.query(sql, s.params);
+  const pool = f360.poolFor(s.channel); if (!pool) throw notConfigured();
+  const Q = sql => pool.query(sql, s.params);
   const W = s.where;
   const [kpi, outcomes, ts, lb, plans, regions] = await Promise.all([
     Q(`SELECT count(*)::int AS total, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed,
@@ -168,11 +168,11 @@ async function qr(db, f360, q) {
 const EXPORT_KEYS = ['id', 'workflow', 'plan', 'channel', 'outcome', 'stepReached', 'orderNumber', 'referralCode', 'nafathOutcome', 'dealerValidation',
   'startedAt', 'completedAt', 'durationS', 'lat', 'lng', 'dealerName', 'dealerCode', 'city', 'region', 'role'];
 async function exportRows(db, f360, q) {
-  if (!db.ops) throw notConfigured();
   const which = q.which === 'qr' ? 'qr' : 'dealers';
   const s = buildScope(f360, q, which);
+  const pool = f360.poolFor(s.channel); if (!pool) throw notConfigured();
   const lim = Math.min(10000, Math.max(1, Number(q.limit) || 10000));
-  const r = await db.ops.query(`SELECT oa.id, oa.workflow::text AS workflow, oa.plan, oa.channel, oa.outcome::text AS outcome, oa.step_reached, oa.order_number,
+  const r = await pool.query(`SELECT oa.id, oa.workflow::text AS workflow, oa.plan, oa.channel, oa.outcome::text AS outcome, oa.step_reached, oa.order_number,
         oa.referral_code, oa.nafath_outcome, oa.dealer_validation, oa.started_at, oa.completed_at, oa.duration_s, oa.lat, oa.lng,
         d.staff_name, d.dealer_code, d.city, d.region, d.role::text AS role
       ${FROM} ${s.where} ORDER BY oa.started_at DESC LIMIT $${s.params.length + 1}`, s.params.concat([lim]));

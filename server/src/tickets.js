@@ -79,6 +79,7 @@ async function create(req, body) {
   const actor = (req && req.actor && req.actor !== 'anonymous') ? req.actor : null;
   if (!actor) return { error: 'not signed in', status: 401 };
   const kind = KINDS.has(String(body.kind)) ? String(body.kind) : 'issue';
+  const segment = SEGMENTS.has(String(body.segment)) ? String(body.segment) : 'mobile';
   const title = String(body.title || '').trim();
   if (!title) return { error: 'title is required', status: 400 };
   const description = String(body.description || '').trim() || null;
@@ -89,10 +90,10 @@ async function create(req, body) {
   // data-modifying CTE (INSERT … then UPDATE … WHERE t.id = ins.id) fails because the UPDATE uses the
   // statement-start snapshot and can't see the row the CTE just inserted → 0 rows → undefined.id crash.
   const ins = await C.query(
-    `INSERT INTO console_tickets (kind, title, description, created_by, ref)
-       VALUES ($1, $2, $3, $4, 'TKT-TMP-' || floor(random() * 1e9)::bigint)
+    `INSERT INTO console_tickets (kind, title, description, created_by, ref, segment)
+       VALUES ($1, $2, $3, $4, 'TKT-TMP-' || floor(random() * 1e9)::bigint, $5)
      RETURNING id, created_at`,
-    [kind, safeName(title, 300), description, actor]);
+    [kind, safeName(title, 300), description, actor, segment]);
   const t = ins.rows[0];
   const upd = await C.query(
     `UPDATE console_tickets SET ref = 'TKT-' || lpad(id::text, 6, '0') WHERE id = $1 RETURNING ref`,
@@ -118,11 +119,11 @@ async function create(req, body) {
   // Degrade gracefully: the ticket is already saved; emailed=false if SMTP is unset/failing.
   let emailed = false, emailError = null;
   try {
-    const r = await sendConfirmation(actor, { ref: t.ref, title, kind, at: t.created_at });
+    const r = await sendConfirmation(actor, { ref: t.ref, title, kind, segment, at: t.created_at });
     emailed = !!r.sent; if (r.error) emailError = r.error;
   } catch (e) { emailError = e.message; }
 
-  return { ok: true, id: t.id, ref: t.ref, kind, title, status: 'open',
+  return { ok: true, id: t.id, ref: t.ref, kind, segment, title, status: 'open',
            created_at: t.created_at, files: saved, fileCount: saved.length, emailed, emailError };
 }
 
@@ -133,6 +134,8 @@ function ksa(iso) {
   } catch (e) { return String(iso); }
 }
 const KIND_LABEL = { enhancement: 'Suggestion / enhancement', issue: 'Issue' };
+const SEGMENTS = new Set(['mobile', 'fixed']);
+const SEGMENT_LABEL = { mobile: 'Mobile (MVNO)', fixed: 'Fixed (FTTX / 5G)' };
 
 async function sendConfirmation(email, t) {
   const e = notify.esc;
@@ -140,6 +143,7 @@ async function sendConfirmation(email, t) {
     <table style="border-collapse:collapse;font-size:13px;color:#334155;margin:8px 0 14px">
       <tr><td style="padding:4px 14px 4px 0;color:#64748b">Reference</td><td style="padding:4px 0;font-weight:800;color:#0f5132">${e(t.ref)}</td></tr>
       <tr><td style="padding:4px 14px 4px 0;color:#64748b">Type</td><td style="padding:4px 0">${e(KIND_LABEL[t.kind] || t.kind)}</td></tr>
+      <tr><td style="padding:4px 14px 4px 0;color:#64748b">Business</td><td style="padding:4px 0">${e(SEGMENT_LABEL[t.segment] || t.segment || 'Mobile')}</td></tr>
       <tr><td style="padding:4px 14px 4px 0;color:#64748b">Title</td><td style="padding:4px 0">${e(t.title)}</td></tr>
       <tr><td style="padding:4px 14px 4px 0;color:#64748b">Raised</td><td style="padding:4px 0">${e(ksa(t.at))} KSA</td></tr>
     </table>
@@ -167,7 +171,7 @@ async function sendStatusUpdate(email, t) {
 }
 const STATUS_LABEL = { open: 'Open', under_evaluation: 'Under evaluation', in_progress: 'In progress', closed: 'Closed', rejected: 'Rejected' };
 
-const TICKET_COLS = `id, ref, kind, title, description, status, priority, created_by, evaluator, resolution,
+const TICKET_COLS = `id, ref, kind, segment, title, description, status, priority, created_by, evaluator, resolution,
   created_at, updated_at, closed_at`;
 
 async function listMine(actor) {
@@ -183,6 +187,7 @@ async function listBoard(q) {
   const w = [], p = [];
   if (q.status && STATUSES.has(String(q.status))) { p.push(q.status); w.push(`status = $${p.length}`); }
   if (q.kind && KINDS.has(String(q.kind))) { p.push(q.kind); w.push(`kind = $${p.length}`); }
+  if (q.segment && SEGMENTS.has(String(q.segment))) { p.push(q.segment); w.push(`segment = $${p.length}`); }
   if (q.search) { p.push('%' + String(q.search).toLowerCase() + '%'); w.push(`(lower(title) LIKE $${p.length} OR lower(ref) LIKE $${p.length} OR lower(coalesce(created_by,'')) LIKE $${p.length})`); }
   const clause = w.length ? 'WHERE ' + w.join(' AND ') : '';
   const r = await C.query(
@@ -191,7 +196,9 @@ async function listBoard(q) {
        FROM console_tickets t ${clause} ORDER BY created_at DESC LIMIT 500`, p);
   const counts = await C.query(`SELECT status, count(*)::int n FROM console_tickets GROUP BY status`);
   const byStatus = {}; for (const row of counts.rows) byStatus[row.status] = row.n;
-  return { tickets: r.rows, counts: byStatus };
+  const segc = await C.query(`SELECT segment, count(*)::int n FROM console_tickets WHERE status NOT IN ('closed','rejected') GROUP BY segment`).catch(() => ({ rows: [] }));
+  const bySegment = {}; for (const row of segc.rows) bySegment[row.segment] = row.n;
+  return { tickets: r.rows, counts: byStatus, bySegment };
 }
 
 /* Full detail incl. files + comments. Non-admins may only read their OWN ticket. */
@@ -223,6 +230,10 @@ async function update(req, ref, body) {
     p.push(body.priority); set.push(`priority = $${p.length}`); changes.priority = body.priority;
   }
   if (body.resolution != null) { p.push(String(body.resolution).slice(0, 4000) || null); set.push(`resolution = $${p.length}`); changes.resolution = true; }
+  if (body.segment != null) {
+    if (!SEGMENTS.has(String(body.segment))) return { error: 'invalid segment (mobile | fixed)', status: 400 };
+    p.push(body.segment); set.push(`segment = $${p.length}`); changes.segment = body.segment;
+  }
   if (body.evaluator != null) { p.push(String(body.evaluator).slice(0, 200) || null); set.push(`evaluator = $${p.length}`); }
   if (!set.length) return { error: 'nothing to update', status: 400 };
   // stamp the acting admin as evaluator when they didn't pass one explicitly

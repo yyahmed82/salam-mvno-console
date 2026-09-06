@@ -191,7 +191,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   window.opsSession = () => SES;   // { email, role, me:{name,mobile,dashboard,...} }
   /* 2 Sep 2026 view split: home→'dashboard', dms→'dms' (own view), every Explore-menu entry
    * (topology/apigw/docs/journeys/integrations/sub360) → the single 'explore' view. */
-  const NAV_VIEW = { home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore",
+  const NAV_VIEW = { landing:"dashboard", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore",
     explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", tapdocs:"explore", alerts:"alerts", errors:"errors", analytics:"analytics", sub360:"explore", settings:"settings" };
 
   async function loadMe(){
@@ -217,10 +217,13 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   function can(c){ return SES.me && SES.me.caps && SES.me.caps[c]; }
   function applyScope(){
     const views = (SES.me&&SES.me.views)||[];
+    const FTV = (SES.me&&SES.me.fixedTabViews)||{};
     document.querySelectorAll(".navtab").forEach(b=>{
-      const v = NAV_VIEW[b.dataset.view];
+      // Fixed sub-pages answer to their own view (matrix column); the hub itself to 'fixed'
+      const v = b.dataset.fxtab ? (FTV[b.dataset.fxtab]||"fixed") : NAV_VIEW[b.dataset.view];
       b.classList.toggle("hidden", !views.includes(v));   // Dashboard too — a real gated view since 2 Sep 2026
     });
+    window.FIXED_TAB_VIEWS = FTV; window.FIXED_VIEWS_HELD = views.filter(v=>/^fixed/.test(v));
     // SLA (SLO) page now lives in the Settings gear menu — root-tier only once ROOT_ADMINS is set
     // (root stays true for all when unset — matches the server failsafe).
     const slaMi = document.getElementById("slaMenuItem"); if(slaMi) slaMi.style.display = (SES.me && SES.me.root!==false)?"":"none";
@@ -1363,7 +1366,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       UM_ROLES = Object.entries(m).sort((a,b)=>(a[1].rank-b[1].rank)||a[1].label.localeCompare(b[1].label)).map(([k,v])=>[k,v.label]);
     }catch(e){}
   }
-  const UM_TAGS = ["BSS","OSS","DIGITAL","SALES OPS","PLATFORM","IDENTITY","CALL CENTER"];
+  const UM_TAGS = ["BSS","OSS","DIGITAL","FIXED","SALES OPS","PLATFORM","IDENTITY","CALL CENTER"];
   const fmtLogin = d => { if(!d) return "—"; const x=new Date(d); return x.toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"numeric",month:"short"})+", "+x.toLocaleTimeString("en-GB",{timeZone:"Asia/Riyadh",hour:"2-digit",minute:"2-digit"}); };
 
   async function renderUserMgmt(){
