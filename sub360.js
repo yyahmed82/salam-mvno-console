@@ -82,9 +82,8 @@
       <div class="sbt-head-row">
         <div class="sbt-avatar">👤</div>
         <div class="sbt-who">
-          <div id="sbSalamNums" class="sbt-nums">…</div>
-          <div class="rl sbt-sub">NID <b>${esc(i.nationality_id_number||'—')}</b> · ${esc(i.current_plan||'—')} ${act}
-            <span style="color:var(--muted)">· <span id="sbLineCount">…</span> Salam line(s) · ${esc(i.flow||'—')}</span></div>
+          <div id="sbSalamNums" class="sbt-nums">Customer · NID <b>${esc(i.nationality_id_number||'—')}</b></div>
+          <div class="rl sbt-sub">Onboarding order: ${esc(i.current_plan||'—')} ${act}<span style="color:var(--muted)"> · ${esc(i.flow||'—')}</span><span id="sbLineCount" hidden></span></div>
         </div>
         <span id="lvHealth" class="rl sbt-health"></span>
         ${unmaskBtn}
@@ -491,7 +490,6 @@
           :`<div class="okbox" style="border-left:3px solid var(--tint-amber-fg,#d97706)"><b>No activated Salam line found for this search key.</b>
           The order's contact number may belong to another operator — BSS reads will likely fail. If the customer has a Salam number, search with it directly.</div>`;
         const lc=document.getElementById('sbLineCount'); if(lc) lc.textContent=String(_lvLines.length);
-      const sn=document.getElementById('sbSalamNums'); if(sn) sn.textContent='— none found —';
         if(fixedServices().length) bar.innerHTML+=servicesStrip([]);
         wireServicesStrip(bar);
         return;
@@ -500,8 +498,7 @@
       bar.innerHTML=servicesStrip(_lvLines);
       // surface the Salam number(s) INSIDE the Identity card too — the first thing an agent reads
       const lc=document.getElementById('sbLineCount'); if(lc) lc.textContent=String(_lvLines.length);
-      const sn=document.getElementById('sbSalamNums');
-      if(sn) sn.innerHTML=_lvLines.map(l=>`<span class="mono" title="${esc(l.source)}" style="background:var(--tint-green,#dcfce7);color:var(--tint-green-fg,#166534);border-radius:6px;padding:1px 8px;font-weight:700;font-size:11.5px;white-space:nowrap">${esc(l.msisdn)}</span>`).join('')||'—';
+
       wireServicesStrip(bar);
       bar.querySelectorAll('[data-lvline]').forEach(b=>b.addEventListener('click',()=>{
         _lvLine=b.getAttribute('data-lvline');

@@ -54,20 +54,20 @@
         <div class="sub" style="margin-bottom:12px">Suggest an improvement or report an issue you hit in the console. You'll get an email confirming it's under evaluation.</div>
         <h5>Type</h5>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <label class="tkKind" style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;gap:8px;align-items:flex-start">
-            <input type="radio" name="tkKind" value="issue" checked style="margin-top:2px">
+          <label class="tk-opt tkKind">
+            <input type="radio" name="tkKind" value="issue" checked>
             <span><b>Issue</b><div class="sub" style="font-size:11px">Something is broken or wrong</div></span></label>
-          <label class="tkKind" style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;gap:8px;align-items:flex-start">
-            <input type="radio" name="tkKind" value="enhancement" style="margin-top:2px">
+          <label class="tk-opt tkKind">
+            <input type="radio" name="tkKind" value="enhancement">
             <span><b>Suggestion</b><div class="sub" style="font-size:11px">An enhancement or new idea</div></span></label>
         </div>
         <h5>Business <span class="sub" style="font-weight:400">— which side of the console is this about?</span></h5>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <label class="tkSeg" style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;gap:8px;align-items:flex-start">
-            <input type="radio" name="tkSeg" value="mobile" ${guessSegment()==="mobile"?"checked":""} style="margin-top:2px">
+          <label class="tk-opt tkSeg">
+            <input type="radio" name="tkSeg" value="mobile" ${guessSegment()==="mobile"?"checked":""}>
             <span><b>📱 Mobile</b><div class="sub" style="font-size:11px">MVNO · selfcare, DMS, payments, activation</div></span></label>
-          <label class="tkSeg" style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;gap:8px;align-items:flex-start">
-            <input type="radio" name="tkSeg" value="fixed" ${guessSegment()==="fixed"?"checked":""} style="margin-top:2px">
+          <label class="tk-opt tkSeg">
+            <input type="radio" name="tkSeg" value="fixed" ${guessSegment()==="fixed"?"checked":""}>
             <span><b>🏠 Fixed</b><div class="sub" style="font-size:11px">FTTH · FTTB · 5G home · SDA dealers · Salam Home app</div></span></label>
         </div>
         <h5>Title</h5>
@@ -96,9 +96,9 @@
     drop.addEventListener("dragleave",()=>{ drop.style.borderColor="var(--line)"; });
     drop.addEventListener("drop",e=>{ e.preventDefault(); drop.style.borderColor="var(--line)"; addFiles(e.dataTransfer.files); });
     $("#tkSubmit").onclick=submit;
-    document.querySelectorAll("#ticketModalOv .tkKind input").forEach(r=>r.onchange=()=>{
-      document.querySelectorAll("#ticketModalOv .tkKind").forEach(l=>l.style.borderColor= l.querySelector("input").checked?"var(--green)":"var(--line)");
-    });
+    // option cards mirror the radio state with an .on class (fallback for browsers without :has())
+    const syncOpts=()=>document.querySelectorAll("#ticketModalOv .tk-opt").forEach(l=>l.classList.toggle("on",!!l.querySelector("input").checked));
+    document.querySelectorAll("#ticketModalOv .tk-opt input").forEach(r=>r.onchange=syncOpts); syncOpts();
   }
   async function addFiles(list){
     const msg=document.getElementById("tkMsg");
