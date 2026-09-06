@@ -181,10 +181,8 @@
     let h=`<div class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       ${chip("","All")}${STATUSES.map(s=>chip(s,STATUS_LABEL[s],STATUS_COLOR[s])).join("")}
       <span style="margin-inline-start:auto;display:flex;gap:8px;align-items:center">
-        <select id="tkSegFilt" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card2);color:var(--ink)">
-          <option value="">📱🏠 Both businesses</option><option value="mobile"${FILT.segment==="mobile"?" selected":""}>📱 Mobile${data.bySegment&&data.bySegment.mobile!=null?" ("+data.bySegment.mobile+" open)":""}</option><option value="fixed"${FILT.segment==="fixed"?" selected":""}>🏠 Fixed${data.bySegment&&data.bySegment.fixed!=null?" ("+data.bySegment.fixed+" open)":""}</option></select>
-        <select id="tkKindFilt" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card2);color:var(--ink)">
-          <option value="">All types</option><option value="issue"${FILT.kind==="issue"?" selected":""}>Issues</option><option value="enhancement"${FILT.kind==="enhancement"?" selected":""}>Suggestions</option></select>
+        <span class="um-biz mini" id="tkSegFilt" title="Business">${[["mobile","📱 Mobile",data.bySegment&&data.bySegment.mobile],["fixed","🏠 Fixed",data.bySegment&&data.bySegment.fixed],["","📱🏠 Both",null]].map(([v,l,n])=>`<button type="button" class="bizchip ${v||"both"}${FILT.segment===v?" on":""}" data-seg="${v}">${l}${n!=null?` <span style="opacity:.75;font-weight:600">${n}</span>`:""}</button>`).join("")}</span>
+        <span class="um-biz mini" id="tkKindFilt" title="Type">${[["issue","🐞 Issues"],["enhancement","💡 Suggestions"],["","All types"]].map(([v,l])=>`<button type="button" class="bizchip kind${FILT.kind===v?" on":""}" data-kind="${v}">${l}</button>`).join("")}</span>
         <input id="tkSearch" type="text" placeholder="Search ref / title / user" value="${esc(FILT.search)}" style="font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card2);color:var(--ink);width:200px">
         <button id="tkRefresh" class="navtab" style="font-size:12px;padding:5px 11px">Refresh</button>
       </span></div>`;
@@ -203,8 +201,8 @@
       +`</table></div>`;
     box.innerHTML=h;
     box.querySelectorAll(".tkChip").forEach(b=>b.onclick=()=>{ FILT.status=b.dataset.status; renderBoard(); });
-    box.querySelector("#tkKindFilt").onchange=e=>{ FILT.kind=e.target.value; renderBoard(); };
-    box.querySelector("#tkSegFilt").onchange=e=>{ FILT.segment=e.target.value; renderBoard(); };
+    box.querySelectorAll("#tkKindFilt .bizchip").forEach(b=>b.onclick=()=>{ FILT.kind=b.dataset.kind; renderBoard(); });
+    box.querySelectorAll("#tkSegFilt .bizchip").forEach(b=>b.onclick=()=>{ FILT.segment=b.dataset.seg; renderBoard(); });
     const s=box.querySelector("#tkSearch"); s.onkeydown=e=>{ if(e.key==="Enter"){ FILT.search=s.value.trim(); renderBoard(); } };
     box.querySelector("#tkRefresh").onclick=()=>{ FILT.search=(box.querySelector("#tkSearch").value||"").trim(); renderBoard(); };
     box.querySelectorAll(".tkRow").forEach(r=>r.onclick=()=>openDrawer(r.dataset.ref));
@@ -247,7 +245,7 @@
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <label style="font-size:11.5px;color:var(--muted)">Status<br><select id="tdStatus" style="${sel};margin-top:3px">${STATUSES.map(s=>`<option value="${s}"${t.status===s?" selected":""}>${STATUS_LABEL[s]}</option>`).join("")}</select></label>
         <label style="font-size:11.5px;color:var(--muted)">Priority<br><select id="tdPriority" style="${sel};margin-top:3px">${PRIORITIES.map(p=>`<option value="${p}"${t.priority===p?" selected":""}>${p}</option>`).join("")}</select></label>
-        <label style="font-size:11.5px;color:var(--muted)">Business<br><select id="tdSegment" style="${sel};margin-top:3px"><option value="mobile"${(t.segment||"mobile")==="mobile"?" selected":""}>📱 Mobile</option><option value="fixed"${t.segment==="fixed"?" selected":""}>🏠 Fixed</option></select></label>
+        <label style="font-size:11.5px;color:var(--muted)">Business<br><span class="um-biz mini" id="tdSegment" data-value="${esc(t.segment||"mobile")}" style="margin-top:3px">${[["mobile","📱 Mobile"],["fixed","🏠 Fixed"]].map(([v,l])=>`<button type="button" class="bizchip ${v}${(t.segment||"mobile")===v?" on":""}" data-seg="${v}">${l}</button>`).join("")}</span></label>
       </div>
       <div style="${lbl}">RESOLUTION / NOTE</div>
       <textarea id="tdResolution" rows="3" placeholder="Outcome, decision, or next step (emailed to the raiser on status change)" style="${sel};width:100%;resize:vertical">${esc(t.resolution||"")}</textarea>
@@ -272,11 +270,12 @@
         window.fetch(API+"/api/tickets/"+t.id+"/file/"+f.id).then(r=>r.ok?r.blob():null).then(b=>{ if(!b) return; const u=URL.createObjectURL(b); _objUrls.push(u); im.src=u; a.href=u; a.target="_blank"; }).catch(()=>{});
       });
     }
+    const segCtl=body.querySelector("#tdSegment"); if(segCtl) segCtl.querySelectorAll(".bizchip").forEach(b=>b.onclick=()=>{ segCtl.querySelectorAll(".bizchip").forEach(x=>x.classList.remove("on")); b.classList.add("on"); segCtl.dataset.value=b.dataset.seg; });
     body.querySelector("#tdSave").onclick=async()=>{
       const msg=body.querySelector("#tdMsg"); msg.textContent="Saving…";
       try{
         const out=await api("/api/tickets/"+encodeURIComponent(t.ref),{method:"PATCH",body:JSON.stringify({
-          status:body.querySelector("#tdStatus").value, priority:body.querySelector("#tdPriority").value, segment:body.querySelector("#tdSegment").value,
+          status:body.querySelector("#tdStatus").value, priority:body.querySelector("#tdPriority").value, segment:body.querySelector("#tdSegment").dataset.value,
           resolution:body.querySelector("#tdResolution").value })});
         msg.textContent="Saved ✓"+(out.emailed?" · creator notified":"");
         renderBoard();
