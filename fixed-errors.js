@@ -26,7 +26,8 @@
     const body=p.body&&typeof p.body==="object"?p.body:null; const empty=!body||!Object.keys(body).length; const qi=url.indexOf("?");
     if(qi>=0&&empty){ const lines=[]; new URLSearchParams(url.slice(qi+1)).forEach((val,k)=>lines.push(esc(k)+" : "+esc(val))); if(lines.length) return lines.join("\n"); }
     if(!empty) return esc(JSON.stringify(body,null,2)); return esc(pretty(p)); }
-  const chip=(on,label,attrs)=>`<button ${attrs} class="fe-chip${on?" on":""} ${(attrs.match(/class="([^"]+)"/)||[])[1]||""}">${label}</button>`;
+  /* one class attribute only — a second class="" is ignored by the browser and the chip falls back to the grey default */
+  const chip=(on,label,attrs)=>{ const m=attrs.match(/\s*class="([^"]*)"/); const rest=m?attrs.replace(m[0],""):attrs; return `<button type="button" class="fe-chip${on?" on":""}${m?" "+m[1]:""}" ${rest}>${label}</button>`; };
   const prioBadge=p=>`<span class="fe-pri" style="background:${PRIO_COLOR[p]||"#7d8590"}">P${p}</span>`;
   const catBadge=(r)=>{ const esc=FX().esc; const t=TONE[r.tone]||TONE.muted; return `<span class="fe-cat"><span class="fe-catpill" style="background:${t.bg};color:${t.fg}">${esc(r.label||r.category)}</span><span class="fe-team" style="color:${TEAM_COLOR[r.team]||"var(--muted)"}">${esc(r.team||"")}</span></span>`; };
   const inp=(id,ph,val,extra)=>`<input id="${id}" class="fe-in" placeholder="${FX().esc(ph)}" value="${FX().esc(val||"")}" autocomplete="off" spellcheck="false" style="${extra||""}">`;
@@ -58,7 +59,9 @@
     #fxErr .fe-tablecard{background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(2,6,23,.05);overflow:hidden}
     #fxErr table.fe-tbl{width:100%;border-collapse:collapse;font-size:13px} #fxErr .fe-tbl th{text-align:left;padding:12px 16px;color:var(--muted);font-weight:700;font-size:11px;letter-spacing:.6px;text-transform:uppercase;border-bottom:1px solid var(--line)}
     #fxErr .fe-tbl td{padding:10px 16px;border-bottom:1px solid var(--line-soft,var(--line));vertical-align:middle} #fxErr tr.fe-row{cursor:pointer;transition:background .12s} #fxErr tr.fe-row:hover td{background:var(--card2,#f8fafc)}
-    #fxErr tr.fe-row.open td{background:var(--card2,#f8fafc)}
+    #fxErr tr.fe-row td:first-child{box-shadow:inset 3px 0 0 transparent;transition:box-shadow .12s} #fxErr tr.fe-row:hover td:first-child,#fxErr tr.fe-row.open td:first-child{box-shadow:inset 3px 0 0 var(--green,#0e9f5a)}
+    #fxErr tr.fe-row.open td{background:var(--card2,#f8fafc)} #fxErr tr.fe-row:focus-visible{outline:2px solid var(--green,#0e9f5a);outline-offset:-2px}
+    #fxErr .fe-caret{display:inline-block;color:var(--muted);font-size:12px;margin-left:8px;transition:transform .15s,color .15s} #fxErr tr.fe-row:hover .fe-caret{color:var(--green,#0e9f5a)} #fxErr tr.fe-row.open .fe-caret{transform:rotate(90deg);color:var(--green,#0e9f5a)}
     #fxErr .fe-link{color:var(--green,#0e9f5a);font-weight:700;text-decoration:underline;text-underline-offset:3px} #fxErr .fe-link small{font-size:10px;color:var(--muted);font-weight:600}
     #fxErr .fe-st{font-size:12px;font-weight:700} #fxErr .fe-st.open{color:#b45309} #fxErr .fe-st.acked{color:#2563eb} #fxErr .fe-st.resolved{color:var(--green,#0e9f5a)}
     #fxErr .fe-x td{padding:14px 16px 18px;background:var(--card,#fff)}
@@ -151,11 +154,12 @@
       if(r.dealer_code) return `<a class="fe-link" href="#fixed?tab=map&dealer=${encodeURIComponent(r.dealer_id||r.dealer_code)}">${esc(r.dealer_code)} <small>↗</small></a>`;
       return `<span style="color:var(--muted)" title="No dealer/staff captured for this journey">unattributed</span>`; };
     const status=r=>r.resolved?`<span class="fe-st resolved">resolved</span>`:r.acked?`<span class="fe-st acked" title="acked by ${esc(r.acked_by||"")}">acked</span>`:`<span class="fe-st open">open</span>`;
-    el.innerHTML=`<table class="fe-tbl"><thead><tr>${["PRI","TIME","CATEGORY","DEALER / QR","REGION","STATUS"].map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row${S.expanded===r.id?" open":""}" data-id="${esc(r.id)}">
+    el.innerHTML=`<table class="fe-tbl"><thead><tr>${["PRI","TIME","CATEGORY","DEALER / QR","REGION","STATUS"].map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row${S.expanded===r.id?" open":""}" data-id="${esc(r.id)}" tabindex="0" title="Open: failed step, request / response, similar cases">
         <td>${prioBadge(r.priority)}</td><td style="white-space:nowrap">${fmtT(r.occurred_at)}</td>
         <td>${catBadge(r)}${r.code?`<span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:8px">${esc(r.code)}</span>`:""}</td>
-        <td class="fe-nostop">${dealer(r)}</td><td>${esc(r.region||"—")}</td><td>${status(r)}</td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="6"></td></tr>`).join("")
+        <td class="fe-nostop">${dealer(r)}</td><td>${esc(r.region||"—")}</td><td style="white-space:nowrap">${status(r)}<span class="fe-caret" aria-hidden="true">›</span></td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="6"></td></tr>`).join("")
       :`<tr><td colspan="6" class="fe-empty">No errors match these filters.</td></tr>`}</tbody></table>`;
+    el.querySelectorAll(".fe-row").forEach(tr=>tr.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); tr.click(); } });
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${CSS.escape(id)}"]`);
       if(S.expanded===id){ S.expanded=null; x.hidden=true; tr.classList.remove("open"); return; } el.querySelectorAll(".fe-x").forEach(o=>o.hidden=true); el.querySelectorAll(".fe-row.open").forEach(o=>o.classList.remove("open")); S.expanded=id; x.hidden=false; tr.classList.add("open"); expand(host,fx,x.firstElementChild,rows.find(r=>r.id===id)); });
     if(keepExpanded&&S.expanded){ const x=el.querySelector(`.fe-x[data-id="${CSS.escape(S.expanded)}"]`); const r=rows.find(r=>r.id===S.expanded); if(x&&r){ x.hidden=false; expand(host,fx,x.firstElementChild,r); } }
