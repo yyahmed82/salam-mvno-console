@@ -343,10 +343,12 @@ const { execFile } = require('child_process');
 function callViaSsh(path, body, msOverride) {
   return new Promise((resolve) => {
     const t0 = Date.now();
-    const host = (process.env.API_LOG_HOSTS || '').split(',')[0].trim();
-    const user = process.env.API_LOG_USER || 'console_ro';
-    const keyf = process.env.API_LOG_KEY || '';
-    if (!host || !keyf) return resolve({ ok: false, error: 'LIVE_UIL_VIA=ssh needs API_LOG_HOSTS/API_LOG_USER/API_LOG_KEY', ms: 0 });
+    // LIVE_UIL_SSH_* lets an instance do live reads over the hop WITHOUT enabling the log collectors (API_LOG_HOSTS
+    // is also the collectors' on-switch); falls back to the collector variables when the dedicated ones are unset.
+    const host = (process.env.LIVE_UIL_SSH_HOST || process.env.API_LOG_HOSTS || '').split(',')[0].trim();
+    const user = process.env.LIVE_UIL_SSH_USER || process.env.API_LOG_USER || 'console_ro';
+    const keyf = process.env.LIVE_UIL_SSH_KEY || process.env.API_LOG_KEY || '';
+    if (!host || !keyf) return resolve({ ok: false, error: 'LIVE_UIL_VIA=ssh needs LIVE_UIL_SSH_HOST/USER/KEY (or API_LOG_HOSTS/USER/KEY)', ms: 0 });
     const q = v => '"' + String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
     const cfg = [
       'url = ' + q(BASE() + path),

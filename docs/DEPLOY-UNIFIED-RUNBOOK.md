@@ -24,7 +24,8 @@ unified console at all.
 3. **No second writer on the replica.** `PROD_DATABASE_URL` stays **empty** in `/apps/unified/.env` → `prodSync.js` is inert. Only `salam-console` keeps the selfcare replica fresh. `indexSource.js` only issues `CREATE INDEX IF NOT EXISTS` (idempotent, safe with two readers).
 4. **Read-only roles on every shared source.** `OPS_DATABASE_URL` uses `sda_ops_app` with the driver-enforced read-only pool (`db.js`), `OPS_BETA_DATABASE_URL` the same, `NEXUS_DATABASE_URL` = `nexus_reader`, `PAYMENTS_DATABASE_URL` read-only. `OPS_POOL_MAX=1..2` so the beta ingester never starves for connections.
 5. **No duplicate side effects during the shadow period.** Alerts evaluate and are stored in `unified_console` (so the 48 h comparison is possible), but nobody is mailed twice: on the user import set `mail_alert=false, mail_report=false` for everyone except the tester(s). Leave `SN_URL`, `SMS_URL`, `SMS_TO`, `WA_BASE_URL`, `API_LOG_HOSTS`, `ZIPKIN_HOSTS`, `SEMATI_PROBE_*`, `IPRL_REDIS_URL` **unset**; keep `SMTP_*` (needed for OTP login). Flip these on only at cutover.
-6. **Single-host samplers stay single.** `UILS_SAMPLE=0`, `UILS_WATCH=0`, `OSB_PROBE_AUTO=0`, `APIGW_PROBE_AUTO=0`, `DMS_JOURNEY_SYNC=0` on unified until `salam-console` is retired (they SSH into app nodes and would double the load).
+6. **Live BSS reads without the collectors.** Customer 360's live UIL read hops over SSH; set `LIVE_UIL_SSH_HOST/USER/KEY` (same values as the digital console's `API_LOG_HOSTS/USER/KEY`) — never `API_LOG_HOSTS` itself, which would start a second log collector.
+7. **Single-host samplers stay single.** `UILS_SAMPLE=0`, `UILS_WATCH=0`, `OSB_PROBE_AUTO=0`, `APIGW_PROBE_AUTO=0`, `DMS_JOURNEY_SYNC=0` on unified until `salam-console` is retired (they SSH into app nodes and would double the load).
 
 ## 3 · Release cadence (how we keep working locally and redeploy per milestone)
 
