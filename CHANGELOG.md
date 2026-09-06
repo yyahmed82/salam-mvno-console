@@ -8,6 +8,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
 - **Fixed hub bar carries no filters any more** — the Channel / Range chips under the page title are gone. Channel is always
   "All" (Errors and Reports own their channel controls); the range is chosen inside the page that uses it — Overview
   (top right), SDA map and QR codes (sidebar "Range"), Reports (toolbar) — via `fx.rangeChips()` / `fx.bindRange()`.
+- **Raise a ticket, business-first**: step 1 picks 📱 Mobile or 🏠 Fixed as two themed tabs (blue / green — header,
+  accent, hints and the submit button follow the choice, pre-selected from the page you are on); step 2 is the form
+  (Issue / Suggestion pills, title, description, screenshots). Themed confirmation, Esc closes. No native controls.
 - **Customer 360 — Services strip** in the sticky header: every service the customer has, both businesses, as cards —
   📱 one per Salam line (click = the line BSS panels read) · 🏠 one per fixed subscription from the BSS inventory
   (account, plan, speed, state, amount owed; click = Fixed services tab) — with a total and a mobile / fixed count.

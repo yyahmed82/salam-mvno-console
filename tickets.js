@@ -35,70 +35,67 @@
     let ov=document.getElementById("ticketModalOv");
     if(ov) return ov;
     ov=document.createElement("div"); ov.id="ticketModalOv"; ov.className="modal-overlay";
-    ov.innerHTML=`<div class="modal-card" id="ticketModalCard" style="max-width:560px"></div>`;
+    ov.innerHTML=`<div class="modal-card tkm-card" id="ticketModalCard" style="max-width:640px"></div>`;
     document.body.appendChild(ov);
     ov.addEventListener("click",e=>{ if(e.target===ov) closeModal(); });
     return ov;
   }
   function closeModal(){ const ov=document.getElementById("ticketModalOv"); if(ov) ov.classList.remove("open"); PICKED=[]; }
   window.openTicketModal=function(){
-    const ov=ensureModal(); PICKED=[];
+    const ov=ensureModal(); PICKED=[]; TK_SEG=guessSegment(); TK_KIND="issue";
     ov.querySelector("#ticketModalCard").innerHTML=formHtml();
     ov.classList.add("open");
     wireForm();
   };
+  /* Business-first modal (6 Sep 2026): step 1 = which business (two themed tabs, Mobile blue / Fixed green);
+   * step 2 = the form for that business (type as segmented pills, title, description, screenshots).
+   * The chosen business drives the accent colour, the header copy and the placeholder hints. */
+  let TK_SEG=null, TK_KIND="issue";
+  const SEG_META={
+    mobile:{ic:"📱",name:"Mobile",tag:"MVNO",blurb:"Selfcare app · DMS dealers · payments · activation · SIM / eSIM",accent:"#2563eb",soft:"rgba(37,99,235,.12)",
+      ph:"e.g. eSIM activation stuck at 'processing' for MSISDN …924",dph:"What happened? Which line / order / payment? What did you expect? Steps to reproduce…"},
+    fixed:{ic:"🏠",name:"Fixed",tag:"FTTH · FTTB · 5G home",blurb:"SDA dealers · e-purchase / QR · Salam Home app · BSS orders",accent:"#0e9f5a",soft:"rgba(14,159,90,.12)",
+      ph:"e.g. feasibility check fails for ODB KRZAHR05053 on the app",dph:"What happened? Which service / ODB / order / dealer? What did you expect? Steps to reproduce…"}};
   function formHtml(){
-    const inp="width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card2);color:var(--ink);font:inherit";
-    return `<div class="modal-head"><span class="path">Raise a ticket</span><span class="x" id="tkX">×</span></div>
-      <div class="modal-body">
-        <div class="sub" style="margin-bottom:12px">Suggest an improvement or report an issue you hit in the console. You'll get an email confirming it's under evaluation.</div>
-        <h5>Type</h5>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <label class="tk-opt tkKind">
-            <input type="radio" name="tkKind" value="issue" checked>
-            <span><b>Issue</b><div class="sub" style="font-size:11px">Something is broken or wrong</div></span></label>
-          <label class="tk-opt tkKind">
-            <input type="radio" name="tkKind" value="enhancement">
-            <span><b>Suggestion</b><div class="sub" style="font-size:11px">An enhancement or new idea</div></span></label>
-        </div>
-        <h5>Business <span class="sub" style="font-weight:400">— which side of the console is this about?</span></h5>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <label class="tk-opt tkSeg">
-            <input type="radio" name="tkSeg" value="mobile" ${guessSegment()==="mobile"?"checked":""}>
-            <span><b>📱 Mobile</b><div class="sub" style="font-size:11px">MVNO · selfcare, DMS, payments, activation</div></span></label>
-          <label class="tk-opt tkSeg">
-            <input type="radio" name="tkSeg" value="fixed" ${guessSegment()==="fixed"?"checked":""}>
-            <span><b>🏠 Fixed</b><div class="sub" style="font-size:11px">FTTH · FTTB · 5G home · SDA dealers · Salam Home app</div></span></label>
-        </div>
-        <h5>Title</h5>
-        <input id="tkTitle" type="text" maxlength="300" placeholder="Short summary" style="${inp}">
-        <h5>Description</h5>
-        <textarea id="tkDesc" rows="5" placeholder="What happened? What did you expect? Steps to reproduce…" style="${inp};resize:vertical"></textarea>
-        <h5>Screenshots <span class="sub" style="font-weight:400">(optional · up to ${MAX_FILES} · PNG/JPG/WEBP/GIF · ${MAX_MB}MB each)</span></h5>
-        <div id="tkDrop" style="border:1.5px dashed var(--line);border-radius:10px;padding:16px;text-align:center;cursor:pointer;color:var(--muted);font-size:12.5px">
-          Drag &amp; drop images here, or <b style="color:var(--green)">browse</b>
-          <input id="tkFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none"></div>
+    const m=TK_SEG?SEG_META[TK_SEG]:null;
+    const tab=(k)=>{ const x=SEG_META[k]; const on=TK_SEG===k; return `<button type="button" class="tkb-tab${on?" on":""}" data-seg="${k}" style="--acc:${x.accent};--soft:${x.soft}">
+        <span class="tkb-ic">${x.ic}</span><span class="tkb-txt"><b>${x.name}</b><small>${x.tag}</small></span>${on?'<span class="tkb-chk">✓</span>':''}</button>`; };
+    const kind=(k,l,sub,ic)=>`<button type="button" class="tkk${TK_KIND===k?" on":""}" data-kind="${k}"><span class="tkk-ic">${ic}</span><span><b>${l}</b><small>${sub}</small></span></button>`;
+    return `<div class="tkm" style="--acc:${m?m.accent:"var(--green)"};--soft:${m?m.soft:"var(--green-bg)"}">
+      <div class="tkm-head"><div><div class="tkm-title">Raise a ticket</div><div class="tkm-sub">${m?`${m.ic} ${m.name} · ${m.blurb}`:"Report an issue or suggest an improvement — you'll get an e-mail when it is under evaluation."}</div></div><button type="button" class="tkm-x" id="tkX" title="Close (Esc)">✕</button></div>
+      <div class="tkm-step"><span class="tkm-n">1</span> Which business is this about?</div>
+      <div class="tkb-tabs">${tab("mobile")}${tab("fixed")}</div>
+      ${m?`<div class="tkm-form">
+        <div class="tkm-step"><span class="tkm-n">2</span> Tell us what you need</div>
+        <div class="tkk-row">${kind("issue","Issue","Something is broken or wrong","🐞")}${kind("enhancement","Suggestion","An enhancement or a new idea","💡")}</div>
+        <label class="tkm-lbl">Title</label>
+        <input id="tkTitle" class="tkm-in" type="text" maxlength="300" placeholder="${esc(m.ph)}">
+        <label class="tkm-lbl">Description</label>
+        <textarea id="tkDesc" class="tkm-in" rows="5" placeholder="${esc(m.dph)}"></textarea>
+        <label class="tkm-lbl">Screenshots <span>optional · up to ${MAX_FILES} · PNG / JPG / WEBP / GIF · ${MAX_MB} MB each</span></label>
+        <div id="tkDrop" class="tkm-drop">🖼️ Drag &amp; drop images here, or <b>browse</b><input id="tkFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none"></div>
         <div id="tkThumbs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"></div>
-        <div id="tkMsg" class="sub" style="margin-top:10px"></div>
-        <div style="display:flex;gap:10px;align-items:center;margin-top:14px">
-          <button id="tkSubmit" class="navtab" style="background:var(--green);color:#fff;border-color:var(--green)">Submit ticket</button>
-          <button id="tkCancel" class="navtab">Cancel</button>
-        </div>
-      </div>`;
+        <div id="tkMsg" class="sub" style="margin-top:8px;min-height:16px"></div>
+        <div class="tkm-actions"><button type="button" id="tkSubmit" class="tkm-btn primary">${m.ic} Submit ${m.name} ticket</button><button type="button" id="tkCancel" class="tkm-btn">Cancel</button>
+          <span class="tkm-hint">${TK_KIND==="issue"?"Goes to the console team as an issue":"Logged as a suggestion for the roadmap"}</span></div>
+      </div>`:`<div class="tkm-empty">Pick <b>Mobile</b> or <b>Fixed</b> to continue — the form adapts to the business.</div>`}
+    </div>`;
   }
   function wireForm(){
-    const $=s=>document.getElementById("ticketModalOv").querySelector(s);
-    $("#tkX").onclick=closeModal; $("#tkCancel").onclick=closeModal;
-    const drop=$("#tkDrop"), file=$("#tkFile");
+    const ov=document.getElementById("ticketModalOv"); const $=s=>ov.querySelector(s);
+    const rerender=()=>{ const t=$("#tkTitle"), d=$("#tkDesc"); const keep={t:t?t.value:"",d:d?d.value:""}; $("#ticketModalCard").innerHTML=formHtml(); wireForm(); const t2=$("#tkTitle"), d2=$("#tkDesc"); if(t2) t2.value=keep.t; if(d2) d2.value=keep.d; renderThumbs(); };
+    $("#tkX").onclick=closeModal;
+    ov.querySelectorAll(".tkb-tab").forEach(b=>b.onclick=()=>{ TK_SEG=b.dataset.seg; rerender(); const t=$("#tkTitle"); if(t) t.focus(); });
+    ov.querySelectorAll(".tkk").forEach(b=>b.onclick=()=>{ TK_KIND=b.dataset.kind; rerender(); });
+    if(!ov.__esc){ ov.__esc=e=>{ if(e.key==="Escape"&&ov.classList.contains("open")) closeModal(); }; document.addEventListener("keydown",ov.__esc); }
+    const cancel=$("#tkCancel"); if(cancel) cancel.onclick=closeModal;
+    const drop=$("#tkDrop"), file=$("#tkFile"); if(!drop) return;
     drop.onclick=()=>file.click();
     file.onchange=()=>{ addFiles(file.files); file.value=""; };
-    drop.addEventListener("dragover",e=>{ e.preventDefault(); drop.style.borderColor="var(--green)"; });
-    drop.addEventListener("dragleave",()=>{ drop.style.borderColor="var(--line)"; });
-    drop.addEventListener("drop",e=>{ e.preventDefault(); drop.style.borderColor="var(--line)"; addFiles(e.dataTransfer.files); });
+    drop.addEventListener("dragover",e=>{ e.preventDefault(); drop.classList.add("over"); });
+    drop.addEventListener("dragleave",()=>{ drop.classList.remove("over"); });
+    drop.addEventListener("drop",e=>{ e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); });
     $("#tkSubmit").onclick=submit;
-    // option cards mirror the radio state with an .on class (fallback for browsers without :has())
-    const syncOpts=()=>document.querySelectorAll("#ticketModalOv .tk-opt").forEach(l=>l.classList.toggle("on",!!l.querySelector("input").checked));
-    document.querySelectorAll("#ticketModalOv .tk-opt input").forEach(r=>r.onchange=syncOpts); syncOpts();
   }
   async function addFiles(list){
     const msg=document.getElementById("tkMsg");
@@ -120,8 +117,8 @@
   }
   async function submit(){
     const ov=document.getElementById("ticketModalOv");
-    const kind=(ov.querySelector('input[name="tkKind"]:checked')||{}).value||"issue";
-    const segment=(ov.querySelector('input[name="tkSeg"]:checked')||{}).value||"mobile";
+    const kind=TK_KIND||"issue";
+    const segment=TK_SEG||"mobile";
     const title=ov.querySelector("#tkTitle").value.trim();
     const description=ov.querySelector("#tkDesc").value.trim();
     const msg=ov.querySelector("#tkMsg"), btn=ov.querySelector("#tkSubmit");
@@ -130,15 +127,17 @@
     const files=PICKED.map(f=>({name:f.name,mime:f.mime,dataB64:f.dataUrl}));
     try{
       const out=await api("/api/tickets",{method:"POST",body:JSON.stringify({kind,segment,title,description,files})});
-      ov.querySelector("#ticketModalCard").innerHTML=`<div class="modal-head"><span class="path">Ticket raised</span><span class="x" id="tkX2">×</span></div>
-        <div class="modal-body" style="text-align:center;padding:26px 22px">
-          <div style="font-size:34px">✅</div>
-          <h2 style="margin:8px 0 4px">Thank you</h2>
-          <div class="sub">Your ticket has been logged and is now under evaluation.</div>
-          <div style="margin:16px 0;font-size:22px;font-weight:800;color:var(--green)">${esc(out.ref)}</div>
-          <div class="sub">${out.emailed?"A confirmation email has been sent to you.":"Logged. (Email confirmation is not configured on this server.)"}</div>
-          <div style="margin-top:18px"><button id="tkDone" class="navtab" style="background:var(--green);color:#fff;border-color:var(--green)">Done</button></div>
-        </div>`;
+      const m=SEG_META[segment]||SEG_META.mobile;
+      ov.querySelector("#ticketModalCard").innerHTML=`<div class="tkm" style="--acc:${m.accent};--soft:${m.soft}">
+        <div class="tkm-head"><div><div class="tkm-title">Ticket raised</div><div class="tkm-sub">${m.ic} ${m.name} · ${kind==="issue"?"issue":"suggestion"}</div></div><button type="button" class="tkm-x" id="tkX2" title="Close">✕</button></div>
+        <div style="text-align:center;padding:26px 22px 8px">
+          <div style="width:64px;height:64px;border-radius:50%;background:var(--soft);display:inline-flex;align-items:center;justify-content:center;font-size:30px;animation:tkPop .25s cubic-bezier(.2,.8,.2,1)">✅</div>
+          <h2 style="margin:12px 0 4px;font-size:18px">Thank you</h2>
+          <div class="sub">Your ${m.name} ticket is logged and now under evaluation.</div>
+          <div style="margin:16px 0 6px;font-size:22px;font-weight:800;color:var(--acc);letter-spacing:.3px">${esc(out.ref)}</div>
+          <div class="sub">${out.emailed?"A confirmation e-mail has been sent to you.":"Logged. (E-mail confirmation is not configured on this server.)"}</div>
+          <div style="margin-top:18px"><button type="button" id="tkDone" class="tkm-btn primary">Done</button></div>
+        </div></div>`;
       ov.querySelector("#tkDone").onclick=closeModal; ov.querySelector("#tkX2").onclick=closeModal;
       if(window.audit) window.audit("TICKET_RAISE_UI", out.ref);
     }catch(e){ msg.textContent="Error: "+e.message; btn.disabled=false; }

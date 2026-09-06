@@ -662,14 +662,46 @@
   .rm-wrap{overflow-x:auto}
   .rm-tbl{border-collapse:collapse;font-size:12px;min-width:100%}
   .rm-tbl th,.rm-tbl td{padding:6px 8px;text-align:center;border-bottom:1px solid var(--line-soft)}
-  .tk-opt{flex:1;min-width:150px;border:1px solid var(--line);border-radius:12px;padding:10px 12px 10px 38px;cursor:pointer;display:block;position:relative;background:var(--card);transition:border-color .15s,background .15s,transform .15s,box-shadow .15s;user-select:none}
-  .tk-opt input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
-  .tk-opt::before{content:"";position:absolute;left:12px;top:13px;width:16px;height:16px;border-radius:50%;border:2px solid var(--line);background:var(--card);transition:border-color .15s,background .15s,box-shadow .15s}
-  .tk-opt:hover{border-color:var(--green);transform:translateY(-1px);box-shadow:0 4px 12px rgba(2,6,23,.08)}
-  .tk-opt:has(input:checked),.tk-opt.on{border-color:var(--green);background:var(--green-bg);box-shadow:0 0 0 3px rgba(14,159,90,.12)}
-  .tk-opt:has(input:checked)::before,.tk-opt.on::before{border-color:var(--green);background:var(--green);box-shadow:inset 0 0 0 3px var(--card)}
-  .tk-opt:has(input:focus-visible){outline:2px solid var(--green);outline-offset:2px}
-  .tk-opt b{font-size:13px} .tk-opt .sub{margin-top:1px}
+  /* raise-a-ticket modal — business-first */
+  .tkm-card{border-radius:18px !important;overflow:hidden}
+  .tkm{--acc:var(--green);--soft:var(--green-bg);padding:0 0 18px}
+  .tkm-head{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 14px;background:linear-gradient(135deg,var(--soft),transparent 70%);border-bottom:1px solid var(--line);position:relative}
+  .tkm-head::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--acc)}
+  .tkm-title{font-size:17px;font-weight:800;letter-spacing:-.2px} .tkm-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .tkm-x{margin-left:auto;width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:14px;cursor:pointer;transition:transform .15s,border-color .15s,color .15s,background .15s;flex:none}
+  .tkm-x:hover{border-color:#dc2626;color:#dc2626;background:rgba(220,38,38,.08);transform:rotate(90deg)}
+  .tkm-step{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;padding:14px 20px 8px}
+  .tkm-n{width:20px;height:20px;border-radius:50%;background:var(--acc);color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:none}
+  .tkb-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 20px}
+  .tkb-tab{position:relative;display:flex;align-items:center;gap:12px;padding:14px 14px;border:2px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);font:inherit;cursor:pointer;text-align:left;transition:transform .16s cubic-bezier(.2,.8,.2,1),box-shadow .16s,border-color .16s,background .16s;overflow:hidden}
+  .tkb-tab::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,var(--soft),transparent 60%);opacity:0;transition:opacity .16s}
+  .tkb-tab:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(2,6,23,.12);border-color:var(--acc)} .tkb-tab:hover::after{opacity:.7}
+  .tkb-tab.on{border-color:var(--acc);box-shadow:0 0 0 4px var(--soft),0 8px 20px rgba(2,6,23,.08)} .tkb-tab.on::after{opacity:1}
+  .tkb-tab:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .tkb-ic{font-size:26px;line-height:1;width:44px;height:44px;border-radius:12px;background:var(--soft);display:inline-flex;align-items:center;justify-content:center;flex:none;position:relative;z-index:1}
+  .tkb-txt{display:flex;flex-direction:column;gap:2px;position:relative;z-index:1} .tkb-txt b{font-size:15px} .tkb-txt small{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.3px}
+  .tkb-chk{position:absolute;right:12px;top:12px;width:22px;height:22px;border-radius:50%;background:var(--acc);color:#fff;font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;z-index:1;animation:tkPop .2s cubic-bezier(.2,.8,.2,1)}
+  @keyframes tkPop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
+  .tkm-form{animation:tkIn .22s ease} @keyframes tkIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .tkm-empty{margin:14px 20px 0;padding:16px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:12.5px;text-align:center}
+  .tkk-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 20px}
+  .tkk{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;cursor:pointer;text-align:left;transition:transform .15s,box-shadow .15s,border-color .15s,background .15s}
+  .tkk small{display:block;font-size:11px;color:var(--muted)} .tkk b{font-size:13px}
+  .tkk-ic{font-size:18px;width:32px;height:32px;border-radius:10px;background:var(--card2);display:inline-flex;align-items:center;justify-content:center;flex:none}
+  .tkk:hover{border-color:var(--acc);transform:translateY(-1px);box-shadow:0 4px 12px rgba(2,6,23,.08)}
+  .tkk.on{border-color:var(--acc);background:var(--soft)} .tkk.on .tkk-ic{background:var(--acc);color:#fff}
+  .tkm-lbl{display:block;padding:14px 20px 4px;font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)} .tkm-lbl span{font-weight:500;text-transform:none;letter-spacing:0}
+  .tkm-in{display:block;width:calc(100% - 40px);margin:0 20px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card2);color:var(--ink);font:inherit;font-size:13px;box-sizing:border-box;transition:border-color .15s,box-shadow .15s,background .15s}
+  .tkm-in:focus{outline:none;border-color:var(--acc);background:var(--card);box-shadow:0 0 0 3px var(--soft)} textarea.tkm-in{resize:vertical;min-height:110px}
+  .tkm-drop{margin:0 20px;border:1.5px dashed var(--line);border-radius:12px;padding:16px;text-align:center;cursor:pointer;color:var(--muted);font-size:12.5px;transition:border-color .15s,background .15s} .tkm-drop b{color:var(--acc)}
+  .tkm-drop:hover,.tkm-drop.over{border-color:var(--acc);background:var(--soft)}
+  #tkThumbs,#tkMsg{margin-left:20px;margin-right:20px}
+  .tkm-actions{display:flex;gap:10px;align-items:center;padding:14px 20px 0;flex-wrap:wrap}
+  .tkm-btn{padding:9px 16px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:transform .15s,box-shadow .15s,border-color .15s,filter .15s}
+  .tkm-btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(2,6,23,.10);border-color:var(--acc)} .tkm-btn:active{transform:none}
+  .tkm-btn.primary{background:var(--acc);border-color:var(--acc);color:#fff} .tkm-btn.primary:hover{filter:brightness(1.06)} .tkm-btn:disabled{opacity:.6;cursor:default;transform:none}
+  .tkm-hint{margin-left:auto;font-size:11px;color:var(--muted)}
+  @media (max-width:560px){.tkb-tabs,.tkk-row{grid-template-columns:1fr}}
   .tk-seg{display:inline-block;font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 7px;white-space:nowrap}.tk-seg-mobile{background:rgba(37,99,235,.1);color:#1d4ed8}.tk-seg-fixed{background:rgba(14,159,90,.12);color:#0e9f5a}
   .rm-sep-fixed{background:rgba(14,159,90,.08)!important;color:var(--green)!important}.rm-col-fixed{background:rgba(14,159,90,.04)}
   .rm-tbl th.rm-role,.rm-tbl td.rm-role{text-align:left;white-space:nowrap;position:sticky;left:0;background:var(--card);z-index:1}
@@ -1343,65 +1375,65 @@
 <div id="ruleModal" class="modal-overlay"><div class="modal-card" id="ruleModalCard" style="max-width:560px"></div></div>
 <div id="panelModal" class="modal-overlay"><div class="modal-card" id="panelModalCard" style="max-width:720px"></div></div>
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
-<script src="base.js?v=20260906m"></script>
-<script src="navdrop.js?v=20260906m" defer></script>
-<script src="ksatime.js?v=20260906m"></script>
-<script src="data.js?v=20260906m"></script>
-<script src="data2.js?v=20260906m"></script>
-<script src="samples.js?v=20260906m"></script>
-<script src="samples2.js?v=20260906m"></script>
-<script src="apidocs.js?v=20260906m"></script>
-<script src="xlsxout.js?v=20260906m"></script>
-<script src="persist.js?v=20260906m"></script>
-<script src="app.js?v=20260906m"></script>
-<script src="uinav.js?v=20260906m"></script>
-<script src="alertsview.js?v=20260906m"></script>
-<script src="ops.js?v=20260906m"></script>
-<script src="opsbar.js?v=20260906m"></script>
-<script src="analytics.js?v=20260906m"></script>
-<script src="topo2data.js?v=20260906m"></script>
-<script src="topology2.js?v=20260906m"></script>
-<script src="tapdocs.js?v=20260906m"></script>
-<script src="screensflow.js?v=20260906m"></script>
-<script src="home.js?v=20260906m"></script>
-<script src="monitoring.js?v=20260906m"></script>
-<script src="workbench.js?v=20260906m"></script>
-<script src="growth.js?v=20260906m"></script>
-<script src="dmsjourney.js?v=20260906m"></script>
-<script src="dms.js?v=20260906m"></script>
-<script src="landing.js?v=20260906m"></script>
-<script src="fixed.js?v=20260906m"></script>
-<script src="fixed-maps-ui.js?v=20260906m"></script>
-<script src="fixed-leaflet.js?v=20260906m"></script>
-<script src="fixed-map.js?v=20260906m"></script>
-<script src="fixed-qr.js?v=20260906m"></script>
-<script src="fixed-channel.js?v=20260906m"></script>
-<script src="fixed-dash.js?v=20260906m"></script>
-<script src="fixed-errors.js?v=20260906m"></script>
-<script src="fixed-alerts.js?v=20260906m"></script>
-<script src="fixed-playbook.js?v=20260906m"></script>
-<script src="fixed-diagrams.js?v=20260906m"></script>
-<script src="fixed-report.js?v=20260906m"></script>
-<script src="otodocs.js?v=20260906m"></script>
-<script src="salamdocs.js?v=20260906m"></script>
-<script src="slo.js?v=20260906m"></script>
-<script src="audit.js?v=20260906m"></script>
-<script src="notifycfg.js?v=20260906m"></script>
-<script src="notifyclone.js?v=20260906m"></script>
+<script src="base.js?v=20260906n"></script>
+<script src="navdrop.js?v=20260906n" defer></script>
+<script src="ksatime.js?v=20260906n"></script>
+<script src="data.js?v=20260906n"></script>
+<script src="data2.js?v=20260906n"></script>
+<script src="samples.js?v=20260906n"></script>
+<script src="samples2.js?v=20260906n"></script>
+<script src="apidocs.js?v=20260906n"></script>
+<script src="xlsxout.js?v=20260906n"></script>
+<script src="persist.js?v=20260906n"></script>
+<script src="app.js?v=20260906n"></script>
+<script src="uinav.js?v=20260906n"></script>
+<script src="alertsview.js?v=20260906n"></script>
+<script src="ops.js?v=20260906n"></script>
+<script src="opsbar.js?v=20260906n"></script>
+<script src="analytics.js?v=20260906n"></script>
+<script src="topo2data.js?v=20260906n"></script>
+<script src="topology2.js?v=20260906n"></script>
+<script src="tapdocs.js?v=20260906n"></script>
+<script src="screensflow.js?v=20260906n"></script>
+<script src="home.js?v=20260906n"></script>
+<script src="monitoring.js?v=20260906n"></script>
+<script src="workbench.js?v=20260906n"></script>
+<script src="growth.js?v=20260906n"></script>
+<script src="dmsjourney.js?v=20260906n"></script>
+<script src="dms.js?v=20260906n"></script>
+<script src="landing.js?v=20260906n"></script>
+<script src="fixed.js?v=20260906n"></script>
+<script src="fixed-maps-ui.js?v=20260906n"></script>
+<script src="fixed-leaflet.js?v=20260906n"></script>
+<script src="fixed-map.js?v=20260906n"></script>
+<script src="fixed-qr.js?v=20260906n"></script>
+<script src="fixed-channel.js?v=20260906n"></script>
+<script src="fixed-dash.js?v=20260906n"></script>
+<script src="fixed-errors.js?v=20260906n"></script>
+<script src="fixed-alerts.js?v=20260906n"></script>
+<script src="fixed-playbook.js?v=20260906n"></script>
+<script src="fixed-diagrams.js?v=20260906n"></script>
+<script src="fixed-report.js?v=20260906n"></script>
+<script src="otodocs.js?v=20260906n"></script>
+<script src="salamdocs.js?v=20260906n"></script>
+<script src="slo.js?v=20260906n"></script>
+<script src="audit.js?v=20260906n"></script>
+<script src="notifycfg.js?v=20260906n"></script>
+<script src="notifyclone.js?v=20260906n"></script>
 <script src="sub360.js?v=20260904b"></script>
-<script src="rolesmatrix.js?v=20260906m"></script>
-<script src="i18n.js?v=20260906m"></script>
-<script src="settingsmenu.js?v=20260906m"></script>
-<script src="tour.js?v=20260906m"></script>
-<script src="helpmenu.js?v=20260906m"></script>
-<script src="assist.js?v=20260906m"></script>
-<script src="assistcfg.js?v=20260906m"></script>
-<script src="assistclone.js?v=20260906m"></script>
-<script src="navcfg.js?v=20260906m"></script>
-<script src="tickets.js?v=20260906m"></script>
-<script src="theme.js?v=20260906m"></script>
-<script src="router.js?v=20260906m"></script>
-<script src="live.js?v=20260906m"></script>
-<script src="oncall.js?v=20260906m"></script>
+<script src="rolesmatrix.js?v=20260906n"></script>
+<script src="i18n.js?v=20260906n"></script>
+<script src="settingsmenu.js?v=20260906n"></script>
+<script src="tour.js?v=20260906n"></script>
+<script src="helpmenu.js?v=20260906n"></script>
+<script src="assist.js?v=20260906n"></script>
+<script src="assistcfg.js?v=20260906n"></script>
+<script src="assistclone.js?v=20260906n"></script>
+<script src="navcfg.js?v=20260906n"></script>
+<script src="tickets.js?v=20260906n"></script>
+<script src="theme.js?v=20260906n"></script>
+<script src="router.js?v=20260906n"></script>
+<script src="live.js?v=20260906n"></script>
+<script src="oncall.js?v=20260906n"></script>
 </body>
 </html>
