@@ -75,7 +75,13 @@ function identifierSql(q, P) {
   if (q.tech === 'fttx') preds.push(`oa.workflow::text IN ('ftth','fttb','ePurchaseFTTH')`);
   else if (q.tech === '5g') preds.push(`oa.workflow::text ILIKE 'fiveG%'`);
   if (!preds.length) return null;
-  return `e.attempt_id IN (SELECT oa.id FROM order_attempts oa WHERE ${preds.join(' AND ')} LIMIT 5000)`;
+  const sub = `e.attempt_id IN (SELECT oa.id FROM order_attempts oa WHERE ${preds.join(' AND ')} LIMIT 5000)`;
+  // "any" and workflow id also match the event row itself (order / referral / dealer / attempt id), so an error whose
+  // attempt row was not ingested (or was trimmed) is still found — same reach as the prod board.
+  const direct = [];
+  if (any) { P.push(like(any)); const d = P.length; direct.push(`e.order_number ILIKE $${d}`, `e.attempt_id ILIKE $${d}`, `e.referral_code ILIKE $${d}`, `e.dealer_code ILIKE $${d}`); }
+  if (q.workflowId && Object.keys(cols).every(k => k === 'workflowId' || !q[k]) && !q.tech) { P.push(like(q.workflowId)); direct.push(`e.attempt_id ILIKE $${P.length}`); }
+  return direct.length ? `(${sub} OR ${direct.join(' OR ')})` : sub;
 }
 
 /* ---- shared WHERE for summary/live (alias e = error_events) ---- */

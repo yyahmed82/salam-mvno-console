@@ -17,6 +17,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
 ### Fixed
 - Fixed › Overview with Salam Home app selected: the Live banner named `sda_ops.public` and Error categories were empty
   — both now follow the channel pool (beta schema).
+- **Fixed › Errors search returned nothing for an ODB / ID that the prod board found** — the unified board inherited the
+  hub channel chip (SDA dealers), which silently excluded QR / e-purchase errors; it now starts on **All channels** like
+  `/operations-console/errors` and follows the hub chip only when the user changes it. Identifier search also matches
+  the event row (order / referral / dealer / attempt id) in addition to the attempt, and applies live as you type.
+- **Fixed › Errors UI aligned with the prod board**: title + subtitle, two cards (window chips · channel select · open-only
+  / counts / clear — and the stacked identifier search: any-ID, service no + All / FTTX / 5G, ODB, four IDs, two IDs),
+  team and priority chips, category tiles, table with priority badge / category pill / green QR link / status colour,
+  expanded row with What happened, Request / Response, Similar cases and Open full trace.
 
 ## [2.0.0-alpha.8] — 2026-09-06 — tickets by business · Fixed pages in user management · guided tour rebuilt
 ### Fixed

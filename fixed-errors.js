@@ -1,6 +1,8 @@
 /* fixed-errors.js — Fixed › Errors: the Operations Console "Live error control board" (apps/web/src/app/errors/page.tsx)
  * reproduced on the unified console. Data: /api/fixed/errors/{summary,live,detail,resolve} (server/src/fixedErrors.js).
- * Window chips on this page (3h … 1 year) override the hub range; channel select seeds from the hub channel.
+ * Window chips on this page (3h … 1 year) override the hub range. The board has its own channel select and starts on
+ * ALL channels like /operations-console/errors (QR errors are epurchase — a hub chip on SDA would hide them); it follows
+ * the hub chip only when the user changes it. Identifier searches apply live (debounced) or on Enter.
  * Identifiers arrive masked (last digits); "Unmask (audited)" only for caps.unmaskPII; "Ack" only for caps.ackErrors. */
 (function(){
   "use strict";
@@ -12,7 +14,7 @@
   const TONE={red:{bg:"rgba(220,76,76,.16)",fg:"#dc2626"},amber:{bg:"rgba(210,153,34,.16)",fg:"#b45309"},muted:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"}};
   const ID_FIELDS=[["serviceNo","Service no. (FTTH… / 5G no.)"],["odb","ODB / plate no (ODB: prefix ok)"],["iccid","SIM ICCID"],["cpe","CPE serial"],["msisdn","MSISDN / mobile"],["custCode","Customer code (custCode)"],["customerId","Customer ID"],["workflowId","Workflow ID (wf_st_…)"]];
   const LS=k=>{ try{ return localStorage.getItem(k); }catch(e){ return null; } };
-  const S={ win:LS("fixed_err_win")||"today", channel:null, openOnly:true, team:"", prio:"", category:"", tech:"all", find:"", ids:{}, expanded:null, timer:null, tick:0 };
+  const S={ win:LS("fixed_err_win")||"today", channel:"", hubSeen:undefined, openOnly:true, team:"", prio:"", category:"", tech:"all", find:"", ids:{}, expanded:null, timer:null, tick:0 };
   const caps=()=>{ try{ const s=window.opsSession&&window.opsSession(); return (s&&s.me&&s.me.caps)||{}; }catch(e){ return {}; } };
   const fmtT=v=>{ if(!v) return "—"; const d=new Date(v); return isNaN(d)?"—":d.toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"Asia/Riyadh"}); };
   const rel=v=>{ if(!v) return "never"; const ms=Date.now()-new Date(v).getTime(); if(ms<0) return "just now"; const m=Math.floor(ms/6e4); if(m<60) return m+"m ago"; const h=Math.floor(m/60); if(h<48) return h+"h ago"; return Math.floor(h/24)+" days ago"; };
@@ -24,51 +26,94 @@
     const body=p.body&&typeof p.body==="object"?p.body:null; const empty=!body||!Object.keys(body).length; const qi=url.indexOf("?");
     if(qi>=0&&empty){ const lines=[]; new URLSearchParams(url.slice(qi+1)).forEach((val,k)=>lines.push(esc(k)+" : "+esc(val))); if(lines.length) return lines.join("\n"); }
     if(!empty) return esc(JSON.stringify(body,null,2)); return esc(pretty(p)); }
-  const chip=(on,label,attrs)=>`<button ${attrs} style="cursor:pointer;font:inherit;font-size:11.5px;font-weight:${on?"800":"600"};padding:5px 11px;border:1px solid ${on?"var(--green,#0e9f5a)":"var(--line)"};border-radius:999px;background:${on?"var(--green,#0e9f5a)":"var(--card,#fff)"};color:${on?"#fff":"inherit"}">${label}</button>`;
-  const prioBadge=p=>`<span style="display:inline-block;padding:1px 7px;border-radius:6px;font-size:10px;font-weight:800;color:#fff;background:${PRIO_COLOR[p]||"#7d8590"}">P${p}</span>`;
-  const catBadge=(r)=>{ const esc=FX().esc; const t=TONE[r.tone]||TONE.muted; return `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:${t.bg};color:${t.fg};border:1px solid var(--line)">${esc(r.label||r.category)}</span><span style="font-size:10px;font-weight:700;color:${TEAM_COLOR[r.team]||"var(--muted)"}">${esc(r.team||"")}</span></span>`; };
-  const inp=(id,ph,val,extra)=>`<input id="${id}" placeholder="${FX().esc(ph)}" value="${FX().esc(val||"")}" autocomplete="off" style="font:inherit;font-size:12px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit;${extra||"min-width:150px"}">`;
-
-  function qs(){ const fx=FX(); const ch=S.channel==null?(fx.state.channel||""):S.channel;
+  const chip=(on,label,attrs)=>`<button ${attrs} class="fe-chip${on?" on":""} ${(attrs.match(/class="([^"]+)"/)||[])[1]||""}">${label}</button>`;
+  const prioBadge=p=>`<span class="fe-pri" style="background:${PRIO_COLOR[p]||"#7d8590"}">P${p}</span>`;
+  const catBadge=(r)=>{ const esc=FX().esc; const t=TONE[r.tone]||TONE.muted; return `<span class="fe-cat"><span class="fe-catpill" style="background:${t.bg};color:${t.fg}">${esc(r.label||r.category)}</span><span class="fe-team" style="color:${TEAM_COLOR[r.team]||"var(--muted)"}">${esc(r.team||"")}</span></span>`; };
+  const inp=(id,ph,val,extra)=>`<input id="${id}" class="fe-in" placeholder="${FX().esc(ph)}" value="${FX().esc(val||"")}" autocomplete="off" spellcheck="false" style="${extra||""}">`;
+  const CSS=`
+    #fxErr h1{margin:0 0 2px;font-size:20px;font-weight:800;letter-spacing:-.2px} #fxErr .fe-sub{font-size:12.5px;color:var(--muted);margin-bottom:14px}
+    #fxErr .fe-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px} @media (max-width:1000px){#fxErr .fe-cards{grid-template-columns:1fr}}
+    #fxErr .fe-card{background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;padding:18px 22px;box-shadow:0 1px 3px rgba(2,6,23,.05);display:flex;flex-direction:column;gap:14px}
+    #fxErr .fe-chip{cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:var(--ink);transition:background .14s,border-color .14s,color .14s,transform .14s,box-shadow .14s;white-space:nowrap}
+    #fxErr .fe-chip:hover{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);transform:translateY(-1px);box-shadow:0 3px 10px rgba(2,6,23,.08)} #fxErr .fe-chip:active{transform:none}
+    #fxErr .fe-chip.on{background:var(--green,#0e9f5a);border-color:var(--green,#0e9f5a);color:#fff;font-weight:700} #fxErr .fe-chip.on:hover{color:#fff}
+    #fxErr .fe-chip.fe-team.on,#fxErr .fe-chip.fe-prio.on{box-shadow:0 3px 10px rgba(14,159,90,.3)}
+    #fxErr .fe-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    #fxErr .fe-in,#fxErr select.fe-in{font:inherit;font-size:13px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card2,#f1f5f9);color:var(--ink);width:100%;box-sizing:border-box;transition:border-color .15s,box-shadow .15s,background .15s}
+    #fxErr .fe-in:focus{outline:none;border-color:var(--green,#0e9f5a);background:var(--card,#fff);box-shadow:0 0 0 3px rgba(14,159,90,.15)}
+    #fxErr .fe-in::placeholder{color:var(--muted)}
+    #fxErr .fe-grid{display:grid;gap:10px} #fxErr .fe-grid.c4{grid-template-columns:repeat(4,1fr)} #fxErr .fe-grid.c2{grid-template-columns:1fr 1fr} @media (max-width:1300px){#fxErr .fe-grid.c4{grid-template-columns:1fr 1fr}}
+    #fxErr .fe-row1{display:flex;gap:10px;align-items:center} #fxErr .fe-row1 .fe-in{flex:1}
+    #fxErr .fe-foot{display:flex;align-items:center;gap:12px;margin-top:auto} #fxErr .fe-foot label{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
+    #fxErr .fe-foot input[type=checkbox]{accent-color:var(--green,#0e9f5a);width:15px;height:15px}
+    #fxErr .fe-counts{margin-left:auto;font-size:12.5px;color:var(--muted)}
+    #fxErr .fe-btn{cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:var(--ink);transition:border-color .14s,color .14s,transform .14s} #fxErr .fe-btn:hover{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);transform:translateY(-1px)}
+    #fxErr .fe-hint{font-size:11px;color:var(--muted)}
+    #fxErr .fe-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin:14px 0 18px}
+    #fxErr .fe-tile{text-align:left;padding:14px 16px;cursor:pointer;font:inherit;color:inherit;border:1px solid var(--line);border-radius:14px;background:var(--card,#fff);box-shadow:0 1px 3px rgba(2,6,23,.05);transition:transform .15s,box-shadow .15s,border-color .15s}
+    #fxErr .fe-tile:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(2,6,23,.10);border-color:var(--green,#0e9f5a)} #fxErr .fe-tile.on{border-color:var(--green,#0e9f5a);box-shadow:0 0 0 3px rgba(14,159,90,.15)}
+    #fxErr .fe-tile .lbl{font-size:13px;font-weight:700;line-height:1.25} #fxErr .fe-tile .big{font-size:26px;font-weight:800;line-height:1}
+    #fxErr .fe-pri{display:inline-block;padding:1px 8px;border-radius:7px;font-size:10.5px;font-weight:800;color:#fff;line-height:1.5}
+    #fxErr .fe-cat{display:inline-flex;align-items:center;gap:8px;white-space:nowrap} #fxErr .fe-catpill{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700} #fxErr .fe-team{font-size:11px;font-weight:800;letter-spacing:.3px}
+    #fxErr .fe-tablecard{background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(2,6,23,.05);overflow:hidden}
+    #fxErr table.fe-tbl{width:100%;border-collapse:collapse;font-size:13px} #fxErr .fe-tbl th{text-align:left;padding:12px 16px;color:var(--muted);font-weight:700;font-size:11px;letter-spacing:.6px;text-transform:uppercase;border-bottom:1px solid var(--line)}
+    #fxErr .fe-tbl td{padding:10px 16px;border-bottom:1px solid var(--line-soft,var(--line));vertical-align:middle} #fxErr tr.fe-row{cursor:pointer;transition:background .12s} #fxErr tr.fe-row:hover td{background:var(--card2,#f8fafc)}
+    #fxErr tr.fe-row.open td{background:var(--card2,#f8fafc)}
+    #fxErr .fe-link{color:var(--green,#0e9f5a);font-weight:700;text-decoration:underline;text-underline-offset:3px} #fxErr .fe-link small{font-size:10px;color:var(--muted);font-weight:600}
+    #fxErr .fe-st{font-size:12px;font-weight:700} #fxErr .fe-st.open{color:#b45309} #fxErr .fe-st.acked{color:#2563eb} #fxErr .fe-st.resolved{color:var(--green,#0e9f5a)}
+    #fxErr .fe-x td{padding:14px 16px 18px;background:var(--card,#fff)}
+    #fxErr .fe-xgrid{display:grid;gap:12px;font-size:13px} #fxErr .fe-what{font-size:13px} #fxErr .fe-what .k{color:var(--muted)}
+    #fxErr .fe-io{display:grid;gap:12px;grid-template-columns:1fr 1fr} @media (max-width:900px){#fxErr .fe-io{grid-template-columns:1fr}}
+    #fxErr .fe-io h5{margin:0 0 6px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+    #fxErr .fe-io pre{margin:0;max-height:240px;overflow:auto;background:var(--card2,#f8fafc);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+    #fxErr .fe-pii{font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:999px;border:1px solid #b7791f;color:#b45309;background:rgba(217,119,6,.08)}
+    #fxErr .fe-sim{border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:var(--card2,#f8fafc)} #fxErr .fe-sim b.t{display:block;font-size:13px;margin-bottom:6px} #fxErr .fe-sim .f{display:flex;flex-wrap:wrap;gap:18px;font-size:12.5px} #fxErr .fe-sim .f span span{color:var(--muted)}
+    #fxErr .fe-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    #fxErr .fe-empty{padding:16px;color:var(--muted);font-size:13px}
+  `;
+  function qs(){ const ch=S.channel||"";
     let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}`;
     if(S.find) q+=`&find=${encodeURIComponent(S.find)}`; for(const [k] of ID_FIELDS) if(S.ids[k]) q+=`&${k}=${encodeURIComponent(S.ids[k])}`; return q; }
 
   async function render(host,fx){
     const esc=fx.esc;
     if(S.timer){ clearInterval(S.timer); S.timer=null; }
-    const ch=S.channel==null?(fx.state.channel||""):S.channel;
-    host.innerHTML=`<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px"><h3 style="margin:0;font-size:15px">Live error control board</h3>
-        <span class="rl" style="font-size:11px;color:var(--muted)">SDA &amp; QR journey errors as they happen — filter by team / category / priority and time window; open a row to see the failed step, the request / response and how often it has happened before.</span></div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin-bottom:10px">
-        <div class="topo-card" style="flex:1 1 380px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-          <div style="display:flex;gap:4px;flex-wrap:wrap">${WINDOWS.map(([k,l])=>chip(S.win===k,l,`class="fe-win" data-w="${k}"`)).join("")}</div>
-          <select id="feCh" style="font:inherit;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit">
+    if(S.hubSeen===undefined) S.hubSeen=fx.state.channel||"";                      // first paint: board starts on All channels (prod default)
+    else if((fx.state.channel||"")!==S.hubSeen){ S.hubSeen=fx.state.channel||""; S.channel=S.hubSeen; }   // hub chip changed by the user → follow it
+    const ch=S.channel||"";
+    host.innerHTML=`<div id="fxErr"><style>${CSS}</style>
+      <h1>Live error control board</h1>
+      <div class="fe-sub">SDA &amp; QR journey errors as they happen — filter by team / category / priority and time window; open a row to see the failed step, the request / response and how often it has happened before.</div>
+      <div class="fe-cards">
+        <div class="fe-card">
+          <div class="fe-chips">${WINDOWS.map(([k,l])=>chip(S.win===k,l,`class="fe-win" data-w="${k}"`)).join("")}</div>
+          <select id="feCh" class="fe-in">
             <option value="" ${ch===""?"selected":""}>All channels</option><option value="sda" ${ch==="sda"?"selected":""}>SDA (dealer)</option><option value="epurchase" ${ch==="epurchase"?"selected":""}>QR / e-purchase</option><option value="salamhome" ${ch==="salamhome"?"selected":""}>Salam Home app</option></select>
-          <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input id="feOpen" type="checkbox" ${S.openOnly?"checked":""}> Open only</label>
-          <span id="feCounts" class="rl" style="margin-left:auto;font-size:12px;color:var(--muted)"></span>
-          <button id="feClear" class="btn" style="font-size:11px;padding:5px 11px">Clear</button>
+          <div class="fe-foot"><label><input id="feOpen" type="checkbox" ${S.openOnly?"checked":""}> Open only</label><span id="feCounts" class="fe-counts"></span><button id="feClear" class="fe-btn">Clear</button></div>
         </div>
-        <div class="topo-card" style="flex:1 1 380px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-          ${inp("feFind","🔍 Search any ID — ODB · service · ICCID · MSISDN · order · customer · workflow…",S.find,"flex:1 1 100%;min-width:240px")}
-          ${inp("feId-serviceNo",ID_FIELDS[0][1],S.ids.serviceNo,"flex:1 1 180px;min-width:150px")}
-          <div style="display:flex;gap:4px">${[["all","All"],["fttx","FTTX"],["5g","5G"]].map(([k,l])=>chip(S.tech===k,l,`class="fe-tech" data-t="${k}"`)).join("")}</div>
-          ${ID_FIELDS.slice(1).map(([k,l])=>inp("feId-"+k,l,S.ids[k],"flex:1 1 150px;min-width:130px")).join("")}
-          <button id="feGo" class="btn" style="font-size:11.5px;padding:6px 13px">Find</button>
-          <span class="rl" style="font-size:10.5px;color:var(--muted)">identifiers are shown as last digits only · full values via Unmask (audited)</span>
+        <div class="fe-card">
+          ${inp("feFind","Search any ID — ODB · service · ICCID · MSISDN · order · customer · workflow…",S.find)}
+          <div class="fe-row1">${inp("feId-serviceNo",ID_FIELDS[0][1]+"…",S.ids.serviceNo)}<div class="fe-chips">${[["all","All"],["fttx","FTTX"],["5g","5G"]].map(([k,l])=>chip(S.tech===k,l,`class="fe-tech" data-t="${k}"`)).join("")}</div></div>
+          ${inp("feId-odb","ODB / plate no (with or without ODB: prefix)…",S.ids.odb)}
+          <div class="fe-grid c4">${inp("feId-iccid","SIM ICCID…",S.ids.iccid)}${inp("feId-cpe","CPE serial…",S.ids.cpe)}${inp("feId-msisdn","MSISDN / mobile…",S.ids.msisdn)}${inp("feId-custCode","Customer code (custCode)…",S.ids.custCode)}</div>
+          <div class="fe-grid c2">${inp("feId-customerId","Customer ID…",S.ids.customerId)}${inp("feId-workflowId","Workflow ID (wf_st_…)…",S.ids.workflowId)}</div>
+          <div class="fe-hint">searches apply as you type (Enter to apply now) · identifiers are shown as last digits only · full values via Unmask (audited)</div>
         </div>
       </div>
-      <div id="feTeams" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"></div>
-      <div id="fePrio" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px"></div>
-      <div id="feTiles" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:16px"><div class="topo-card" style="padding:14px;color:var(--muted)">${window.salamLoader?window.salamLoader("Reading error events…"):"Loading…"}</div></div>
-      <div class="topo-card" style="padding:0;overflow:auto"><div id="feRows"></div><div id="feMore" style="padding:10px;text-align:center"></div></div>
-      <div id="feStamp" class="rl" style="font-size:10.5px;color:var(--muted);margin-top:6px"></div>`;
+      <div id="feTeams" class="fe-chips" style="margin-bottom:8px"></div>
+      <div id="fePrio" class="fe-chips" style="margin-bottom:4px"></div>
+      <div id="feTiles" class="fe-tiles"><div class="fe-tile" style="cursor:default;color:var(--muted)">${window.salamLoader?window.salamLoader("Reading error events…"):"Loading…"}</div></div>
+      <div class="fe-tablecard"><div id="feRows"></div><div id="feMore" style="padding:10px;text-align:center"></div></div>
+      <div id="feStamp" class="rl" style="font-size:11px;color:var(--muted);margin-top:8px"></div></div>`;
     host.querySelectorAll(".fe-win").forEach(b=>b.onclick=()=>{ S.win=b.dataset.w; try{ localStorage.setItem("fixed_err_win",S.win); }catch(e){} render(host,fx); });
     host.querySelectorAll(".fe-tech").forEach(b=>b.onclick=()=>{ S.tech=b.dataset.t; render(host,fx); });
     host.querySelector("#feCh").onchange=e=>{ S.channel=e.target.value; render(host,fx); };
     host.querySelector("#feOpen").onchange=e=>{ S.openOnly=e.target.checked; render(host,fx); };
-    const go=()=>{ S.find=host.querySelector("#feFind").value.trim(); for(const [k] of ID_FIELDS) S.ids[k]=host.querySelector("#feId-"+k).value.trim(); render(host,fx); };
-    host.querySelector("#feGo").onclick=go; host.querySelectorAll("input[id^=feId-],#feFind").forEach(i=>i.onkeydown=e=>{ if(e.key==="Enter") go(); });
+    const read=()=>{ S.find=host.querySelector("#feFind").value.trim(); for(const [k] of ID_FIELDS) S.ids[k]=host.querySelector("#feId-"+k).value.trim(); };
+    let deb=null; const go=()=>{ clearTimeout(deb); read(); load(host,fx,true); };
+    host.querySelectorAll("input[id^=feId-],#feFind").forEach(i=>{ i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } }; i.oninput=()=>{ clearTimeout(deb); deb=setTimeout(go,450); }; });
     host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",openOnly:true,team:"",prio:"",category:"",tech:"all",find:"",ids:{},expanded:null}); render(host,fx); };
+    host.querySelector("#feFind").focus();
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }
       if(document.visibilityState!=="visible") return; load(host,fx,false); },60000);
@@ -83,15 +128,15 @@
       const $=s=>host.querySelector(s);
       $("#feCounts").textContent=`${fmt(sum.open)} open · ${fmt(sum.total)} total`;
       $("#feTeams").innerHTML=chip(S.team==="","All teams",`class="fe-team" data-t=""`)+TEAMS.map(t=>chip(S.team===t,`${t} · ${fmt(S.openOnly?sum.byTeam[t].open:sum.byTeam[t].total)}`,`class="fe-team" data-t="${t}"`)).join("");
-      $("#fePrio").innerHTML=`<span class="rl" style="font-size:11px;color:var(--muted)">Priority:</span>`+chip(S.prio==="","All",`class="fe-prio" data-p=""`)+[0,1,2,3,4].map(p=>chip(S.prio===String(p),`P${p} · ${fmt(S.openOnly?sum.byPriority[p].open:sum.byPriority[p].total)}`,`class="fe-prio" data-p="${p}"`)).join("");
+      $("#fePrio").innerHTML=`<span style="font-size:12px;color:var(--muted);margin-right:2px">Priority:</span>`+chip(S.prio==="","All",`class="fe-prio" data-p=""`)+[0,1,2,3,4].map(p=>chip(S.prio===String(p),`P${p} · ${fmt(S.openOnly?sum.byPriority[p].open:sum.byPriority[p].total)}`,`class="fe-prio" data-p="${p}"`)).join("");
       host.querySelectorAll(".fe-team").forEach(b=>b.onclick=()=>{ S.team=(S.team===b.dataset.t)?"":b.dataset.t; load(host,fx,true); });
       host.querySelectorAll(".fe-prio").forEach(b=>b.onclick=()=>{ S.prio=(S.prio===b.dataset.p)?"":b.dataset.p; load(host,fx,true); });
       const tiles=sum.byCategory.filter(c=>(!S.team||c.team===S.team)&&(S.prio===""||String(c.priority)===S.prio));
       $("#feTiles").innerHTML=tiles.length?tiles.map(c=>{ const on=S.category===c.category; const t=TONE[c.tone]||TONE.muted;
-        return `<button class="topo-card fe-tile" data-c="${esc(c.category)}" style="text-align:left;padding:12px 14px;cursor:pointer;font:inherit;color:inherit;border:1px solid ${on?"var(--green,#0e9f5a)":"var(--line)"};background:var(--card,#fff)">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span style="font-size:12px;font-weight:600">${esc(c.label)}</span><span style="display:flex;align-items:center;gap:6px">${prioBadge(c.priority)}<span style="font-size:10px;font-weight:700;color:${TEAM_COLOR[c.team]||"var(--muted)"}">${esc(c.team)}</span></span></div>
-          <div style="display:flex;align-items:baseline;gap:8px;margin-top:6px"><span style="font-size:24px;font-weight:800;color:${t.fg}">${fmt(S.openOnly?c.open:c.total)}</span><span class="rl" style="font-size:11px;color:var(--muted)">${S.openOnly?`${fmt(c.total)} total · ${fmt(c.last3h)} in 3h`:`${fmt(c.open)} open · ${fmt(c.last3h)} in 3h`}</span></div></button>`; }).join("")
-        :`<div class="topo-card" style="padding:14px;color:var(--muted)">No errors in this window.</div>`;
+        return `<button class="fe-tile${on?" on":""}" data-c="${esc(c.category)}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><span class="lbl">${esc(c.label)}</span><span style="display:flex;align-items:center;gap:8px;flex:none;padding-top:2px">${prioBadge(c.priority)}<span class="fe-team" style="color:${TEAM_COLOR[c.team]||"var(--muted)"}">${esc(c.team)}</span></span></div>
+          <div style="display:flex;align-items:baseline;gap:10px;margin-top:10px"><span class="big" style="color:${t.fg}">${fmt(S.openOnly?c.open:c.total)}</span><span style="font-size:12px;color:var(--muted)">${S.openOnly?`${fmt(c.total)} total · ${fmt(c.last3h)} in 3h`:`${fmt(c.open)} open · ${fmt(c.last3h)} in 3h`}</span></div></button>`; }).join("")
+        :`<div class="fe-tile" style="cursor:default;color:var(--muted)">No errors in this window.</div>`;
       host.querySelectorAll(".fe-tile").forEach(b=>b.onclick=()=>{ S.category=(S.category===b.dataset.c)?"":b.dataset.c; load(host,fx,true); });
       drawRows(host,fx,live.rows,first);
       $("#feMore").innerHTML=live.nextCursor?`<button id="feMoreBtn" class="btn" style="font-size:11px;padding:5px 12px">Load more</button>`:"";
@@ -102,19 +147,17 @@
 
   function drawRows(host,fx,rows,keepExpanded){
     const esc=fx.esc; const el=host.querySelector("#feRows"); if(!el) return;
-    const th=h=>`<th style="text-align:left;padding:7px 10px;color:var(--muted);font-weight:700;font-size:10px;letter-spacing:.6px;border-bottom:1px solid var(--line)">${h}</th>`;
-    const dealer=r=>{ if(r.channel==="epurchase"&&r.referral_code) return `<a href="#fixed?tab=qr&ref=${encodeURIComponent(r.referral_code)}" style="color:#2563eb">${esc(r.referral_code)} <span style="font-size:10px;color:var(--muted)">QR ↗</span></a>`;
-      if(r.dealer_code) return `<a href="#fixed?tab=map&dealer=${encodeURIComponent(r.dealer_id||r.dealer_code)}" style="color:#2563eb">${esc(r.dealer_code)} <span style="font-size:10px;color:var(--muted)">↗</span></a>`;
+    const dealer=r=>{ if(r.channel==="epurchase"&&r.referral_code) return `<a class="fe-link" href="#fixed?tab=qr&ref=${encodeURIComponent(r.referral_code)}">${esc(r.referral_code)} <small>QR ↗</small></a>`;
+      if(r.dealer_code) return `<a class="fe-link" href="#fixed?tab=map&dealer=${encodeURIComponent(r.dealer_id||r.dealer_code)}">${esc(r.dealer_code)} <small>↗</small></a>`;
       return `<span style="color:var(--muted)" title="No dealer/staff captured for this journey">unattributed</span>`; };
-    const status=r=>r.resolved?`<span style="font-size:11px;font-weight:600;color:var(--green,#0e9f5a)">resolved</span>`:r.acked?`<span style="font-size:11px;font-weight:600;color:#2563eb" title="acked by ${esc(r.acked_by||"")}">acked</span>`:`<span style="font-size:11px;font-weight:600;color:#d97706">open</span>`;
-    el.innerHTML=`<table class="mono" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr>${["PRI","TIME KSA","CATEGORY","DEALER / QR","REGION","STATUS"].map(th).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row" data-id="${esc(r.id)}" style="cursor:pointer">
-        <td style="padding:6px 10px;border-bottom:1px solid var(--line)">${prioBadge(r.priority)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--line);white-space:nowrap">${fmtT(r.occurred_at)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid var(--line)">${catBadge(r)}${r.code?`<span class="rl" style="font-size:10px;color:var(--muted);margin-left:6px">${esc(r.code)}</span>`:""}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid var(--line)" class="fe-nostop">${dealer(r)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--line)">${esc(r.region||"—")}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid var(--line)">${status(r)}</td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="6" style="padding:12px 14px;background:var(--bg,rgba(0,0,0,.03));border-bottom:1px solid var(--line)"></td></tr>`).join("")
-      :`<tr><td colspan="6" style="padding:12px;color:var(--muted)">No errors match these filters.</td></tr>`}</tbody></table>`;
+    const status=r=>r.resolved?`<span class="fe-st resolved">resolved</span>`:r.acked?`<span class="fe-st acked" title="acked by ${esc(r.acked_by||"")}">acked</span>`:`<span class="fe-st open">open</span>`;
+    el.innerHTML=`<table class="fe-tbl"><thead><tr>${["PRI","TIME","CATEGORY","DEALER / QR","REGION","STATUS"].map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row${S.expanded===r.id?" open":""}" data-id="${esc(r.id)}">
+        <td>${prioBadge(r.priority)}</td><td style="white-space:nowrap">${fmtT(r.occurred_at)}</td>
+        <td>${catBadge(r)}${r.code?`<span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:8px">${esc(r.code)}</span>`:""}</td>
+        <td class="fe-nostop">${dealer(r)}</td><td>${esc(r.region||"—")}</td><td>${status(r)}</td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="6"></td></tr>`).join("")
+      :`<tr><td colspan="6" class="fe-empty">No errors match these filters.</td></tr>`}</tbody></table>`;
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${CSS.escape(id)}"]`);
-      if(S.expanded===id){ S.expanded=null; x.hidden=true; return; } el.querySelectorAll(".fe-x").forEach(o=>o.hidden=true); S.expanded=id; x.hidden=false; expand(host,fx,x.firstElementChild,rows.find(r=>r.id===id)); });
+      if(S.expanded===id){ S.expanded=null; x.hidden=true; tr.classList.remove("open"); return; } el.querySelectorAll(".fe-x").forEach(o=>o.hidden=true); el.querySelectorAll(".fe-row.open").forEach(o=>o.classList.remove("open")); S.expanded=id; x.hidden=false; tr.classList.add("open"); expand(host,fx,x.firstElementChild,rows.find(r=>r.id===id)); });
     if(keepExpanded&&S.expanded){ const x=el.querySelector(`.fe-x[data-id="${CSS.escape(S.expanded)}"]`); const r=rows.find(r=>r.id===S.expanded); if(x&&r){ x.hidden=false; expand(host,fx,x.firstElementChild,r); } }
   }
 
@@ -123,21 +166,21 @@
     cell.innerHTML=`<span style="color:var(--muted);font-size:12px">loading…</span>`;
     let d; try{ d=await fx.api("/api/fixed/errors/detail?id="+encodeURIComponent(row.id)); }catch(e){ cell.innerHTML=`<span style="color:#dc2626;font-size:12px">${esc(e.message)}</span>`; return; }
     if(!cell.isConnected) return;
-    const pre=(html)=>`<pre style="margin:0;max-height:220px;overflow:auto;background:var(--card,#fff);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11px;white-space:pre-wrap;word-break:break-word">${html==null?"—":html}</pre>`;
-    const draw=(req,res,unmasked,extra)=>`<div style="display:grid;gap:8px;grid-template-columns:1fr 1fr"><div><div style="font-weight:700;margin-bottom:4px;font-size:12px">Request ${unmasked?`<span style="font-size:10px;font-weight:700;margin-left:8px;padding:1px 7px;border-radius:10px;border:1px solid #b7791f;color:#b45309" title="Raw customer data fetched live from nexus — this view is recorded in the audit log">⚠ PII UNMASKED — audited</span>`:""}</div>${pre(renderReq(req,row.step))}</div>
-      <div><div style="font-weight:700;margin-bottom:4px;font-size:12px">Response</div>${pre(res==null?null:esc(pretty(res)))}</div></div>${extra||""}`;
+    const pre=(html)=>`<pre>${html==null?"—":html}</pre>`;
+    const draw=(req,res,unmasked,extra)=>`<div class="fe-io"><div><h5>Request ${unmasked?`<span class="fe-pii" title="Raw customer data fetched live from nexus — this view is recorded in the audit log">⚠ PII UNMASKED — audited</span>`:""}</h5>${pre(renderReq(req,row.step))}</div>
+      <div><h5>Response</h5>${pre(res==null?null:esc(pretty(res)))}</div></div>${extra||""}`;
     const sim=d.similar||{};
     const tl=(d.timeline||[]);
-    cell.innerHTML=`<div style="display:grid;gap:10px;font-size:12px">
-      <div><span style="color:var(--muted)">What happened: </span>${esc(d.event.message||d.event.label)}${d.event.step?` <span style="color:var(--muted)">· step ${esc(d.event.step)}</span>`:""}
-        <span class="rl" style="color:var(--muted);font-size:10.5px;margin-left:10px">${esc(d.event.label)} · ${esc(d.event.team)} · base P${d.event.basePriority}${d.event.order_number?` · order ${esc(d.event.order_number)}`:""}${d.event.acct_masked?` · acct ${esc(d.event.acct_masked)}`:""}${d.event.cust_masked?` · cust …${esc(d.event.cust_masked)}`:""}${d.event.dealer_name?` · ${esc(d.event.dealer_name)}`:""}</span></div>
-      <div id="feBodies">${(d.request!=null||d.response!=null)?draw(d.request,d.response,false):`<div style="color:var(--muted);font-size:11px">No captured request/response for this error (older event — re-ingest or backfill to populate).</div>`}</div>
-      <div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--card,#fff)"><div style="font-weight:700;margin-bottom:6px">Similar cases <span class="rl" style="font-weight:400;color:var(--muted);font-size:10.5px">signature ${esc(d.event.signature||d.event.category)}</span></div>
-        <div style="display:flex;flex-wrap:wrap;gap:16px"><span><b>${fmt(sim.d30)}</b> in 30d <span style="color:var(--muted)">(${fmt(sim.d7)} in 7d · ${fmt(sim.all)} ever)</span></span><span>last seen <b>${esc(rel(sim.lastSeen))}</b></span><span>affected today <b>${fmt(sim.affectedToday)}</b></span><span>median resolve <b>${sim.medianResolveMins!=null?sim.medianResolveMins+"m":"—"}</b></span>${sim.biggestDay?`<span>biggest day <b>${esc(sim.biggestDay.day)}</b> (${fmt(sim.biggestDay.count)})</span>`:""}</div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        ${d.event.attempt_id?`<button id="feTrace" class="btn" style="font-size:11px;padding:5px 11px">Open full trace → (${tl.length} calls)</button>`:""}
-        ${c.unmaskPII&&d.event.attempt_id?`<button id="feUnmask" class="btn" style="font-size:11px;padding:5px 11px;border-color:#b7791f;color:#b45309" ${d.unmaskAvailable?"":"disabled title='NEXUS_DATABASE_URL not configured'"}>Unmask (audited)</button>`:""}
-        ${c.ackErrors&&!d.event.resolved?`<button id="feAck" class="btn" style="font-size:11px;padding:5px 11px">${d.event.acked?"Un-ack":"Ack"}</button>`:""}
+    cell.innerHTML=`<div class="fe-xgrid">
+      <div class="fe-what"><span class="k">What happened: </span><b style="font-weight:600">${esc(d.event.message||d.event.label)}</b>${d.event.step?` <span class="k">· step ${esc(d.event.step)}</span>`:""}
+        <span class="rl" style="color:var(--muted);font-size:11px;margin-left:10px">${esc(d.event.label)} · ${esc(d.event.team)} · base P${d.event.basePriority}${d.event.order_number?` · order ${esc(d.event.order_number)}`:""}${d.event.acct_masked?` · acct ${esc(d.event.acct_masked)}`:""}${d.event.cust_masked?` · cust …${esc(d.event.cust_masked)}`:""}${d.event.dealer_name?` · ${esc(d.event.dealer_name)}`:""}</span></div>
+      <div id="feBodies">${(d.request!=null||d.response!=null)?draw(d.request,d.response,false):`<div style="color:var(--muted);font-size:12px">No captured request/response for this error (older event — re-ingest or backfill to populate).</div>`}</div>
+      <div class="fe-sim"><b class="t">Similar cases <span class="rl" style="font-weight:400;color:var(--muted);font-size:10.5px">signature ${esc(d.event.signature||d.event.category)}</span></b>
+        <div class="f"><span><b>${fmt(sim.d30)}</b> in 30d <span>(${fmt(sim.d7)} in 7d · ${fmt(sim.all)} ever)</span></span><span>last seen <b>${esc(rel(sim.lastSeen))}</b></span><span>affected today <b>${fmt(sim.affectedToday)}</b></span><span>median resolve <b>${sim.medianResolveMins!=null?sim.medianResolveMins+"m":"—"}</b></span>${sim.biggestDay?`<span>biggest day <b>${esc(sim.biggestDay.day)}</b> (${fmt(sim.biggestDay.count)})</span>`:""}</div></div>
+      <div class="fe-actions">
+        ${d.event.attempt_id?`<button id="feTrace" class="fe-btn">Open full trace → <span style="color:var(--muted);font-weight:500">(${tl.length} calls)</span></button>`:""}
+        ${c.unmaskPII&&d.event.attempt_id?`<button id="feUnmask" class="fe-btn" style="border-color:#b7791f;color:#b45309" ${d.unmaskAvailable?"":"disabled title='NEXUS_DATABASE_URL not configured'"}>🔓 Unmask (audited)</button>`:""}
+        ${c.ackErrors&&!d.event.resolved?`<button id="feAck" class="fe-btn">${d.event.acked?"Un-ack":"Ack"}</button>`:""}
         ${d.event.acked?`<span class="rl" style="font-size:10.5px;color:var(--muted)">acked by ${esc(d.event.acked_by||"")}</span>`:""}
         <span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:auto">attempt <span class="mono">${esc(d.event.attempt_id||"—")}</span> · event <span class="mono">${esc(d.event.id)}</span></span></div>
       <div id="feTl" hidden></div></div>`;
@@ -147,7 +190,7 @@
       try{ const u=await fx.api("/api/fixed/errors/detail?unmask=1&id="+encodeURIComponent(row.id)); const um=u.unmask||{};
         if(!um.unmaskAvailable){ ub.textContent="Unmask unavailable"; ub.title=um.error||"nexus not configured"; return; }
         if(!um.matched){ ub.textContent="no raw call matched"; return; }
-        $("#feBodies").innerHTML=draw(um.request,um.response,true,`<div class="rl" style="font-size:10.5px;color:var(--muted);margin-top:4px">raw endpoint <span class="mono">${esc(um.endpoint||"")}</span> · ${fmtT(um.at)} · ${fmt(um.calls)} api_logs rows${um.context?` · <a href="#" id="feCtx">workflow context</a>`:""}</div>${um.context?`<pre id="feCtxPre" hidden style="margin-top:6px;max-height:260px;overflow:auto;background:var(--card,#fff);border:1px solid #b7791f;border-radius:8px;padding:10px;font-size:11px;white-space:pre-wrap;word-break:break-word">${esc(pretty(um.context))}</pre>`:""}`);
+        $("#feBodies").innerHTML=draw(um.request,um.response,true,`<div class="rl" style="font-size:10.5px;color:var(--muted);margin-top:6px">raw endpoint <span class="mono">${esc(um.endpoint||"")}</span> · ${fmtT(um.at)} · ${fmt(um.calls)} api_logs rows${um.context?` · <a href="#" id="feCtx">workflow context</a>`:""}</div>${um.context?`<pre id="feCtxPre" hidden style="margin-top:6px;max-height:260px;overflow:auto;background:var(--card2,#f8fafc);border:1px solid #b7791f;border-radius:10px;padding:12px;font-size:12px;white-space:pre-wrap;word-break:break-word">${esc(pretty(um.context))}</pre>`:""}`);
         const cx=$("#feCtx"); if(cx) cx.onclick=e=>{ e.preventDefault(); const p=$("#feCtxPre"); p.hidden=!p.hidden; };
         ub.textContent="unmasked"; }catch(e){ ub.disabled=false; ub.textContent="Unmask failed: "+e.message; } };
     const ab=$("#feAck"); if(ab) ab.onclick=async()=>{ ab.disabled=true; try{ const undo=!!d.event.acked;
