@@ -140,7 +140,7 @@ function mount(app, deps) {
 
   /* ---- per-dealer summary (activity.dealerSummary, current + previous window for the deltas) ---- */
   async function dealerKpis(s) {
-    const Q = (sql, extra = []) => ops(q).query(sql, s.params.concat(extra));
+    const Q = (sql, extra = []) => ops({ channel: s.channel }).query(sql, s.params.concat(extra));
     const [k, wf, outc] = await Promise.all([
       Q(`SELECT count(*)::int AS total, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed, avg(oa.duration_s) AS avg_duration,
                 count(DISTINCT d.city)::int AS areas, min(oa.started_at) AS min_started, max(oa.started_at) AS max_started ${FROM} ${s.where}`),
