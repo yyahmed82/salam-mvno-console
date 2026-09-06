@@ -113,7 +113,7 @@
     host.querySelector("#feCh").onchange=e=>{ S.channel=e.target.value; render(host,fx); };
     host.querySelector("#feOpen").onchange=e=>{ S.openOnly=e.target.checked; render(host,fx); };
     const read=()=>{ S.find=host.querySelector("#feFind").value.trim(); for(const [k] of ID_FIELDS) S.ids[k]=host.querySelector("#feId-"+k).value.trim(); };
-    let deb=null; const go=()=>{ clearTimeout(deb); read(); load(host,fx,true); };
+    let deb=null; const go=()=>{ clearTimeout(deb); read(); S.category=""; load(host,fx,true); };
     host.querySelectorAll("input[id^=feId-],#feFind").forEach(i=>{ i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } }; i.oninput=()=>{ clearTimeout(deb); deb=setTimeout(go,450); }; });
     host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",openOnly:true,team:"",prio:"",category:"",tech:"all",find:"",ids:{},expanded:null}); render(host,fx); };
     host.querySelector("#feFind").focus();
@@ -125,11 +125,17 @@
   async function load(host,fx,first){
     const esc=fx.esc, fmt=fx.fmt; const my=++S.tick;
     try{
+      const sum=await fx.api("/api/fixed/errors/summary?"+qs());
+      if(my!==S.tick||!host.isConnected) return;
+      // a category tile selected earlier may not exist under the new window / search — drop it instead of filtering invisibly
+      if(S.category&&!sum.byCategory.some(c=>c.category===S.category)) S.category="";
       let lq=qs(); if(S.team) lq+=`&team=${S.team}`; if(S.prio!=="") lq+=`&priority=${S.prio}`; if(S.category) lq+=`&category=${encodeURIComponent(S.category)}`;
-      const [sum,live]=await Promise.all([fx.api("/api/fixed/errors/summary?"+qs()), fx.api("/api/fixed/errors/live?"+lq+"&limit=100")]);
+      const live=await fx.api("/api/fixed/errors/live?"+lq+"&limit=100");
       if(my!==S.tick||!host.isConnected) return;
       const $=s=>host.querySelector(s);
-      $("#feCounts").textContent=`${fmt(sum.open)} open · ${fmt(sum.total)} total`;
+      const catOn=S.category?sum.byCategory.find(c=>c.category===S.category):null;
+      $("#feCounts").innerHTML=`${fmt(sum.open)} open · ${fmt(sum.total)} total`+(catOn?` <button type="button" class="fe-chip on" id="feCatOff" title="Remove the category filter" style="margin-left:8px">category: ${esc(catOn.label)} ✕</button>`:"");
+      const co=$("#feCatOff"); if(co) co.onclick=()=>{ S.category=""; load(host,fx,true); };
       $("#feTeams").innerHTML=chip(S.team==="","All teams",`class="fe-team" data-t=""`)+TEAMS.map(t=>chip(S.team===t,`${t} · ${fmt(S.openOnly?sum.byTeam[t].open:sum.byTeam[t].total)}`,`class="fe-team" data-t="${t}"`)).join("");
       $("#fePrio").innerHTML=`<span style="font-size:12px;color:var(--muted);margin-right:2px">Priority:</span>`+chip(S.prio==="","All",`class="fe-prio" data-p=""`)+[0,1,2,3,4].map(p=>chip(S.prio===String(p),`P${p} · ${fmt(S.openOnly?sum.byPriority[p].open:sum.byPriority[p].total)}`,`class="fe-prio" data-p="${p}"`)).join("");
       host.querySelectorAll(".fe-team").forEach(b=>b.onclick=()=>{ S.team=(S.team===b.dataset.t)?"":b.dataset.t; load(host,fx,true); });
@@ -158,7 +164,7 @@
         <td>${prioBadge(r.priority)}</td><td style="white-space:nowrap">${fmtT(r.occurred_at)}</td>
         <td>${catBadge(r)}${r.code?`<span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:8px">${esc(r.code)}</span>`:""}</td>
         <td class="fe-nostop">${dealer(r)}</td><td>${esc(r.region||"—")}</td><td style="white-space:nowrap">${status(r)}<span class="fe-caret" aria-hidden="true">›</span></td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="6"></td></tr>`).join("")
-      :`<tr><td colspan="6" class="fe-empty">No errors match these filters.</td></tr>`}</tbody></table>`;
+      :`<tr><td colspan="6" class="fe-empty">No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""?` (team / priority filter active)`:""}.</td></tr>`}</tbody></table>`;
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); tr.click(); } });
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${CSS.escape(id)}"]`);
       if(S.expanded===id){ S.expanded=null; x.hidden=true; tr.classList.remove("open"); return; } el.querySelectorAll(".fe-x").forEach(o=>o.hidden=true); el.querySelectorAll(".fe-row.open").forEach(o=>o.classList.remove("open")); S.expanded=id; x.hidden=false; tr.classList.add("open"); expand(host,fx,x.firstElementChild,rows.find(r=>r.id===id)); });
