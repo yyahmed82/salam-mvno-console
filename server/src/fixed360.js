@@ -64,8 +64,8 @@ function maskAttempt(r) {
 }
 
 /* ---- freshness: is the beta watcher alive? ---- */
-async function freshness() {
-  const r = await db.ops.query(`SELECT
+async function freshness(pool = db.ops) {
+  const r = await pool.query(`SELECT
       (SELECT last_ts   FROM ingest_state WHERE source='replica' LIMIT 1) AS cursor_ts,
       (SELECT updated_at FROM ingest_state WHERE source='replica' LIMIT 1) AS cursor_updated,
       (SELECT max(started_at) FROM order_attempts)                          AS newest_attempt,
@@ -110,11 +110,11 @@ async function summary(q) {
     Q(`SELECT oa.dealer_validation AS outcome, count(*)::int AS n ${FROM} ${W}
           AND oa.channel='sda' AND oa.dealer_validation IS NOT NULL GROUP BY 1`),
     // error_events has its own timestamp; reuse the window + channel only
-    db.ops.query(`SELECT category, count(*)::int AS n, count(*) FILTER (WHERE NOT resolved)::int AS open,
+    pool.query(`SELECT category, count(*)::int AS n, count(*) FILTER (WHERE NOT resolved)::int AS open,
                          max(occurred_at) AS last_at
                     FROM error_events WHERE occurred_at >= $1 AND occurred_at < $2 ${s.channel ? 'AND channel = $3' : ''}
                    GROUP BY 1 ORDER BY 2 DESC LIMIT 12`, s.channel ? [P[0], P[1], s.channel] : [P[0], P[1]]),
-    freshness(),
+    freshness(pool),
   ]);
   const k = kpi.rows[0] || {};
   const nafTotal = naf.rows.reduce((a, r) => a + n(r.n), 0);
