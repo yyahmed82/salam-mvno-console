@@ -141,11 +141,16 @@ app.use('/api/', (req, res, next) => {
   return res.status(401).json({ error: 'Not signed in.' });
 });
 app.get('/api/cache-stats', (req, res) => res.json(respCache.stats()));
+/* DEMO MODE — record / replay at the API boundary, per signed-in user (server/src/demo.js). Sits right after
+ * the session gate so only authenticated calls are ever recorded or replayed; routes below never know. */
+const demo = require('./demo');
+app.use(demo.middleware);
 
 function requireCap(cap) {
   return (req, res, next) => (req.caps && req.caps[cap]) ? next()
     : res.status(403).json({ error: `role ${req.roleName} lacks ${cap}` });
 }
+demo.mount(app, { requireCap, audit });
 // gate by VIEW membership (e.g. the L2 Workbench is scoped to roles that have the 'workbench' view —
 // L2/L3/admin/super, never L1/report_manager). Mirrors the frontend nav scoping in ops.js.
 function requireView(view) {
@@ -6060,4 +6065,5 @@ app.listen(PORT, async () => {
   try { require('./dmsJourneys').start(); } catch (e) { console.error('DMS journey collector:', e.message); }
   try { require('./uilSampler').start(); } catch (e) { console.error('UIL sampler:', e.message); }
   try { require('./assist').startWarm(); } catch (e) { /* LLM warm-up is best-effort */ }
+  try { demo.startWarmup(); } catch (e) { /* cache warm-up is best-effort */ }
 });

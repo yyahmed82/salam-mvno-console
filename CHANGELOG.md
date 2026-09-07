@@ -3,6 +3,22 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.17] — 2026-09-07 — Demo mode: record once, replay instantly
+### Added
+- **Settings → Demo mode** (`democfg.js`, `#settings-demo`, cap `manageSync`) — record-and-replay at the API boundary
+  (`server/src/demo.js`). **Record**: browse the demo path once, every JSON response the pages fetch is stored in a
+  named set (`demo_sets` / `demo_snapshots`, console DB only). **Replay**: pages answer from the set in ~1 ms — no
+  replica, OPS pool, SSH or LLM — with timestamps shifted to now (ISO, `YYYY-MM-DD HH:MM:SS`, epoch-ms; date-only by
+  whole days); anything not recorded falls through to live. **Per signed-in user** (`demo_users`): nobody else is
+  affected. Writes in replay never reach a handler — a recorded answer or "Demo mode — nothing was changed". Yusr:
+  recorded questions (normalised text) answer instantly, new ones go to the live model. Coverage checklist per demo
+  surface, export / import of a set as JSON, a violet dot on the ⚙ gear while replaying (red blinking while recording).
+- **Cache warm-up after deploy**: the set marked ★ is replayed against the server itself 20 s after boot (loopback
+  auth + `X-Demo-Bypass`, so real handlers run and `respCache` fills) — the first Home paint after a restart is fast
+  for everyone. `DEMO_WARMUP=0` disables; Settings → Demo has "Warm cache now".
+- Verified end-to-end on a local Postgres with a mini Express app: record → replay (5 ms), time shift, Yusr match,
+  write guard, live fallback, per-user isolation, export.
+
 ## [2.0.0-alpha.16] — 2026-09-07 — Fixed › Errors: export XLSX / PDF
 ### Added
 - **Fixed › Errors: export XLSX / PDF** (team request) — two buttons next to Clear export the board exactly as filtered:

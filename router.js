@@ -15,6 +15,7 @@
     settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
     "settings-notify":{notifyClone:true}, "settings-notify-clone":{notifyClone:true},
     "settings-assist":{assistClone:true}, "settings-assist-clone":{assistClone:true},
+    "settings-demo":{demoCfg:true},
     audit:{audit:true}, tickets:{tickets:true}
   };
   const VIEW_HASH={landing:"home",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
@@ -109,6 +110,7 @@
     else if(r.sla){ window.openSla && window.openSla(); }
     else if(r.notifyClone){ window.openNotifyClone && window.openNotifyClone(); }
     else if(r.assistClone){ window.openAssistClone && window.openAssistClone(); }
+    else if(r.demoCfg){ window.openDemoSettings && window.openDemoSettings(); }
     else if(r.oncall){ window.openOncall && window.openOncall(); }
     else if(r.settings){ window.openSettings && window.openSettings(r.settings);
       const fn=SEG_RENDER[r.settings]; if(fn && window[fn]) window[fn](); }
