@@ -18,6 +18,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   for everyone. `DEMO_WARMUP=0` disables; Settings → Demo has "Warm cache now".
 - Verified end-to-end on a local Postgres with a mini Express app: record → replay (5 ms), time shift, Yusr match,
   write guard, live fallback, per-user isolation, export.
+- **Prod-safety healthcheck mail** (`server/src/prodHealth.js`) — the Fixed ops console's `ops-healthcheck` cron, ported
+  in-process and widened to the unified footprint: console-role connections + shared-server saturation on the console
+  Postgres (and the ops server when different), read load on the selfcare replica and Nexus, box CPU / memory / disk,
+  Fixed ingest freshness, Mobile sync age. Every `HEALTHCHECK_INTERVAL_MIN` (5); recipients `HEALTHCHECK_EMAILS`;
+  CRIT every run, WARN on change / throttle, OK as recovery notice, `HEALTHCHECK_ALWAYS=1` for the old every-run
+  behaviour. Same body as the old mail, on the console template. `node src/cli.js healthcheck [--always|--print]`.
+### Fixed
+- Detail drawers (tickets, user panel) opened *under* the sticky header on desktop, hiding the title bar and its ×
+  (`.drawer-ov` z-index 210 vs header 1200; the phone rule already had 1300). Base rule raised to 1250.
 
 ## [2.0.0-alpha.16] — 2026-09-07 — Fixed › Errors: export XLSX / PDF
 ### Added

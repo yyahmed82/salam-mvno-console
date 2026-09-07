@@ -6066,4 +6066,5 @@ app.listen(PORT, async () => {
   try { require('./uilSampler').start(); } catch (e) { console.error('UIL sampler:', e.message); }
   try { require('./assist').startWarm(); } catch (e) { /* LLM warm-up is best-effort */ }
   try { demo.startWarmup(); } catch (e) { /* cache warm-up is best-effort */ }
+  try { require('./prodHealth').start(); } catch (e) { console.error('prod-safety healthcheck:', e.message); }
 });

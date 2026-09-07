@@ -49,6 +49,11 @@ async function main() {
         if (t.opened || t.resolved) console.log(`  ${t.sim_now}  +${t.opened} / -${t.resolved}`);
       }});
       console.log(`simulate ${out.from} → ${out.to} (${out.ticks} ticks @ ${stepHours}h): ${opened} alerts opened, ${resolved} resolved`);
+    } else if (cmd === 'healthcheck') {
+      // node src/cli.js healthcheck [--always] [--print]  — the prod-safety probes, printed; mailed per policy / forced
+      const o = await require('./prodHealth').run({ always: args.includes('--always'), printOnly: args.includes('--print') });
+      console.log('\n' + o.body + '\n');
+      console.log(o.mailed ? `[healthcheck] mailed → ${o.recipients.join(', ')}` : `[healthcheck] not mailed — ${o.mailError || o.reason || 'print only'}`);
     } else if (cmd === 'testmail') {
       const [fire, to] = args;
       if (!fire || !to) throw new Error('usage: testmail <rule-key|metric-key> <email>');
@@ -65,7 +70,7 @@ async function main() {
       console.log(JSON.stringify({ sent: out.sent, dev: out.dev, error: out.error, reason: out.reason, subject: out.subject,
         recipients: out.recipients, attachments: out.attachments, reportNotes: out.reportNotes, segment: ev.segment }, null, 1));
     } else {
-      console.log('commands: init [--reset] | admin <email> | index | sync [iso] | simulate [stepH] [steps] | bounds | testmail <rule-key> <email>');
+      console.log('commands: init [--reset] | admin <email> | index | sync [iso] | simulate [stepH] [steps] | bounds | healthcheck [--always|--print] | testmail <rule-key> <email>');
     }
   } finally {
     await db.source.end().catch(() => {});
