@@ -45,10 +45,20 @@ async function verifyOtp(email, code) {
 }
 
 async function sendMail(email, code) {
-  // same shell as every other console mail (notify.shell = the Undertaking Consent System template)
+  // same shell as every other console mail (notify.shell = the Undertaking Consent System template).
+  // The code sits alone in a big letter-spaced block: one triple-click / long-press selects exactly the six digits
+  // (letter-spacing is CSS, so the copied text has no spaces).
   const notify = require('./notify');
   const text = `Your sign-in code is: ${code}\n\nIt is valid for ${CODE_TTL_MIN} minutes. Never share it.\nIf you did not request this, contact the Digital Operations team.`;
-  const r = await notify.sendText([email], 'Salam Operations Console — sign-in code', text, { title: 'sign-in code' });
+  const bodyHtml = `
+    <div style="font-size:14px;color:#20302a;">Your sign-in code for the Salam Operations Console:</div>
+    <div style="margin:16px 0 18px;padding:18px 20px;background:#f2f4f3;border:1px solid #e3e7e5;border-radius:10px;text-align:center;">
+      <span style="display:inline-block;font-family:Menlo,Consolas,'Courier New',monospace;font-size:38px;font-weight:800;letter-spacing:10px;color:#0b3d2b;line-height:1;">${notify.esc(String(code))}</span>
+    </div>
+    <div style="font-size:14px;color:#20302a;">It is valid for <b>${CODE_TTL_MIN} minutes</b>. Never share it.</div>
+    <div style="font-size:13px;color:#5b6b63;margin-top:6px;">If you did not request this, contact the Digital Operations team.</div>`;
+  const html = notify.shell({ title: 'Your sign-in code', bodyHtml });
+  const r = await notify.sendHtml([email], 'Salam Operations Console — sign-in code', html, [], text);
   if (!r.sent && r.error) throw new Error(r.error);
   if (!r.sent && r.dev) throw new Error('SMTP not configured');
 }

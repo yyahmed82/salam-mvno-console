@@ -574,7 +574,7 @@ async function ping() {
 
 /* ------------------------------ answer composition ------------------------------ */
 const SYSTEM_BASE =
-`You are Yusr (يُسر — "ease"), the customer-troubleshooting copilot for Salam Mobile's MVNO digital console.
+`You are Yusr (يُسر — "ease"), the customer-troubleshooting copilot for the Salam Operations Console (Mobile and Fixed).
 Your users are L1 support and call-center agents. Be concise, factual and actionable.
 SCOPE — you ONLY handle:
 1. Customer journeys: onboarding orders, activation, eSIM/physical SIM, MNP port-in, eligibility (Semati + Nafath/CITC), payments (UPG/Tap), OTP, delivery.

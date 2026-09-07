@@ -1,4 +1,4 @@
-/* Salam DMS · MVNO Digital Console — data layer (topology + integrations)
+/* Salam Operations Console — data layer (topology + integrations)
    Generated from static analysis of selfcare-backend release-2.34.1 */
 
 const FLOW_TYPES = {

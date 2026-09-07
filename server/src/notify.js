@@ -79,7 +79,7 @@ async function sendHtml(to, subject, html, attachments, text) {
       auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
     });
     const withLogo = [brand.attachment(), ...(attachments || [])];   // CID logo for the shell header
-    await t.sendMail({ from: process.env.SMTP_FROM || 'Salam Operations Console <noreply@salam.sa>',
+    await t.sendMail({ from: fromAddress(),
       to: emails.join(','), subject, html, ...(text ? { text } : {}), attachments: withLogo });
     mailOk();
     return { ...base, sent: true };
@@ -92,7 +92,16 @@ async function sendHtml(to, subject, html, attachments, text) {
 // sends goes through it: OTP, sync health, alert digests, tickets. Keep it table-based — Outlook.
 const brand = require('./mailBrand');
 const SYSTEM_BADGE = process.env.MAIL_SYSTEM_BADGE || 'OPERATIONS CONSOLE';
-const FOOTER = process.env.MAIL_FOOTER || '— Salam Digital Operations · Operations Console · automated message';
+const FOOTER = process.env.MAIL_FOOTER || '— Salam Operations Console · automated message';
+/* The display name is enforced in code: /apps/unified/.env started life as a copy of the digital console's, so
+   SMTP_FROM there says "Salam Digital Console". We keep the ADDRESS (the relay whitelists it) and put our own name
+   on it — MAIL_FROM_NAME overrides. */
+const FROM_NAME = process.env.MAIL_FROM_NAME || 'Salam Operations Console';
+function fromAddress() {
+  const raw = process.env.SMTP_FROM || 'noreply@salam.sa';
+  const m = /<([^>]+)>/.exec(raw); const addr = (m ? m[1] : raw).trim();
+  return `${FROM_NAME} <${addr}>`;
+}
 function shell({ title, pill, pillColor, bodyHtml, badge }) {
   const statusPill = pill ? `<span style="display:inline-block;background:${pillColor || '#1e5c44'};color:#ffffff;font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.08em;border-radius:6px;padding:3px 10px;margin-left:6px;">${esc(String(pill).toUpperCase())}</span>` : '';
   return `<!DOCTYPE html>
@@ -209,4 +218,4 @@ async function sendAlertDigest(simNow, evals, opts = {}) {
   return { ...base, sent: r.sent, dev: r.dev, error: r.error };
 }
 
-module.exports = { recipients, sendHtml, sendText, textToHtml, buildDigest, sendAlertDigest, smtpConfigured, mailStatus, esc, shell };
+module.exports = { recipients, sendHtml, sendText, textToHtml, buildDigest, sendAlertDigest, smtpConfigured, mailStatus, esc, shell, fromAddress };

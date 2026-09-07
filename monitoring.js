@@ -147,7 +147,7 @@
    * probed, why it matters, and the first move when it is not green. `tab` links the dependency
    * to the section that investigates it, so a red chip is one click from the evidence. */
   const WHATIS={
-    console_api:{ what:"The console's own Node process on 172.31.38.152:4600.", why:"If this is down you are not reading this page — it is here so uptime and version are visible after a deploy.", red:"pm2 logs salam-console --err" },
+    console_api:{ what:"This console's own Node process on 172.31.38.152 (salam-unified).", why:"If this is down you are not reading this page — it is here so uptime and version are visible after a deploy.", red:"pm2 logs salam-console --err" },
     replica:{ what:"The Postgres replica the console reads (orders, payments, users…), plus how long ago prod-sync last landed rows.", why:"Every number in this console comes from here. A stale sync looks exactly like 'nothing happened' — which is how we once concluded sign-in tracking was broken.", red:"DOWN = no connection: check the network and SOURCE_DATABASE_URL. SATURATED = the database is fine but every pooled connection is busy — find the slow query (pg_stat_activity) or raise SOURCE_POOL_MAX. The two are different problems.", tab:"access" },
     console_db:{ what:"The console's own database: rules, snapshots, sessions, collected API logs.", why:"Alerts, audit and the API-traffic collector all write here.", red:"Verify CONSOLE_DATABASE_URL and disk space on 152." },
     ollama:{ what:"The local LLM that answers as Yusr (llama3.1, CPU-only on this box).", why:"Yusr degrades to runbook search without it — nothing else on the console is affected.", red:"systemctl status ollama · Settings → Yusr" },

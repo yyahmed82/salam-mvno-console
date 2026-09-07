@@ -12,6 +12,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   (`MAIL_FOOTER`). The OTP mail (`otp.js`) goes through it too — subject "Salam Operations Console — sign-in code",
   same wording as the undertaking OTP — instead of its own unstyled HTML; sync-health, alert digests and ticket mails
   pick it up automatically. `notify.sendText()` wraps plain text (URLs linked) for short transactional mails.
+- **Sender name enforced in code** — `/apps/unified/.env` was copied from the digital console, so its `SMTP_FROM` said
+  "Salam Digital Console". `notify.fromAddress()` keeps the address (the relay whitelists it) and always labels it
+  "Salam Operations Console" (`MAIL_FROM_NAME` overrides). Footer is "— Salam Operations Console · automated message".
+- **OTP code is a big copyable block** — 38 px letter-spaced monospace digits on their own line (letter-spacing is
+  CSS, so one selection copies exactly six digits). Remaining "Digital Console" product strings (Yusr system prompt,
+  Monitoring self-check text, data-file headers) renamed to Operations Console.
 - **Settings → Users** — the row is now USER (email + name · mobile · team) · BUSINESS · ROLES · TAGS · STATUS (with
   last-seen) · MAIL · **ACTIONS**. The old table had 12 columns and the Block button sat off-screen to the right;
   name and mobile were unstyled inline inputs nobody recognised as editable.

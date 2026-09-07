@@ -1,4 +1,4 @@
-/* Salam DMS · MVNO Digital Console — journeys data
+/* Salam Operations Console — journeys data
    Step fields: n=name d=desc ep=endpoint ctl=controller svc=services
    intg=sync integrations, async={w:worker,q:queue,to:[systems]}, tbl=tables,
    st=state transition, ok=on-success, fail=[{at,why,fx}] */
