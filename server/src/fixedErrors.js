@@ -84,6 +84,12 @@ function identifierSql(q, P) {
   return direct.length ? `(${sub} OR ${direct.join(' OR ')})` : sub;
 }
 
+/* ---- provider (DAWIYAT / TLS / STC …) — not a column: the failing call's request body carries it
+ * ("provider": "DAWIYAT" on feasibility / appointment / order calls). Extracted with one regex so the
+ * board can filter and count by provider; events whose request has no provider land in the "no provider"
+ * bucket (value "-"). Bounded by the window WHERE, so the regex only runs on the rows already selected. */
+const PROVIDER_EXPR = `upper(substring(e.req_body from '"provider"\\s*:\\s*"([^"]+)"'))`;
+
 /* ---- shared WHERE for summary/live (alias e = error_events) ---- */
 function baseWhere(q) {
   const w = parseWindow(q);
@@ -93,6 +99,10 @@ function baseWhere(q) {
   if (channel) { P.push(channel); parts.push(`e.channel = $${P.length}`); }
   if (q.region) { P.push(String(q.region).slice(0, 60)); parts.push(`e.region = $${P.length}`); }
   if (q.dealerId) { P.push(String(q.dealerId).slice(0, 40)); parts.push(`e.dealer_id = $${P.length}`); }
+  if (q.provider) {
+    if (q.provider === '-') parts.push(`${PROVIDER_EXPR} IS NULL`);
+    else { P.push(String(q.provider).toUpperCase().slice(0, 40)); parts.push(`${PROVIDER_EXPR} = $${P.length}`); }
+  }
   const ident = identifierSql(q, P);
   if (ident) parts.push(ident);
   return { ...w, channel, P, where: 'WHERE ' + parts.join(' AND ') };
@@ -142,7 +152,15 @@ function mount(app, deps) {
     const byTeam = Object.fromEntries(TEAMS.map(t => [t, { open: 0, total: 0 }]));
     const byPriority = Object.fromEntries([0, 1, 2, 3, 4].map(p => [p, { open: 0, total: 0 }]));
     for (const c of byCategory) { byTeam[c.team].open += c.open; byTeam[c.team].total += c.total; byPriority[c.priority].open += c.open; byPriority[c.priority].total += c.total; }
-    return { window: s.window, from: s.from, to: s.to, channel: s.channel, openOnly,
+    /* provider chips: counted WITHOUT the provider filter so every chip keeps its number while one is selected */
+    let byProvider = [];
+    try {
+      const s0 = q.provider ? baseWhere({ ...q, provider: undefined }) : s;
+      const pr = await ops(q).query(`SELECT ${PROVIDER_EXPR} AS provider, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open
+        FROM error_events e ${s0.where} GROUP BY 1 ORDER BY 2 DESC LIMIT 20`, s0.P);
+      byProvider = pr.rows.map(x => ({ provider: x.provider || '-', label: x.provider || 'no provider', open: n(x.open), total: n(x.total) }));
+    } catch (e) { byProvider = []; }
+    return { window: s.window, from: s.from, to: s.to, channel: s.channel, openOnly, provider: q.provider || '', byProvider,
       total: byCategory.reduce((a, c) => a + c.total, 0), open: byCategory.reduce((a, c) => a + c.open, 0),
       byCategory: openOnly ? byCategory.filter(c => c.open > 0) : byCategory, byTeam, byPriority, taxonomy: TAXONOMY, spike: SPIKE };
   }

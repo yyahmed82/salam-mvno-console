@@ -14,7 +14,7 @@
   const TONE={red:{bg:"rgba(220,76,76,.16)",fg:"#dc2626"},amber:{bg:"rgba(210,153,34,.16)",fg:"var(--warn-fg)"},muted:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"}};
   const ID_FIELDS=[["serviceNo","Service no. (FTTH… / 5G no.)"],["odb","ODB / plate no (ODB: prefix ok)"],["iccid","SIM ICCID"],["cpe","CPE serial"],["msisdn","MSISDN / mobile"],["custCode","Customer code (custCode)"],["customerId","Customer ID"],["workflowId","Workflow ID (wf_st_…)"]];
   const LS=k=>{ try{ return localStorage.getItem(k); }catch(e){ return null; } };
-  const S={ win:LS("fixed_err_win")||"today", channel:"", hubSeen:undefined, openOnly:true, team:"", prio:"", category:"", tech:"all", find:"", ids:{}, expanded:null, timer:null, tick:0 };
+  const S={ win:LS("fixed_err_win")||"today", channel:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", category:"", tech:"all", find:"", ids:{}, expanded:null, timer:null, tick:0 };
   const caps=()=>{ try{ const s=window.opsSession&&window.opsSession(); return (s&&s.me&&s.me.caps)||{}; }catch(e){ return {}; } };
   const fmtT=v=>{ if(!v) return "—"; const d=new Date(v); return isNaN(d)?"—":d.toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"Asia/Riyadh"}); };
   const rel=v=>{ if(!v) return "never"; const ms=Date.now()-new Date(v).getTime(); if(ms<0) return "just now"; const m=Math.floor(ms/6e4); if(m<60) return m+"m ago"; const h=Math.floor(m/60); if(h<48) return h+"h ago"; return Math.floor(h/24)+" days ago"; };
@@ -75,7 +75,7 @@
     #fxErr .fe-empty{padding:16px;color:var(--muted);font-size:13px}
   `;
   function qs(){ const ch=S.channel||"";
-    let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}`;
+    let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}`;
     if(S.find) q+=`&find=${encodeURIComponent(S.find)}`; for(const [k] of ID_FIELDS) if(S.ids[k]) q+=`&${k}=${encodeURIComponent(S.ids[k])}`; return q; }
 
   async function render(host,fx){
@@ -105,6 +105,7 @@
       </div>
       <div id="feTeams" class="fe-chips" style="margin-bottom:8px"></div>
       <div id="fePrio" class="fe-chips" style="margin-bottom:4px"></div>
+      <div id="feProv" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feTiles" class="fe-tiles"><div class="fe-tile" style="cursor:default;color:var(--muted)">${window.salamLoader?window.salamLoader("Reading error events…"):"Loading…"}</div></div>
       <div class="fe-tablecard"><div id="feRows"></div><div id="feMore" style="padding:10px;text-align:center"></div></div>
       <div id="feStamp" class="rl" style="font-size:11px;color:var(--muted);margin-top:8px"></div></div>`;
@@ -115,7 +116,7 @@
     const read=()=>{ S.find=host.querySelector("#feFind").value.trim(); for(const [k] of ID_FIELDS) S.ids[k]=host.querySelector("#feId-"+k).value.trim(); };
     let deb=null; const go=()=>{ clearTimeout(deb); read(); S.category=""; load(host,fx,true); };
     host.querySelectorAll("input[id^=feId-],#feFind").forEach(i=>{ i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } }; i.oninput=()=>{ clearTimeout(deb); deb=setTimeout(go,450); }; });
-    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",openOnly:true,team:"",prio:"",category:"",tech:"all",find:"",ids:{},expanded:null}); render(host,fx); };
+    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",openOnly:true,team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},expanded:null}); render(host,fx); };
     host.querySelector("#feFind").focus();
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }
@@ -140,6 +141,13 @@
       $("#fePrio").innerHTML=`<span style="font-size:12px;color:var(--muted);margin-right:2px">Priority:</span>`+chip(S.prio==="","All",`class="fe-prio" data-p=""`)+[0,1,2,3,4].map(p=>chip(S.prio===String(p),`P${p} · ${fmt(S.openOnly?sum.byPriority[p].open:sum.byPriority[p].total)}`,`class="fe-prio" data-p="${p}"`)).join("");
       host.querySelectorAll(".fe-team").forEach(b=>b.onclick=()=>{ S.team=(S.team===b.dataset.t)?"":b.dataset.t; load(host,fx,true); });
       host.querySelectorAll(".fe-prio").forEach(b=>b.onclick=()=>{ S.prio=(S.prio===b.dataset.p)?"":b.dataset.p; load(host,fx,true); });
+      /* provider chips (DAWIYAT / TLS / STC … from the failing call's request) — counts never drop while one is selected */
+      const provs=(sum.byProvider||[]).filter(p=>S.openOnly?p.open>0:p.total>0);
+      const provN=p=>fmt(S.openOnly?p.open:p.total);
+      $("#feProv").innerHTML=(provs.length||S.provider)?`<span style="font-size:12px;color:var(--muted);margin-right:2px">Provider:</span>`+chip(S.provider==="","All",`class="fe-prov" data-v=""`)
+        +provs.filter(p=>p.provider!=="-").map(p=>chip(S.provider===p.provider,`${esc(p.label)} · ${provN(p)}`,`class="fe-prov" data-v="${esc(p.provider)}"`)).join("")
+        +provs.filter(p=>p.provider==="-").map(p=>chip(S.provider==="-",`no provider · ${provN(p)}`,`class="fe-prov" data-v="-" title="events whose failing request carries no provider (Nafath, payment, BSS …)"`)).join(""):"";
+      host.querySelectorAll(".fe-prov").forEach(b=>b.onclick=()=>{ S.provider=(S.provider===b.dataset.v)?"":b.dataset.v; load(host,fx,true); });
       const tiles=sum.byCategory.filter(c=>(!S.team||c.team===S.team)&&(S.prio===""||String(c.priority)===S.prio));
       $("#feTiles").innerHTML=tiles.length?tiles.map(c=>{ const on=S.category===c.category; const t=TONE[c.tone]||TONE.muted;
         return `<button class="fe-tile${on?" on":""}" data-c="${esc(c.category)}">
@@ -164,7 +172,7 @@
         <td>${prioBadge(r.priority)}</td><td style="white-space:nowrap">${fmtT(r.occurred_at)}</td>
         <td>${catBadge(r)}${r.code?`<span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:8px">${esc(r.code)}</span>`:""}</td>
         <td class="fe-nostop">${dealer(r)}</td><td>${esc(r.region||"—")}</td><td style="white-space:nowrap">${status(r)}<span class="fe-caret" aria-hidden="true">›</span></td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="6"></td></tr>`).join("")
-      :`<tr><td colspan="6" class="fe-empty">No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""?` (team / priority filter active)`:""}.</td></tr>`}</tbody></table>`;
+      :`<tr><td colspan="6" class="fe-empty">No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""||S.provider?` (team / priority / provider filter active)`:""}.</td></tr>`}</tbody></table>`;
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); tr.click(); } });
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; e.preventDefault();
       const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${id.replace(/[^\w-]/g,"")}"]`); if(!x) return;

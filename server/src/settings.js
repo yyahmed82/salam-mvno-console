@@ -56,6 +56,14 @@ async function tickOnce() {
     const s = await syncOnce(when);
     const a = await runAlerts(when);
     try { await require('./anomaly').detectAndRaise(when.toISOString()); } catch (e) {}
+    /* alert mail (digest + one PDF per firing rule) — the same call /api/sync makes when the
+     * prod-sync scheduler drives the loop. Only when THIS scheduler owns the loop, so a console
+     * running both never mails twice. Best-effort: a mail failure must not stop the tick. */
+    const prodSyncOwnsLoop = !!process.env.PROD_DATABASE_URL && process.env.PROD_SYNC_AUTO !== '0';
+    if (a.opened > 0 && !prodSyncOwnsLoop) {
+      try { a.mailed = await require('./notify').sendAlertDigest(a.simNow || when, a.evals); }
+      catch (e) { a.mailed = { sent: false, error: e.message }; console.error('scheduler alert mail failed:', e.message); }
+    }
     lastTick = { at: new Date().toISOString(), sim_now: when.toISOString(), ...s, ...a };
   } catch (e) {
     lastTick = { at: new Date().toISOString(), error: e.message };

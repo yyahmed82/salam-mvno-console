@@ -4,6 +4,8 @@
  *   sync [iso]             one metrics sync (+alerts) at iso or now
  *   simulate [stepH] [steps]   replay historical data as live traffic
  *   bounds                 print source data time bounds
+ *   testmail <rule-key> <email>   simulate ONE rule firing (Mobile or Fixed) and mail the digest + PDF
+ *                          to that address only — the way to verify the alert mail on a server
  */
 const db = require('./db');
 const { init } = require('./init');
@@ -47,8 +49,23 @@ async function main() {
         if (t.opened || t.resolved) console.log(`  ${t.sim_now}  +${t.opened} / -${t.resolved}`);
       }});
       console.log(`simulate ${out.from} → ${out.to} (${out.ticks} ticks @ ${stepHours}h): ${opened} alerts opened, ${resolved} resolved`);
+    } else if (cmd === 'testmail') {
+      const [fire, to] = args;
+      if (!fire || !to) throw new Error('usage: testmail <rule-key|metric-key> <email>');
+      const { evaluate } = require('./alertRunner');
+      const notify = require('./notify');
+      // evaluate at the last sync point so every other row shows its real value
+      const last = (await db.console.query(`SELECT sim_now FROM sync_runs ORDER BY id DESC LIMIT 1`).catch(() => ({ rows: [] }))).rows[0];
+      const when = last && last.sim_now ? new Date(last.sim_now) : new Date();
+      const { evals } = await evaluate(when);
+      const ev = evals.find(e => e.key === fire) || evals.find(e => e.metric_key === fire);
+      if (!ev) throw new Error(`no enabled rule matches "${fire}" — keys: ${evals.map(e => e.key).join(', ')}`);
+      ev.fired = true; ev.simulated = true;
+      const out = await notify.sendAlertDigest(when, evals, { to });
+      console.log(JSON.stringify({ sent: out.sent, dev: out.dev, error: out.error, reason: out.reason, subject: out.subject,
+        recipients: out.recipients, attachments: out.attachments, reportNotes: out.reportNotes, segment: ev.segment }, null, 1));
     } else {
-      console.log('commands: init [--reset] | admin <email> | index | sync [iso] | simulate [stepH] [steps] | bounds');
+      console.log('commands: init [--reset] | admin <email> | index | sync [iso] | simulate [stepH] [steps] | bounds | testmail <rule-key> <email>');
     }
   } finally {
     await db.source.end().catch(() => {});

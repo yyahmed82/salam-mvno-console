@@ -19,6 +19,7 @@
 
 const db = require('./db');
 const pdfout = require('./pdfout');
+const FL = require('./fixedLinks');
 
 const BASE = process.env.CONSOLE_PUBLIC_URL || process.env.CONSOLE_BASE_URL || 'https://salam.sa/unified-console/';
 const opLabel = { gt: '>', gte: '>=', lt: '<', lte: '<=', eq: '=' };
@@ -60,6 +61,53 @@ const LADDER = {
        'If it recurs daily, propose a threshold or fix via the team channel — chronic P3s hide real regressions.'],
 };
 
+/* FIXED rules — the evidence is not the API capture but the dealer-ops read model (sda_ops, read-only
+ * through db.ops): the very rows the retired Operations Console linked to from its mail. Bounded,
+ * never throws (a missing OPS pool becomes a note in the PDF). */
+async function fixedEvidence(ev) {
+  const ops = db.ops;
+  const h = Math.max(1, Number(ev.window_hours) || 24);
+  if (!ops) return { title: 'dealer-ops read model', hours: h, error: 'OPS_DATABASE_URL not configured on this console' };
+  const key = String(ev.key || '');
+  const FIVE_G = ['fiveGWhiteLabel', 'fiveGFWA'];
+  const attCols = [{ label: 'Started (KSA)', w: 15 }, { label: 'Plan', w: 12 }, { label: 'Dealer / channel', w: 20 },
+                   { label: 'Region', w: 11 }, { label: 'Outcome', w: 12 }, { label: 'Nafath', w: 14 }, { label: 'Last error', w: 16 }];
+  const attempts = async (extra, params) => (await ops.query(
+    `SELECT oa.started_at, oa.plan, oa.workflow::text AS workflow, COALESCE(d.dealer_name, d.dealer_code, oa.channel) AS dealer,
+            COALESCE(oa.region, d.region) AS region, oa.outcome::text AS outcome, oa.nafath_outcome, oa.last_error_category
+       FROM order_attempts oa LEFT JOIN dealers d ON d.id = oa.dealer_id
+      WHERE oa.started_at >= now() - ($1||' hours')::interval ${extra}
+      ORDER BY oa.started_at DESC LIMIT 12`, [String(h), ...params])).rows
+    .map(r => [ksa(r.started_at), r.plan || r.workflow || '—', r.dealer || '—', r.region || '—', r.outcome || '—', r.nafath_outcome || '—', r.last_error_category || '—']);
+  if (/nafath/.test(key)) return { title: '5G attempts whose Nafath outcome is not COMPLETED', hours: h, cols: attCols,
+    rows: await attempts(`AND oa.workflow::text = ANY($2::text[]) AND oa.nafath_outcome IS NOT NULL AND oa.nafath_outcome <> 'COMPLETED'`, [FIVE_G]) };
+  if (/semati/.test(key)) return { title: '5G attempts that failed at Semati provisioning', hours: h, cols: attCols,
+    rows: await attempts(`AND oa.workflow::text = ANY($2::text[]) AND oa.nafath_outcome IN ('FAILED','MOBILE_EXISTS')`, [FIVE_G]) };
+  if (/error_spike|timeout/.test(key)) {
+    const rows = (await ops.query(
+      `SELECT occurred_at, category, code, COALESCE(dealer_code, channel) AS who, region, left(coalesce(message,''), 70) AS msg
+         FROM error_events WHERE occurred_at >= now() - ($1||' hours')::interval AND resolved = false
+        ORDER BY occurred_at DESC LIMIT 12`, [String(Math.max(h, 3))])).rows;
+    return { title: 'open error events (unresolved)', hours: Math.max(h, 3),
+      cols: [{ label: 'When (KSA)', w: 15 }, { label: 'Category', w: 18 }, { label: 'Code', w: 10 }, { label: 'Dealer / channel', w: 16 }, { label: 'Region', w: 11 }, { label: 'Message', w: 30 }],
+      rows: rows.map(r => [ksa(r.occurred_at), r.category || '—', r.code || '—', r.who || '—', r.region || '—', r.msg || '—']) };
+  }
+  if (/conversion|workhours|offhours|stagnation|manafith/.test(key)) return { title: 'latest SDA attempts not completed', hours: h, cols: attCols,
+    rows: await attempts(`AND oa.outcome::text <> 'COMPLETED'`, []) };
+  if (/ticket|incident/.test(key)) {
+    const scope = ev.dim && ev.dim.scope ? String(ev.dim.scope) : null;
+    const rows = (await ops.query(
+      `SELECT submitted_at, incident_number, priority, status, sla_status, theme, assigned_group, left(coalesce(description,''), 70) AS descr
+         FROM incident_log
+        WHERE submitted_at >= now() - ($1||' hours')::interval AND ($2::text IS NULL OR theme ILIKE '%' || $2 || '%')
+        ORDER BY submitted_at DESC LIMIT 12`, [String(h), scope])).rows;
+    return { title: `incident tickets${scope ? ` - theme "${scope}"` : ''}`, hours: h,
+      cols: [{ label: 'Submitted (KSA)', w: 15 }, { label: 'Incident', w: 13 }, { label: 'Prio', w: 7 }, { label: 'Status', w: 11 }, { label: 'SLA', w: 9 }, { label: 'Theme', w: 18 }, { label: 'Group', w: 13 }, { label: 'Description', w: 24 }],
+      rows: rows.map(r => [ksa(r.submitted_at), r.incident_number || '—', r.priority || '—', r.status || '—', r.sla_status || '—', r.theme || '—', r.assigned_group || '—', r.descr || '—']) };
+  }
+  return null;
+}
+
 async function ruleRow(key) {
   return (await db.console.query(`SELECT * FROM alert_rules WHERE key=$1`, [key])).rows[0] || null;
 }
@@ -86,7 +134,11 @@ async function buildOne(ev, simNow) {
   const isLatency = /latency/.test(ev.metric_key);
   const evWin = `${Math.max(ev.window_hours * 4, 6)} hours`;
   let evTitle = null, evCodes = [], evRows = [], evSlow = [];
-  try {
+  const isFixed = FL.isFixed(ev);
+  const insp = isFixed ? FL.inspect(ev.key) : null;
+  let fx = null;
+  if (isFixed) { try { fx = await fixedEvidence({ ...ev, dim }); } catch (e) { fx = { title: 'dealer-ops read model', hours: ev.window_hours, error: e.message }; } }
+  if (!isFixed) try {
     const fam = (EVIDENCE.find(([re]) => re.test(ev.metric_key)) || [])[1];
     const where = apiDim ? `path = $2` : fam;
     if (isLatency) {
@@ -134,7 +186,7 @@ async function buildOne(ev, simNow) {
    * file (same source as the console's trace view); PII masked; headers never returned. Hard
    * 10s budget — a slow host must not delay the alert mail. */
   let example = null;
-  try {
+  if (!isFixed) try {
     const cand = evRows.find(r => r.transaction_id);
     if (cand) {
       const roles = require('./roles');
@@ -166,7 +218,9 @@ async function buildOne(ev, simNow) {
     ['Metric', ev.metric_key + (Object.keys(dim).length ? `  dim ${JSON.stringify(dim)}` : '')],
     ['Observed', `${fmtVal(ev.value, ev.unit)}  (sample ${ev.sample}, window ${ev.window_hours}h)`],
     ['Threshold', `${opLabel[ev.operator] || ev.operator} ${fmtVal(ev.threshold, ev.unit)}` + (ev.min_sample ? `  min sample ${ev.min_sample}` : '') + (ev.active ? `  active ${ev.active}` : '')],
-    ['Console', `${BASE}#alerts   (acknowledge / history)      ${BASE}#troubleshoot   (live drill)`],
+    ['Console', isFixed
+      ? `${FL.alertsUrl()}   (Fixed > Alerts: rules / history)` + (insp ? `      ${insp.url}   (${insp.label})` : '')
+      : `${BASE}#alerts   (acknowledge / history)      ${BASE}#troubleshoot   (live drill)`],
   ], { boldVal: true });
 
   if (rule && rule.description) { d.h2('What this alert means'); d.p(rule.description); }
@@ -219,6 +273,15 @@ async function buildOne(ev, simNow) {
         evRows.map(r => [ksa(r.ts), r.host, r.path, r.code, r.msg, r.duration_ms == null ? '—' : String(r.duration_ms)]));
     } else if (!evSlow.length) d.p('The API capture holds no rows for this family in the window (7-day retention; collector live since 13 Aug 2026).');
     d.p('Full traces: console -> Troubleshoot -> open any failure -> trace (end-to-end app -> gateway -> BSS/UPG).', { color: CC.muted });
+  }
+
+  if (fx) {
+    d.h2(`Evidence - ${fx.title} (dealer-ops read model, last ${fx.hours}h)`);
+    if (fx.error) d.p(`Evidence query skipped: ${fx.error}`, { color: CC.muted });
+    else if (!fx.rows.length) d.p('No matching rows in the window - the breach may come from a single burst that has already cleared.');
+    else d.table(fx.cols, fx.rows);
+    if (insp) { d.p('Same rows in the console:', { color: CC.muted }); d.kv([[insp.label, insp.url]]); }
+    if (insp && /tab=map/.test(insp.url)) d.p('Order-level trace: Fixed > SDA map > click the dealer > order number > trace (Nafath, Manafith, Semati, BSS steps).', { color: CC.muted });
   }
 
   /* real example — the actual request and response of one of the calls above */

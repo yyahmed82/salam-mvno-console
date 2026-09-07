@@ -93,6 +93,18 @@
   /* ---- layout ---- */
   async function render(h,ctx){
     host=h; fx=ctx;
+    /* Deep-link filters — alert mails / chat posts land here pre-filtered, like the retired console's
+     * "Inspect in console →": #fixed?tab=map&plans=fiveGWhiteLabel,fiveGFWA&nafath=not_completed&range=24h
+     * (also semati, outcomes, regions, roles, dealerId). Applied once per distinct query so a later manual
+     * change on the page is never overwritten by a re-render. */
+    try{ const qs=(location.hash.split("?")[1]||"");
+      if(qs && qs!==window.__fxmLastQs && /(?:^|&)(plans|nafath|semati|outcomes|regions|roles|range|dealerId)=/.test(qs)){
+        window.__fxmLastQs=qs; const P=new URLSearchParams(qs);
+        const list=k=>P.has(k)?P.get(k).split(",").map(s=>s.trim()).filter(Boolean):[];
+        Object.assign(S,{regions:list("regions"),roles:list("roles"),plans:list("plans"),outcomes:list("outcomes"),
+          nafath:P.get("nafath")||"all",semati:P.get("semati")||"all",dealerId:P.get("dealerId")||null,dealerName:""});
+        if(P.get("range")&&fx.state){ fx.state.range=P.get("range"); try{ localStorage.setItem("fixed_range",fx.state.range); }catch(e){} }
+        save(); } }catch(e){}
     host.innerHTML=`<div id="fxm" style="display:grid;grid-template-columns:262px minmax(0,1fr) 360px;gap:12px;height:calc(100vh - 205px);min-height:600px">
       <aside id="fxmSide" class="topo-card" style="padding:12px;overflow:auto;display:flex;flex-direction:column;gap:12px"></aside>
       <div id="fxmMapWrap" class="topo-card" style="padding:0;position:relative;overflow:hidden;min-height:400px">

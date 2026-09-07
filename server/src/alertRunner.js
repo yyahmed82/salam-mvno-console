@@ -61,7 +61,7 @@ async function evaluate(simNow) {
       id: rule.id, key: rule.key, name: rule.name, severity: rule.severity, team: rule.team,
       metric_key: rule.metric_key, operator: rule.operator, threshold: Number(rule.threshold),
       min_sample: rule.min_sample, unit: rule.unit, window_hours: Number(rule.window_hours),
-      active: activeLabel(rule), value, sample, fired, counts
+      active: activeLabel(rule), value, sample, fired, counts, segment: rule.segment || 'mvno'
     });
   }
   return { now, evals };

@@ -3,6 +3,36 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.15] — 2026-09-07 — alert mails for both businesses: PDF for Mobile, map / error-board links for Fixed
+### Added
+- **Fixed rows in the alert digest carry the retired Operations Console's "Inspect in console →" link, on the unified
+  routes** (`server/src/fixedLinks.js`): Nafath / Semati spikes → the SDA map pre-filtered to the failing 5G attempts
+  (`#fixed?tab=map&plans=fiveGWhiteLabel,fiveGFWA&nafath=not_completed&range=24h`), error spike / timeout waves → the
+  error control board, SDA activity rules → the map, ticket rules → the Fixed dashboard. Every Fixed row's "Open ›"
+  goes to **Fixed › Alerts**, never to the Mobile `#alerts` page a Fixed-only reader cannot see.
+- **`fixed-map.js` reads deep-link filters from the hash** (`plans`, `nafath`, `semati`, `outcomes`, `regions`, `roles`,
+  `dealerId`, `range`) and applies them once per distinct query — a mail link lands on the exact rows behind the alert.
+- **The per-alert PDF now covers Fixed rules too**: evidence comes from the dealer-ops read model (`sda_ops`, read-only)
+  instead of the Mobile API capture — failing 5G attempts (plan, dealer, region, Nafath outcome, last error), open
+  error events, or the incident tickets of the rule's theme — plus the Fixed console links in the header.
+- **`node src/cli.js testmail <rule-key> <email>`** — simulate one rule (Mobile or Fixed) firing and mail the digest +
+  PDF to that address only. The way to verify the mail chain on 152 without a browser session.
+- Segment chip (📱 MOBILE / 🏠 FIXED) on every digest row and intro line.
+- **Fixed › Errors: provider filter** (team request) — a chip row under Priority, before the KPI tiles: DAWIYAT / TLS /
+  STC … discovered from the failing call's request body (`"provider"`), plus a *no provider* bucket for events whose
+  request carries none (Nafath, payment, BSS). Clicking a chip filters the tiles, the counts and the rows; chip counts
+  are computed without the provider filter so they never drop while one is selected. `GET /api/fixed/errors/summary`
+  returns `byProvider`; `summary` and `live` accept `provider=<NAME>` or `provider=-`.
+### Changed
+- **The built-in sync scheduler (Settings → Sync, "Auto · Live") now mails the digest when a rule opens**, exactly
+  like `/api/sync` does when the prod-sync scheduler drives the loop — and only when prod-sync is *not* armed, so a
+  console running both never mails twice. Before, a console without `PROD_DATABASE_URL` evaluated its rules and
+  mailed nobody.
+- `alertRunner.evaluate()` rows carry `segment`.
+### Verified
+- Digest + four PDFs rendered headless with stubbed data (3 Fixed rules, 1 Mobile): links, chips, evidence tables,
+  PDF header links all correct; Mobile path byte-identical to the digital console apart from branding.
+
 ## [2.0.0-alpha.14] — 2026-09-07 — Users page: edit panel, block / unblock in sight · one mail template
 ### Changed
 - **Every mail the console sends now uses the Undertaking Consent System template** (`notify.shell`, ported from the

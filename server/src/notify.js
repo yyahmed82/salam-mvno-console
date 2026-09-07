@@ -140,6 +140,24 @@ async function sendText(to, subject, text, opts = {}) {
 
 const CONSOLE_URL = process.env.CONSOLE_PUBLIC_URL || process.env.CONSOLE_BASE_URL || 'https://salam.sa/unified-console/';
 
+const FL = require('./fixedLinks');
+/* per-row destinations: Mobile rows → #alerts (incident or rule), Fixed rows → Fixed › Alerts plus the
+ * rule's own "Inspect" deep link (map pre-filtered / error board) — the link the retired
+ * Operations Console mailed, on the unified routes */
+function segChip(e) {
+  return FL.isFixed(e)
+    ? '<span style="display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.3px;padding:1px 6px;border-radius:999px;background:#e6f4ec;color:#0b3d2b;margin-right:5px;vertical-align:1px">🏠 FIXED</span>'
+    : '<span style="display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.3px;padding:1px 6px;border-radius:999px;background:#f1e9fe;color:#5b21b6;margin-right:5px;vertical-align:1px">📱 MOBILE</span>';
+}
+function openUrl(e, idByKey) {
+  if (FL.isFixed(e)) return FL.alertsUrl();
+  return `${CONSOLE_URL}#alerts${e.fired && idByKey[e.key] ? `?id=${idByKey[e.key]}` : `?rule=${encodeURIComponent(e.key)}`}`;
+}
+function inspectHtml(e, style) {
+  const i = e.fired && FL.isFixed(e) ? FL.inspect(e.key) : null;
+  return i ? `<a href="${i.url}" style="${style}">${esc(i.label)} ›</a>` : '';
+}
+
 function buildDigest(simNow, evals, reportNames = [], idByKey = {}) {
   const firing = evals.filter(e => e.fired);
   const th = 'padding:9px 12px;text-align:left;font-size:12px;color:#334155;background:#eef4f0;border-bottom:1px solid #dbe6df';
@@ -153,11 +171,11 @@ function buildDigest(simNow, evals, reportNames = [], idByKey = {}) {
       + (e.min_sample ? ` · n≥${e.min_sample}` : '') + (e.active ? ` · ${e.active}` : '');
     return `<tr style="${rowBg}">
       <td style="${td}">${status}<div style="color:#94a3b8;font-size:11px;margin-top:2px">${esc(e.team || '')}</div></td>
-      <td style="${td}"><b style="color:#0f172a">${esc(e.severity)} ${esc(e.name)}</b><div style="color:#94a3b8;font-size:11px;margin-top:2px">${esc(e.metric_key)}</div></td>
+      <td style="${td}">${segChip(e)}<b style="color:#0f172a">${esc(e.severity)} ${esc(e.name)}</b><div style="color:#94a3b8;font-size:11px;margin-top:2px">${esc(e.metric_key)}</div></td>
       <td style="${td};white-space:nowrap">${e.value == null ? '—' : fmtVal(e.value, e.unit)}${e.sample != null ? `<div style="color:#94a3b8;font-size:11px">sample ${e.sample}</div>` : ''}</td>
       <td style="${td};white-space:nowrap;color:#475569">${esc(thr)}</td>
       <td style="${td};color:#475569">${esc(e.counts || '')}</td>
-      <td style="${td};white-space:nowrap"><a href="${CONSOLE_URL}#alerts${e.fired && idByKey[e.key] ? `?id=${idByKey[e.key]}` : `?rule=${encodeURIComponent(e.key)}`}" style="color:#0e9f5a;font-weight:700;text-decoration:none">Open ›</a></td>
+      <td style="${td};white-space:nowrap"><a href="${openUrl(e, idByKey)}" style="color:#0e9f5a;font-weight:700;text-decoration:none">Open ›</a>${inspectHtml(e, 'display:block;margin-top:4px;color:#0e9f5a;font-weight:700;text-decoration:none;font-size:12px')}</td>
     </tr>`;
   }).join('');
   /* INTRO — the resume a reader needs before the table: what fired, how bad, where the detail
@@ -169,7 +187,7 @@ function buildDigest(simNow, evals, reportNames = [], idByKey = {}) {
     <div style="background:#fdf6ec;border:1px solid #f3d9a4;border-left:4px solid #d97706;border-radius:8px;padding:12px 16px;margin-bottom:16px">
       <div style="font-weight:800;color:#7c2d12;font-size:13px;margin-bottom:6px">In short — ${firing.length} alert(s) need attention (${sevLine}), out of ${evals.length} rules evaluated.</div>
       ${firing.map((e, i) => `<div style="font-size:12.5px;color:#334155;margin:3px 0">
-        <b>${esc(e.severity)}</b> · <a href="${CONSOLE_URL}#alerts${idByKey[e.key] ? `?id=${idByKey[e.key]}` : ''}" style="color:#0f172a;font-weight:700">${esc(e.name)}</a>${e.simulated ? ' <span style="color:#7c3aed;font-weight:800">(SIMULATED — test mail)</span>' : ''} — observed <b>${fmtVal(e.value, e.unit)}</b> vs threshold ${opLabel[e.operator] || e.operator} ${fmtVal(e.threshold, e.unit)} (sample ${e.sample ?? '—'}, ${e.window_hours}h)${reportNames[i] ? ` · full report attached: <span style="font-family:monospace;font-size:11px">${esc(reportNames[i])}</span>` : ''}
+        ${segChip(e)}<b>${esc(e.severity)}</b> · <a href="${openUrl(e, idByKey)}" style="color:#0f172a;font-weight:700">${esc(e.name)}</a>${e.simulated ? ' <span style="color:#7c3aed;font-weight:800">(SIMULATED — test mail)</span>' : ''} — observed <b>${fmtVal(e.value, e.unit)}</b> vs threshold ${opLabel[e.operator] || e.operator} ${fmtVal(e.threshold, e.unit)} (sample ${e.sample ?? '—'}, ${e.window_hours}h)${reportNames[i] ? ` · full report attached: <span style="font-family:monospace;font-size:11px">${esc(reportNames[i])}</span>` : ''}${FL.isFixed(e) && FL.inspect(e.key) ? ` · inspect: ${inspectHtml(e, 'color:#0e9f5a;font-weight:700')}` : ''}
       </div>`).join('')}
       <div style="font-size:12px;color:#64748b;margin-top:8px">Each attached PDF carries the KPIs, the APIs and request/response evidence, the alert history and the step-by-step L1 action plan — read it before escalating.</div>
     </div>` : `
@@ -177,7 +195,7 @@ function buildDigest(simNow, evals, reportNames = [], idByKey = {}) {
       <b>All clear.</b> ${evals.length} rules evaluated — nothing firing. No action needed.
     </div>`;
   const body = `${intro}
-    <div style="color:#64748b;font-size:12px;margin-bottom:12px">At: ${ksa(simNow)} KSA · every row links to the console → <a href="${CONSOLE_URL}#alerts" style="color:#0e9f5a">Alerts</a> for acknowledge / history / rules</div>
+    <div style="color:#64748b;font-size:12px;margin-bottom:12px">At: ${ksa(simNow)} KSA · every row links to the console → <a href="${CONSOLE_URL}#alerts" style="color:#0e9f5a">Alerts</a> (Mobile) · <a href="${FL.alertsUrl()}" style="color:#0e9f5a">Fixed › Alerts</a> — acknowledge / history / rules; Fixed rows also carry an <b>Inspect</b> link to the map or the error board</div>
     <table style="border-collapse:collapse;width:100%;font-size:13px;border:1px solid #dbe6df">
       <tr><th style="${th}">Status</th><th style="${th}">Rule</th><th style="${th}">Metric</th><th style="${th}">Threshold</th><th style="${th}">Counts</th><th style="${th}">Details</th></tr>
       ${rows}
