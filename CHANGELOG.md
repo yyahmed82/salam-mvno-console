@@ -3,6 +3,16 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.16] — 2026-09-07 — Fixed › Errors: export XLSX / PDF
+### Added
+- **Fixed › Errors: export XLSX / PDF** (team request) — two buttons next to Clear export the board exactly as filtered:
+  a Summary (period, every active filter, totals by category / team / priority / provider) and the full error list —
+  time (KSA), priority, team, category, code, message, endpoint, method, HTTP status, **response time (ms)** (joined
+  from `api_calls` on the failing step), provider, channel, dealer / QR, region, order #, workflow id, status, acked by,
+  **request** and **response** bodies (masked as on the board). XLSX up to 5 000 rows (two sheets); PDF up to 400 rows
+  with bodies trimmed to one line. `GET /api/fixed/errors/export?format=xlsx|pdf&…` (cap `export`, audited
+  `fixed.errors.export`).
+
 ## [2.0.0-alpha.15] — 2026-09-07 — alert mails for both businesses: PDF for Mobile, map / error-board links for Fixed
 ### Added
 - **Fixed rows in the alert digest carry the retired Operations Console's "Inspect in console →" link, on the unified

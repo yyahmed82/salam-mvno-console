@@ -8,6 +8,7 @@
  *   GET  summary  ?range|from|to&channel&openOnly&find&tech&odb&iccid&cpe&msisdn&serviceNo&custCode&customerId&workflowId
  *   GET  live     …same + &team&priority&category&limit
  *   GET  detail   ?id[&unmask=1]
+ *   GET  export   ?format=xlsx|pdf …same filters as live   (cap export) — filters, period, summary, every row
  *   POST resolve  {id[, undo]}                     (cap ackErrors)
  */
 
@@ -288,6 +289,114 @@ function mount(app, deps) {
     if (audit) audit(req, undo ? 'fixed.errors.unack' : 'fixed.errors.ack', id, {});
     return { ok: true, id, acked: !undo, actor: req.actor || null };
   }
+
+  /* ---- export (team request, alpha.15): the board as the team sees it — every filter, the period, the summary
+   * and every error row with endpoint, request, response, date/time and response time.
+   *   GET /api/fixed/errors/export?format=xlsx|pdf&<every board filter>      (cap: export, audited)
+   * Rows come through live() page by page (identical filter semantics, acks merged), then one query adds the
+   * request / response bodies and one joins api_calls for the failing step's duration (response time) and
+   * HTTP status. xlsx: up to 5 000 rows; pdf: up to 400 rows (bodies trimmed) — the sheet is the full record. */
+  const ksaStr = iso => { try { return new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Riyadh', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', ''); } catch (_) { return String(iso || ''); } };
+  const provOf = body => { const m = /"provider"\s*:\s*"([^"]+)"/.exec(String(body || '')); return m ? m[1].toUpperCase() : ''; };
+  const oneLine = (v, max) => { const t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); return t.length > max ? t.slice(0, max - 1) + '…' : t; };
+  const WIN_LABEL = { '1h': 'Last 1h', '3h': 'Last 3h', '6h': 'Last 6h', '24h': 'Last 24h', '32h': 'Last 32h', '48h': 'Last 48h', '72h': 'Last 72h', today: 'Today (KSA)', '7d': 'Last 7d', '30d': '1 month', '90d': '3 months', '365d': '1 year' };
+  const CHAN_LABEL = { '': 'All channels', sda: 'SDA (dealer)', epurchase: 'QR / e-purchase', salamhome: 'Salam Home app' };
+
+  async function exportData(q, req, cap) {
+    const sum = await summary(q);
+    const rows = [];
+    let cursor = null;
+    while (rows.length < cap) {
+      const page = await live({ ...q, limit: 200, cursor: cursor || undefined }, req);
+      rows.push(...page.rows);
+      if (!page.nextCursor || !page.rows.length) break;
+      cursor = page.nextCursor;
+    }
+    const out = rows.slice(0, cap);
+    const ids = out.map(r => r.id), attempts = [...new Set(out.map(r => r.attempt_id).filter(Boolean))];
+    const bodies = ids.length ? (await ops(q).query(`SELECT id, req_body, res_body FROM error_events WHERE id = ANY($1::text[])`, [ids])).rows : [];
+    const bodyById = Object.fromEntries(bodies.map(b => [b.id, b]));
+    const calls = attempts.length ? (await ops(q).query(
+      `SELECT DISTINCT ON (attempt_id, endpoint) attempt_id, endpoint, method, status, duration_ms
+         FROM api_calls WHERE attempt_id = ANY($1::text[]) ORDER BY attempt_id, endpoint, created_at DESC`, [attempts])).rows : [];
+    const callKey = {}; for (const c of calls) callKey[c.attempt_id + '|' + c.endpoint] = c;
+    const callFor = r => { if (!r.attempt_id) return null; if (r.step && callKey[r.attempt_id + '|' + r.step]) return callKey[r.attempt_id + '|' + r.step];
+      const tail = r.step ? calls.find(c => c.attempt_id === r.attempt_id && (c.endpoint.endsWith(r.step) || r.step.endsWith(c.endpoint))) : null; return tail || null; };
+    const flat = out.map(r => { const b = bodyById[r.id] || {}; const c = callFor(r);
+      return { when: r.occurred_at, priority: r.priority, team: r.team, category: r.label || r.category, code: r.code || '', message: r.message || '',
+        endpoint: r.step || (c && c.endpoint) || '', method: (c && c.method) || '', http: c && c.status != null ? c.status : '', ms: c && c.duration_ms != null ? c.duration_ms : '',
+        channel: r.channel || '', dealer: r.channel === 'epurchase' && r.referral_code ? 'QR ' + r.referral_code : (r.dealer_code || ''), region: r.region || '',
+        order: r.order_number || '', attempt: r.attempt_id || '', status: r.resolved ? 'resolved' : (r.acked ? 'acked' : 'open'), acked_by: r.acked_by || '',
+        provider: provOf(b.req_body) || '', request: b.req_body || '', response: b.res_body || '' }; });
+    const filters = [
+      ['Period', `${WIN_LABEL[sum.window] || sum.window} — ${ksaStr(sum.from)} → ${ksaStr(sum.to)} KSA`],
+      ['Channel', CHAN_LABEL[q.channel || ''] || q.channel],
+      ['Open only', (q.openOnly === '1' || q.openOnly === 'true') ? 'yes' : 'no (open + resolved)'],
+      ['Team', q.team || 'All teams'], ['Priority', q.priority !== undefined && q.priority !== '' ? 'P' + q.priority : 'All'],
+      ['Provider', q.provider === '-' ? 'no provider' : (q.provider || 'All')], ['Category', q.category ? (meta(q.category).label || q.category) : 'All'],
+      ['Access tech', q.tech && q.tech !== 'all' ? q.tech.toUpperCase() : 'All'],
+      ['Search', [q.find, q.odb && 'ODB ' + q.odb, q.iccid && 'ICCID ' + q.iccid, q.cpe && 'CPE ' + q.cpe, q.msisdn && 'MSISDN ' + q.msisdn, q.serviceNo && 'service ' + q.serviceNo,
+        q.custCode && 'custCode ' + q.custCode, q.customerId && 'customer ' + q.customerId, q.workflowId && 'workflow ' + q.workflowId].filter(Boolean).join(' · ') || '—'],
+      ['Rows', `${flat.length}${rows.length > cap ? ` (capped at ${cap} — narrow the window for the rest)` : ''}`],
+      ['Generated', `${ksaStr(new Date().toISOString())} KSA by ${req.sessionEmail || req.actor || 'console'}`],
+    ];
+    return { sum, flat, filters, capped: rows.length > cap };
+  }
+
+  function exportXlsx(d) {
+    const xlsx = require('./xlsx');
+    const HEAD = ['Time (KSA)', 'Priority', 'Team', 'Category', 'Code', 'Message', 'Endpoint', 'Method', 'HTTP', 'Response time (ms)', 'Provider', 'Channel', 'Dealer / QR', 'Region', 'Order #', 'Workflow (attempt)', 'Status', 'Acked by', 'Request', 'Response'];
+    const body = d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, r.team, r.category, r.code, r.message, r.endpoint, r.method, r.http, r.ms, r.provider, r.channel, r.dealer, r.region, r.order, r.attempt, r.status, r.acked_by, oneLine(r.request, 32000), oneLine(r.response, 32000)]);
+    const S = d.sum, sumRows = [['Live error control board — export'], []];
+    d.filters.forEach(([k, v]) => sumRows.push([k, v]));
+    sumRows.push([], ['Totals', 'Open', 'Total'], ['All', S.open, S.total], []);
+    sumRows.push(['By category', 'Open', 'Total', 'Last 3h', 'Priority', 'Team']); S.byCategory.forEach(c => sumRows.push([c.label, c.open, c.total, c.last3h, 'P' + c.priority, c.team]));
+    sumRows.push([], ['By team', 'Open', 'Total']); Object.entries(S.byTeam).forEach(([t, v]) => sumRows.push([t, v.open, v.total]));
+    sumRows.push([], ['By priority', 'Open', 'Total']); Object.entries(S.byPriority).forEach(([p, v]) => sumRows.push(['P' + p, v.open, v.total]));
+    sumRows.push([], ['By provider', 'Open', 'Total']); (S.byProvider || []).forEach(p => sumRows.push([p.label, p.open, p.total]));
+    return xlsx.build([
+      { name: 'Errors', rows: [HEAD, ...body], numericCols: [8, 9], widths: [19, 8, 10, 26, 14, 40, 44, 8, 7, 12, 10, 10, 14, 10, 14, 22, 9, 22, 60, 60] },
+      { name: 'Summary', rows: sumRows, numericCols: [1, 2, 3], widths: [34, 30, 12, 10, 10, 12] },
+    ]);
+  }
+
+  function exportPdf(d) {
+    const pdfout = require('./pdfout');
+    const doc = pdfout.doc({ footer: `Salam Operations Console - Fixed error control board - generated ${ksaStr(new Date().toISOString())} KSA` });
+    const CC = doc.colors, S = d.sum;
+    const top = doc.band(64, CC.dark);
+    doc.at(46, top + 24, 'FIXED - LIVE ERROR CONTROL BOARD', { size: 9, bold: true, color: [0.5, 0.83, 0.65] });
+    doc.at(46, top + 44, `${S.open} open - ${S.total} total - ${WIN_LABEL[S.window] || S.window}`, { size: 15, bold: true, color: CC.white });
+    doc.space(10);
+    doc.h2('Filters'); doc.kv(d.filters, { boldVal: true });
+    doc.h2('Summary - by category');
+    doc.table([{ label: 'Category', w: 30 }, { label: 'Team', w: 12 }, { label: 'Prio', w: 8 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }, { label: 'Last 3h', w: 10, align: 'right' }],
+      S.byCategory.map(c => [c.label, c.team, 'P' + c.priority, String(c.open), String(c.total), String(c.last3h)]),
+      { rowColor: ri => S.byCategory[ri].priority <= 1 ? CC.red : (S.byCategory[ri].priority === 2 ? CC.amber : null) });
+    doc.h2('Summary - by team / priority / provider');
+    doc.table([{ label: 'Team', w: 20 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], Object.entries(S.byTeam).map(([t, v]) => [t, String(v.open), String(v.total)]));
+    doc.table([{ label: 'Priority', w: 20 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], Object.entries(S.byPriority).map(([p, v]) => ['P' + p, String(v.open), String(v.total)]));
+    if ((S.byProvider || []).length) doc.table([{ label: 'Provider', w: 20 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], S.byProvider.map(p => [p.label, String(p.open), String(p.total)]));
+    doc.h2(`Errors - ${d.flat.length} row(s)${d.capped ? ' (PDF capped - the xlsx export holds the full list)' : ''}`);
+    doc.table([{ label: 'Time (KSA)', w: 13 }, { label: 'P', w: 4 }, { label: 'Category / code', w: 16 }, { label: 'Endpoint', w: 20 }, { label: 'ms', w: 5, align: 'right' }, { label: 'Dealer', w: 8 }, { label: 'Status', w: 7 }, { label: 'Request', w: 22 }, { label: 'Response', w: 22 }],
+      d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, `${r.category}${r.code ? ' - ' + r.code : ''}`, r.endpoint || '—', r.ms === '' ? '—' : String(r.ms), r.dealer || '—', r.status, oneLine(r.request, 160) || '—', oneLine(r.response, 160) || '—']),
+      { size: 6.8, rowColor: ri => d.flat[ri].priority <= 1 ? CC.red : (d.flat[ri].priority === 2 ? CC.amber : null) });
+    doc.p('Identifiers are masked as on the board; full bodies and end-to-end traces stay in the console (Fixed > Errors > open a row > Open full trace).', { color: CC.muted, size: 8 });
+    return doc.buffer();
+  }
+
+  app.get('/api/fixed/errors/export', gate, async (req, res) => {
+    if (!(req.caps && req.caps.export)) return res.status(403).json({ error: `role ${req.roleName} lacks export` });
+    const q = req.query || {}; const format = q.format === 'pdf' ? 'pdf' : 'xlsx';
+    try {
+      const d = await exportData(q, req, format === 'pdf' ? 400 : 5000);
+      if (audit) audit(req, 'fixed.errors.export', format, { rows: d.flat.length, range: q.range || null, channel: q.channel || null, provider: q.provider || null, category: q.category || null });
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+      res.setHeader('Content-Disposition', `attachment; filename="fixed-errors_${q.range || 'today'}_${stamp}.${format}"`);
+      if (format === 'pdf') { res.setHeader('Content-Type', 'application/pdf'); return res.send(exportPdf(d)); }
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); res.send(exportXlsx(d));
+    } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+  });
 
   app.get('/api/fixed/errors/summary', gate, wrap(q => summary(q)));
   app.get('/api/fixed/errors/live',    gate, wrap((q, req) => live(q, req)));

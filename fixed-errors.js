@@ -45,7 +45,7 @@
     #fxErr .fe-in::placeholder{color:var(--muted)}
     #fxErr .fe-grid{display:grid;gap:10px} #fxErr .fe-grid.c4{grid-template-columns:repeat(4,1fr)} #fxErr .fe-grid.c2{grid-template-columns:1fr 1fr} @media (max-width:1300px){#fxErr .fe-grid.c4{grid-template-columns:1fr 1fr}}
     #fxErr .fe-row1{display:flex;gap:10px;align-items:center} #fxErr .fe-row1 .fe-in{flex:1}
-    #fxErr .fe-foot{display:flex;align-items:center;gap:12px;margin-top:auto} #fxErr .fe-foot label{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
+    #fxErr .fe-foot{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;margin-top:auto} #fxErr .fe-foot label{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
     #fxErr .fe-foot input[type=checkbox]{accent-color:var(--green,#0e9f5a);width:15px;height:15px}
     #fxErr .fe-counts{margin-left:auto;font-size:12.5px;color:var(--muted)}
     #fxErr .fe-btn{cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:var(--ink);transition:border-color .14s,color .14s,transform .14s} #fxErr .fe-btn:hover{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);transform:translateY(-1px)}
@@ -73,6 +73,7 @@
     #fxErr .fe-sim{border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:var(--card2,#f8fafc)} #fxErr .fe-sim b.t{display:block;font-size:13px;margin-bottom:6px} #fxErr .fe-sim .f{display:flex;flex-wrap:wrap;gap:18px;font-size:12.5px} #fxErr .fe-sim .f span span{color:var(--muted)}
     #fxErr .fe-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     #fxErr .fe-empty{padding:16px;color:var(--muted);font-size:13px}
+    #fxErr .fe-btn.fe-exp{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);font-weight:700} #fxErr .fe-btn.fe-exp:hover{background:var(--green,#0e9f5a);color:#fff} #fxErr .fe-btn.fe-exp:disabled{opacity:.6;cursor:progress}
   `;
   function qs(){ const ch=S.channel||"";
     let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}`;
@@ -92,7 +93,7 @@
           <div class="fe-chips">${WINDOWS.map(([k,l])=>chip(S.win===k,l,`class="fe-win" data-w="${k}"`)).join("")}</div>
           <select id="feCh" class="fe-in">
             <option value="" ${ch===""?"selected":""}>All channels</option><option value="sda" ${ch==="sda"?"selected":""}>SDA (dealer)</option><option value="epurchase" ${ch==="epurchase"?"selected":""}>QR / e-purchase</option><option value="salamhome" ${ch==="salamhome"?"selected":""}>Salam Home app</option></select>
-          <div class="fe-foot"><label><input id="feOpen" type="checkbox" ${S.openOnly?"checked":""}> Open only</label><span id="feCounts" class="fe-counts"></span><button id="feClear" class="fe-btn">Clear</button></div>
+          <div class="fe-foot"><label><input id="feOpen" type="checkbox" ${S.openOnly?"checked":""}> Open only</label><span id="feCounts" class="fe-counts"></span><button id="feClear" class="fe-btn">Clear</button><button id="feXlsx" class="fe-btn fe-exp" title="Excel: filters, period, summary and every error row (endpoint, request, response, response time) — up to 5 000 rows">⬇ XLSX</button><button id="fePdf" class="fe-btn fe-exp" title="PDF: same content, up to 400 rows">⬇ PDF</button></div>
         </div>
         <div class="fe-card">
           ${inp("feFind","Search any ID — ODB · service · ICCID · MSISDN · order · customer · workflow…",S.find)}
@@ -116,11 +117,28 @@
     const read=()=>{ S.find=host.querySelector("#feFind").value.trim(); for(const [k] of ID_FIELDS) S.ids[k]=host.querySelector("#feId-"+k).value.trim(); };
     let deb=null; const go=()=>{ clearTimeout(deb); read(); S.category=""; load(host,fx,true); };
     host.querySelectorAll("input[id^=feId-],#feFind").forEach(i=>{ i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } }; i.oninput=()=>{ clearTimeout(deb); deb=setTimeout(go,450); }; });
+    host.querySelector("#feXlsx").onclick=()=>exportBoard(host,fx,"xlsx"); host.querySelector("#fePdf").onclick=()=>exportBoard(host,fx,"pdf");
     host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",openOnly:true,team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},expanded:null}); render(host,fx); };
     host.querySelector("#feFind").focus();
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }
       if(document.visibilityState!=="visible") return; load(host,fx,true); },60000);
+  }
+
+  /* export the board exactly as filtered (window, channel, team, priority, provider, category, tech, search) */
+  async function exportBoard(host,fx,format){
+    const btn=host.querySelector(format==="pdf"?"#fePdf":"#feXlsx"); if(!btn||btn.disabled) return;
+    const old=btn.textContent; btn.disabled=true; btn.textContent="… building";
+    try{
+      let q=qs(); if(S.team) q+=`&team=${S.team}`; if(S.prio!=="") q+=`&priority=${S.prio}`; if(S.category) q+=`&category=${encodeURIComponent(S.category)}`;
+      const base=(window.API_BASE||window.CONSOLE_BASE||"");
+      const r=await fetch(`${base}/api/fixed/errors/export?format=${format}&${q}`,{headers:{"X-Console-Role":localStorage.getItem("cons_role")||"","X-Console-User":localStorage.getItem("cons_email")||""}});
+      if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||("HTTP "+r.status)); }
+      const cd=r.headers.get("Content-Disposition")||""; const m=/filename="([^"]+)"/.exec(cd);
+      const blob=await r.blob(); const href=URL.createObjectURL(blob); const a=document.createElement("a");
+      a.href=href; a.download=m?m[1]:`fixed-errors.${format}`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(href),2000);
+    }catch(e){ const t=host.querySelector("#feTiles"); if(t) t.insertAdjacentHTML("afterbegin",`<div class="albanner" style="grid-column:1/-1;border-left:4px solid #dc2626;padding:10px 14px">Export failed — ${fx.esc(e.message)}</div>`); }
+    finally{ btn.disabled=false; btn.textContent=old; }
   }
 
   async function load(host,fx,first){
