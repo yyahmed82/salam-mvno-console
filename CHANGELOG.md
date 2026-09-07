@@ -3,6 +3,18 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.14] — 2026-09-07 — Users page: edit panel, block / unblock in sight
+### Changed
+- **Settings → Users** — the row is now USER (email + name · mobile · team) · BUSINESS · ROLES · TAGS · STATUS (with
+  last-seen) · MAIL · **ACTIONS**. The old table had 12 columns and the Block button sat off-screen to the right;
+  name and mobile were unstyled inline inputs nobody recognised as editable.
+- **✎ Edit** opens a side panel (full screen on phones) with every field of the account — name, mobile, team,
+  business, roles, tags, mail flags, quick-tour reset — plus a provenance line for imported accounts (which console it
+  came from, legacy Fixed roles) and a marked danger zone for Block / Unblock. Saves with one PATCH.
+- **Block / Unblock** on the row too: Block arms on the first click ("Confirm block", 4 s) — no browser dialog. Blocked
+  rows strike the e-mail through. USER and ACTIONS stay sticky while the middle scrolls; on phones the table keeps
+  only user · status · actions (everything else lives in the panel).
+
 ## [2.0.0-alpha.13] — 2026-09-06 — data convergence: people & history from both prod consoles
 ### Added
 - **`server/scripts/converge-import.cjs`** — one-way merge of the two prod consoles into `unified_console`:
@@ -31,6 +43,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
 ### Changed
 - `deploy152/deploy.sh` now ships `server/scripts/*.cjs` (and syntax-checks them) — one-off jobs reach 152 with
   the normal deploy instead of being scp'd by hand.
+### Fixed (same day)
+- The first dry run on 152 died at the 2 GB heap limit: `mvno_console.metric_snapshots` holds 22.7 M rows and the
+  importer loaded a year of them into one array. `audit`, `alerts` and `snapshots` are now **streamed** (keyset
+  pagination on `id`, `--page` rows in memory at a time; a dry run only counts) — verified under a 64 MB heap.
+  `snapshots` is now **opt-in** with its own `--snapshot-days` window (default 14): it is chart history only —
+  the seasonal baselines come from `rollup_hourly`, which this console rebuilds from the replica itself, so the
+  earlier note that snapshots "close the anomaly-baseline gap" was wrong and is withdrawn.
 ### Verified
 - Rehearsed end to end on a throwaway Postgres 16 with all three schemas and seeded edge cases (shared account,
   blocked user, legacy `SUPER_ADMIN`, ticket-ref collision, `FIRED`/`OK`/`SKIPPED` events, rows outside the

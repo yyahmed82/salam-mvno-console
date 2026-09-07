@@ -366,6 +366,34 @@
   .blocklink{background:none;border:none;color:var(--red);font-size:12px;font-weight:600;cursor:pointer;padding:0}
   .blocklink.unblock{color:var(--green)}
   [data-theme="dark"] .tagchip.on{color:#fff}
+  /* ---- users table v2 (6 Sep 2026): actions in sight, edit panel for everything else ---- */
+  .um-wrap{overflow-x:auto;margin-top:26px;border:1px solid var(--line);border-radius:12px}
+  .um-wrap table.umtable{margin-top:0}
+  .u-who{display:flex;flex-direction:column;gap:2px;min-width:200px} .u-who b{font-weight:700;color:var(--ink)} .u-who span{font-size:11px;color:var(--muted)}
+  .u-last{font-size:10px;color:var(--muted);margin-top:4px;white-space:nowrap}
+  tr.u-blocked .u-who b{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--red)}
+  .u-sticky{position:sticky;left:0;background:var(--card);z-index:1} .u-sticky-r{position:sticky;right:0;background:var(--card);z-index:1;box-shadow:-8px 0 12px -10px rgba(2,6,23,.25)}
+  table.umtable tr:hover td.u-sticky,table.umtable tr:hover td.u-sticky-r{background:var(--bg)}
+  .u-act{white-space:nowrap;display:flex;gap:6px;align-items:center}
+  .ubtn{font:inherit;font-size:11.5px;font-weight:700;padding:6px 11px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);transition:background .15s,border-color .15s,color .15s,transform .06s;white-space:nowrap}
+  .ubtn:active{transform:translateY(1px)}
+  .ubtn.edit{border-color:var(--green);color:var(--green-dark)} .ubtn.edit:hover{background:var(--green-bg)}
+  .ubtn.block{border-color:var(--red-line);color:var(--red)} .ubtn.block:hover,.ubtn.block.arm{background:var(--red);border-color:var(--red);color:#fff}
+  .ubtn.unblock{background:var(--green);border-color:var(--green);color:#fff} .ubtn.unblock:hover{filter:brightness(1.06)}
+  /* edit panel */
+  .ud-av{width:34px;height:34px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;flex:none}
+  .ud-body{padding:18px 20px 28px} .ud-body .um-lbl{margin-top:16px} .ud-body .um-lbl:first-child{margin-top:0}
+  .ud-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px} .ud-grid .um-lbl{margin-top:0}
+  .ud-hint{font-weight:500;letter-spacing:0;text-transform:none;color:var(--muted);font-size:11px}
+  .ud-prov{font-size:12px;color:var(--ink-soft);background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:9px 12px;line-height:1.5}
+  .ud-actions{display:flex;align-items:center;gap:10px;margin-top:20px;flex-wrap:wrap} .ud-msg{font-size:12px;font-weight:600}
+  .ud-danger{display:flex;align-items:center;gap:14px;margin-top:22px;padding:14px 16px;border:1px solid var(--red-line);background:var(--tint-red);border-radius:12px;color:var(--ink)} .ud-danger>div{flex:1} .ud-danger .ud-hint{color:var(--tint-red-fg)}
+  /* phones: the table keeps only what the edit panel does not cover — user · status · actions; no sticky columns */
+  @media (max-width:700px){ .ud-grid{grid-template-columns:1fr} .ud-danger{flex-direction:column;align-items:stretch}
+    .umtable th:nth-child(2),.umtable td:nth-child(2),.umtable th:nth-child(3),.umtable td:nth-child(3),.umtable th:nth-child(4),.umtable td:nth-child(4),
+    .umtable th:nth-child(6),.umtable td:nth-child(6),.umtable th:nth-child(7),.umtable td:nth-child(7){display:none}
+    .u-sticky,.u-sticky-r{position:static;box-shadow:none} .u-who{min-width:0} .u-who b{word-break:break-all}
+    .u-act{flex-direction:column;align-items:stretch;gap:5px} .ubtn{padding:7px 8px;font-size:11px} table.umtable td,table.umtable th{padding:10px 7px} }
   /* 360 quick-access pill — deliberately the ONLY red element in the header: the customer
      workstation must be findable in one glance by call center */
   .nav360{background:#dc2626;color:#fff;border:1.5px solid #dc2626;border-radius:999px;
@@ -1647,66 +1675,66 @@
 <div id="ruleModal" class="modal-overlay"><div class="modal-card" id="ruleModalCard" style="max-width:560px"></div></div>
 <div id="panelModal" class="modal-overlay"><div class="modal-card" id="panelModalCard" style="max-width:720px"></div></div>
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
-<script src="base.js?v=20260906r"></script>
-<script src="navdrop.js?v=20260906r" defer></script>
-<script src="adaptive.js?v=20260906r" defer></script>
-<script src="ksatime.js?v=20260906r"></script>
-<script src="data.js?v=20260906r"></script>
-<script src="data2.js?v=20260906r"></script>
-<script src="samples.js?v=20260906r"></script>
-<script src="samples2.js?v=20260906r"></script>
-<script src="apidocs.js?v=20260906r"></script>
-<script src="xlsxout.js?v=20260906r"></script>
-<script src="persist.js?v=20260906r"></script>
-<script src="app.js?v=20260906r"></script>
-<script src="uinav.js?v=20260906r"></script>
-<script src="alertsview.js?v=20260906r"></script>
-<script src="ops.js?v=20260906r"></script>
-<script src="opsbar.js?v=20260906r"></script>
-<script src="analytics.js?v=20260906r"></script>
-<script src="topo2data.js?v=20260906r"></script>
-<script src="topology2.js?v=20260906r"></script>
-<script src="tapdocs.js?v=20260906r"></script>
-<script src="screensflow.js?v=20260906r"></script>
-<script src="home.js?v=20260906r"></script>
-<script src="monitoring.js?v=20260906r"></script>
-<script src="workbench.js?v=20260906r"></script>
-<script src="growth.js?v=20260906r"></script>
-<script src="dmsjourney.js?v=20260906r"></script>
-<script src="dms.js?v=20260906r"></script>
-<script src="landing.js?v=20260906r"></script>
-<script src="fixed.js?v=20260906r"></script>
-<script src="fixed-maps-ui.js?v=20260906r"></script>
-<script src="fixed-leaflet.js?v=20260906r"></script>
-<script src="fixed-map.js?v=20260906r"></script>
-<script src="fixed-qr.js?v=20260906r"></script>
-<script src="fixed-channel.js?v=20260906r"></script>
-<script src="fixed-dash.js?v=20260906r"></script>
-<script src="fixed-errors.js?v=20260906r"></script>
-<script src="fixed-alerts.js?v=20260906r"></script>
-<script src="fixed-playbook.js?v=20260906r"></script>
-<script src="fixed-diagrams.js?v=20260906r"></script>
-<script src="fixed-report.js?v=20260906r"></script>
-<script src="otodocs.js?v=20260906r"></script>
-<script src="salamdocs.js?v=20260906r"></script>
-<script src="slo.js?v=20260906r"></script>
-<script src="audit.js?v=20260906r"></script>
-<script src="notifycfg.js?v=20260906r"></script>
-<script src="notifyclone.js?v=20260906r"></script>
-<script src="sub360.js?v=20260906r"></script>
-<script src="rolesmatrix.js?v=20260906r"></script>
-<script src="i18n.js?v=20260906r"></script>
-<script src="settingsmenu.js?v=20260906r"></script>
-<script src="tour.js?v=20260906r"></script>
-<script src="helpmenu.js?v=20260906r"></script>
-<script src="assist.js?v=20260906r"></script>
-<script src="assistcfg.js?v=20260906r"></script>
-<script src="assistclone.js?v=20260906r"></script>
-<script src="navcfg.js?v=20260906r"></script>
-<script src="tickets.js?v=20260906r"></script>
-<script src="theme.js?v=20260906r"></script>
-<script src="router.js?v=20260906r"></script>
-<script src="live.js?v=20260906r"></script>
-<script src="oncall.js?v=20260906r"></script>
+<script src="base.js?v=20260906s"></script>
+<script src="navdrop.js?v=20260906s" defer></script>
+<script src="adaptive.js?v=20260906s" defer></script>
+<script src="ksatime.js?v=20260906s"></script>
+<script src="data.js?v=20260906s"></script>
+<script src="data2.js?v=20260906s"></script>
+<script src="samples.js?v=20260906s"></script>
+<script src="samples2.js?v=20260906s"></script>
+<script src="apidocs.js?v=20260906s"></script>
+<script src="xlsxout.js?v=20260906s"></script>
+<script src="persist.js?v=20260906s"></script>
+<script src="app.js?v=20260906s"></script>
+<script src="uinav.js?v=20260906s"></script>
+<script src="alertsview.js?v=20260906s"></script>
+<script src="ops.js?v=20260906s"></script>
+<script src="opsbar.js?v=20260906s"></script>
+<script src="analytics.js?v=20260906s"></script>
+<script src="topo2data.js?v=20260906s"></script>
+<script src="topology2.js?v=20260906s"></script>
+<script src="tapdocs.js?v=20260906s"></script>
+<script src="screensflow.js?v=20260906s"></script>
+<script src="home.js?v=20260906s"></script>
+<script src="monitoring.js?v=20260906s"></script>
+<script src="workbench.js?v=20260906s"></script>
+<script src="growth.js?v=20260906s"></script>
+<script src="dmsjourney.js?v=20260906s"></script>
+<script src="dms.js?v=20260906s"></script>
+<script src="landing.js?v=20260906s"></script>
+<script src="fixed.js?v=20260906s"></script>
+<script src="fixed-maps-ui.js?v=20260906s"></script>
+<script src="fixed-leaflet.js?v=20260906s"></script>
+<script src="fixed-map.js?v=20260906s"></script>
+<script src="fixed-qr.js?v=20260906s"></script>
+<script src="fixed-channel.js?v=20260906s"></script>
+<script src="fixed-dash.js?v=20260906s"></script>
+<script src="fixed-errors.js?v=20260906s"></script>
+<script src="fixed-alerts.js?v=20260906s"></script>
+<script src="fixed-playbook.js?v=20260906s"></script>
+<script src="fixed-diagrams.js?v=20260906s"></script>
+<script src="fixed-report.js?v=20260906s"></script>
+<script src="otodocs.js?v=20260906s"></script>
+<script src="salamdocs.js?v=20260906s"></script>
+<script src="slo.js?v=20260906s"></script>
+<script src="audit.js?v=20260906s"></script>
+<script src="notifycfg.js?v=20260906s"></script>
+<script src="notifyclone.js?v=20260906s"></script>
+<script src="sub360.js?v=20260906s"></script>
+<script src="rolesmatrix.js?v=20260906s"></script>
+<script src="i18n.js?v=20260906s"></script>
+<script src="settingsmenu.js?v=20260906s"></script>
+<script src="tour.js?v=20260906s"></script>
+<script src="helpmenu.js?v=20260906s"></script>
+<script src="assist.js?v=20260906s"></script>
+<script src="assistcfg.js?v=20260906s"></script>
+<script src="assistclone.js?v=20260906s"></script>
+<script src="navcfg.js?v=20260906s"></script>
+<script src="tickets.js?v=20260906s"></script>
+<script src="theme.js?v=20260906s"></script>
+<script src="router.js?v=20260906s"></script>
+<script src="live.js?v=20260906s"></script>
+<script src="oncall.js?v=20260906s"></script>
 </body>
 </html>

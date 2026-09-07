@@ -31,6 +31,12 @@
  *   --mail-allow=a,b        emails allowed to keep mail_alert/mail_report on import
  *   --refresh-business      recompute business for EXISTING users too (default: only new rows; admin edits win)
  *   --with-ticket-files     also import ticket file rows (prints the rsync the blobs need)
+ *   --snapshot-days=N       metric_snapshots window (default 14; opt-in section — chart history only)
+ *   --page=N                rows per page for the streamed sections (default 5000)
+ *
+ * MEMORY: audit, alerts and snapshots are STREAMED (keyset pagination on id, one page in memory at a time).
+ * Dry runs only COUNT them. The first version loaded a year of snapshots into one array and the process died at
+ * the 2 GB heap limit on 152 — never hold a prod table in memory.
  */
 'use strict';
 const path = require('path');
@@ -49,12 +55,16 @@ const list = n => String(opt(n, '')).split(',').map(s => s.trim().toLowerCase())
 const APPLY = flag('apply');
 const MONTHS = Number(opt('months', 12)) || 12;
 const ALL_SECTIONS = ['users', 'audit', 'alerts', 'snapshots', 'incidents', 'tickets', 'docs', 'dashboards', 'settings'];
-const DEFAULT_SECTIONS = ALL_SECTIONS.filter(s => s !== 'settings');   // settings is opt-in: it can change permissions
+// settings is opt-in (it can change permissions); snapshots is opt-in (22M+ rows in prod, and it is only chart
+// history — the seasonal baselines come from rollup_hourly, which this console rebuilds from the replica itself)
+const DEFAULT_SECTIONS = ALL_SECTIONS.filter(s => s !== 'settings' && s !== 'snapshots');
 const ONLY = list('only').length ? list('only') : DEFAULT_SECTIONS;
 const SUPER_OK = new Set(list('super-admins'));
 const MAIL_OK = new Set(list('mail-allow'));
 const REFRESH_BIZ = flag('refresh-business');
 const WITH_FILES = flag('with-ticket-files');
+const SNAP_DAYS = Number(opt('snapshot-days', 14)) || 14;
+const PAGE = Number(opt('page', 5000)) || 5000;
 
 const since = new Date(Date.now() - MONTHS * 30.44 * 864e5);
 const log = (...a) => console.log(...a);
@@ -109,7 +119,30 @@ async function insertBatch(table, cols, rows, conflict, chunk = 500) {
   }
   return done;
 }
-const jstr = v => (v === null || v === undefined) ? null : (typeof v === 'string' ? v : JSON.stringify(v));
+/* keyset-paginated read: `from` is a table alias'd as t, `where` may reference t.*; pages by t.id ascending so the
+   memory footprint is one page whatever the table size. In a dry run only the COUNT is fetched. */
+async function streamRows(pool, { select, from, where, params }, onPage) {
+  const base = `FROM ${from} WHERE ${where || 'true'}`;
+  const total = Number((await q(pool, `SELECT count(*) AS n ${base}`, params))[0].n);
+  if (!APPLY) return { total, seen: 0 };
+  let last = null, seen = 0;
+  for (;;) {
+    const sql = `SELECT ${select} ${base}${last === null ? '' : ` AND t.id > $${params.length + 1}`} ORDER BY t.id LIMIT ${PAGE}`;
+    const rows = await q(pool, sql, last === null ? params : [...params, last]);
+    if (!rows.length) break;
+    await onPage(rows);
+    seen += rows.length; last = rows[rows.length - 1].id;
+    if (rows.length < PAGE) break;
+  }
+  return { total, seen };
+}
+/* always valid JSON for a jsonb column. A jsonb SCALAR in the source (audit detail = "signed in") comes back from
+   to_jsonb() as a plain JS string — passing it through verbatim raised "invalid input syntax for type json" on 152. */
+const jstr = v => {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== 'string') return JSON.stringify(v);
+  try { JSON.parse(v); return v; } catch (e) { return JSON.stringify(v); }
+};
 const asDate = v => v ? new Date(v) : null;
 const lower = s => String(s || '').trim().toLowerCase();
 
@@ -250,28 +283,28 @@ const AUDIT_COLS = ['actor', 'role', 'action', 'target', 'detail', 'at', 'ip', '
 const AUDIT_CONFLICT = 'ON CONFLICT (source, legacy_id) WHERE legacy_id IS NOT NULL DO NOTHING';
 async function importAudit() {
   if (digital && await tableExists(digital, 'audit_log')) {
-    const rows = await rowsJson(digital, 'SELECT to_jsonb(a) AS j FROM audit_log a WHERE at >= $1 ORDER BY at', [since]);
-    const mapped = rows.map(a => ({
-      actor: a.actor || null, role: a.role || null, action: a.action || 'UNKNOWN', target: a.target || null,
-      detail: jstr(a.detail || {}), at: asDate(a.at), ip: a.ip || null, ua: a.ua || null,
-      source: 'digital', legacy_id: String(a.id),
-    }));
-    log(`· audit   : digital console → ${num(mapped.length)} entries since ${since.toISOString().slice(0, 10)}`);
-    tally('audit', 'digital', mapped.length);
-    if (APPLY) log(`            inserted ${num(await insertBatch('audit_log', AUDIT_COLS, mapped, AUDIT_CONFLICT, 1000))}`);
+    let ins = 0;
+    const r = await streamRows(digital, { select: 't.id, to_jsonb(t) AS j', from: 'audit_log t', where: 't.at >= $1', params: [since] },
+      async rows => { ins += await insertBatch('audit_log', AUDIT_COLS, rows.map(({ j: a }) => ({
+        actor: a.actor || null, role: a.role || null, action: a.action || 'UNKNOWN', target: a.target || null,
+        detail: jstr(a.detail || {}), at: asDate(a.at), ip: a.ip || null, ua: a.ua || null,
+        source: 'digital', legacy_id: String(a.id),
+      })), AUDIT_CONFLICT, 1000); });
+    log(`· audit   : digital console → ${num(r.total)} entries since ${since.toISOString().slice(0, 10)}${APPLY ? ` — inserted ${num(ins)}` : ''}`);
+    tally('audit', 'digital', r.total);
   }
   if (opsConfigured && await tableExists(OPS, 'audit_log')) {
-    const rows = await rowsJson(OPS, 'SELECT to_jsonb(a) AS j FROM audit_log a WHERE created_at >= $1 ORDER BY created_at', [since]);
-    const mapped = rows.map(a => ({
-      actor: a.user_email || null, role: null, action: a.action || 'UNKNOWN',
-      target: [a.target_type, a.target_id].filter(Boolean).join(':') || null,
-      detail: jstr({ meta: a.meta || null, user_id: a.user_id || null, console: 'operations' }),
-      at: asDate(a.created_at), ip: a.ip || null, ua: a.user_agent || null,
-      source: 'operations', legacy_id: String(a.id),
-    }));
-    log(`· audit   : operations console → ${num(mapped.length)} entries since ${since.toISOString().slice(0, 10)}`);
-    tally('audit', 'operations', mapped.length);
-    if (APPLY) log(`            inserted ${num(await insertBatch('audit_log', AUDIT_COLS, mapped, AUDIT_CONFLICT, 1000))}`);
+    let ins = 0;
+    const r = await streamRows(OPS, { select: 't.id, to_jsonb(t) AS j', from: 'audit_log t', where: 't.created_at >= $1', params: [since] },
+      async rows => { ins += await insertBatch('audit_log', AUDIT_COLS, rows.map(({ j: a }) => ({
+        actor: a.user_email || null, role: null, action: a.action || 'UNKNOWN',
+        target: [a.target_type, a.target_id].filter(Boolean).join(':') || null,
+        detail: jstr({ meta: a.meta || null, user_id: a.user_id || null, console: 'operations' }),
+        at: asDate(a.created_at), ip: a.ip || null, ua: a.user_agent || null,
+        source: 'operations', legacy_id: String(a.id),
+      })), AUDIT_CONFLICT, 1000); });
+    log(`· audit   : operations console → ${num(r.total)} entries since ${since.toISOString().slice(0, 10)}${APPLY ? ` — inserted ${num(ins)}` : ''}`);
+    tally('audit', 'operations', r.total);
   }
 }
 
@@ -283,19 +316,19 @@ const ALERT_CONFLICT = 'ON CONFLICT (source, legacy_id) WHERE legacy_id IS NOT N
 async function importAlerts() {
   // 3a · digital console firings — same shape as here
   if (digital && await tableExists(digital, 'alerts')) {
-    const rows = await rowsJson(digital, 'SELECT to_jsonb(a) AS j FROM alerts a WHERE fired_at >= $1 ORDER BY fired_at', [since]);
-    const mapped = rows.map(a => ({
-      rule_key: a.rule_key, name: a.name, severity: a.severity, team: a.team || null,
-      status: a.status || 'resolved', metric_key: a.metric_key, operator: a.operator, threshold: a.threshold,
-      observed_value: a.observed_value, sample: a.sample, window_hours: a.window_hours,
-      dim: jstr(a.dim || {}), context: jstr(a.context || {}), message: a.message || null,
-      fired_at: asDate(a.fired_at), last_seen_at: asDate(a.last_seen_at || a.fired_at), resolved_at: asDate(a.resolved_at),
-      peak_value: a.peak_value, breach_count: a.breach_count || 1, segment: a.segment || 'mvno',
-      source: 'digital', legacy_id: String(a.id),
-    }));
-    log(`· alerts  : digital console → ${num(mapped.length)} firings`);
-    tally('alerts', 'digital', mapped.length);
-    if (APPLY) log(`            inserted ${num(await insertBatch('alerts', ALERT_COLS, mapped, ALERT_CONFLICT))}`);
+    let ins = 0;
+    const r = await streamRows(digital, { select: 't.id, to_jsonb(t) AS j', from: 'alerts t', where: 't.fired_at >= $1', params: [since] },
+      async rows => { ins += await insertBatch('alerts', ALERT_COLS, rows.map(({ j: a }) => ({
+        rule_key: a.rule_key, name: a.name, severity: a.severity, team: a.team || null,
+        status: a.status || 'resolved', metric_key: a.metric_key, operator: a.operator, threshold: a.threshold,
+        observed_value: a.observed_value, sample: a.sample, window_hours: a.window_hours,
+        dim: jstr(a.dim || {}), context: jstr(a.context || {}), message: a.message || null,
+        fired_at: asDate(a.fired_at), last_seen_at: asDate(a.last_seen_at || a.fired_at), resolved_at: asDate(a.resolved_at),
+        peak_value: a.peak_value, breach_count: a.breach_count || 1, segment: a.segment || 'mvno',
+        source: 'digital', legacy_id: String(a.id),
+      })), ALERT_CONFLICT); });
+    log(`· alerts  : digital console → ${num(r.total)} firings${APPLY ? ` — inserted ${num(ins)}` : ''}`);
+    tally('alerts', 'digital', r.total);
   }
 
   // 3b · operations alert_events → alerts(segment='fixed'). FIRED rows only: OK rows are the resolution marker
@@ -361,22 +394,24 @@ async function importAlerts() {
   }
 }
 
-/* ---------------- 4 · metric snapshots (the anomaly baseline) ---------------- */
+/* ---------------- 4 · metric snapshots (opt-in: chart history, NOT the baseline) ---------------- */
 async function importSnapshots() {
   if (!digital || !(await tableExists(digital, 'metric_snapshots'))) { warn('no digital metric_snapshots — skipping'); return; }
-  const rows = await rowsJson(digital, 'SELECT to_jsonb(s) AS j FROM metric_snapshots s WHERE sim_now >= $1 ORDER BY sim_now', [since]);
-  const mapped = rows.map(s => ({
-    metric_key: s.metric_key, dim: jstr(s.dim || {}), window_hours: s.window_hours, value: s.value,
-    sample: s.sample || 0, sim_now: asDate(s.sim_now), computed_at: asDate(s.computed_at || s.sim_now),
-    source: 'digital', legacy_id: String(s.id),
-  }));
-  log(`· snapshot: digital console → ${num(mapped.length)} metric snapshots (what the seasonal baselines are built from)`);
-  tally('snapshots', 'digital', mapped.length);
-  if (APPLY) {
-    log(`            inserted ${num(await insertBatch('metric_snapshots',
+  const from = new Date(Date.now() - SNAP_DAYS * 864e5);
+  let ins = 0;
+  const r = await streamRows(digital, {
+    select: 't.id, t.metric_key, t.dim, t.window_hours, t.value, t.sample, t.sim_now, t.computed_at',
+    from: 'metric_snapshots t', where: 't.sim_now >= $1', params: [from],
+  }, async rows => {
+    ins += await insertBatch('metric_snapshots',
       ['metric_key', 'dim', 'window_hours', 'value', 'sample', 'sim_now', 'computed_at', 'source', 'legacy_id'],
-      mapped, 'ON CONFLICT (source, legacy_id) WHERE legacy_id IS NOT NULL DO NOTHING', 1000))}`);
-  }
+      rows.map(t => ({ metric_key: t.metric_key, dim: jstr(t.dim || {}), window_hours: t.window_hours, value: t.value,
+        sample: t.sample || 0, sim_now: t.sim_now, computed_at: t.computed_at || t.sim_now, source: 'digital', legacy_id: String(t.id) })),
+      'ON CONFLICT (source, legacy_id) WHERE legacy_id IS NOT NULL DO NOTHING', 1000);
+  });
+  log(`· snapshot: digital console → ${num(r.total)} metric snapshots in the last ${SNAP_DAYS} days${APPLY ? ` — inserted ${num(ins)}` : ''}`);
+  tally('snapshots', 'digital', r.total);
+  NOTES.push('metric_snapshots only feed the Metric-charts tab and alert-mail sparklines; the seasonal baselines come from rollup_hourly, which this console rebuilds from the replica itself.');
 }
 
 /* ---------------- 5 · incidents (archive) ---------------- */

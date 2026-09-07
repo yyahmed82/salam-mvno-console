@@ -13,7 +13,7 @@ is lost — and so the unified console stops looking "younger" than they are.
 | **Users** | `mvno_console.console_users` + `sda_ops.users` | `console_users` (union by e-mail) | one identity per person, with the business scope derived |
 | **Audit trail** | both `audit_log`s | `audit_log` (+ `source`, `legacy_id`) | who did what, one searchable history |
 | **Alert history** | `mvno_console.alerts` · `sda_ops.alert_events` | `alerts` (`segment` mvno / fixed) | one incident history across both businesses |
-| **Metric snapshots** | `mvno_console.metric_snapshots` | `metric_snapshots` | **this is what the anomaly baselines are built from** — without it the unified console compares today against a few hours of its own history |
+| **Metric snapshots** (opt-in) | `mvno_console.metric_snapshots` | `metric_snapshots` | chart history only — the Metric-charts tab and the sparkline in alert mails. **Not** the seasonal baseline: `anomaly.js` builds that from `rollup_hourly`, which this console rebuilds from the replica itself. 22.7 M rows in prod, so it is streamed and defaults to the last 14 days (`--snapshot-days`) |
 | **Tickets** | `mvno_console.console_tickets` (+ comments, files) | same tables, refs prefixed `D-` | feedback history and its thread |
 | **Dashboards** | `analytics_dashboards`, `user_dashboards`, `slo_targets`, `error_codes` | same tables | boards people built, SLO targets, the error-code catalogue |
 | **Incidents** | `sda_ops.incident_log` | `legacy_incident_log` (archive) | Fixed pages still read the live table through the OPS pool; this is the retirement copy |
@@ -76,16 +76,24 @@ node scripts/converge-import.cjs
 
 # 3 · one section at a time, still dry
 node scripts/converge-import.cjs --only=users
-node scripts/converge-import.cjs --only=snapshots --months=12
 
 # 4 · apply, in the same order you reviewed
 node scripts/converge-import.cjs --apply --only=users --super-admins=y.yahmed.sns@salam.sa
-node scripts/converge-import.cjs --apply --only=audit,alerts,snapshots
+node scripts/converge-import.cjs --apply --only=audit,alerts
 node scripts/converge-import.cjs --apply --only=tickets,docs,incidents,dashboards
 
 # 5 · ticket attachments (the DB rows point at files on disk)
 rsync -a /apps/console/uploads/tickets/ /apps/unified/uploads/tickets/
 node scripts/converge-import.cjs --apply --only=tickets --with-ticket-files
+```
+
+`audit`, `alerts` and `snapshots` are **streamed** — keyset pagination on `id`, one page (`--page`, default 5 000)
+in memory at a time, so a 20-million-row table cannot exhaust the heap; a dry run only counts them.
+
+```bash
+# optional: two weeks of chart history (dry run first — it prints the row count)
+node scripts/converge-import.cjs --only=snapshots --snapshot-days=14
+node scripts/converge-import.cjs --only=snapshots --snapshot-days=14 --apply
 ```
 
 `settings` is deliberately **not** in the default set: a copied `role_perms` row can change who sees what. Run
@@ -99,8 +107,8 @@ the record of what was merged and when.
 1. **Users** — Settings → Users: check the BUSINESS column, spot-check a fixed-only person, and confirm nobody
    unexpected holds `admin`.
 2. **Roles** — if the script warned about "no Fixed view", grant `fixed` to that role before people sign in.
-3. **Baselines** — the anomaly banner and "vs seasonal norm" figures should stop disagreeing with the digital
-   console within one scheduler cycle, because they now read the same snapshot history.
+3. **Metric charts** — if you imported snapshots, the Metric-charts tab shows the digital console's last two
+   weeks instead of starting empty. (The anomaly baselines are unaffected — they come from `rollup_hourly`.)
 4. **Audit** — the Audit page should show both consoles' history; `source` tells them apart
    (`digital` / `operations` / `unified`).
 5. **Mail** — `SELECT email FROM console_users WHERE mail_alert OR mail_report;` should return only your testers.

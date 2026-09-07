@@ -1410,25 +1410,23 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const rows = users.map(u=>{
       const urs=(u.roles&&u.roles.length)?u.roles:(u.role?[u.role]:[]);
       const utags=(u.tags||[]);
-      return `<tr data-uid="${u.id}">
-        <td class="u-email">${esc(u.email)}</td>
-        <td><input class="u-inline" data-ufield="name" value="${esc(u.name||'')}" placeholder="—"></td>
-        <td><input class="u-inline" data-ufield="mobile" value="${esc(u.mobile||'')}" placeholder="—"></td>
+      const sub=[u.name||'', u.mobile||'', u.team||''].filter(Boolean).join(' · ');
+      return `<tr data-uid="${u.id}" class="${u.enabled?'':'u-blocked'}">
+        <td class="u-email u-sticky"><div class="u-who"><b>${esc(u.email)}</b><span>${esc(sub||'no name yet')}</span></div></td>
         <td><div class="um-biz mini">${bizSeg(u.business||"both")}</div></td>
         <td><div class="um-rolecell">${UM_ROLES.map(([v,l])=>`<label><input type="checkbox" data-role="${v}" ${urs.includes(v)?'checked':''}><span>${l}</span></label>`).join("")}</div></td>
         <td><div class="u-tagedit">${UM_TAGS.map(t=>`<button type="button" class="tagchip mini ${utags.includes(t)?'on':''}" data-tag="${t}">${t}</button>`).join("")}</div></td>
-        <td><span class="status-pill ${u.enabled?'active':'blocked'}">${u.enabled?'Active':'Blocked'}</span></td>
+        <td><span class="status-pill ${u.enabled?'active':'blocked'}">${u.enabled?'Active':'Blocked'}</span><div class="u-last">${u.last_login?'seen '+fmtLogin(u.last_login):'never signed in'}</div></td>
         <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="mail_report" ${u.mail_report?'checked':''}></td>
         <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="mail_alert" ${u.mail_alert?'checked':''}></td>
-        <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="tour_seen" ${u.tour_seen?'checked':''}></td>
-        <td style="white-space:nowrap;color:var(--muted)">${fmtLogin(u.last_login)}</td>
-        <td><button class="blocklink ${u.enabled?'':'unblock'}" data-block>${u.enabled?'Block':'Unblock'}</button></td>
+        <td class="u-act u-sticky-r"><button type="button" class="ubtn edit" data-edit title="Edit name, mobile, team, roles…">✎ Edit</button><button type="button" class="ubtn ${u.enabled?'block':'unblock'}" data-block>${u.enabled?'Block':'Unblock'}</button></td>
       </tr>`;
     }).join("");
-    const table = `<div style="overflow-x:auto;margin-top:26px"><table class="umtable">
-      <tr><th>EMAIL</th><th>NAME</th><th>MOBILE</th><th>BUSINESS</th><th>ROLES</th><th>TAGS</th><th>STATUS</th><th>MAIL REPORT</th><th>MAIL ALERT</th><th>QUICK TOUR</th><th>LAST LOGIN</th><th>ACTIONS</th></tr>
-      ${rows||`<tr><td colspan="12" style="color:var(--muted);padding:18px">No users yet.</td></tr>`}
+    const table = `<div class="um-wrap"><table class="umtable">
+      <tr><th class="u-sticky">USER</th><th>BUSINESS</th><th>ROLES</th><th>TAGS</th><th>STATUS</th><th>MAIL REPORT</th><th>MAIL ALERT</th><th class="u-sticky-r">ACTIONS</th></tr>
+      ${rows||`<tr><td colspan="8" style="color:var(--muted);padding:18px">No users yet.</td></tr>`}
     </table></div>`;
+    window.__umUsers = users;   // the edit panel reads the full row from here
 
     $("#usersBody").innerHTML = card + table;
     wireUserMgmt();
@@ -1477,19 +1475,96 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         c.classList.toggle("on");
         patch({tags:[...tr.querySelectorAll(".u-tagedit .tagchip.on")].map(x=>x.dataset.tag)});
       }));
-      // inline name / mobile editing (save on blur / Enter)
-      tr.querySelectorAll(".u-inline[data-ufield]").forEach(inp=>{
-        const save=()=>patch({[inp.dataset.ufield]: inp.value.trim()});
-        inp.addEventListener("change", save);
-        inp.addEventListener("keydown", e=>{ if(e.key==="Enter") inp.blur(); });
-      });
-      // notification / tour checkboxes
+      // notification checkboxes
       tr.querySelectorAll(".um-cellchk[data-field]").forEach(cb=>cb.addEventListener("change",()=>patch({[cb.dataset.field]:cb.checked})));
-      // block / unblock
+      // edit → side panel with every field
+      const ed=tr.querySelector("[data-edit]");
+      if(ed) ed.addEventListener("click",()=>{ const u=(window.__umUsers||[]).find(x=>String(x.id)===String(id)); if(u) openUserPanel(u); });
+      // block / unblock — two clicks, no browser dialog: the first arms the button for 4 s
       const blk=tr.querySelector("[data-block]");
-      if(blk) blk.addEventListener("click",async()=>{ const enable=blk.classList.contains("unblock"); await patch({enabled:enable}); renderUserMgmt(); });
+      if(blk) blk.addEventListener("click",async()=>{
+        const enable=blk.classList.contains("unblock");
+        if(!enable && !blk.dataset.armed){ blk.dataset.armed="1"; const t=blk.textContent; blk.textContent="Confirm block"; blk.classList.add("arm");
+          setTimeout(()=>{ if(blk.isConnected){ delete blk.dataset.armed; blk.textContent=t; blk.classList.remove("arm"); } },4000); return; }
+        await patch({enabled:enable}); renderUserMgmt();
+      });
     });
   }
+
+  /* ---- user edit panel (6 Sep 2026): one place for every field of an account ----
+   * Slides in from the right (same .drawer as the transaction trace → full screen on phones). Saves with ONE
+   * PATCH so a half-edited row is never left behind; Block / Unblock lives in a marked danger zone. */
+  function openUserPanel(u){
+    let ov=document.getElementById("userPanel");
+    if(!ov){ ov=document.createElement("div"); ov.id="userPanel"; ov.className="drawer-ov"; ov.innerHTML=`<div class="drawer" id="userPanelBody"></div>`; document.body.appendChild(ov);
+      ov.addEventListener("click",e=>{ if(e.target===ov) closeUserPanel(); }); }
+    const body=ov.querySelector("#userPanelBody");
+    const urs=(u.roles&&u.roles.length)?u.roles:(u.role?[u.role]:[]);
+    const utags=u.tags||[];
+    const BIZ=[["mobile","📱 Mobile"],["fixed","🏠 Fixed"],["both","📱🏠 Both"]];
+    const lr=u.legacy_ref||{}; const src={digital:"Digital console",operations:"Fixed console (sda_ops)",both:"both consoles",unified:"created here"}[u.source]||"created here";
+    body.innerHTML=`
+      <div class="drawer-hd"><span class="av ud-av">${esc((u.name||u.email||"?")[0].toUpperCase())}</span>
+        <div style="min-width:0"><div style="font-weight:800;font-size:14px;overflow:hidden;text-overflow:ellipsis">${esc(u.email)}</div>
+        <div style="font-size:11px;opacity:.8">${u.enabled?'Active':'Blocked'} · ${esc(src)}${u.last_login?' · last seen '+fmtLogin(u.last_login):' · never signed in'}</div></div>
+        <span class="x" id="udX" title="Close">×</span></div>
+      <div class="ud-body">
+        <div class="ud-grid">
+          <div><div class="um-lbl">NAME</div><input class="um-input" id="udName" value="${esc(u.name||'')}" placeholder="Full name"></div>
+          <div><div class="um-lbl">MOBILE</div><input class="um-input" id="udMobile" value="${esc(u.mobile||'')}" placeholder="05xxxxxxxx" inputmode="tel"></div>
+        </div>
+        <div class="um-lbl">TEAM <span class="ud-hint">free text · shown next to the name</span></div>
+        <input class="um-input" id="udTeam" value="${esc(u.team||'')}" placeholder="e.g. Digital Ops · SDA · Call center">
+        <div class="um-lbl">BUSINESS <span class="ud-hint">which side of the console this person works on</span></div>
+        <div class="um-biz" id="udBiz">${BIZ.map(([v,l])=>`<button type="button" class="bizchip ${v} ${(u.business||'both')===v?'on':''}" data-biz="${v}">${l}</button>`).join("")}</div>
+        <div class="um-lbl">ROLES</div>
+        <div class="um-checks" id="udRoles">${UM_ROLES.map(([v,l])=>`<label class="um-check"><input type="checkbox" value="${v}" ${urs.includes(v)?'checked':''}><span>${l}</span></label>`).join("")}</div>
+        <div class="um-lbl">TEAM TAGS</div>
+        <div class="um-tags" id="udTags">${UM_TAGS.map(t=>`<button type="button" class="tagchip ${utags.includes(t)?'on':''}" data-tag="${t}">${t}</button>`).join("")}</div>
+        <div class="um-lbl">NOTIFICATIONS &amp; ONBOARDING</div>
+        <div class="um-checks">
+          <label class="um-check"><input type="checkbox" id="udMailReport" ${u.mail_report?'checked':''}><span>Mail report</span></label>
+          <label class="um-check"><input type="checkbox" id="udMailAlert" ${u.mail_alert?'checked':''}><span>Mail alert</span></label>
+          <label class="um-check"><input type="checkbox" id="udTour" ${u.tour_seen?'checked':''}><span>Quick tour seen</span> <span class="ud-hint">(untick to replay it at next sign-in)</span></label>
+        </div>
+        ${(lr.ops_roles&&lr.ops_roles.length)||lr.digital_id?`<div class="um-lbl">PROVENANCE</div><div class="ud-prov">Imported from ${esc(src)}${u.imported_at?' on '+fmtLogin(u.imported_at):''}${(lr.ops_roles&&lr.ops_roles.length)?` · legacy Fixed roles: <span class="mono">${esc(lr.ops_roles.join(', '))}</span>`:''}</div>`:''}
+        <div class="ud-actions">
+          <button type="button" class="um-btn" id="udSave">Save changes</button>
+          <button type="button" class="tkm-btn" id="udCancel">Cancel</button>
+          <span class="ud-msg" id="udMsg"></span>
+        </div>
+        <div class="ud-danger">
+          <div><b>${u.enabled?'Block this account':'Unblock this account'}</b><div class="ud-hint">${u.enabled?'The person can no longer sign in. Nothing is deleted — unblock restores everything.':'Sign-in is restored with the same roles and scope.'}</div></div>
+          <button type="button" class="ubtn ${u.enabled?'block':'unblock'}" id="udBlock">${u.enabled?'Block':'Unblock'}</button>
+        </div>
+      </div>`;
+    body.querySelector("#udX").onclick=closeUserPanel; body.querySelector("#udCancel").onclick=closeUserPanel;
+    body.querySelectorAll("#udBiz .bizchip").forEach(c=>c.onclick=()=>{ body.querySelectorAll("#udBiz .bizchip").forEach(x=>x.classList.remove("on")); c.classList.add("on"); });
+    body.querySelectorAll("#udTags .tagchip").forEach(c=>c.onclick=()=>c.classList.toggle("on"));
+    const msg=(t,bad)=>{ const m=body.querySelector("#udMsg"); m.textContent=t; m.style.color=bad?"var(--red)":"var(--green-dark)"; };
+    body.querySelector("#udSave").onclick=async()=>{
+      const roles=[...body.querySelectorAll("#udRoles input:checked")].map(x=>x.value);
+      if(!roles.length){ msg("Pick at least one role.",true); return; }
+      const payload={ name:body.querySelector("#udName").value.trim(), mobile:body.querySelector("#udMobile").value.trim(), team:body.querySelector("#udTeam").value.trim(),
+        business:(body.querySelector("#udBiz .bizchip.on")||{}).dataset.biz||"both", roles,
+        tags:[...body.querySelectorAll("#udTags .tagchip.on")].map(x=>x.dataset.tag),
+        mail_report:body.querySelector("#udMailReport").checked, mail_alert:body.querySelector("#udMailAlert").checked, tour_seen:body.querySelector("#udTour").checked };
+      const btn=body.querySelector("#udSave"); btn.disabled=true; msg("Saving…");
+      try{ await api("/api/users/"+u.id,{method:"PATCH",body:JSON.stringify(payload)}); msg("Saved."); setTimeout(closeUserPanel,350); renderUserMgmt(); }
+      catch(e){ msg(e.message,true); btn.disabled=false; }
+    };
+    const blk=body.querySelector("#udBlock");
+    blk.onclick=async()=>{
+      const enable=!u.enabled;
+      if(!enable && !blk.dataset.armed){ blk.dataset.armed="1"; blk.textContent="Confirm block"; blk.classList.add("arm"); setTimeout(()=>{ if(blk.isConnected){ delete blk.dataset.armed; blk.textContent="Block"; blk.classList.remove("arm"); } },4000); return; }
+      try{ await api("/api/users/"+u.id,{method:"PATCH",body:JSON.stringify({enabled:enable})}); closeUserPanel(); renderUserMgmt(); }
+      catch(e){ msg(e.message,true); }
+    };
+    ov.classList.add("open"); document.addEventListener("keydown",escUserPanel);
+    setTimeout(()=>{ const n=body.querySelector("#udName"); if(n) n.focus(); },120);
+  }
+  function escUserPanel(e){ if(e.key==="Escape") closeUserPanel(); }
+  function closeUserPanel(){ const ov=document.getElementById("userPanel"); if(ov) ov.classList.remove("open"); document.removeEventListener("keydown",escUserPanel); }
 
   async function loadConfigChanges(){
     const box=$("#configChanges"); if(!box) return;
