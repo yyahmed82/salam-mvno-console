@@ -52,6 +52,10 @@ cp deploy152/test-smtp.cjs "$STAGE/server/test-smtp.cjs" 2>/dev/null || true    
 cp deploy152/sync-watchdog.cjs "$STAGE/server/sync-watchdog.cjs" 2>/dev/null || true # needs pg → beside node_modules
 cp deploy152/install-watchdog.sh "$STAGE/install-watchdog.sh" 2>/dev/null || true
 cp server/package.json        "$STAGE/server/"
+# build stamp → /api/version reports the milestone actually shipped (VERSION file + git commit/tag)
+printf '{ "version": "%s", "commit": "%s", "tag": "%s", "builtAt": "%s" }\n' \
+  "$(cat VERSION 2>/dev/null | tr -d '[:space:]')" "$(git rev-parse --short HEAD 2>/dev/null || echo dev)" \
+  "$(git describe --tags --exact-match 2>/dev/null || git describe --tags 2>/dev/null || echo '')" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STAGE/server/build.json"
 cp ./*.js ./*.html            "$STAGE/web/" 2>/dev/null || true
 # docs artifacts: imported API references (otoDocs/salamApiDocs .json for the viewers) and the
 # .md runbooks/KB files that assist.js reads from STATIC_DIR (OPS_RUNBOOK, OTO_API_DOCS, …)
@@ -100,6 +104,7 @@ else
   cp -f /tmp/csync/server/db/*.sql  "$APP/server/db/"
   cp -f /tmp/csync/server/scripts/*.cjs "$APP/server/scripts/" 2>/dev/null || true
   cp -f /tmp/csync/server/package.json "$APP/server/" 2>/dev/null || true
+  cp -f /tmp/csync/server/build.json "$APP/server/" 2>/dev/null || true
   [ -d /tmp/csync/server/node_modules ] && { rm -rf "$APP/server/node_modules"; cp -R /tmp/csync/server/node_modules "$APP/server/"; echo "▸ node_modules replaced"; }
   cp -f /tmp/csync/web/* "$APP/web/" 2>/dev/null || true
   [ -f /tmp/csync/ecosystem.prod.config.js ] && cp -f /tmp/csync/ecosystem.prod.config.js "$APP/ecosystem.prod.config.js"

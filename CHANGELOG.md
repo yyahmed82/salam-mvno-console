@@ -12,6 +12,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   **request** and **response** bodies (masked as on the board). XLSX up to 5 000 rows (two sheets); PDF up to 400 rows
   with bodies trimmed to one line. `GET /api/fixed/errors/export?format=xlsx|pdf&…` (cap `export`, audited
   `fixed.errors.export`).
+### Fixed
+- **`/api/version` reported `2.0.0-alpha.8`** whatever was deployed — it read `server/package.json`, which is not bumped
+  per milestone. `deploy152/deploy.sh` now writes `server/build.json` (repo `VERSION`, git commit, tag, build time) at
+  stage time and `reliability.version()` reports it (`version`, `commit`, `tag`, `builtAt`); package.json aligned.
+- Monitoring › Gateway header read "last undefinedh" when a collector is not configured (window label now falls back to
+  the selected range). The empty Gateway / API-health / UIL panels on the unified console are **configuration, not code**:
+  the readers (`ZIPKIN_HOSTS`, `API_LOG_*`, `DMSLOG_*`, `UILS_SAMPLE`) were stripped from the copied `.env` during the
+  shadow start — see the runbook in this entry's deploy notes / `docs/ALERT-MAIL.md` §collectors.
 
 ## [2.0.0-alpha.15] — 2026-09-07 — alert mails for both businesses: PDF for Mobile, map / error-board links for Fixed
 ### Added

@@ -98,9 +98,15 @@ async function ready() {
   return out;
 }
 function version() {
-  let v = '0.0.0';
-  try { v = require('../package.json').version; } catch (e) {}
-  return { version: v, commit: process.env.GIT_SHA || process.env.SOURCE_COMMIT || 'dev', node: process.version, startedAt: START };
+  /* deploy.sh writes server/build.json (version = repo VERSION file, commit, tag, builtAt) at stage time, so
+   * /api/version reports the milestone that was actually shipped — package.json is not bumped per milestone */
+  let v = '0.0.0', build = null;
+  try { build = require('../build.json'); } catch (e) {}
+  try { v = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'VERSION'), 'utf8').trim(); } catch (e) {}
+  if (build && build.version) v = build.version;
+  else if (v === '0.0.0') { try { v = require('../package.json').version; } catch (e) {} }
+  return { version: v, commit: (build && build.commit) || process.env.GIT_SHA || process.env.SOURCE_COMMIT || 'dev',
+    tag: (build && build.tag) || null, builtAt: (build && build.builtAt) || null, node: process.version, startedAt: START };
 }
 const START = new Date().toISOString();
 

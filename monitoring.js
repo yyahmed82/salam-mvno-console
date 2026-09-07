@@ -447,7 +447,7 @@
 
     const g=d.gauges;
     box.innerHTML=head+selector+`<div style="display:grid;grid-template-columns:repeat(12,1fr);gap:12px">
-      <div class="apanel" style="grid-column:span 12"><div class="ah"><b>Call outcomes <span class="rl" style="font-weight:600;font-size:11px;color:var(--muted)">· last ${d.hours}h${apiFilter?` · ${esc(apiFilter)}`:""}</span></b></div>
+      <div class="apanel" style="grid-column:span 12"><div class="ah"><b>Call outcomes <span class="rl" style="font-weight:600;font-size:11px;color:var(--muted)">· last ${d.hours||winH}h${apiFilter?` · ${esc(apiFilter)}`:""}</span></b></div>
         <div class="abody" style="display:flex;flex-wrap:wrap;gap:12px;justify-content:space-around;align-items:flex-end">
           ${gauge("Total calls",g.total,"#64748b",g.total)}${gauge("Success",g.success,CLS.success,g.total)}${gauge("Failure",g.failure,CLS.technical,g.total)}
         </div></div>
@@ -554,7 +554,7 @@
     if(!box.firstChild) box.innerHTML=`<div class="sub">Loading app error log…</div>`;
     let d; try{ d=await api(`/api/monitoring/app-errors?hours=${winH}${monErrRangeQS()}${monErrCat?`&cat=${encodeURIComponent(monErrCat)}`:""}`); }
     catch(e){ box.innerHTML=""; return; }   // route absent (old build) → hide quietly
-    const rangeLbl = d.range ? `${KT.dt(d.range.from)} → ${KT.dt(d.range.to)} KSA` : `last ${d.hours}h`;
+    const rangeLbl = d.range ? `${KT.dt(d.range.from)} → ${KT.dt(d.range.to)} KSA` : `last ${d.hours||winH}h`;
     const head=`<div style="font-weight:800;font-size:13px;color:var(--ink);margin:4px 0 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">④ ACCESS · APP ERRORS · IP RATE-LIMITING
       <span class="rl" style="font-weight:600" title="Source: the Rails app's own error log (ApiErrorLogger) on the API servers — application-layer errors returned to customers. NOT gateway logs: requests rejected at the APIGW never reach this log (gateway-log collector pending access).">· app-layer log (Rails on 17/18) → api_error_events · ${esc(rangeLbl)} <span style="cursor:help">ⓘ</span></span>
       <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
@@ -991,7 +991,7 @@
     let d; try{ d=await api(`/api/monitoring/sms-health?window=${winH}`); }
     catch(e){ box.innerHTML=""; return; }   // old build → hide
     const head=`<div style="font-weight:800;font-size:13px;color:var(--ink);margin:4px 0 8px">⑤ SMS · NOTIFICATIONS (UNIFONIC)
-      <span class="rl" style="font-weight:600">· OTP funnel (replica) + gateway reachability from the API hosts · last ${d.hours}h</span></div>`;
+      <span class="rl" style="font-weight:600">· OTP funnel (replica) + gateway reachability from the API hosts · last ${d.hours||winH}h</span></div>`;
     const o=d.otp||{};
     const vr=o.sent?Math.round(100*(o.verified||0)/o.sent):null;
     const vrColor=vr==null?"var(--muted)":vr>=70?"#10b981":vr>=50?"#d97706":"#dc2626";
@@ -1173,7 +1173,7 @@
         <td class="mono">${esc(r.otp_for)}</td><td>${num(r.n)}</td>
         <td style="color:${r.verify_rate>=70?"#10b981":r.verify_rate>=40?"#d97706":"#dc2626"};font-weight:700">${r.verify_rate==null?"—":r.verify_rate+"%"}</td>
         <td class="mono">${esc(KT.dt(r.last_at))}</td></tr>`).join("");
-      out.innerHTML=`<div class="rl" style="font-size:11.5px;margin-bottom:5px"><b>${num(d.count)}</b> numbers ${esc(d.label)} · last ${d.hours}h
+      out.innerHTML=`<div class="rl" style="font-size:11.5px;margin-bottom:5px"><b>${num(d.count)}</b> numbers ${esc(d.label)} · last ${d.hours||winH}h
           <span style="color:var(--muted)">· click a row for that customer's full SMS history</span></div>
         <table class="alerts"><tr><th>NUMBER</th><th>OTPs</th><th>VERIFIED</th><th>LAST (KSA)</th></tr>${rows||`<tr><td colspan="4" class="rl">none</td></tr>`}</table>
         <div class="rl" style="font-size:10.5px;color:var(--muted);white-space:normal;margin-top:5px">• ${esc(d.note||"")}</div>
@@ -1199,7 +1199,7 @@
     let d; try{ d=await api(`/api/monitoring/uil?hours=${winH}`); }
     catch(e){ box.innerHTML=""; return; }   // old build → hide
     const head=`<div style="font-weight:800;font-size:13px;color:var(--ink);margin:4px 0 8px">④ DMS SERVICES · UIL LIVE LOGS
-      <span class="rl" style="font-weight:600">· per-call summary blocks sampled from the app nodes every 5 min · last ${d.hours}h</span></div>`;
+      <span class="rl" style="font-weight:600">· per-call summary blocks sampled from the app nodes every 5 min · last ${d.hours||winH}h</span></div>`;
     const smp=d.sampler||{};
     if(!smp.configured){ box.innerHTML=head+`<div style="border:1px dashed var(--line);border-radius:10px;padding:12px;background:var(--card)" class="rl">
       Sampler not configured (needs console_ro on the DMS app nodes — DMSLOG_HOSTS).</div>`; return; }
@@ -1282,7 +1282,7 @@
     let d; try{ d=await api(`/api/monitoring/apigw?window=${winH}${monQS()}`); }
     catch(e){ box.innerHTML=""; return; }   // old build → hide
     const head=`<div style="font-weight:800;font-size:13px;color:var(--ink);margin:4px 0 8px">① API GATEWAY · TRACES
-      <span class="rl" style="font-weight:600">· Zipkin spans distilled per-minute (gateway keeps only ~1–3h — the console keeps 30 days) · last ${d.hours}h</span></div>`;
+      <span class="rl" style="font-weight:600">· Zipkin spans distilled per-minute (gateway keeps only ~1–3h — the console keeps 30 days) · last ${d.hours||winH}h</span></div>`;
     if(!d.configured){ box.innerHTML=head+`<div style="border:1px dashed var(--line);border-radius:10px;padding:12px;background:var(--card)" class="rl">
       Trace collector not configured — set <span class="mono">ZIPKIN_HOSTS</span> on the console and restart.</div>`; return; }
 
@@ -1705,7 +1705,7 @@
     host.innerHTML=`<div style="padding:14px 16px 16px">
       <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
         <b style="font-size:13.5px" class="mono">${esc(title)}</b>
-        <span class="rl" style="font-size:11px;color:var(--muted)">${esc(r.service||"")} · last ${d.hours}h</span>
+        <span class="rl" style="font-size:11px;color:var(--muted)">${esc(r.service||"")} · last ${d.hours||winH}h</span>
         <span style="flex:1"></span><button class="pill gw-x" style="padding:4px 11px;font-size:12px">✕</button>
       </div>
       <div class="topo-stats" style="margin:9px 0 0">
