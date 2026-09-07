@@ -62,7 +62,7 @@ async function recipients(column = 'mail_alert') {
 
 // generic sender — returns {sent, dev, error, recipients}. Dev (no SMTP) logs + does not send.
 // `attachments` (optional) is passed straight to nodemailer: [{filename, content, contentType}].
-async function sendHtml(to, subject, html, attachments) {
+async function sendHtml(to, subject, html, attachments, text) {
   const emails = (to || []).map(r => (typeof r === 'string' ? r : r.email));
   const base = { recipients: emails, subject };
   if (!emails.length) return { ...base, sent: false, reason: 'no recipients' };
@@ -78,25 +78,55 @@ async function sendHtml(to, subject, html, attachments) {
       tls: process.env.SMTP_TLS_REJECT_UNAUTHORIZED === 'false' ? { rejectUnauthorized: false } : undefined,
       auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
     });
+    const withLogo = [brand.attachment(), ...(attachments || [])];   // CID logo for the shell header
     await t.sendMail({ from: process.env.SMTP_FROM || 'Salam Operations Console <noreply@salam.sa>',
-      to: emails.join(','), subject, html,
-      ...(attachments && attachments.length ? { attachments } : {}) });
+      to: emails.join(','), subject, html, ...(text ? { text } : {}), attachments: withLogo });
     mailOk();
     return { ...base, sent: true };
   } catch (e) { mailFail(e.message); return { ...base, sent: false, error: e.message }; }
 }
 
-// shared branded email shell — dark-green header + Salam logo + status pill + green divider + white body
-function shell({ title, pill, pillColor, bodyHtml }) {
-  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:auto;background:#fff">
-    <div style="background:linear-gradient(135deg,#0f5132,#0a3a24);padding:26px 28px 22px;border-radius:6px 6px 0 0">
-      <img src="https://salam.sa/epurchase/static/salam-new-logo.png" alt="salam" style="height:44px;display:block;margin-bottom:14px">
-      <div style="color:#fff;font-size:20px;font-weight:800;margin-bottom:8px">${esc(title)}</div>
-      <span style="display:inline-block;background:${pillColor};color:#fff;font-weight:800;font-size:12px;padding:4px 12px;border-radius:16px;letter-spacing:.5px">${esc(pill)}</span>
+// shared branded email shell — the SAME template as the Undertaking Consent System mails (7 Sep 2026):
+// table layout for mail clients, #0b3d2b header with the logo attached as a CID image (renders without
+// "load images"), a system badge + optional status pill, white body, quiet footer. Every mail the console
+// sends goes through it: OTP, sync health, alert digests, tickets. Keep it table-based — Outlook.
+const brand = require('./mailBrand');
+const SYSTEM_BADGE = process.env.MAIL_SYSTEM_BADGE || 'OPERATIONS CONSOLE';
+const FOOTER = process.env.MAIL_FOOTER || '— Salam Digital Operations · Operations Console · automated message';
+function shell({ title, pill, pillColor, bodyHtml, badge }) {
+  const statusPill = pill ? `<span style="display:inline-block;background:${pillColor || '#1e5c44'};color:#ffffff;font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.08em;border-radius:6px;padding:3px 10px;margin-left:6px;">${esc(String(pill).toUpperCase())}</span>` : '';
+  return `<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#f2f4f3;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f4f3;padding:24px 0;">
+<tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:94%;">
+  <tr><td style="background:#0b3d2b;border-radius:12px 12px 0 0;padding:28px 32px;">
+    <img src="cid:${brand.CID}" alt="salam" height="44" style="display:block;height:44px;width:auto;border:0;">
+    <div style="color:#ffffff;font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:19px;font-weight:700;padding-top:14px;">
+      ${esc(title)}
     </div>
-    <div style="height:5px;background:#4ade80"></div>
-    <div style="padding:24px 28px">${bodyHtml}</div>
-  </div>`;
+    <div style="padding-top:8px;">
+      <span style="display:inline-block;background:#1e5c44;color:#c9f3de;font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.08em;border-radius:6px;padding:3px 10px;">${esc(badge || SYSTEM_BADGE)}</span>${statusPill}
+    </div>
+  </td></tr>
+  <tr><td style="background:#ffffff;border:1px solid #e3e7e5;border-top:0;padding:26px 32px;font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:14px;line-height:1.65;color:#20302a;">
+    ${bodyHtml}
+  </td></tr>
+  <tr><td style="background:#ffffff;border:1px solid #e3e7e5;border-top:0;border-radius:0 0 12px 12px;padding:14px 32px 20px;font-family:Arial,sans-serif;font-size:11px;color:#8a978f;">
+    ${esc(FOOTER)}
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+}
+// plain text → the shell body (escaped, URLs linked, newlines kept) — for short transactional mails such as the OTP
+function textToHtml(text) {
+  return esc(String(text || '')).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#0b7a4b;text-decoration:underline;">$1</a>').replace(/\n/g, '<br>');
+}
+async function sendText(to, subject, text, opts = {}) {
+  const title = opts.title || String(subject).replace(/^Salam Operations Console\s*—\s*/i, '');
+  return sendHtml(to, subject, shell({ title, pill: opts.pill, pillColor: opts.pillColor, badge: opts.badge, bodyHtml: textToHtml(text) }), [], text);
 }
 
 const CONSOLE_URL = process.env.CONSOLE_PUBLIC_URL || process.env.CONSOLE_BASE_URL || 'https://salam.sa/unified-console/';
@@ -179,4 +209,4 @@ async function sendAlertDigest(simNow, evals, opts = {}) {
   return { ...base, sent: r.sent, dev: r.dev, error: r.error };
 }
 
-module.exports = { recipients, sendHtml, buildDigest, sendAlertDigest, smtpConfigured, mailStatus, esc, shell };
+module.exports = { recipients, sendHtml, sendText, textToHtml, buildDigest, sendAlertDigest, smtpConfigured, mailStatus, esc, shell };

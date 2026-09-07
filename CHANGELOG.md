@@ -3,8 +3,15 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
-## [2.0.0-alpha.14] — 2026-09-07 — Users page: edit panel, block / unblock in sight
+## [2.0.0-alpha.14] — 2026-09-07 — Users page: edit panel, block / unblock in sight · one mail template
 ### Changed
+- **Every mail the console sends now uses the Undertaking Consent System template** (`notify.shell`, ported from the
+  deployed undertaking bundle, table-based for Outlook): `#0b3d2b` header with the white Salam logo attached as a
+  CID image (`mailBrand.js` embeds the PNG so it always ships and renders without "load images"), a system badge
+  (`MAIL_SYSTEM_BADGE`, default OPERATIONS CONSOLE) plus an optional status pill, white body, quiet footer
+  (`MAIL_FOOTER`). The OTP mail (`otp.js`) goes through it too — subject "Salam Operations Console — sign-in code",
+  same wording as the undertaking OTP — instead of its own unstyled HTML; sync-health, alert digests and ticket mails
+  pick it up automatically. `notify.sendText()` wraps plain text (URLs linked) for short transactional mails.
 - **Settings → Users** — the row is now USER (email + name · mobile · team) · BUSINESS · ROLES · TAGS · STATUS (with
   last-seen) · MAIL · **ACTIONS**. The old table had 12 columns and the Block button sat off-screen to the right;
   name and mobile were unstyled inline inputs nobody recognised as editable.

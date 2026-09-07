@@ -45,27 +45,12 @@ async function verifyOtp(email, code) {
 }
 
 async function sendMail(email, code) {
-  const nodemailer = require('nodemailer');
-  const t = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === 'true',
-    // Internal relays present self-signed certs / may not need STARTTLS at all:
-    //   SMTP_TLS_REJECT_UNAUTHORIZED=false → keep STARTTLS but accept the internal (self-signed) cert
-    //   SMTP_IGNORE_TLS=true               → plain SMTP, never upgrade (some port-25 relays)
-    ignoreTLS: process.env.SMTP_IGNORE_TLS === 'true',
-    tls: process.env.SMTP_TLS_REJECT_UNAUTHORIZED === 'false' ? { rejectUnauthorized: false } : undefined,
-    auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
-  });
-  await t.sendMail({
-    from: process.env.SMTP_FROM || 'Salam Operations Console <noreply@salam.sa>',
-    to: email,
-    subject: 'Your Salam Console sign-in code',
-    text: `Your sign-in code is ${code}. It expires in ${CODE_TTL_MIN} minutes.`,
-    html: `<div style="font-family:sans-serif"><p>Your Salam Operations Console sign-in code:</p>
-           <p style="font-size:26px;font-weight:800;letter-spacing:4px">${code}</p>
-           <p style="color:#64748b">Expires in ${CODE_TTL_MIN} minutes. If you didn't request this, ignore it.</p></div>`
-  });
+  // same shell as every other console mail (notify.shell = the Undertaking Consent System template)
+  const notify = require('./notify');
+  const text = `Your sign-in code is: ${code}\n\nIt is valid for ${CODE_TTL_MIN} minutes. Never share it.\nIf you did not request this, contact the Digital Operations team.`;
+  const r = await notify.sendText([email], 'Salam Operations Console — sign-in code', text, { title: 'sign-in code' });
+  if (!r.sent && r.error) throw new Error(r.error);
+  if (!r.sent && r.dev) throw new Error('SMTP not configured');
 }
 
 module.exports = { requestOtp, verifyOtp, smtpConfigured, CODE_TTL_MIN };
