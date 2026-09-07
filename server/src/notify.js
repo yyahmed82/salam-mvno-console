@@ -105,11 +105,11 @@ function fromAddress() {
 function shell({ title, pill, pillColor, bodyHtml, badge }) {
   const statusPill = pill ? `<span style="display:inline-block;background:${pillColor || '#1e5c44'};color:#ffffff;font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.08em;border-radius:6px;padding:3px 10px;margin-left:6px;">${esc(String(pill).toUpperCase())}</span>` : '';
   return `<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#f2f4f3;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f4f3;padding:24px 0;">
+<html><head><meta charset="utf-8"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><style>:root{color-scheme:light only} body{background:#f2f4f3 !important}</style></head><body bgcolor="#f2f4f3" style="margin:0;padding:0;background:#f2f4f3;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f2f4f3" style="background:#f2f4f3;padding:24px 0;">
 <tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:94%;">
-  <tr><td style="background:#0b3d2b;border-radius:12px 12px 0 0;padding:28px 32px;">
+  <tr><td bgcolor="#0b3d2b" style="background:#0b3d2b;border-radius:12px 12px 0 0;padding:28px 32px;">
     <img src="cid:${brand.CID}" alt="salam" height="44" style="display:block;height:44px;width:auto;border:0;">
     <div style="color:#ffffff;font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:19px;font-weight:700;padding-top:14px;">
       ${esc(title)}
@@ -118,10 +118,10 @@ function shell({ title, pill, pillColor, bodyHtml, badge }) {
       <span style="display:inline-block;background:#1e5c44;color:#c9f3de;font-family:Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.08em;border-radius:6px;padding:3px 10px;">${esc(badge || SYSTEM_BADGE)}</span>${statusPill}
     </div>
   </td></tr>
-  <tr><td style="background:#ffffff;border:1px solid #e3e7e5;border-top:0;padding:26px 32px;font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:14px;line-height:1.65;color:#20302a;">
+  <tr><td bgcolor="#ffffff" style="background:#ffffff;border:1px solid #e3e7e5;border-top:0;padding:26px 32px;font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:14px;line-height:1.65;color:#20302a;">
     ${bodyHtml}
   </td></tr>
-  <tr><td style="background:#ffffff;border:1px solid #e3e7e5;border-top:0;border-radius:0 0 12px 12px;padding:14px 32px 20px;font-family:Arial,sans-serif;font-size:11px;color:#8a978f;">
+  <tr><td bgcolor="#ffffff" style="background:#ffffff;border:1px solid #e3e7e5;border-top:0;border-radius:0 0 12px 12px;padding:14px 32px 20px;font-family:Arial,sans-serif;font-size:11px;color:#8a978f;">
     ${esc(FOOTER)}
   </td></tr>
 </table>

@@ -23,7 +23,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   Postgres (and the ops server when different), read load on the selfcare replica and Nexus, box CPU / memory / disk,
   Fixed ingest freshness, Mobile sync age. Every `HEALTHCHECK_INTERVAL_MIN` (5); recipients `HEALTHCHECK_EMAILS`;
   CRIT every run, WARN on change / throttle, OK as recovery notice, `HEALTHCHECK_ALWAYS=1` for the old every-run
-  behaviour. Same body as the old mail, on the console template. `node src/cli.js healthcheck [--always|--print]`.
+  behaviour. Laid out like the Sync Health mail — status line, key/value block, one table row per probe (colour by
+  level) — plain-text alternative kept. `node src/cli.js healthcheck [--always|--print]`.
+- Mail shell declares `color-scheme: light only` (+ `bgcolor` on the header/body cells) so Apple Mail / Outlook dark
+  mode no longer invert it into a mint header on a dark body.
 ### Fixed
 - Detail drawers (tickets, user panel) opened *under* the sticky header on desktop, hiding the title bar and its ×
   (`.drawer-ov` z-index 210 vs header 1200; the phone rule already had 1300). Base rule raised to 1250.

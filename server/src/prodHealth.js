@@ -115,12 +115,46 @@ async function run({ always = false, printOnly = false } = {}) {
     try {
       const notify = require('./notify');
       const subject = `[Salam Ops] Healthcheck ${overall}${prodRisk ? ' — POSSIBLE PROD IMPACT' : ''} — ${now} KSA`;
-      const r = await notify.sendText(to.map(e => ({ email: e })), subject, body, { title: 'Prod-safety healthcheck', pill: overall + (prodRisk ? ' · PROD IMPACT' : ''), pillColor: overall === 'CRIT' ? '#dc2626' : overall === 'WARN' ? '#d97706' : '#16a34a' });
+      const r = await notify.sendHtml(to.map(e => ({ email: e })), subject, buildHtml({ checks, overall, prodRisk, now }), [], body);
       out.mailed = !!r.sent; out.mailError = r.error || null;
     } catch (e) { out.mailError = e.message; }
   } else if (should && !to.length) out.mailError = 'HEALTHCHECK_EMAILS not set';
   try { fs.writeFileSync(stateFile, JSON.stringify({ level: overall, lastEmailAt: out.mailed ? Date.now() : prev.lastEmailAt })); } catch (_) {}
   return out;
+}
+
+/* mail layout = the Sync Health mail's: status line, key/value block, one table row per probe */
+function buildHtml({ checks, overall, prodRisk, now }) {
+  const notify = require('./notify');
+  const esc = notify.esc;
+  const color = l => l === 'CRIT' ? '#dc2626' : l === 'WARN' ? '#d97706' : '#16a34a';
+  const bg = l => l === 'CRIT' ? '#fdecec' : l === 'WARN' ? '#fdf6ec' : '';
+  const th = 'padding:9px 12px;text-align:left;font-size:12px;color:#334155;background:#eef4f0;border-bottom:1px solid #dbe6df';
+  const td = 'padding:10px 12px;font-size:13px;border-bottom:1px solid #eef2f6;vertical-align:top';
+  const metric = (label, val) => `<tr><td style="padding:6px 0;color:#475569;font-size:13px">${label}</td><td style="padding:6px 0 6px 24px;font-weight:800;font-size:14px;color:#0f172a">${val}</td></tr>`;
+  const bad = checks.filter(c => c.level !== 'OK');
+  const summary = overall === 'OK'
+    ? '<div style="color:#16a34a;font-weight:600;margin-bottom:18px">All probes OK — the console is not putting production at risk.</div>'
+    : `<div style="color:${color(overall)};font-weight:700;margin-bottom:8px">${prodRisk ? '⚠ POSSIBLE PROD IMPACT — ' : ''}Attention needed:</div><ul style="color:${color(overall)};margin:0 0 18px 18px;padding:0">${bad.map(c => `<li style="margin:2px 0"><b>${esc(c.name)}</b> — ${esc(c.detail.split('.')[0])}.</li>`).join('')}</ul>`;
+  const rows = checks.map(c => `<tr style="background:${bg(c.level)}">
+      <td style="${td};white-space:nowrap;color:${color(c.level)};font-weight:800">${icon(c.level)} ${c.level}</td>
+      <td style="${td};font-weight:700;color:#0f172a;white-space:nowrap">${esc(c.name)}</td>
+      <td style="${td};color:#475569">${esc(c.detail)}${c.prodImpact && c.level === 'CRIT' ? ' <span style="color:#dc2626;font-weight:800">· can degrade prod</span>' : ''}</td></tr>`).join('');
+  const bodyHtml = `${summary}
+      <table style="border-collapse:collapse;margin-bottom:22px">
+        ${metric('Overall', `<span style="color:${color(overall)}">${overall}${prodRisk ? ' · possible prod impact' : ''}</span>`)}
+        ${metric('Checked at', esc(now) + ' KSA')}
+        ${metric('Host · app', esc(os.hostname()) + ' · salam-unified')}
+        ${metric('Probes', `${checks.length} · ${checks.filter(c => c.level === 'OK').length} ok · ${checks.filter(c => c.level === 'WARN').length} warn · ${checks.filter(c => c.level === 'CRIT').length} crit`)}
+      </table>
+      <div style="color:#0f5132;font-weight:800;font-size:15px;margin-bottom:8px">Probes — where the console could impact production</div>
+      <table style="border-collapse:collapse;width:100%;border:1px solid #dbe6df">
+        <tr><th style="${th}">Status</th><th style="${th}">Check</th><th style="${th}">Detail · thresholds</th></tr>
+        ${rows}
+      </table>
+      <div style="color:#94a3b8;font-size:12px;margin-top:14px">Read-only probes (pg_stat_activity + OS reads), each on its own single connection which is excluded from the count. The console never writes to prod tables. Mail policy: CRIT every run · WARN on change, then every ${num('HC_WARN_THROTTLE_MIN', 120)} min · OK once as the recovery notice.</div>
+      <div style="color:#94a3b8;font-size:12px;margin-top:8px">— Salam Operations Console · prod-safety healthcheck</div>`;
+  return notify.shell({ title: 'Prod-safety healthcheck — Operations Console', pill: overall + (prodRisk ? ' · PROD IMPACT' : ''), pillColor: color(overall), bodyHtml });
 }
 
 let timer = null;
