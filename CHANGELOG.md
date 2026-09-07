@@ -3,6 +3,40 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.13] — 2026-09-06 — data convergence: people & history from both prod consoles
+### Added
+- **`server/scripts/converge-import.cjs`** — one-way merge of the two prod consoles into `unified_console`:
+  users (union by e-mail), audit trail, alert history, metric snapshots, tickets (+ comments / files),
+  dashboards / SLOs / error codes, and archives of the Fixed console's incidents, playbooks and rule definitions.
+  Dry-run by default; `--apply` writes. Sections are selectable (`--only=`), the history window is
+  `--months=` (default 12). Every `--apply` run is recorded in `converge_runs`.
+- **`server/db/converge.sql`** — additive schema: provenance (`source`, `legacy_id`, `legacy_ref`, `imported_at`)
+  with unique indexes that make the import idempotent, plus the `legacy_incident_log` / `legacy_ops_docs` /
+  `legacy_alert_rules` archives and `converge_runs`.
+- `docs/DATA-CONVERGENCE.md` — what moves, what stays read-only in `sda_ops`, the merge rules, the runbook and
+  the rollback.
+### Merge rules worth knowing
+- **Business scope is derived from where the account exists**: digital console only → `mobile`, sda_ops only →
+  `fixed`, both → `both`. One import populates the alpha.11 business scope for everyone.
+- Legacy `SUPER_ADMIN` lands as `admin` unless the e-mail is passed in `--super-admins` — a legacy database must
+  not be able to mint a super admin here. When a person exists in both consoles the digital role wins.
+- The script reads the merged role map and **warns when fixed-only users would land on a role that holds no Fixed
+  view** (they would sign in to an empty console).
+- Nothing already in the unified console is overwritten: existing users keep role / enabled / business / mail,
+  existing dashboards, SLOs, error codes and settings keys win over the legacy copy.
+- Credentials (password hashes, OTP codes, session jti) are never imported; settings rows whose key or value
+  matches `secret|token|password|webhook|smtp|api_key|credential|bearer` are skipped; imported users land with
+  mail off unless `--mail-allow` lists them; legacy ticket refs are prefixed `D-` so they cannot collide.
+- Importing `metric_snapshots` is what closes the anomaly-baseline gap between this console and the digital one.
+### Changed
+- `deploy152/deploy.sh` now ships `server/scripts/*.cjs` (and syntax-checks them) — one-off jobs reach 152 with
+  the normal deploy instead of being scp'd by hand.
+### Verified
+- Rehearsed end to end on a throwaway Postgres 16 with all three schemas and seeded edge cases (shared account,
+  blocked user, legacy `SUPER_ADMIN`, ticket-ref collision, `FIRED`/`OK`/`SKIPPED` events, rows outside the
+  window): correct business split, provenance, role mapping and secret filtering; idempotent across three
+  consecutive `--apply` runs; a hand-edited user survives a re-run untouched.
+
 ## [2.0.0-alpha.12] — 2026-09-06 — dark mode complete · phone / tablet app shell
 ### Changed
 - **Dark mode, every page.** New tokens in `index.html` (`--violet`, `--indigo*`, `--good`, `--warn-fg`, `--bad-fg`,
@@ -27,6 +61,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   (`top:var(--hdr)`) instead of behind it. SDA map / QR pages: tablet = filters on top, map + detail side by side;
   phone = one column with a 56 vh map. Touch targets ≥ 36 px on coarse pointers, 16 px inputs on phones (no iOS zoom).
 - Drawer CSS is scoped to `header>nav` (the Monitoring sub-tabs are a `<nav>` too).
+- **Drawer menu reworked** — navigation carries a single accent again: the Mobile group label is no longer violet
+  (violet stays a *business* marker: ticket modal, business chips, Customer 360 services). Groups are separated by a
+  hairline and a green-tinted group icon instead of a colour per business; Home and Customer 360 sit at the top as
+  shortcuts (360 keeps its red); every entry is one 28 px-icon row with a green tint + white icon when active.
+  Each group's **EXPLORE section folds away** behind its own label (item count + chevron, auto-opened when the current
+  page is inside it), so Mobile *and* Fixed are both reachable without scrolling — previously Fixed sat below twelve
+  Mobile rows. The bottom tab bar's active tab is green (top bar + heavier stroke), red only for Customer 360. The
+  collapse affordance is drawer-only; the desktop dropdown is unchanged. Toggle listens in the capture phase because
+  `navdrop.js` stops click propagation inside the panel.
 
 ## [2.0.0-alpha.11] — 2026-09-06 — business scope per user
 ### Added

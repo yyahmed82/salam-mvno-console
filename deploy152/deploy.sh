@@ -27,15 +27,16 @@ cd "$ROOT"
 
 # ---- 1. syntax-check everything locally FIRST (never ship a file that can't parse) ----
 echo "▸ checking syntax…"
-for f in server/src/*.js *.js; do node --check "$f" >/dev/null || { echo "✗ SYNTAX ERROR in $f — aborting"; exit 1; }; done
+for f in server/src/*.js server/scripts/*.cjs *.js; do [ -e "$f" ] || continue; node --check "$f" >/dev/null || { echo "✗ SYNTAX ERROR in $f — aborting"; exit 1; }; done
 echo "  ✓ all JS parses"
 
 # ---- 2. build the payload ----
 STAGE="$(mktemp -d /tmp/csync.XXXX)"
-mkdir -p "$STAGE/server/src" "$STAGE/server/db" "$STAGE/web"
+mkdir -p "$STAGE/server/src" "$STAGE/server/db" "$STAGE/server/scripts" "$STAGE/web"
 cp server/src/*.js            "$STAGE/server/src/"
 cp deploy152/ecosystem.prod.config.js "$STAGE/ecosystem.prod.config.js"   # unified: PORT/name come from .env
 cp server/db/*.sql            "$STAGE/server/db/"
+cp server/scripts/*.cjs       "$STAGE/server/scripts/" 2>/dev/null || true   # one-off jobs (converge-import…)
 cp deploy152/healthcheck.cjs  "$STAGE/server/healthcheck.cjs" 2>/dev/null || true   # lives beside node_modules
 cp deploy152/postdeploy-check.cjs "$STAGE/server/postdeploy-check.cjs" 2>/dev/null || true  # needs pg + src/
 cp deploy152/find-osb-log-table.cjs "$STAGE/server/find-osb-log-table.cjs" 2>/dev/null || true
@@ -89,7 +90,7 @@ PM2="$(command -v pm2 || echo /usr/local/bin/pm2)"
 [ -x "$PM2" ] || { echo "✗ pm2 not found (looked in /usr/local/bin) — aborting"; exit 1; }
 [ -s "$SRC" ] || { echo "✗ payload missing/empty at $SRC"; exit 1; }
 rm -rf /tmp/csync && mkdir -p /tmp/csync && tar xzf "$SRC" -C /tmp/csync
-mkdir -p "$APP/server/src" "$APP/server/db" "$APP/web"   # first deploy of a new target: create the tree
+mkdir -p "$APP/server/src" "$APP/server/db" "$APP/server/scripts" "$APP/web"   # first deploy of a new target: create the tree
 
 if [ "$MODE" = "--web-only" ]; then
   cp -f /tmp/csync/web/* "$APP/web/" 2>/dev/null || true
@@ -97,6 +98,7 @@ if [ "$MODE" = "--web-only" ]; then
 else
   cp -f /tmp/csync/server/src/*.js  "$APP/server/src/"
   cp -f /tmp/csync/server/db/*.sql  "$APP/server/db/"
+  cp -f /tmp/csync/server/scripts/*.cjs "$APP/server/scripts/" 2>/dev/null || true
   cp -f /tmp/csync/server/package.json "$APP/server/" 2>/dev/null || true
   [ -d /tmp/csync/server/node_modules ] && { rm -rf "$APP/server/node_modules"; cp -R /tmp/csync/server/node_modules "$APP/server/"; echo "▸ node_modules replaced"; }
   cp -f /tmp/csync/web/* "$APP/web/" 2>/dev/null || true

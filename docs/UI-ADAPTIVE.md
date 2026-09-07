@@ -22,6 +22,13 @@ renders browser-default. Custom select arrow, dark pickers, themed scrollbars.
 | ≤ 700 | bottom tab bar `#appTabs` (mirrors nav visibility incl. business scope), compact header, bottom-sheet modals (z 1300), full-screen drawers / Yusr, 2-up KPI tiles |
 | ≤ 420 | KPI grids stay 2-up, tab labels shrink |
 
+**Drawer menu**: one accent (green) — Home + Customer 360 as top shortcuts (360 red), then a group per business
+(hairline + green-tinted group icon; no per-business hue). Each group's `EXPLORE` sub-group collapses behind its label
+(`syncGroups()` stamps `data-navgroup` from a one-time `data-gkey`, adds the count badge and chevron; `.exp-open` on the
+panel reveals it, auto-set when the active page is inside). Drawer-only — the desktop dropdown hides the affordance and
+ignores `.exp-open`. The toggle listens on `document` in the **capture** phase: `navdrop.js` calls `stopPropagation()`
+on clicks inside `.navdrop-panel`.
+
 Runtime helpers (run after every DOM change, debounced): `fitGrids()` stacks inline `grid-template-columns` only when a column would be
 < 150 px (`.g-stack` / `.g-two`; `data-nofit` opts out); `wrapTables()` wraps overflowing tables in `.tscroll`.
 Module CSS breakpoints for class grids live in the same index.html block (`#fxErr .fe-grid`, `.fxc-*`, `.ld-*`, `.t2-doc2`, `.td-wrap`).

@@ -116,6 +116,7 @@
   .navdrop-panel .navtab.active{border-color:var(--green);background:var(--green-bg);box-shadow:inset 3px 0 0 var(--green)}
   .navdrop-panel .navtab.active .num{background:linear-gradient(135deg,#0e9f5a,#019c20);border-color:transparent;color:#fff}
   .navdrop-panel .navtab.hidden{display:none}
+  .navdrop-panel>.navgroup .ngc,.navdrop-panel>.navgroup .ngn{display:none}   /* collapse affordance is drawer-only (see ADAPTIVE UI LAYER) */
   .navdrop.hidden{display:none}
   nav .navtab small,.navdrop-btn small{display:none}                  /* descriptions live in tooltips now */
   nav>.navtab,.navdrop-btn{padding:9px 16px;font-size:13px}
@@ -1014,17 +1015,25 @@
   #appTabs[data-n="4"]{grid-template-columns:repeat(4,1fr)} #appTabs[data-n="3"]{grid-template-columns:repeat(3,1fr)} #appTabs[data-n="2"]{grid-template-columns:repeat(2,1fr)}
   #appTabs .at{border:0;background:transparent;color:var(--muted);font:inherit;font-size:10px;font-weight:700;letter-spacing:.2px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px 4px;border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:color .15s,background .15s;min-height:48px}
   #appTabs .at svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-  #appTabs .at.on{color:var(--green)} #appTabs .at.on.at-mobile{color:var(--violet)} #appTabs .at.on.at-360{color:var(--red)}
+  /* navigation carries ONE accent (Salam green); the only exception is Customer 360, the deliberate red.
+     Violet stays a BUSINESS marker (ticket modal, business chips, C360 services) — never navigation chrome. */
+  #appTabs .at.on{color:var(--green)} #appTabs .at.on.at-360{color:var(--red)}
+  #appTabs .at.on svg{stroke-width:2.3}
+  #appTabs .at.on::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:26px;height:2.5px;border-radius:0 0 3px 3px;background:currentColor}
+  #appTabs .at{position:relative}
   #appTabs .at:active{background:var(--bg)}
   #appTabs .at.hidden{display:none}
   body.has-tabs main{padding-bottom:calc(76px + var(--safe-b))}
-  /* nav drawer chrome (built by adaptive.js, only visible in drawer mode) */
-  #navDrawerHd{display:none;align-items:center;gap:10px;padding:2px 2px 12px;margin-bottom:8px;border-bottom:1px solid var(--line)}
-  #navDrawerHd b{font-size:15px;font-weight:800;color:var(--ink)} #navDrawerHd small{display:block;font-size:10px;letter-spacing:1.2px;color:var(--muted);font-weight:700}
-  #navDrawerHd .ndx{margin-left:auto;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  /* nav drawer chrome (built by adaptive.js, only visible in drawer mode).
+     One accent — Salam green. Hierarchy comes from weight, size and rhythm, not from a second hue. */
+  #navDrawerHd{display:none;align-items:center;gap:11px;padding:0 2px 12px;margin-bottom:6px;border-bottom:1px solid var(--line);position:sticky;top:calc(-1*var(--safe-t));z-index:2;background:var(--card)}
+  #navDrawerHd b{font-size:15px;font-weight:800;color:var(--ink);letter-spacing:-.01em} #navDrawerHd small{display:block;font-size:9.5px;letter-spacing:1.3px;color:var(--muted);font-weight:700;margin-top:1px}
+  #navDrawerHd .ndx{margin-left:auto;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--muted);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:color .15s,border-color .15s,background .15s;flex:none}
+  #navDrawerHd .ndx:hover,#navDrawerHd .ndx:active{color:var(--ink);border-color:var(--green);background:var(--green-bg)}
   #navDrawerFt{display:none;margin-top:auto;padding-top:12px;border-top:1px solid var(--line);gap:8px;flex-wrap:wrap}
-  #navDrawerFt .ndbtn{flex:1 1 40%;display:flex;align-items:center;gap:9px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:10px 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
-  #navDrawerFt .ndbtn .num{width:26px;height:26px;border-radius:8px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted)}
+  #navDrawerFt .ndbtn{flex:1 1 40%;display:flex;align-items:center;gap:9px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:10px 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:border-color .15s,background .15s}
+  #navDrawerFt .ndbtn .num{width:26px;height:26px;border-radius:8px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);flex:none}
+  #navDrawerFt .ndbtn:hover{border-color:var(--green)} #navDrawerFt .ndbtn:hover .num{color:var(--green-dark);border-color:var(--green)}
   #navDrawerFt .ndbtn:active{background:var(--bg)}
   body.nav-open{overflow:hidden}
   body.nav-open header::before{content:"";position:fixed;inset:0;background:var(--scrim);z-index:55;animation:scrimIn .2s ease}
@@ -1046,28 +1055,58 @@
     .beta{display:none}
     #navBurger{display:flex;margin-left:auto;order:5;flex:0 0 auto}
     .setwrap,.helpwrap,#liveBtn,#langToggle,#themeToggle,#userChip{order:6}
-    header>nav{position:fixed;top:0;bottom:0;left:auto;right:0;width:min(88vw,360px);height:100dvh;margin:0;padding:calc(14px + var(--safe-t)) 14px calc(14px + var(--safe-b));flex-direction:column;align-items:stretch;gap:4px;background:var(--card);border-left:1px solid var(--line);box-shadow:none;transform:translateX(104%);transition:transform .24s cubic-bezier(.2,.8,.2,1);z-index:60;overflow:auto;overscroll-behavior:contain;flex-wrap:nowrap}
+    header>nav{position:fixed;top:0;bottom:0;left:auto;right:0;width:min(88vw,360px);height:100dvh;margin:0;padding:calc(14px + var(--safe-t)) 14px calc(14px + var(--safe-b));flex-direction:column;align-items:stretch;gap:2px;background:var(--card);border-left:1px solid var(--line);box-shadow:none;transform:translateX(104%);transition:transform .24s cubic-bezier(.2,.8,.2,1);z-index:60;overflow:auto;overscroll-behavior:contain;flex-wrap:nowrap}
     header>nav.open{transform:none;box-shadow:var(--shadow-lg)}
     #navDrawerHd{display:flex} #navDrawerFt{display:flex}
-    header>nav>.navtab,.navdrop-btn{width:100%;justify-content:flex-start;padding:9px 12px;font-size:13.5px;border-radius:12px}
-    header>nav>.navtab .num,.navdrop-panel .navtab .num{width:28px;height:28px;border-radius:9px}
-    .navtab.active{outline:none}
-    header>nav>.navtab:hover,.navdrop-btn:hover{transform:none;box-shadow:none}
-    header>nav>.navtab.active{box-shadow:none;background:var(--green-bg)}
-    .navdrop{display:flex;flex-direction:column;gap:2px}
-    .navdrop-btn{border-color:transparent;background:transparent;color:var(--ink);font-size:11px;letter-spacing:1.4px;text-transform:uppercase;padding:16px 12px 2px;cursor:default;pointer-events:none;font-weight:800}
-    .navdrop[data-drop=mobile]>.navdrop-btn{color:var(--violet)} .navdrop[data-drop=home]>.navdrop-btn{color:var(--green)}
-    .navdrop-btn .num{display:none} .navdrop-btn .chev{display:none} .navdrop-cur{display:none}
+    /* reading order: shortcuts (Home · Customer 360) → Mobile → Fixed → utilities */
+    #navDrawerHd{order:0} header>nav>.navtab[data-view=landing]{order:1}
+    header>nav>.navtab[data-view=sub360],.nav360{order:2}
+    .navdrop[data-drop=mobile]{order:3} .navdrop[data-drop=home]{order:4} #navDrawerFt{order:9}
+    /* every entry is the same row: 28px icon chip · label · 40px tall */
+    header>nav .navtab{width:100%;justify-content:flex-start;gap:11px;padding:8px 10px;font-size:13.5px;font-weight:600;
+      border:1px solid transparent;background:transparent;border-radius:11px;transition:background .14s ease,color .14s ease}
+    header>nav .navtab .num{width:28px;height:28px;border-radius:9px;background:var(--bg);border:1px solid var(--line);color:var(--muted);flex:none;transition:background .14s,border-color .14s,color .14s}
+    header>nav .navtab:hover,header>nav .navtab:focus-visible{background:var(--bg);border-color:transparent;transform:none;box-shadow:none;outline:none}
+    header>nav .navtab:hover .num{color:var(--ink)}
+    header>nav .navtab.active{background:var(--green-bg);border-color:transparent;box-shadow:none;outline:none;color:var(--green-dark);font-weight:700}
+    header>nav .navtab.active .num{background:var(--green);border-color:var(--green);color:#fff}
+    /* group = header row + its items, separated by a hairline instead of a colour */
+    .navdrop{display:flex;flex-direction:column;gap:1px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+    .navdrop-btn{width:100%;justify-content:flex-start;gap:9px;border-color:transparent;background:transparent;color:var(--ink);
+      font-size:11.5px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;padding:0 10px 8px;cursor:default;pointer-events:none}
+    .navdrop-btn .num{display:flex;width:22px;height:22px;border-radius:7px;background:var(--green-bg);border:0;color:var(--green-dark);flex:none}
+    .navdrop-btn .num svg{width:12px;height:12px}
+    .navdrop-btn .chev,.navdrop-cur{display:none}
     .navdrop.on>.navdrop-btn,.navdrop.open>.navdrop-btn{border-color:transparent;background:transparent;box-shadow:none}
-    .navdrop-panel{position:static;display:flex;box-shadow:none;border:0;padding:0;min-width:0;backdrop-filter:none;-webkit-backdrop-filter:none;background:transparent;animation:none;border-radius:0}
+    .navdrop.on>.navdrop-btn .num{background:var(--green);color:#fff}
+    .navdrop-panel{position:static;display:flex;box-shadow:none;border:0;padding:0;min-width:0;backdrop-filter:none;-webkit-backdrop-filter:none;background:transparent;animation:none;border-radius:0;gap:1px}
     .navdrop-panel::before{display:none}
-    .navdrop-panel .navgroup,header>nav .navgroup{padding:10px 12px 3px;align-self:stretch;text-align:left;font-size:9px}
-    .navdrop-panel .navtab{padding:8px 12px;font-size:13.5px;border-radius:12px}
-    .navdrop-panel .navtab:hover{transform:none}
-    .navdrop-panel .navtab .num{width:28px;height:28px;border-radius:9px}
+    /* OPERATE / EXPLORE: a quiet micro-label, not a second heading */
+    header>nav .navgroup{padding:9px 10px 4px;align-self:stretch;text-align:left;font-size:8.5px;letter-spacing:.16em;color:var(--muted);opacity:.75}
+    .navdrop-panel>.navgroup:first-child{padding-top:2px}
+    /* EXPLORE folds away so both businesses fit on one screen */
+    .navdrop-panel>.navgroup[data-collapse]{display:flex;align-items:center;gap:6px;cursor:pointer;opacity:1;color:var(--muted);
+      padding:10px 10px 8px;margin-top:2px;border-radius:9px;-webkit-tap-highlight-color:transparent}
+    .navdrop-panel>.navgroup[data-collapse]:hover{background:var(--bg);color:var(--ink)}
+    .navdrop-panel>.navgroup[data-collapse] .ngc{display:inline;font-style:normal;font-size:10px;letter-spacing:0;margin-left:auto;transition:transform .18s ease}
+    .navdrop-panel>.navgroup[data-collapse] .ngn{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;
+      border-radius:8px;background:var(--bg);border:1px solid var(--line);font-size:9px;font-weight:800;letter-spacing:0;color:var(--muted)}
+    .navdrop-panel.exp-open>.navgroup[data-collapse] .ngc{transform:rotate(180deg)}
+    .navdrop-panel:not(.exp-open) .navtab[data-navgroup="EXPLORE"]{display:none}
     .navdiv{display:none}
-    .nav360{margin:8px 0 0;justify-content:center;padding:11px 14px;font-size:14px}
+    /* Customer 360 keeps its red, but sits in the row rhythm instead of a centred pill */
+    header>nav>.navtab[data-view=sub360]{background:rgba(220,38,38,.09);color:var(--red);font-weight:700}
+    header>nav>.navtab[data-view=sub360] .num{background:var(--red);border-color:var(--red);color:#fff}
+    header>nav>.navtab[data-view=sub360]:hover{background:rgba(220,38,38,.15)}
+    header>nav>.navtab[data-view=sub360].active{background:var(--red);color:#fff}
+    header>nav>.navtab[data-view=sub360].active .num{background:rgba(255,255,255,.22);border-color:transparent}
+    .nav360{width:100%;margin:2px 0 0;justify-content:flex-start;gap:11px;padding:9px 10px;font-size:13.5px;font-weight:700;letter-spacing:0;
+      border-radius:11px;border:1px solid transparent;background:rgba(220,38,38,.10);color:var(--red);box-shadow:none}
+    .nav360 .n360-ic{width:28px;height:28px;border-radius:9px;background:var(--red);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex:none}
     .nav360 .n360-txt{display:inline}
+    .nav360:hover{background:rgba(220,38,38,.16);transform:none}
+    .nav360.active{background:var(--red);color:#fff;box-shadow:none}
+    .nav360.active .n360-ic{background:rgba(255,255,255,.22)}
     #navTip{display:none}
   }
   /* ---------- phone (≤700) : app mode ---------- */
@@ -1608,66 +1647,66 @@
 <div id="ruleModal" class="modal-overlay"><div class="modal-card" id="ruleModalCard" style="max-width:560px"></div></div>
 <div id="panelModal" class="modal-overlay"><div class="modal-card" id="panelModalCard" style="max-width:720px"></div></div>
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
-<script src="base.js?v=20260906q"></script>
-<script src="navdrop.js?v=20260906q" defer></script>
-<script src="adaptive.js?v=20260906q" defer></script>
-<script src="ksatime.js?v=20260906q"></script>
-<script src="data.js?v=20260906q"></script>
-<script src="data2.js?v=20260906q"></script>
-<script src="samples.js?v=20260906q"></script>
-<script src="samples2.js?v=20260906q"></script>
-<script src="apidocs.js?v=20260906q"></script>
-<script src="xlsxout.js?v=20260906q"></script>
-<script src="persist.js?v=20260906q"></script>
-<script src="app.js?v=20260906q"></script>
-<script src="uinav.js?v=20260906q"></script>
-<script src="alertsview.js?v=20260906q"></script>
-<script src="ops.js?v=20260906q"></script>
-<script src="opsbar.js?v=20260906q"></script>
-<script src="analytics.js?v=20260906q"></script>
-<script src="topo2data.js?v=20260906q"></script>
-<script src="topology2.js?v=20260906q"></script>
-<script src="tapdocs.js?v=20260906q"></script>
-<script src="screensflow.js?v=20260906q"></script>
-<script src="home.js?v=20260906q"></script>
-<script src="monitoring.js?v=20260906q"></script>
-<script src="workbench.js?v=20260906q"></script>
-<script src="growth.js?v=20260906q"></script>
-<script src="dmsjourney.js?v=20260906q"></script>
-<script src="dms.js?v=20260906q"></script>
-<script src="landing.js?v=20260906q"></script>
-<script src="fixed.js?v=20260906q"></script>
-<script src="fixed-maps-ui.js?v=20260906q"></script>
-<script src="fixed-leaflet.js?v=20260906q"></script>
-<script src="fixed-map.js?v=20260906q"></script>
-<script src="fixed-qr.js?v=20260906q"></script>
-<script src="fixed-channel.js?v=20260906q"></script>
-<script src="fixed-dash.js?v=20260906q"></script>
-<script src="fixed-errors.js?v=20260906q"></script>
-<script src="fixed-alerts.js?v=20260906q"></script>
-<script src="fixed-playbook.js?v=20260906q"></script>
-<script src="fixed-diagrams.js?v=20260906q"></script>
-<script src="fixed-report.js?v=20260906q"></script>
-<script src="otodocs.js?v=20260906q"></script>
-<script src="salamdocs.js?v=20260906q"></script>
-<script src="slo.js?v=20260906q"></script>
-<script src="audit.js?v=20260906q"></script>
-<script src="notifycfg.js?v=20260906q"></script>
-<script src="notifyclone.js?v=20260906q"></script>
-<script src="sub360.js?v=20260906q"></script>
-<script src="rolesmatrix.js?v=20260906q"></script>
-<script src="i18n.js?v=20260906q"></script>
-<script src="settingsmenu.js?v=20260906q"></script>
-<script src="tour.js?v=20260906q"></script>
-<script src="helpmenu.js?v=20260906q"></script>
-<script src="assist.js?v=20260906q"></script>
-<script src="assistcfg.js?v=20260906q"></script>
-<script src="assistclone.js?v=20260906q"></script>
-<script src="navcfg.js?v=20260906q"></script>
-<script src="tickets.js?v=20260906q"></script>
-<script src="theme.js?v=20260906q"></script>
-<script src="router.js?v=20260906q"></script>
-<script src="live.js?v=20260906q"></script>
-<script src="oncall.js?v=20260906q"></script>
+<script src="base.js?v=20260906r"></script>
+<script src="navdrop.js?v=20260906r" defer></script>
+<script src="adaptive.js?v=20260906r" defer></script>
+<script src="ksatime.js?v=20260906r"></script>
+<script src="data.js?v=20260906r"></script>
+<script src="data2.js?v=20260906r"></script>
+<script src="samples.js?v=20260906r"></script>
+<script src="samples2.js?v=20260906r"></script>
+<script src="apidocs.js?v=20260906r"></script>
+<script src="xlsxout.js?v=20260906r"></script>
+<script src="persist.js?v=20260906r"></script>
+<script src="app.js?v=20260906r"></script>
+<script src="uinav.js?v=20260906r"></script>
+<script src="alertsview.js?v=20260906r"></script>
+<script src="ops.js?v=20260906r"></script>
+<script src="opsbar.js?v=20260906r"></script>
+<script src="analytics.js?v=20260906r"></script>
+<script src="topo2data.js?v=20260906r"></script>
+<script src="topology2.js?v=20260906r"></script>
+<script src="tapdocs.js?v=20260906r"></script>
+<script src="screensflow.js?v=20260906r"></script>
+<script src="home.js?v=20260906r"></script>
+<script src="monitoring.js?v=20260906r"></script>
+<script src="workbench.js?v=20260906r"></script>
+<script src="growth.js?v=20260906r"></script>
+<script src="dmsjourney.js?v=20260906r"></script>
+<script src="dms.js?v=20260906r"></script>
+<script src="landing.js?v=20260906r"></script>
+<script src="fixed.js?v=20260906r"></script>
+<script src="fixed-maps-ui.js?v=20260906r"></script>
+<script src="fixed-leaflet.js?v=20260906r"></script>
+<script src="fixed-map.js?v=20260906r"></script>
+<script src="fixed-qr.js?v=20260906r"></script>
+<script src="fixed-channel.js?v=20260906r"></script>
+<script src="fixed-dash.js?v=20260906r"></script>
+<script src="fixed-errors.js?v=20260906r"></script>
+<script src="fixed-alerts.js?v=20260906r"></script>
+<script src="fixed-playbook.js?v=20260906r"></script>
+<script src="fixed-diagrams.js?v=20260906r"></script>
+<script src="fixed-report.js?v=20260906r"></script>
+<script src="otodocs.js?v=20260906r"></script>
+<script src="salamdocs.js?v=20260906r"></script>
+<script src="slo.js?v=20260906r"></script>
+<script src="audit.js?v=20260906r"></script>
+<script src="notifycfg.js?v=20260906r"></script>
+<script src="notifyclone.js?v=20260906r"></script>
+<script src="sub360.js?v=20260906r"></script>
+<script src="rolesmatrix.js?v=20260906r"></script>
+<script src="i18n.js?v=20260906r"></script>
+<script src="settingsmenu.js?v=20260906r"></script>
+<script src="tour.js?v=20260906r"></script>
+<script src="helpmenu.js?v=20260906r"></script>
+<script src="assist.js?v=20260906r"></script>
+<script src="assistcfg.js?v=20260906r"></script>
+<script src="assistclone.js?v=20260906r"></script>
+<script src="navcfg.js?v=20260906r"></script>
+<script src="tickets.js?v=20260906r"></script>
+<script src="theme.js?v=20260906r"></script>
+<script src="router.js?v=20260906r"></script>
+<script src="live.js?v=20260906r"></script>
+<script src="oncall.js?v=20260906r"></script>
 </body>
 </html>

@@ -40,6 +40,50 @@
   window.addEventListener("hashchange",closeDrawer);
   document.addEventListener("click",e=>{ if(!document.body.classList.contains("nav-open")) return; const h=e.target.closest("header"); if(h&&!e.target.closest("nav")&&!e.target.closest("#navBurger")) closeDrawer(); },true);
 
+  /* ---------- collapsible EXPLORE inside each business group ----------
+   * A phone drawer that lists 12 Mobile rows buries the Fixed group below the fold. Each group's OPERATE rows stay
+   * open (the daily pages); its EXPLORE rows (docs, topology, journeys…) fold behind their own label, so Mobile and
+   * Fixed are both reachable without scrolling. Opens itself when the current page lives inside it. Drawer only —
+   * the desktop dropdown ignores .exp-open entirely. */
+  function markGroups(){
+    document.querySelectorAll(".navdrop-panel").forEach(panel=>{
+      let key="";
+      Array.from(panel.children).forEach(el=>{
+        if(el.classList.contains("navgroup")){
+          // gkey is stamped once: rewriting the label adds the chevron, so textContent is not a stable key
+          key=el.dataset.gkey||(el.textContent||"").trim().toUpperCase();
+          if(!el.dataset.gkey){
+            el.dataset.gkey=key;
+            if(key==="EXPLORE"){
+              el.dataset.collapse="1"; el.setAttribute("role","button"); el.tabIndex=0;
+              el.innerHTML=`<span>${el.textContent.trim()}</span><b class="ngn"></b><i class="ngc" aria-hidden="true">▾</i>`;
+            }
+          }
+        } else if(el.classList.contains("navtab")) el.dataset.navgroup=key;
+      });
+    });
+  }
+  // capture phase: navdrop.js stops click propagation inside .navdrop-panel, so a bubble listener never sees this
+  document.addEventListener("click",e=>{
+    const g=e.target.closest&&e.target.closest(".navdrop-panel .navgroup[data-collapse]"); if(!g||!mqDrawer.matches) return;
+    e.stopPropagation(); e.preventDefault(); g.parentElement.classList.toggle("exp-open");
+  },true);
+  document.addEventListener("keydown",e=>{
+    if(e.key!=="Enter"&&e.key!==" ") return;
+    const g=e.target.closest&&e.target.closest(".navdrop-panel .navgroup[data-collapse]"); if(!g||!mqDrawer.matches) return;
+    e.preventDefault(); g.parentElement.classList.toggle("exp-open");
+  },true);
+  function syncGroups(){
+    markGroups();
+    document.querySelectorAll(".navdrop-panel").forEach(panel=>{
+      const act=panel.querySelector(".navtab.active");
+      if(act&&act.dataset.navgroup==="EXPLORE") panel.classList.add("exp-open");
+      const g=panel.querySelector('.navgroup[data-collapse] .ngn');
+      if(g){ const n=panel.querySelectorAll('.navtab[data-navgroup="EXPLORE"]:not(.hidden)').length; g.textContent=n||""; g.hidden=!n;
+             panel.querySelector('.navgroup[data-collapse]').hidden=!n; }   // role sees no Explore page → no empty disclosure
+    });
+  }
+
   /* ---------- bottom tab bar ---------- */
   const ICON={
     home:'<svg viewBox="0 0 24 24"><path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></svg>',
@@ -119,10 +163,10 @@
   }
 
   /* ---------- glue ---------- */
-  let t0=null; const later=()=>{ clearTimeout(t0); t0=setTimeout(()=>{ syncTabs(); fitGrids(); wrapTables(); },120); };
+  let t0=null; const later=()=>{ clearTimeout(t0); t0=setTimeout(()=>{ syncGroups(); syncTabs(); fitGrids(); wrapTables(); },120); };
   function modeSync(){ document.body.classList.toggle("has-tabs",mqPhone.matches); if(!mqDrawer.matches) closeDrawer(); later(); }
   function boot(){
-    buildDrawer(); buildTabs(); modeSync();
+    buildDrawer(); buildTabs(); syncGroups(); modeSync();
     const n=nav(); if(n) new MutationObserver(later).observe(n,{subtree:true,attributes:true,attributeFilter:["class","style"]});
     new MutationObserver(later).observe(document.body,{subtree:true,childList:true});
     window.addEventListener("hashchange",later); window.addEventListener("resize",later);
