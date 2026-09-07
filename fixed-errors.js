@@ -7,7 +7,7 @@
 (function(){
   "use strict";
   const FX=()=>window.FX;
-  const WINDOWS=[["3h","Last 3h"],["6h","Last 6h"],["24h","Last 24h"],["today","Today"],["7d","Last 7d"],["30d","1 month"],["90d","3 months"],["365d","1 year"]];
+  const WINDOWS=[["3h","Last 3h"],["6h","Last 6h"],["24h","Last 24h"],["32h","Last 32h"],["48h","Last 48h"],["72h","Last 72h"],["today","Today"],["7d","Last 7d"],["30d","1 month"],["90d","3 months"],["365d","1 year"]];
   const TEAMS=["OSS","IDENTITY","BSS","CLIENT","PLATFORM"];
   const TEAM_COLOR={OSS:"#dc2626",IDENTITY:"#d97706",BSS:"#2563eb",CLIENT:"var(--muted)",PLATFORM:"var(--muted)"};
   const PRIO_COLOR=["#dc4c4c","#dc4c4c","#d29922","#7d8590","#7d8590"];

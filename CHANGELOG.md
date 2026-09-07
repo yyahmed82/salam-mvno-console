@@ -23,6 +23,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   request carries none (Nafath, payment, BSS). Clicking a chip filters the tiles, the counts and the rows; chip counts
   are computed without the provider filter so they never drop while one is selected. `GET /api/fixed/errors/summary`
   returns `byProvider`; `summary` and `live` accept `provider=<NAME>` or `provider=-`.
+- **Fixed › Errors: Last 32h / 48h / 72h windows** between Last 24h and Today (team request).
 ### Changed
 - **The built-in sync scheduler (Settings → Sync, "Auto · Live") now mails the digest when a rule opens**, exactly
   like `/api/sync` does when the prod-sync scheduler drives the loop — and only when prod-sync is *not* armed, so a

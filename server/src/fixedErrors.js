@@ -44,7 +44,7 @@ function effectiveSeverity(base, countInWindow, moneyAtRisk) {
 }
 
 /* ---- windows (errors.ts WINDOWS) — "today" = KSA day boundary; the rest are rolling ---- */
-const WINDOW_HOURS = { '1h': 1, '3h': 3, '6h': 6, '24h': 24, 'today': null, '7d': 168, '30d': 720, '90d': 2160, '365d': 8760 };
+const WINDOW_HOURS = { '1h': 1, '3h': 3, '6h': 6, '24h': 24, '32h': 32, '48h': 48, '72h': 72, 'today': null, '7d': 168, '30d': 720, '90d': 2160, '365d': 8760 };
 const KSA = 3 * 3600e3;
 function parseWindow(q = {}) {
   const now = new Date();
