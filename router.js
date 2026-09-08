@@ -126,6 +126,16 @@
         const tab=r.monTab||(m?m[1]:null);
         if(tab && window.openMonitoring){ window.openMonitoring(tab); window.audit && window.audit("VIEW_PAGE","#monitoring?tab="+tab); return; }
       }
+      /* Fixed incident view (#fixed-alerts): the SAME #view-alerts section, but activated by hand — clickNav('alerts')
+       * would click the Mobile Alerts tab, whose click listener rewrites the hash to #alerts (the bug seen 8 Sep). */
+      if(r.seg==="fixed"){
+        document.querySelectorAll(".navtab").forEach(x=>x.classList.remove("active"));
+        document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active", x.id==="view-"+r.view));
+        const gear=document.getElementById("settingsBtn"); if(gear) gear.classList.remove("on");
+        const fb=document.querySelector('.navtab[data-fxtab="alerts"]'); if(fb) fb.classList.add("active");
+        if(typeof window.openAlerts==="function") { try{ window.openAlerts("fixed"); }catch(e){} }
+        window.audit && window.audit("VIEW_PAGE", "#fixed-alerts"); return;
+      }
       clickNav(r.view);
       /* clickNav is a no-op when the tab is already active, so any view that only renders on a
        * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
