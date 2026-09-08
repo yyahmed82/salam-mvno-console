@@ -18,8 +18,16 @@ const { execSync } = require('child_process');
 const { Pool } = require('pg');
 
 const num = (k, d) => { const v = Number((process.env[k] || '').trim()); return Number.isFinite(v) && v > 0 ? v : d; };
+/* The console's own connection BUDGET on a server: every pool it can open there (db.js maxes) + the prod-sync writer
+ * + this probe. pg_stat_activity is counted per ROLE, and every unified pool uses the same role on 121, so the
+ * "console connections" number is the whole footprint — a threshold below the budget (the donor's 12) can only flap.
+ * Defaults: warn = budget + 2 (something outside the console holds the role), crit = budget + 8. Env overrides stay. */
+const E = k => !!(process.env[k] || '').trim();
+const POOL_BUDGET = 4 /* console */ + (Number(process.env.SOURCE_POOL_MAX) || 8)
+  + (E('OPS_DATABASE_URL') ? (Number(process.env.OPS_POOL_MAX) || 3) : 0) + (E('OPS_BETA_DATABASE_URL') ? (Number(process.env.OPS_BETA_POOL_MAX) || 2) : 0)
+  + (E('NEXUS_DATABASE_URL') ? 2 : 0) + (E('PAYMENTS_DATABASE_URL') ? 2 : 0) + (E('UPG_DATABASE_URL') ? 2 : 0) + 2 /* prod-sync writer + probe */;
 const T = {
-  connWarn: num('HC_OPS_CONN_WARN', 12), connCrit: num('HC_OPS_CONN_CRIT', 18),
+  connWarn: num('HC_OPS_CONN_WARN', POOL_BUDGET + 2), connCrit: num('HC_OPS_CONN_CRIT', POOL_BUDGET + 8),
   usedWarn: num('HC_PG_USED_WARN', 80), usedCrit: num('HC_PG_USED_CRIT', 92),
   srcWarn: num('HC_SRC_CONN_WARN', 6), srcCrit: num('HC_SRC_CONN_CRIT', 10),
   loadWarn: num('HC_LOAD_WARN', 8), loadCrit: num('HC_LOAD_CRIT', 14),
@@ -48,10 +56,11 @@ async function dbChecks(checks, label, cs, { shared, srcOnly, local } = {}) {
        * pool (SOURCE_POOL_MAX, default 8) + the prod-sync writer + this probe — sized to the pool, never a prod risk.
        * Thresholds for a REMOTE source (a real prod replica) stay at the donor's 6 / 10. */
       const poolMax = Number(process.env.SOURCE_POOL_MAX) || 8;
-      const w = local ? poolMax + 4 : srcOnly ? T.srcWarn : T.connWarn, c = local ? poolMax + 10 : srcOnly ? T.srcCrit : T.connCrit;
+      // local replica = same server + same role as the console DB → the count IS the console's whole footprint: judge it against the budget
+      const w = local ? T.connWarn : srcOnly ? T.srcWarn : T.connWarn, c = local ? T.connCrit : srcOnly ? T.srcCrit : T.connCrit;
       const ml = lvl(mine, w, c);
       checks.push({ name: `${label} — console connections`, level: ml, prodImpact: ml === 'CRIT' && !local,
-        detail: `${mine} connections held by the console role on ${hostOf(cs)} (warn ≥${w}, crit ≥${c}).${local ? ` Our own replica on the console server — pool max ${poolMax} (SOURCE_POOL_MAX) + prod-sync writer + probes; not a production system.` : srcOnly ? ' The watcher + unmask pools should stay small.' : ' The console_app role — the count covers every app using it on this server.'}` });
+        detail: `${mine} connections held by the console role on ${hostOf(cs)} (warn ≥${w}, crit ≥${c}; the console's own pool budget here is ${POOL_BUDGET}).${local ? ` Our own replica on the console server — source pool max ${poolMax} (SOURCE_POOL_MAX) + prod-sync writer + probes; not a production system.` : srcOnly ? ' The watcher + unmask pools should stay small.' : ' The console_app role — the count covers every app using it on this server.'}` });
       if (shared) {
         const r = (await pool.query(`SELECT (SELECT count(*) FROM pg_stat_activity) AS used, current_setting('max_connections') AS max`)).rows[0];
         const u = Number(r.used), m = Number(r.max) || 100, pct = Math.round(u / m * 100);

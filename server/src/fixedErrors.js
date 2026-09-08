@@ -1,13 +1,26 @@
 /* fixedErrors.js — Fixed "Errors" page: the Live Error Control Board of the Operations Console
  * (salam-dealer-ops packages/api/src/routers/errors.ts) ported 1:1 onto the unified console.
  *
- * Data: db.ops (prod sda_ops.public) — error_events · order_attempts · api_calls · dealers. READ-ONLY.
- * Acks never touch sda_ops: they live in the console's own DB (fixed_error_acks) and are merged in.
+ * Data (READ-ONLY): error_events · order_attempts · api_calls · dealers from TWO read models of the same nexus stream:
+ *   · db.ops     = prod sda_ops.public (ops-ingest-watch)  — the dealer world: SDA journeys and QR / referral e-purchase.
+ *     Its ingest still folds the Salam Home app (nexus channel PULSE) into "epurchase" without a referral code, which
+ *     is why "consumer-direct e-purchase" was hidden there: it was a mix of web orders and app journeys.
+ *   · db.opsBeta = sda_ops_beta (opsb-ingest-watch) — the B2C read model: PULSE → channel "salamhome", consumer-direct
+ *     e-purchase STORED, salamHome* workflows mapped. Coverage from 2026-01-01 (backfilled).
+ * The board covers all four channels by PARTITIONING the two sources — each channel bucket comes from exactly one:
+ *   sda, qr  ← db.ops      (channel 'sda' · channel 'epurchase' WITH referral code)
+ *   web, app ← db.opsBeta  (channel 'epurchase' WITHOUT referral code = Web e-purchase · channel 'salamhome' = Salam Home app)
+ * so nothing is counted twice and nothing is hidden. Without OPS_BETA_DATABASE_URL every bucket is read from db.ops.
+ * Channel and product TYPE are derived in SQL (CHANNEL_EXPR / TYPE_EXPR — the type from the attempt's workflow, then
+ * its plan text) so the board can show, filter, count and export them.
+ * Acks never touch either DB: they live in the console's own DB (fixed_error_acks) keyed by the deterministic event id
+ * (hash of attempt · step · code · time — identical in both read models) and are merged in.
  * Unmask (cap unmaskPII + ?unmask=1): raw api_logs / workflow_states from db.nexus, audited pii.unmask.
  * Routes (all under /api/fixed/errors/*, gated by deps.gate = requireView('fixed')):
- *   GET  summary  ?range|from|to&channel&openOnly&find&tech&odb&iccid&cpe&msisdn&serviceNo&custCode&customerId&workflowId
- *   GET  live     …same + &team&priority&category&limit
- *   GET  detail   ?id[&unmask=1]
+ *   GET  summary  ?range|from|to&channel&type&provider&openOnly&find&tech&odb&iccid&cpe&msisdn&serviceNo&custCode&customerId&workflowId
+ *                 channel = sda | qr | web | salamhome (legacy: epurchase = qr + web) · type = ftth | fttb | 5gwl | 5gfwa | 5g | lead | unknown
+ *   GET  live     …same + &team&priority&category&limit&cursor   (cursor = ISO time of the last row — sources are merged)
+ *   GET  detail   ?id[&src=ops|beta][&unmask=1]
  *   GET  export   ?format=xlsx|pdf …same filters as live   (cap export) — filters, period, summary, every row
  *   POST resolve  {id[, undo]}                     (cap ackErrors)
  */
@@ -91,29 +104,105 @@ function identifierSql(q, P) {
  * bucket (value "-"). Bounded by the window WHERE, so the regex only runs on the rows already selected. */
 const PROVIDER_EXPR = `upper(substring(e.req_body from '"provider"\\s*:\\s*"([^"]+)"'))`;
 
-/* ---- shared WHERE for summary/live (alias e = error_events) ---- */
-function baseWhere(q) {
+/* ---- channel buckets — derived from the event row (alias e). The app always wins over the referral code. ---- */
+const CHANNELS = [
+  { key: 'sda',       label: 'SDA (dealer)',    short: 'SDA',  src: 'ops',  desc: 'dealer app journeys' },
+  { key: 'qr',        label: 'QR codes',        short: 'QR',   src: 'ops',  desc: 'e-purchase web flow opened from a dealer / campaign QR (referral code)' },
+  { key: 'web',       label: 'Web e-purchase',  short: 'Web',  src: 'beta', desc: 'public e-purchase web flow, consumer-direct (no referral code)' },
+  { key: 'salamhome', label: 'Salam Home app',  short: 'App',  src: 'beta', desc: 'Salam Home (Pulse) app — buy FTTH + manage-line journeys' },
+];
+const CHAN = Object.fromEntries(CHANNELS.map(c => [c.key, c]));
+const CHANNEL_EXPR = `CASE WHEN e.channel = 'sda' THEN 'sda' WHEN e.channel = 'salamhome' THEN 'salamhome' WHEN e.referral_code IS NOT NULL THEN 'qr' ELSE 'web' END`;
+/* which buckets each source serves when BOTH read models are configured (see header) */
+const SRC_BUCKETS = { ops: ['sda', 'qr'], beta: ['web', 'salamhome'] };
+const bucketSql = keys => `${CHANNEL_EXPR} IN (${keys.map(k => `'${k}'`).join(',')})`;
+/* q.channel → bucket list: new keys, the legacy hub values, or everything */
+function channelBuckets(q) {
+  const c = String(q.channel || '').toLowerCase();
+  if (!c) return CHANNELS.map(x => x.key);
+  if (c === 'epurchase') return ['qr', 'web'];
+  if (c === 'app') return ['salamhome'];
+  return CHAN[c] ? [c] : CHANNELS.map(x => x.key);
+}
+
+/* ---- product TYPE — from the attempt's workflow (alias oa = order_attempts, LEFT JOINed), then its plan text.
+ * Journeys of the Salam Home app carry the product they act on (relocation FTTH = fibre, relocation WL / Own = 5G);
+ * manage-line journeys without a plan hint (freeze / renew …) stay 'unknown' rather than guessing. ---- */
+const TYPES = [
+  { key: 'ftth',    label: 'FTTH',         desc: 'fibre to the home — ftth · ePurchaseFTTH · salamHomeRelocationFTTH · plan ~ fiber' },
+  { key: 'fttb',    label: 'FTTB',         desc: 'fibre to the building (business) — fttb · plan ~ FTTB / business' },
+  { key: '5gwl',    label: '5G HomeFi',    desc: 'fiveGWhiteLabel · salamHomeRelocationWL / Own' },
+  { key: '5gfwa',   label: '5G FWA',       desc: 'fiveGFWA' },
+  { key: '5g',      label: '5G (plan)',    desc: 'workflow does not say — the plan text says 5G' },
+  { key: 'lead',    label: 'Lead',         desc: 'promoters (lead capture, no order)' },
+  { key: 'unknown', label: 'Unknown',      desc: 'no attempt row or no product hint' },
+];
+const TYPE = Object.fromEntries(TYPES.map(t => [t.key, t]));
+const TYPE_EXPR = `CASE
+  WHEN oa.workflow::text IN ('ftth','ePurchaseFTTH','salamHomeRelocationFTTH') THEN 'ftth'
+  WHEN oa.workflow::text = 'fttb' THEN 'fttb'
+  WHEN oa.workflow::text IN ('fiveGWhiteLabel','salamHomeRelocationWL','salamHomeRelocationOwn') THEN '5gwl'
+  WHEN oa.workflow::text = 'fiveGFWA' THEN '5gfwa'
+  WHEN oa.workflow::text = 'promoters' THEN 'lead'
+  WHEN oa.plan ILIKE '%5g%' THEN '5g'
+  WHEN oa.plan ILIKE '%fttb%' OR oa.plan ILIKE '%business%' THEN 'fttb'
+  WHEN oa.plan ILIKE '%ftth%' OR oa.plan ILIKE '%fiber%' OR oa.plan ILIKE '%fibre%' THEN 'ftth'
+  ELSE 'unknown' END`;
+const WF_LABEL = { ftth: 'New line', fttb: 'New line', fiveGWhiteLabel: 'New line', fiveGFWA: 'New line', promoters: 'Lead', ePurchaseFTTH: 'New line',
+  salamHomeFreeze: 'Freeze', salamHomeUnFreeze: 'Unfreeze', salamHomeRelocationFTTH: 'Relocation', salamHomeRelocationWL: 'Relocation', salamHomeRelocationOwn: 'Relocation',
+  salamHomeChangePlan: 'Change plan', salamHomeChangePlanPre2Post: 'Pre → post', salamHomeRenew: 'Renew', unknown: '' };
+const JOIN_OA = 'LEFT JOIN order_attempts oa ON oa.id = e.attempt_id';
+
+/* ---- shared WHERE for summary/live (alias e = error_events, oa = order_attempts) ----
+ * opts.skip = a dimension ('provider' | 'channel' | 'type') to leave OUT so its chips keep their counts while selected. */
+function baseWhere(q, opts = {}) {
   const w = parseWindow(q);
   const P = [w.from.toISOString(), w.to.toISOString()];
-  const parts = ['e.occurred_at >= $1', 'e.occurred_at < $2', `NOT (e.channel = 'epurchase' AND e.referral_code IS NULL)`];
-  const channel = ['sda', 'epurchase', 'salamhome'].includes(q.channel) ? q.channel : null;
-  if (channel) { P.push(channel); parts.push(`e.channel = $${P.length}`); }
+  const parts = ['e.occurred_at >= $1', 'e.occurred_at < $2'];
+  const buckets = opts.skip === 'channel' ? CHANNELS.map(x => x.key) : channelBuckets(q);
   if (q.region) { P.push(String(q.region).slice(0, 60)); parts.push(`e.region = $${P.length}`); }
   if (q.dealerId) { P.push(String(q.dealerId).slice(0, 40)); parts.push(`e.dealer_id = $${P.length}`); }
-  if (q.provider) {
+  if (q.provider && opts.skip !== 'provider') {
     if (q.provider === '-') parts.push(`${PROVIDER_EXPR} IS NULL`);
     else { P.push(String(q.provider).toUpperCase().slice(0, 40)); parts.push(`${PROVIDER_EXPR} = $${P.length}`); }
   }
+  const type = TYPE[String(q.type || '').toLowerCase()] ? String(q.type).toLowerCase() : null;
+  if (type && opts.skip !== 'type') { P.push(type); parts.push(`${TYPE_EXPR} = $${P.length}`); }
   const ident = identifierSql(q, P);
   if (ident) parts.push(ident);
-  return { ...w, channel, P, where: 'WHERE ' + parts.join(' AND ') };
+  return { ...w, channel: q.channel || null, buckets, type, P, parts };
+}
+/* the WHERE for one source: the shared parts + this source's slice of the requested buckets (null = nothing to ask) */
+function whereFor(s, src, split) {
+  const mine = split ? s.buckets.filter(b => SRC_BUCKETS[src].includes(b)) : s.buckets;
+  if (!mine.length) return null;
+  const parts = s.parts.slice();
+  if (mine.length < CHANNELS.length) parts.push(bucketSql(mine));
+  return 'WHERE ' + parts.join(' AND ');
 }
 const n = v => Number(v) || 0;
 const parseJson = s => { if (s == null) return null; if (typeof s === 'object') return s; try { return JSON.parse(s); } catch (_) { return s; } };
 
 function mount(app, deps) {
   const { gate, wrap, audit, db } = deps;
-  const ops = (q) => { const p = (q && q.channel === 'salamhome') ? (db.opsBeta || db.ops) : db.ops; if (!p) { const e = new Error('Fixed data source not configured (OPS_DATABASE_URL)'); e.status = 503; throw e; } return p; };   // Salam Home app → beta schema
+  /* ---- the read models. split = both configured and different → partition (header); else one pool serves every bucket ---- */
+  const split = () => !!(db.ops && db.opsBeta && db.opsBeta !== db.ops);
+  function sources() {
+    const list = [];
+    if (db.ops) list.push({ src: 'ops', pool: db.ops });
+    if (db.opsBeta && (!db.ops || db.opsBeta !== db.ops)) list.push({ src: 'beta', pool: db.opsBeta });
+    if (!list.length) { const e = new Error('Fixed data source not configured (OPS_DATABASE_URL)'); e.status = 503; throw e; }
+    return list;
+  }
+  const poolOf = src => (src === 'beta' && db.opsBeta) ? db.opsBeta : (db.ops || db.opsBeta);
+  /* run `fn(pool, where, src)` on every source that has something to answer for this filter set; results in source order */
+  async function each(s, fn) {
+    const sp = split();
+    const jobs = sources().map(x => { const w = whereFor(s, x.src, sp); return w ? fn(x.pool, w, x.src).then(r => ({ src: x.src, r })) : null; }).filter(Boolean);
+    return Promise.all(jobs);
+  }
+  /* the partition predicate alone (no user filters) — for the 3h escalation counts and freshness */
+  const sliceOnly = src => { if (!split()) return ''; return 'AND ' + bucketSql(SRC_BUCKETS[src]); };
 
   /* acks live in the console DB — sda_ops stays read-only */
   let ackReady = null;
@@ -130,40 +219,59 @@ function mount(app, deps) {
     } catch (_) { return {}; }
   }
 
-  /* per-category last-3h volume → effective priority (same escalation as the prod board) */
-  async function effByCategory(q) {
-    const r = await ops(q).query(`SELECT category, count(*)::int AS n FROM error_events e
-      WHERE e.occurred_at >= now() - interval '3 hours' AND NOT (e.channel = 'epurchase' AND e.referral_code IS NULL) GROUP BY 1`);
-    const last3h = Object.fromEntries(r.rows.map(x => [x.category, n(x.n)]));
+  /* per-category last-3h volume → effective priority (same escalation as the prod board), summed over the sources */
+  async function effByCategory() {
+    const last3h = {};
+    await Promise.all(sources().map(async x => {
+      const r = await x.pool.query(`SELECT category, count(*)::int AS n FROM error_events e
+        WHERE e.occurred_at >= now() - interval '3 hours' ${sliceOnly(x.src)} GROUP BY 1`);
+      for (const row of r.rows) last3h[row.category] = (last3h[row.category] || 0) + n(row.n);
+    }));
     const eff = {}; for (const c of TAXONOMY) eff[c.key] = effectiveSeverity(c.severity, last3h[c.key] || 0, c.moneyAtRisk);
     for (const k of Object.keys(last3h)) if (!(k in eff)) eff[k] = effectiveSeverity(3, last3h[k], false);
     return eff;
   }
 
+  /* one GROUP BY over every source, merged by key: [{key, total, open}] sorted by total desc */
+  async function grouped(q, expr, skip, limit) {
+    const s = baseWhere(q, { skip });
+    const parts = await each(s, (pool, where) => pool.query(`SELECT ${expr} AS k, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open
+      FROM error_events e ${JOIN_OA} ${where} GROUP BY 1 ORDER BY 2 DESC LIMIT ${limit}`, s.P));
+    const acc = {};
+    for (const p of parts) for (const row of p.r.rows) { const k = row.k == null ? '-' : String(row.k); (acc[k] = acc[k] || { key: k, total: 0, open: 0 }); acc[k].total += n(row.total); acc[k].open += n(row.open); }
+    return Object.values(acc).sort((a, b) => b.total - a.total);
+  }
+
   // ---- GET /api/fixed/errors/summary ----
   async function summary(q) {
     const s = baseWhere(q);
-    const r = await ops(q).query(`SELECT e.category, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open,
-        count(*) FILTER (WHERE e.occurred_at >= now() - interval '3 hours')::int AS last3h
-      FROM error_events e ${s.where} GROUP BY 1 ORDER BY 2 DESC LIMIT 100`, s.P);
     const openOnly = q.openOnly === '1' || q.openOnly === 'true';
-    const byCategory = r.rows.map(x => { const m = meta(x.category);
+    const [catParts, provs, chans, types, fresh] = await Promise.all([
+      each(s, (pool, where) => pool.query(`SELECT e.category, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open,
+          count(*) FILTER (WHERE e.occurred_at >= now() - interval '3 hours')::int AS last3h
+        FROM error_events e ${JOIN_OA} ${where} GROUP BY 1 ORDER BY 2 DESC LIMIT 100`, s.P)),
+      grouped(q, PROVIDER_EXPR, 'provider', 20).catch(() => []),
+      grouped(q, CHANNEL_EXPR, 'channel', 10).catch(() => []),
+      grouped(q, TYPE_EXPR, 'type', 10).catch(() => []),
+      Promise.all(sources().map(async x => { try { const r = await x.pool.query(`SELECT max(occurred_at) AS latest FROM error_events e WHERE e.occurred_at >= now() - interval '30 days' ${sliceOnly(x.src)}`);
+        return { src: x.src, buckets: split() ? SRC_BUCKETS[x.src] : CHANNELS.map(c => c.key), latest: r.rows[0] && r.rows[0].latest || null }; } catch (e) { return { src: x.src, error: e.message }; } })),
+    ]);
+    const cat = {};
+    for (const p of catParts) for (const x of p.r.rows) { const c = cat[x.category] = cat[x.category] || { category: x.category, total: 0, open: 0, last3h: 0 }; c.total += n(x.total); c.open += n(x.open); c.last3h += n(x.last3h); }
+    const byCategory = Object.values(cat).sort((a, b) => b.total - a.total).map(x => { const m = meta(x.category);
       return { category: x.category, label: m.label, team: m.team, tone: m.tone, clientSide: m.clientSide, moneyAtRisk: m.moneyAtRisk,
-        basePriority: m.severity, priority: effectiveSeverity(m.severity, n(x.last3h), m.moneyAtRisk), open: n(x.open), total: n(x.total), last3h: n(x.last3h) }; });
+        basePriority: m.severity, priority: effectiveSeverity(m.severity, x.last3h, m.moneyAtRisk), open: x.open, total: x.total, last3h: x.last3h }; });
     const byTeam = Object.fromEntries(TEAMS.map(t => [t, { open: 0, total: 0 }]));
     const byPriority = Object.fromEntries([0, 1, 2, 3, 4].map(p => [p, { open: 0, total: 0 }]));
     for (const c of byCategory) { byTeam[c.team].open += c.open; byTeam[c.team].total += c.total; byPriority[c.priority].open += c.open; byPriority[c.priority].total += c.total; }
-    /* provider chips: counted WITHOUT the provider filter so every chip keeps its number while one is selected */
-    let byProvider = [];
-    try {
-      const s0 = q.provider ? baseWhere({ ...q, provider: undefined }) : s;
-      const pr = await ops(q).query(`SELECT ${PROVIDER_EXPR} AS provider, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open
-        FROM error_events e ${s0.where} GROUP BY 1 ORDER BY 2 DESC LIMIT 20`, s0.P);
-      byProvider = pr.rows.map(x => ({ provider: x.provider || '-', label: x.provider || 'no provider', open: n(x.open), total: n(x.total) }));
-    } catch (e) { byProvider = []; }
-    return { window: s.window, from: s.from, to: s.to, channel: s.channel, openOnly, provider: q.provider || '', byProvider,
+    /* chips are counted WITHOUT their own filter so every chip keeps its number while one is selected */
+    const byProvider = provs.map(x => ({ provider: x.key, label: x.key === '-' ? 'no provider' : x.key, open: x.open, total: x.total }));
+    const byChannel = CHANNELS.map(c => { const x = chans.find(y => y.key === c.key) || { open: 0, total: 0 }; return { channel: c.key, label: c.label, short: c.short, desc: c.desc, open: x.open, total: x.total }; });
+    const byType = TYPES.map(t => { const x = types.find(y => y.key === t.key) || { open: 0, total: 0 }; return { type: t.key, label: t.label, desc: t.desc, open: x.open, total: x.total }; });
+    return { window: s.window, from: s.from, to: s.to, channel: q.channel || '', type: s.type || '', openOnly, provider: q.provider || '',
+      byProvider, byChannel, byType, sources: fresh, split: split(),
       total: byCategory.reduce((a, c) => a + c.total, 0), open: byCategory.reduce((a, c) => a + c.open, 0),
-      byCategory: openOnly ? byCategory.filter(c => c.open > 0) : byCategory, byTeam, byPriority, taxonomy: TAXONOMY, spike: SPIKE };
+      byCategory: openOnly ? byCategory.filter(c => c.open > 0) : byCategory, byTeam, byPriority, taxonomy: TAXONOMY, spike: SPIKE, channels: CHANNELS, types: TYPES };
   }
 
   // ---- GET /api/fixed/errors/live ----
@@ -174,7 +282,7 @@ function mount(app, deps) {
     if (q.category) { P.push(String(q.category).slice(0, 60)); extra.push(`e.category = $${P.length}`); }
     let cats = null;
     if (q.team && TEAMS.includes(q.team)) cats = TAXONOMY.filter(c => c.team === q.team).map(c => c.key);
-    const eff = await effByCategory(q);
+    const eff = await effByCategory();
     if (q.priority !== undefined && q.priority !== '') {
       const p = Number(q.priority);
       const pc = Object.keys(eff).filter(k => eff[k] === p);
@@ -183,28 +291,32 @@ function mount(app, deps) {
       if (p === 3 && (!q.team || q.team === 'PLATFORM')) { P.push(Object.keys(eff)); extra.push(`(e.category = ANY($${P.length + 1}::text[]) OR e.category <> ALL($${P.length}::text[]))`); P.push(cats); cats = null; }
     }
     if (cats) { if (!cats.length) return { window: s.window, from: s.from, to: s.to, rows: [] }; P.push(cats); extra.push(`e.category = ANY($${P.length}::text[])`); }
-    if (q.cursor) { P.push(String(q.cursor)); extra.push(`e.occurred_at < (SELECT occurred_at FROM error_events WHERE id = $${P.length})`); }
+    // cursor = ISO time of the last row served (the sources are merged, so an id would only be valid in one of them)
+    if (q.cursor) { const c = new Date(String(q.cursor)); if (!isNaN(c)) { P.push(c.toISOString()); extra.push(`e.occurred_at < $${P.length}::timestamptz`); } }
     const lim = Math.min(200, Math.max(10, Number(q.limit) || 100));
     P.push(lim + 1);
-    const r = await ops(q).query(`SELECT e.id, e.attempt_id, e.order_number, e.acct_masked, e.cust_masked, e.category, e.code, e.message, e.client_side,
-        e.channel, e.dealer_id, e.dealer_code, e.referral_code, e.region, e.step, e.occurred_at, e.resolved, e.resolved_at, e.signature
-      FROM error_events e ${s.where} ${extra.length ? 'AND ' + extra.join(' AND ') : ''} ORDER BY e.occurred_at DESC LIMIT $${P.length}`, P);
-    const rows = r.rows.slice(0, lim);
+    const parts = await each({ ...s, P }, (pool, where, src) => pool.query(`SELECT e.id, e.attempt_id, e.order_number, e.acct_masked, e.cust_masked, e.category, e.code, e.message, e.client_side,
+        e.channel, e.dealer_id, e.dealer_code, e.referral_code, e.region, e.step, e.occurred_at, e.resolved, e.resolved_at, e.signature,
+        ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, oa.workflow::text AS workflow, oa.plan, '${src}'::text AS src
+      FROM error_events e ${JOIN_OA} ${where} ${extra.length ? 'AND ' + extra.join(' AND ') : ''} ORDER BY e.occurred_at DESC LIMIT $${P.length}`, P));
+    const all = [].concat(...parts.map(p => p.r.rows)).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
+    const rows = all.slice(0, lim);
     const acks = await acksFor(rows.map(x => x.id));
     if (audit && (q.find || q.anyId)) audit(req, 'fixed.errors.search', String(q.find || q.anyId).slice(0, 40), { rows: rows.length });
-    return { window: s.window, from: s.from, to: s.to, nextCursor: r.rows.length > lim ? rows[rows.length - 1].id : null,
+    return { window: s.window, from: s.from, to: s.to, nextCursor: all.length > lim && rows.length ? new Date(rows[rows.length - 1].occurred_at).toISOString() : null,
       rows: rows.map(x => { const m = meta(x.category); const a = acks[x.id];
         return { ...x, label: m.label, team: m.team, tone: m.tone, priority: eff[x.category] != null ? eff[x.category] : m.severity,
+          chanLabel: (CHAN[x.chan] || {}).label || x.chan, typeLabel: (TYPE[x.type] || {}).label || x.type, journey: WF_LABEL[x.workflow] || '',
           acked: !!a, acked_by: a ? a.actor : null, acked_at: a ? a.at : null }; }) };
   }
 
   // ---- "Similar cases" (errors.ts history) ----
-  async function similar(signature, category, excludeId, q) {
+  async function similar(signature, category, excludeId, pool) {
     const key = signature ? 'signature = $1' : 'category = $1';
     const P = [signature || category]; let ex = '';
     if (excludeId) { P.push(excludeId); ex = ` AND id <> $${P.length}`; }
     const [rows, biggest] = await Promise.all([
-      ops(q).query(`SELECT count(*)::int AS "all",
+      pool.query(`SELECT count(*)::int AS "all",
           count(*) FILTER (WHERE occurred_at >= now() - interval '30 days')::int AS d30,
           count(*) FILTER (WHERE occurred_at >= now() - interval '7 days')::int AS d7,
           max(occurred_at) AS last_seen,
@@ -212,7 +324,7 @@ function mount(app, deps) {
           (percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (resolved_at - occurred_at)) / 60.0)
              FILTER (WHERE resolved AND resolved_at IS NOT NULL))::int AS median_resolve_mins
         FROM error_events WHERE ${key}${ex}`, P),
-      ops(q).query(`SELECT occurred_at::date AS day, count(*)::int AS n FROM error_events WHERE ${key}${ex} GROUP BY 1 ORDER BY n DESC LIMIT 1`, P),
+      pool.query(`SELECT occurred_at::date AS day, count(*)::int AS n FROM error_events WHERE ${key}${ex} GROUP BY 1 ORDER BY n DESC LIMIT 1`, P),
     ]);
     const r = rows.rows[0] || {}; const b = biggest.rows[0];
     return { all: n(r.all), d30: n(r.d30), d7: n(r.d7), lastSeen: r.last_seen || null, affectedToday: n(r.affected_today),
@@ -243,18 +355,22 @@ function mount(app, deps) {
   // ---- GET /api/fixed/errors/detail ----
   async function detail(q, req) {
     const id = String(q.id || '').slice(0, 80); if (!id) { const e = new Error('id required'); e.status = 400; throw e; }
-    const DSQL = `SELECT e.*, d.dealer_name, d.staff_name, d.staff_code FROM error_events e LEFT JOIN dealers d ON d.id = e.dealer_id WHERE e.id = $1 LIMIT 1`;
-    let r = await ops(q).query(DSQL, [id]);
-    if (!r.rows.length && db.opsBeta && ops(q) !== db.opsBeta) { q = { ...q, channel: 'salamhome' }; r = await ops(q).query(DSQL, [id]); }
-    const ev = r.rows[0]; if (!ev) { const e = new Error('error event not found'); e.status = 404; throw e; }
+    const DSQL = `SELECT e.*, d.dealer_name, d.staff_name, d.staff_code, ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, oa.workflow::text AS workflow, oa.plan
+      FROM error_events e LEFT JOIN dealers d ON d.id = e.dealer_id ${JOIN_OA} WHERE e.id = $1 LIMIT 1`;
+    // the row's own source first (the board passes src=); the same id may exist in both read models with a different channel label
+    const order = sources().sort((a, b) => (a.src === q.src ? -1 : 0) - (b.src === q.src ? -1 : 0));
+    let ev = null, pool = null;
+    for (const x of order) { const r = await x.pool.query(DSQL, [id]); if (r.rows.length) { ev = r.rows[0]; pool = x.pool; ev.src = x.src; break; } }
+    if (!ev) { const e = new Error('error event not found'); e.status = 404; throw e; }
     const m = meta(ev.category);
     const [sim, calls, acks] = await Promise.all([
-      similar(ev.signature, ev.category, ev.id, q),
-      ev.attempt_id ? ops(q).query(`SELECT id, method, endpoint, status, duration_ms, error_class, error_msg, info, created_at
+      similar(ev.signature, ev.category, ev.id, pool),
+      ev.attempt_id ? pool.query(`SELECT id, method, endpoint, status, duration_ms, error_class, error_msg, info, created_at
           FROM api_calls WHERE attempt_id = $1 ORDER BY created_at ASC LIMIT 200`, [ev.attempt_id]) : { rows: [] },
       acksFor([ev.id]),
     ]);
-    const out = { event: { ...ev, req_body: undefined, res_body: undefined, label: m.label, team: m.team, tone: m.tone, basePriority: m.severity, acked: !!acks[ev.id], acked_by: acks[ev.id] ? acks[ev.id].actor : null },
+    const out = { event: { ...ev, req_body: undefined, res_body: undefined, label: m.label, team: m.team, tone: m.tone, basePriority: m.severity, acked: !!acks[ev.id], acked_by: acks[ev.id] ? acks[ev.id].actor : null,
+        chanLabel: (CHAN[ev.chan] || {}).label || ev.chan, typeLabel: (TYPE[ev.type] || {}).label || ev.type, journey: WF_LABEL[ev.workflow] || '' },
       request: parseJson(ev.req_body), response: parseJson(ev.res_body), masked: true,
       similar: sim, timeline: calls.rows, unmaskAvailable: !!db.nexus };
     // ---- audited unmask: raw request/response of the failing step from nexus.api_logs ----
@@ -300,7 +416,8 @@ function mount(app, deps) {
   const provOf = body => { const m = /"provider"\s*:\s*"([^"]+)"/.exec(String(body || '')); return m ? m[1].toUpperCase() : ''; };
   const oneLine = (v, max) => { const t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); return t.length > max ? t.slice(0, max - 1) + '…' : t; };
   const WIN_LABEL = { '1h': 'Last 1h', '3h': 'Last 3h', '6h': 'Last 6h', '24h': 'Last 24h', '32h': 'Last 32h', '48h': 'Last 48h', '72h': 'Last 72h', today: 'Today (KSA)', '7d': 'Last 7d', '30d': '1 month', '90d': '3 months', '365d': '1 year' };
-  const CHAN_LABEL = { '': 'All channels', sda: 'SDA (dealer)', epurchase: 'QR / e-purchase', salamhome: 'Salam Home app' };
+  const CHAN_LABEL = { '': 'All channels (SDA · QR · Web · Salam Home app)', epurchase: 'QR + Web e-purchase', app: 'Salam Home app' };
+  const chanLabel = c => CHAN_LABEL[c || ''] || (CHAN[c] ? CHAN[c].label : c);
 
   async function exportData(q, req, cap) {
     const sum = await summary(q);
@@ -313,24 +430,30 @@ function mount(app, deps) {
       cursor = page.nextCursor;
     }
     const out = rows.slice(0, cap);
-    const ids = out.map(r => r.id), attempts = [...new Set(out.map(r => r.attempt_id).filter(Boolean))];
-    const bodies = ids.length ? (await ops(q).query(`SELECT id, req_body, res_body FROM error_events WHERE id = ANY($1::text[])`, [ids])).rows : [];
+    // bodies and api_calls come from the row's own read model (rows carry src)
+    const bodies = [], calls = [];
+    for (const src of [...new Set(out.map(r => r.src))]) {
+      const mine = out.filter(r => r.src === src), pool = poolOf(src);
+      const ids = mine.map(r => r.id), attempts = [...new Set(mine.map(r => r.attempt_id).filter(Boolean))];
+      if (ids.length) bodies.push(...(await pool.query(`SELECT id, req_body, res_body FROM error_events WHERE id = ANY($1::text[])`, [ids])).rows);
+      if (attempts.length) calls.push(...(await pool.query(
+        `SELECT DISTINCT ON (attempt_id, endpoint) attempt_id, endpoint, method, status, duration_ms
+           FROM api_calls WHERE attempt_id = ANY($1::text[]) ORDER BY attempt_id, endpoint, created_at DESC`, [attempts])).rows);
+    }
     const bodyById = Object.fromEntries(bodies.map(b => [b.id, b]));
-    const calls = attempts.length ? (await ops(q).query(
-      `SELECT DISTINCT ON (attempt_id, endpoint) attempt_id, endpoint, method, status, duration_ms
-         FROM api_calls WHERE attempt_id = ANY($1::text[]) ORDER BY attempt_id, endpoint, created_at DESC`, [attempts])).rows : [];
     const callKey = {}; for (const c of calls) callKey[c.attempt_id + '|' + c.endpoint] = c;
     const callFor = r => { if (!r.attempt_id) return null; if (r.step && callKey[r.attempt_id + '|' + r.step]) return callKey[r.attempt_id + '|' + r.step];
       const tail = r.step ? calls.find(c => c.attempt_id === r.attempt_id && (c.endpoint.endsWith(r.step) || r.step.endsWith(c.endpoint))) : null; return tail || null; };
     const flat = out.map(r => { const b = bodyById[r.id] || {}; const c = callFor(r);
       return { when: r.occurred_at, priority: r.priority, team: r.team, category: r.label || r.category, code: r.code || '', message: r.message || '',
         endpoint: r.step || (c && c.endpoint) || '', method: (c && c.method) || '', http: c && c.status != null ? c.status : '', ms: c && c.duration_ms != null ? c.duration_ms : '',
-        channel: r.channel || '', dealer: r.channel === 'epurchase' && r.referral_code ? 'QR ' + r.referral_code : (r.dealer_code || ''), region: r.region || '',
+        chan: r.chan || '', channel: r.chanLabel || r.chan || r.channel || '', type: r.typeLabel || r.type || '', journey: r.journey || '', workflow: r.workflow || '',
+        dealer: r.chan === 'qr' && r.referral_code ? 'QR ' + r.referral_code : (r.dealer_code || (r.chan === 'web' ? 'consumer-direct' : r.chan === 'salamhome' ? 'app' : '')), region: r.region || '',
         order: r.order_number || '', attempt: r.attempt_id || '', status: r.resolved ? 'resolved' : (r.acked ? 'acked' : 'open'), acked_by: r.acked_by || '',
         provider: provOf(b.req_body) || '', request: b.req_body || '', response: b.res_body || '' }; });
     const filters = [
       ['Period', `${WIN_LABEL[sum.window] || sum.window} — ${ksaStr(sum.from)} → ${ksaStr(sum.to)} KSA`],
-      ['Channel', CHAN_LABEL[q.channel || ''] || q.channel],
+      ['Channel', chanLabel(q.channel)], ['Type', q.type && TYPE[q.type] ? TYPE[q.type].label : 'All types'],
       ['Open only', (q.openOnly === '1' || q.openOnly === 'true') ? 'yes' : 'no (open + resolved)'],
       ['Team', q.team || 'All teams'], ['Priority', q.priority !== undefined && q.priority !== '' ? 'P' + q.priority : 'All'],
       ['Provider', q.provider === '-' ? 'no provider' : (q.provider || 'All')], ['Category', q.category ? (meta(q.category).label || q.category) : 'All'],
@@ -345,8 +468,8 @@ function mount(app, deps) {
 
   function exportXlsx(d) {
     const xlsx = require('./xlsx');
-    const HEAD = ['Time (KSA)', 'Priority', 'Team', 'Category', 'Code', 'Message', 'Endpoint', 'Method', 'HTTP', 'Response time (ms)', 'Provider', 'Channel', 'Dealer / QR', 'Region', 'Order #', 'Workflow (attempt)', 'Status', 'Acked by', 'Request', 'Response'];
-    const body = d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, r.team, r.category, r.code, r.message, r.endpoint, r.method, r.http, r.ms, r.provider, r.channel, r.dealer, r.region, r.order, r.attempt, r.status, r.acked_by, oneLine(r.request, 32000), oneLine(r.response, 32000)]);
+    const HEAD = ['Time (KSA)', 'Priority', 'Team', 'Category', 'Code', 'Message', 'Endpoint', 'Method', 'HTTP', 'Response time (ms)', 'Provider', 'Channel', 'Type', 'Journey', 'Workflow', 'Dealer / QR', 'Region', 'Order #', 'Workflow id (attempt)', 'Status', 'Acked by', 'Request', 'Response'];
+    const body = d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, r.team, r.category, r.code, r.message, r.endpoint, r.method, r.http, r.ms, r.provider, r.channel, r.type, r.journey, r.workflow, r.dealer, r.region, r.order, r.attempt, r.status, r.acked_by, oneLine(r.request, 32000), oneLine(r.response, 32000)]);
     const S = d.sum, sumRows = [['Live error control board — export'], []];
     d.filters.forEach(([k, v]) => sumRows.push([k, v]));
     sumRows.push([], ['Totals', 'Open', 'Total'], ['All', S.open, S.total], []);
@@ -354,8 +477,10 @@ function mount(app, deps) {
     sumRows.push([], ['By team', 'Open', 'Total']); Object.entries(S.byTeam).forEach(([t, v]) => sumRows.push([t, v.open, v.total]));
     sumRows.push([], ['By priority', 'Open', 'Total']); Object.entries(S.byPriority).forEach(([p, v]) => sumRows.push(['P' + p, v.open, v.total]));
     sumRows.push([], ['By provider', 'Open', 'Total']); (S.byProvider || []).forEach(p => sumRows.push([p.label, p.open, p.total]));
+    sumRows.push([], ['By channel', 'Open', 'Total']); (S.byChannel || []).forEach(c => sumRows.push([c.label, c.open, c.total]));
+    sumRows.push([], ['By type', 'Open', 'Total']); (S.byType || []).filter(t => t.total > 0).forEach(t => sumRows.push([t.label, t.open, t.total]));
     return xlsx.build([
-      { name: 'Errors', rows: [HEAD, ...body], numericCols: [8, 9], widths: [19, 8, 10, 26, 14, 40, 44, 8, 7, 12, 10, 10, 14, 10, 14, 22, 9, 22, 60, 60] },
+      { name: 'Errors', rows: [HEAD, ...body], numericCols: [8, 9], widths: [19, 8, 10, 26, 14, 40, 44, 8, 7, 12, 10, 16, 11, 11, 20, 14, 10, 14, 22, 9, 22, 60, 60] },
       { name: 'Summary', rows: sumRows, numericCols: [1, 2, 3], widths: [34, 30, 12, 10, 10, 12] },
     ]);
   }
@@ -377,9 +502,12 @@ function mount(app, deps) {
     doc.table([{ label: 'Team', w: 20 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], Object.entries(S.byTeam).map(([t, v]) => [t, String(v.open), String(v.total)]));
     doc.table([{ label: 'Priority', w: 20 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], Object.entries(S.byPriority).map(([p, v]) => ['P' + p, String(v.open), String(v.total)]));
     if ((S.byProvider || []).length) doc.table([{ label: 'Provider', w: 20 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], S.byProvider.map(p => [p.label, String(p.open), String(p.total)]));
+    doc.h2('Summary - by channel / type');
+    doc.table([{ label: 'Channel', w: 24 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], (S.byChannel || []).map(c => [c.label, String(c.open), String(c.total)]));
+    doc.table([{ label: 'Type', w: 24 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], (S.byType || []).filter(t => t.total > 0).map(t => [t.label, String(t.open), String(t.total)]));
     doc.h2(`Errors - ${d.flat.length} row(s)${d.capped ? ' (PDF capped - the xlsx export holds the full list)' : ''}`);
-    doc.table([{ label: 'Time (KSA)', w: 13 }, { label: 'P', w: 4 }, { label: 'Category / code', w: 16 }, { label: 'Endpoint', w: 20 }, { label: 'ms', w: 5, align: 'right' }, { label: 'Dealer', w: 8 }, { label: 'Status', w: 7 }, { label: 'Request', w: 22 }, { label: 'Response', w: 22 }],
-      d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, `${r.category}${r.code ? ' - ' + r.code : ''}`, r.endpoint || '—', r.ms === '' ? '—' : String(r.ms), r.dealer || '—', r.status, oneLine(r.request, 160) || '—', oneLine(r.response, 160) || '—']),
+    doc.table([{ label: 'Time (KSA)', w: 12 }, { label: 'P', w: 4 }, { label: 'Category / code', w: 15 }, { label: 'Channel', w: 8 }, { label: 'Type', w: 8 }, { label: 'Endpoint', w: 17 }, { label: 'ms', w: 5, align: 'right' }, { label: 'Dealer', w: 7 }, { label: 'Status', w: 6 }, { label: 'Request', w: 19 }, { label: 'Response', w: 19 }],
+      d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, `${r.category}${r.code ? ' - ' + r.code : ''}`, (CHAN[r.chan] || {}).short || r.channel, r.type + (r.journey ? ' - ' + r.journey : ''), r.endpoint || '—', r.ms === '' ? '—' : String(r.ms), r.dealer || '—', r.status, oneLine(r.request, 140) || '—', oneLine(r.response, 140) || '—']),
       { size: 6.8, rowColor: ri => d.flat[ri].priority <= 1 ? CC.red : (d.flat[ri].priority === 2 ? CC.amber : null) });
     doc.p('Identifiers are masked as on the board; full bodies and end-to-end traces stay in the console (Fixed > Errors > open a row > Open full trace).', { color: CC.muted, size: 8 });
     return doc.buffer();
@@ -390,7 +518,7 @@ function mount(app, deps) {
     const q = req.query || {}; const format = q.format === 'pdf' ? 'pdf' : 'xlsx';
     try {
       const d = await exportData(q, req, format === 'pdf' ? 400 : 5000);
-      if (audit) audit(req, 'fixed.errors.export', format, { rows: d.flat.length, range: q.range || null, channel: q.channel || null, provider: q.provider || null, category: q.category || null });
+      if (audit) audit(req, 'fixed.errors.export', format, { rows: d.flat.length, range: q.range || null, channel: q.channel || null, type: q.type || null, provider: q.provider || null, category: q.category || null });
       const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
       res.setHeader('Content-Disposition', `attachment; filename="fixed-errors_${q.range || 'today'}_${stamp}.${format}"`);
       if (format === 'pdf') { res.setHeader('Content-Type', 'application/pdf'); return res.send(exportPdf(d)); }
@@ -402,7 +530,7 @@ function mount(app, deps) {
   app.get('/api/fixed/errors/live',    gate, wrap((q, req) => live(q, req)));
   app.get('/api/fixed/errors/detail',  gate, wrap((q, req) => detail(q, req)));
   app.post('/api/fixed/errors/resolve', gate, wrap((q, req) => resolve(q, req)));
-  app.get('/api/fixed/errors/taxonomy', gate, (req, res) => res.json({ taxonomy: TAXONOMY, teams: TEAMS, spike: SPIKE }));
+  app.get('/api/fixed/errors/taxonomy', gate, (req, res) => res.json({ taxonomy: TAXONOMY, teams: TEAMS, spike: SPIKE, channels: CHANNELS, types: TYPES }));
 }
 
-module.exports = { mount, TAXONOMY, TEAMS, SPIKE, effectiveSeverity, parseWindow };
+module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CHANNEL_EXPR, TYPE_EXPR, effectiveSeverity, parseWindow };

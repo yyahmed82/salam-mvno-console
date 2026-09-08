@@ -3,6 +3,40 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.18] — 2026-09-08 — Fixed › Errors: every channel, with Channel and Type
+### Changed
+- **Fixed › Errors covers all four Fixed channels** — SDA dealer app, QR codes, **Web e-purchase (consumer-direct)** and
+  the **Salam Home app** — instead of SDA + QR only. The board now reads the two read models of the same nexus stream
+  and partitions them so nothing is counted twice and nothing is hidden: SDA + QR from prod `sda_ops` (whose ingest
+  still folds the app's PULSE channel into referral-less e-purchase — the reason "consumer-direct" used to be excluded),
+  Web + Salam Home app from `sda_ops_beta` (PULSE → `salamhome`, consumer-direct stored, salamHome* journeys mapped).
+  Without `OPS_BETA_DATABASE_URL` every channel is read from `sda_ops`. Summary, live rows, escalation counts
+  (last-3h), detail, similar cases, api_calls and exports all follow the row's own source (`src`).
+- **Two new columns** on the board: **Channel** (SDA · QR code · Web e-purchase · Salam Home app) and **Type**
+  (FTTH · FTTB · 5G HomeFi · 5G FWA · 5G (plan) · Lead · Unknown), the type derived from the attempt's workflow
+  (`ftth` / `ePurchaseFTTH` / `salamHomeRelocationFTTH` → FTTH, `fttb` → FTTB, `fiveGWhiteLabel` / relocation WL·Own →
+  5G HomeFi, `fiveGFWA` → 5G FWA, `promoters` → Lead) then from the plan text; Salam Home journeys also show what the
+  customer was doing (Relocation · Freeze · Change plan · Renew …). Dealer / QR cell reads "consumer-direct" (web) or
+  "customer (app)" instead of "unattributed".
+- **Two new chip rows** — **Channel** and **Type** — under Provider, counted like the provider chips (a chip keeps its
+  number while it is selected; other filters still apply). The channel `<select>` is gone; the hub's channel chip is
+  still honoured (`epurchase` = QR + Web). `?channel=sda|qr|web|salamhome&type=…` on every errors API.
+- Source freshness on the board: "SDA · QR code ← sda_ops · last event 4m ago · Web e-purchase · Salam Home app ←
+  sda_ops_beta · last event 2m ago" — red when a read model is silent for > 2 h or unreachable, so a stalled watcher
+  is visible where the team looks, not only in the healthcheck mail.
+- Exports (XLSX / PDF) carry Channel, Type, Journey and Workflow columns plus by-channel / by-type summaries; filters
+  block lists Channel and Type.
+- Live paging cursor is now the timestamp of the last row (sources are merged), `OPS_BETA_POOL_MAX` (2) for the beta
+  pool. Phone: the table scrolls sideways, an opened row's detail stays pinned to the screen.
+- Fixed › Diagrams on prod: the four iframe pages (`fixed-diagrams/*.html` + mermaid) were never in the deploy bundle
+  ("Cannot GET /fixed-diagrams/salam-journeys-explorer.html") — `deploy.sh` now ships the folder like `assets/`.
+- Healthcheck: "console connections" warn / crit now default to the console's own pool budget (+2 / +8, computed from the
+  db.js pool maxes and the configured sources) instead of the donor's fixed 12 / 18 — every unified pool shares one role
+  on 121, so 12 was below normal load and flapped; the local-replica probe uses the same budget (same server, same role).
+- Verified on a local Postgres with two databases seeded to mirror prod (PULSE folded) and beta (mapped): 9 events →
+  4 SDA · 1 QR · 1 Web · 3 app, types FTTH 5 / FTTB 1 / 5G HomeFi 1 / 5G 1 / Lead 1, no duplicate for the same
+  event id, cursor paging, legacy `channel=epurchase`, detail via `src`, XLSX + PDF; single-source fallback.
+
 ## [2.0.0-alpha.17] — 2026-09-07 — Demo mode: record once, replay instantly
 ### Added
 - **Settings → Demo mode** (`democfg.js`, `#settings-demo`, cap `manageSync`) — record-and-replay at the API boundary

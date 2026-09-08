@@ -75,7 +75,7 @@ const roPool = (url, name, max = 3, timeoutMs = 15000) => {
   return pool;
 };
 const ops      = roPool(process.env.OPS_DATABASE_URL      || '', 'salam_unified_ops_ro',      Number(process.env.OPS_POOL_MAX) || 3);
-const opsBeta  = roPool(process.env.OPS_BETA_DATABASE_URL || '', 'salam_unified_opsbeta_ro',  1);   // B2C / Salam Home app rows (beta schema)
+const opsBeta  = roPool(process.env.OPS_BETA_DATABASE_URL || '', 'salam_unified_opsbeta_ro',  Number(process.env.OPS_BETA_POOL_MAX) || 2);   // B2C read model (Web e-purchase + Salam Home app) — the errors board runs its chip counts in parallel
 const nexus    = roPool(process.env.NEXUS_DATABASE_URL    || '', 'salam_unified_nexus_ro',    2);
 const payments = roPool(process.env.PAYMENTS_DATABASE_URL || '', 'salam_unified_payments_ro', 2);
 for (const [n, p] of [['OPS', ops], ['OPS_BETA', opsBeta], ['NEXUS', nexus], ['PAYMENTS', payments]])

@@ -50,6 +50,7 @@ cp deploy152/find-activation-ledger.cjs "$STAGE/server/find-activation-ledger.cj
 cp deploy152/dealer-check.cjs  "$STAGE/server/dealer-check.cjs" 2>/dev/null || true      # Dealer 360 CLI (in-process, no HTTP session needed)
 cp deploy152/test-smtp.cjs "$STAGE/server/test-smtp.cjs" 2>/dev/null || true                  # needs nodemailer
 cp deploy152/sync-watchdog.cjs "$STAGE/server/sync-watchdog.cjs" 2>/dev/null || true # needs pg → beside node_modules
+cp deploy152/check-fixed-sources.cjs "$STAGE/server/check-fixed-sources.cjs" 2>/dev/null || true  # Fixed › Errors read-model census (read-only, needs pg + src/)
 cp deploy152/install-watchdog.sh "$STAGE/install-watchdog.sh" 2>/dev/null || true
 cp server/package.json        "$STAGE/server/"
 # build stamp → /api/version reports the milestone actually shipped (VERSION file + git commit/tag)
@@ -62,6 +63,7 @@ cp ./*.js ./*.html            "$STAGE/web/" 2>/dev/null || true
 cp ./*.json ./*.md            "$STAGE/web/" 2>/dev/null || true
 rm -f "$STAGE/web/ecosystem.prod.config.js"
 [ -d assets ] && cp -R assets "$STAGE/web/"
+[ -d fixed-diagrams ] && cp -R fixed-diagrams "$STAGE/web/"   # Fixed › Diagrams iframe pages (+ mermaid.min.js)
 if [ "$MODE" = "--full" ]; then
   echo "▸ including node_modules (full mode)…"
   ( cd server && npm install --omit=dev --no-audit --no-fund --silent )
@@ -109,6 +111,7 @@ else
   cp -f /tmp/csync/web/* "$APP/web/" 2>/dev/null || true
   [ -f /tmp/csync/ecosystem.prod.config.js ] && cp -f /tmp/csync/ecosystem.prod.config.js "$APP/ecosystem.prod.config.js"
   [ -d /tmp/csync/web/assets ] && cp -R /tmp/csync/web/assets "$APP/web/"
+  [ -d /tmp/csync/web/fixed-diagrams ] && cp -R /tmp/csync/web/fixed-diagrams "$APP/web/"
   cp -f /tmp/csync/server/healthcheck.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/postdeploy-check.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/find-osb-log-table.cjs "$APP/server/" 2>/dev/null || true

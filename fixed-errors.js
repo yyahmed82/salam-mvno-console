@@ -14,7 +14,13 @@
   const TONE={red:{bg:"rgba(220,76,76,.16)",fg:"#dc2626"},amber:{bg:"rgba(210,153,34,.16)",fg:"var(--warn-fg)"},muted:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"}};
   const ID_FIELDS=[["serviceNo","Service no. (FTTH… / 5G no.)"],["odb","ODB / plate no (ODB: prefix ok)"],["iccid","SIM ICCID"],["cpe","CPE serial"],["msisdn","MSISDN / mobile"],["custCode","Customer code (custCode)"],["customerId","Customer ID"],["workflowId","Workflow ID (wf_st_…)"]];
   const LS=k=>{ try{ return localStorage.getItem(k); }catch(e){ return null; } };
-  const S={ win:LS("fixed_err_win")||"today", channel:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", category:"", tech:"all", find:"", ids:{}, expanded:null, timer:null, tick:0 };
+  const S={ win:LS("fixed_err_win")||"today", channel:"", type:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", category:"", tech:"all", find:"", ids:{}, expanded:null, timer:null, tick:0 };
+  /* channel + product type pills — same hue family in light and dark (tokens), never the violet business marker */
+  const CH_STYLE={ sda:{bg:"rgba(14,159,90,.14)",fg:"var(--green,#0e9f5a)"}, qr:{bg:"rgba(13,148,136,.14)",fg:"#0d9488"}, web:{bg:"rgba(37,99,235,.13)",fg:"#2563eb"}, salamhome:{bg:"rgba(217,119,6,.14)",fg:"var(--warn-fg,#b45309)"} };
+  const TY_STYLE={ ftth:{bg:"rgba(14,159,90,.12)",fg:"var(--green,#0e9f5a)"}, fttb:{bg:"rgba(5,150,105,.12)",fg:"#047857"}, "5gwl":{bg:"rgba(37,99,235,.12)",fg:"#2563eb"}, "5gfwa":{bg:"rgba(79,70,229,.12)",fg:"#4338ca"}, "5g":{bg:"rgba(37,99,235,.10)",fg:"#2563eb"}, lead:{bg:"rgba(217,119,6,.12)",fg:"var(--warn-fg,#b45309)"}, unknown:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"} };
+  const CH_LABEL={ sda:"SDA", qr:"QR code", web:"Web e-purchase", salamhome:"Salam Home app" };
+  const chanPill=r=>{ const esc=FX().esc; const k=r.chan||"", st=CH_STYLE[k]||TY_STYLE.unknown; return `<span class="fe-pill" style="background:${st.bg};color:${st.fg}" title="${esc(r.chanLabel||"")}">${esc(CH_LABEL[k]||r.chanLabel||k||"—")}</span>`; };
+  const typePill=r=>{ const esc=FX().esc; const k=r.type||"unknown", st=TY_STYLE[k]||TY_STYLE.unknown; return `<span class="fe-pill" style="background:${st.bg};color:${st.fg}" title="${esc(r.workflow||"")}">${esc(r.typeLabel||k)}</span>${r.journey?`<span class="fe-jr">${esc(r.journey)}</span>`:""}`; };
   const caps=()=>{ try{ const s=window.opsSession&&window.opsSession(); return (s&&s.me&&s.me.caps)||{}; }catch(e){ return {}; } };
   const fmtT=v=>{ if(!v) return "—"; const d=new Date(v); return isNaN(d)?"—":d.toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"Asia/Riyadh"}); };
   const rel=v=>{ if(!v) return "never"; const ms=Date.now()-new Date(v).getTime(); if(ms<0) return "just now"; const m=Math.floor(ms/6e4); if(m<60) return m+"m ago"; const h=Math.floor(m/60); if(h<48) return h+"h ago"; return Math.floor(h/24)+" days ago"; };
@@ -73,10 +79,17 @@
     #fxErr .fe-sim{border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:var(--card2,#f8fafc)} #fxErr .fe-sim b.t{display:block;font-size:13px;margin-bottom:6px} #fxErr .fe-sim .f{display:flex;flex-wrap:wrap;gap:18px;font-size:12.5px} #fxErr .fe-sim .f span span{color:var(--muted)}
     #fxErr .fe-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
     #fxErr .fe-empty{padding:16px;color:var(--muted);font-size:13px}
+    #fxErr .fe-pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;line-height:1.4}
+    #fxErr .fe-jr{display:block;font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap}
+    #fxErr .fe-dim{font-size:12px;color:var(--muted);margin-right:2px;min-width:62px;display:inline-block}
+    #fxErr #feRows{overflow-x:auto;-webkit-overflow-scrolling:touch} #fxErr table.fe-tbl{min-width:760px}
+    #fxErr .fe-src{font-size:11px;color:var(--muted)} #fxErr .fe-src b{font-weight:700;color:var(--ink)} #fxErr .fe-src .stale{color:#dc2626;font-weight:700}
+    @media (max-width:700px){#fxErr table.fe-tbl{min-width:640px;font-size:12px} #fxErr .fe-tbl .c-region,#fxErr .fe-tbl th.c-region{display:none} #fxErr .fe-tbl th,#fxErr .fe-tbl td{padding-left:8px;padding-right:8px} #fxErr .fe-tbl td:nth-child(2){white-space:normal!important;min-width:64px}
+      #fxErr .fe-x td{padding:12px 10px 14px} #fxErr .fe-x .fe-xgrid{position:sticky;left:0;width:calc(100vw - 62px);max-width:calc(100vw - 62px)} #fxErr .fe-what{white-space:normal;word-break:break-word} #fxErr .fe-io pre{font-size:11px} #fxErr .fe-sim .f{gap:10px 14px}}
     #fxErr .fe-btn.fe-exp{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);font-weight:700} #fxErr .fe-btn.fe-exp:hover{background:var(--green,#0e9f5a);color:#fff} #fxErr .fe-btn.fe-exp:disabled{opacity:.6;cursor:progress}
   `;
   function qs(){ const ch=S.channel||"";
-    let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}`;
+    let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.type?`&type=${encodeURIComponent(S.type)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}`;
     if(S.find) q+=`&find=${encodeURIComponent(S.find)}`; for(const [k] of ID_FIELDS) if(S.ids[k]) q+=`&${k}=${encodeURIComponent(S.ids[k])}`; return q; }
 
   async function render(host,fx){
@@ -87,12 +100,11 @@
     const ch=S.channel||"";
     host.innerHTML=`<div id="fxErr"><style>${STYLE}</style>
       <h1>Live error control board</h1>
-      <div class="fe-sub">SDA &amp; QR journey errors as they happen — filter by team / category / priority and time window; open a row to see the failed step, the request / response and how often it has happened before.</div>
+      <div class="fe-sub">Every Fixed sales &amp; service channel — SDA dealer app, QR codes, Web e-purchase and the Salam Home app — as errors happen. Filter by team / priority / provider / channel / product type and time window; open a row for the failed step, the request / response and how often it has happened before.</div>
       <div class="fe-cards">
         <div class="fe-card">
           <div class="fe-chips">${WINDOWS.map(([k,l])=>chip(S.win===k,l,`class="fe-win" data-w="${k}"`)).join("")}</div>
-          <select id="feCh" class="fe-in">
-            <option value="" ${ch===""?"selected":""}>All channels</option><option value="sda" ${ch==="sda"?"selected":""}>SDA (dealer)</option><option value="epurchase" ${ch==="epurchase"?"selected":""}>QR / e-purchase</option><option value="salamhome" ${ch==="salamhome"?"selected":""}>Salam Home app</option></select>
+          <div id="feSrc" class="fe-src">Channels: SDA · QR codes · Web e-purchase · Salam Home app — pick one in the <b>Channel</b> row below; product <b>Type</b> (FTTH / FTTB / 5G HomeFi …) next to it.</div>
           <div class="fe-foot"><label><input id="feOpen" type="checkbox" ${S.openOnly?"checked":""}> Open only</label><span id="feCounts" class="fe-counts"></span><button id="feClear" class="fe-btn">Clear</button><button id="feXlsx" class="fe-btn fe-exp" title="Excel: filters, period, summary and every error row (endpoint, request, response, response time) — up to 5 000 rows">⬇ XLSX</button><button id="fePdf" class="fe-btn fe-exp" title="PDF: same content, up to 400 rows">⬇ PDF</button></div>
         </div>
         <div class="fe-card">
@@ -107,18 +119,19 @@
       <div id="feTeams" class="fe-chips" style="margin-bottom:8px"></div>
       <div id="fePrio" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feProv" class="fe-chips" style="margin-bottom:4px"></div>
+      <div id="feChan" class="fe-chips" style="margin-bottom:4px"></div>
+      <div id="feType" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feTiles" class="fe-tiles"><div class="fe-tile" style="cursor:default;color:var(--muted)">${window.salamLoader?window.salamLoader("Reading error events…"):"Loading…"}</div></div>
       <div class="fe-tablecard"><div id="feRows"></div><div id="feMore" style="padding:10px;text-align:center"></div></div>
       <div id="feStamp" class="rl" style="font-size:11px;color:var(--muted);margin-top:8px"></div></div>`;
     host.querySelectorAll(".fe-win").forEach(b=>b.onclick=()=>{ S.win=b.dataset.w; try{ localStorage.setItem("fixed_err_win",S.win); }catch(e){} render(host,fx); });
     host.querySelectorAll(".fe-tech").forEach(b=>b.onclick=()=>{ S.tech=b.dataset.t; render(host,fx); });
-    host.querySelector("#feCh").onchange=e=>{ S.channel=e.target.value; render(host,fx); };
     host.querySelector("#feOpen").onchange=e=>{ S.openOnly=e.target.checked; render(host,fx); };
     const read=()=>{ S.find=host.querySelector("#feFind").value.trim(); for(const [k] of ID_FIELDS) S.ids[k]=host.querySelector("#feId-"+k).value.trim(); };
     let deb=null; const go=()=>{ clearTimeout(deb); read(); S.category=""; load(host,fx,true); };
     host.querySelectorAll("input[id^=feId-],#feFind").forEach(i=>{ i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } }; i.oninput=()=>{ clearTimeout(deb); deb=setTimeout(go,450); }; });
     host.querySelector("#feXlsx").onclick=()=>exportBoard(host,fx,"xlsx"); host.querySelector("#fePdf").onclick=()=>exportBoard(host,fx,"pdf");
-    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",openOnly:true,team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},expanded:null}); render(host,fx); };
+    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",type:"",openOnly:true,team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},expanded:null}); render(host,fx); };
     host.querySelector("#feFind").focus();
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }
@@ -166,6 +179,21 @@
         +provs.filter(p=>p.provider!=="-").map(p=>chip(S.provider===p.provider,`${esc(p.label)} · ${provN(p)}`,`class="fe-prov" data-v="${esc(p.provider)}"`)).join("")
         +provs.filter(p=>p.provider==="-").map(p=>chip(S.provider==="-",`no provider · ${provN(p)}`,`class="fe-prov" data-v="-" title="events whose failing request carries no provider (Nafath, payment, BSS …)"`)).join(""):"";
       host.querySelectorAll(".fe-prov").forEach(b=>b.onclick=()=>{ S.provider=(S.provider===b.dataset.v)?"":b.dataset.v; load(host,fx,true); });
+      /* channel chips — the four Fixed channels, always shown (a zero tells the team the channel is quiet, not missing) */
+      const chN=x=>fmt(S.openOnly?x.open:x.total); const chSel=S.channel; const chans=sum.byChannel||[];
+      const chOn=k=>chSel===k||(chSel==="epurchase"&&(k==="qr"||k==="web"));
+      $("#feChan").innerHTML=`<span class="fe-dim">Channel:</span>`+chip(!chSel,"All",`class="fe-chan" data-v=""`)
+        +chans.map(c=>chip(chOn(c.channel),`${esc(c.label)} · ${chN(c)}`,`class="fe-chan" data-v="${esc(c.channel)}" title="${esc(c.desc||"")}"`)).join("");
+      host.querySelectorAll(".fe-chan").forEach(b=>b.onclick=()=>{ S.channel=(S.channel===b.dataset.v)?"":b.dataset.v; load(host,fx,true); });
+      /* type chips — product of the journey (workflow, then plan text); only types with data, plus the selected one */
+      const types=(sum.byType||[]).filter(t=>(S.openOnly?t.open:t.total)>0||S.type===t.type);
+      $("#feType").innerHTML=(types.length||S.type)?`<span class="fe-dim">Type:</span>`+chip(!S.type,"All",`class="fe-type" data-v=""`)
+        +types.map(t=>chip(S.type===t.type,`${esc(t.label)} · ${chN(t)}`,`class="fe-type" data-v="${esc(t.type)}" title="${esc(t.desc||"")}"`)).join(""):"";
+      host.querySelectorAll(".fe-type").forEach(b=>b.onclick=()=>{ S.type=(S.type===b.dataset.v)?"":b.dataset.v; load(host,fx,true); });
+      /* which read model answers which channel, and how fresh each is */
+      const srcEl=$("#feSrc"); if(srcEl&&sum.sources&&sum.sources.length){ const SRC={ops:"sda_ops",beta:"sda_ops_beta"};
+        srcEl.innerHTML=sum.sources.map(x=>{ const bk=(x.buckets||[]).map(k=>CH_LABEL[k]||k).join(" · "); if(x.error) return `<span><b>${esc(bk)}</b> — <span class="stale">source unavailable</span> (${esc(SRC[x.src]||x.src)})</span>`;
+          const age=x.latest?Date.now()-new Date(x.latest).getTime():null; const stale=age==null||age>2*3600e3; return `<span><b>${esc(bk)}</b> ← ${esc(SRC[x.src]||x.src)} · last event <span class="${stale?"stale":""}">${esc(rel(x.latest))}</span></span>`; }).join(" &nbsp;·&nbsp; "); }
       const tiles=sum.byCategory.filter(c=>(!S.team||c.team===S.team)&&(S.prio===""||String(c.priority)===S.prio));
       $("#feTiles").innerHTML=tiles.length?tiles.map(c=>{ const on=S.category===c.category; const t=TONE[c.tone]||TONE.muted;
         return `<button class="fe-tile${on?" on":""}" data-c="${esc(c.category)}">
@@ -176,21 +204,24 @@
       drawRows(host,fx,live.rows,first);
       $("#feMore").innerHTML=live.nextCursor?`<button id="feMoreBtn" class="btn" style="font-size:11px;padding:5px 12px">Load more</button>`:"";
       const mb=$("#feMoreBtn"); if(mb) mb.onclick=async()=>{ mb.disabled=true; try{ const more=await fx.api("/api/fixed/errors/live?"+lq+"&limit=100&cursor="+encodeURIComponent(live.nextCursor)); live.rows=live.rows.concat(more.rows); live.nextCursor=more.nextCursor; drawRows(host,fx,live.rows,true); $("#feMore").innerHTML=more.nextCursor?`<span class="rl" style="color:var(--muted);font-size:11px">more available — narrow the window</span>`:""; }catch(e){ mb.disabled=false; } };
-      $("#feStamp").textContent=`window ${fx.ts(sum.from)} → ${fx.ts(sum.to)} KSA · consumer-direct e-purchase excluded · refreshed ${fx.ts(new Date().toISOString(),true)} · auto-refresh 60 s`;
+      $("#feStamp").textContent=`window ${fx.ts(sum.from)} → ${fx.ts(sum.to)} KSA · all channels (SDA · QR · Web · Salam Home app) · refreshed ${fx.ts(new Date().toISOString(),true)} · auto-refresh 60 s`;
     }catch(e){ if(my!==S.tick) return; const t=host.querySelector("#feTiles"); if(t) t.innerHTML=`<div class="albanner" style="grid-column:1/-1;border-left:4px solid #dc2626;padding:12px 14px"><b>Error board unavailable</b> — ${esc(e.message)}</div>`; }
   }
 
   function drawRows(host,fx,rows,keepExpanded){
     const esc=fx.esc; const el=host.querySelector("#feRows"); if(!el) return;
-    const dealer=r=>{ if(r.channel==="epurchase"&&r.referral_code) return `<a class="fe-link" href="#fixed?tab=qr&ref=${encodeURIComponent(r.referral_code)}">${esc(r.referral_code)} <small>QR ↗</small></a>`;
+    const dealer=r=>{ if(r.chan==="qr"&&r.referral_code) return `<a class="fe-link" href="#fixed?tab=qr&ref=${encodeURIComponent(r.referral_code)}">${esc(r.referral_code)} <small>QR ↗</small></a>`;
       if(r.dealer_code) return `<a class="fe-link" href="#fixed?tab=map&dealer=${encodeURIComponent(r.dealer_id||r.dealer_code)}">${esc(r.dealer_code)} <small>↗</small></a>`;
+      if(r.chan==="web") return `<span style="color:var(--muted)" title="Public e-purchase order without a referral code — no dealer involved">consumer-direct</span>`;
+      if(r.chan==="salamhome") return `<span style="color:var(--muted)" title="Customer self-service in the Salam Home app — no dealer involved">customer (app)</span>`;
       return `<span style="color:var(--muted)" title="No dealer/staff captured for this journey">unattributed</span>`; };
     const status=r=>r.resolved?`<span class="fe-st resolved">resolved</span>`:r.acked?`<span class="fe-st acked" title="acked by ${esc(r.acked_by||"")}">acked</span>`:`<span class="fe-st open">open</span>`;
-    el.innerHTML=`<table class="fe-tbl"><thead><tr>${["PRI","TIME","CATEGORY","DEALER / QR","REGION","STATUS"].map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row${S.expanded===r.id?" open":""}" data-id="${esc(r.id)}" tabindex="0" title="Open: failed step, request / response, similar cases">
+    el.innerHTML=`<table class="fe-tbl"><thead><tr>${[["PRI"],["TIME"],["CATEGORY"],["CHANNEL"],["TYPE"],["DEALER / QR"],["REGION","c-region"],["STATUS"]].map(([h,c])=>`<th class="${c||""}">${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row${S.expanded===r.id?" open":""}" data-id="${esc(r.id)}" tabindex="0" title="Open: failed step, request / response, similar cases">
         <td>${prioBadge(r.priority)}</td><td style="white-space:nowrap">${fmtT(r.occurred_at)}</td>
         <td>${catBadge(r)}${r.code?`<span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:8px">${esc(r.code)}</span>`:""}</td>
-        <td class="fe-nostop">${dealer(r)}</td><td>${esc(r.region||"—")}</td><td style="white-space:nowrap">${status(r)}<span class="fe-caret" aria-hidden="true">›</span></td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="6"></td></tr>`).join("")
-      :`<tr><td colspan="6" class="fe-empty">No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""||S.provider?` (team / priority / provider filter active)`:""}.</td></tr>`}</tbody></table>`;
+        <td>${chanPill(r)}</td><td>${typePill(r)}</td>
+        <td class="fe-nostop">${dealer(r)}</td><td class="c-region">${esc(r.region||"—")}</td><td style="white-space:nowrap">${status(r)}<span class="fe-caret" aria-hidden="true">›</span></td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="8"></td></tr>`).join("")
+      :`<tr><td colspan="8" class="fe-empty">No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""||S.provider||S.channel||S.type?` (team / priority / provider / channel / type filter active)`:""}.</td></tr>`}</tbody></table>`;
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); tr.click(); } });
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; e.preventDefault();
       const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${id.replace(/[^\w-]/g,"")}"]`); if(!x) return;
@@ -204,7 +235,7 @@
   async function expand(host,fx,cell,row){
     const esc=fx.esc, fmt=fx.fmt; const c=caps();
     cell.innerHTML=`<span style="color:var(--muted);font-size:12px">loading…</span>`;
-    let d; try{ d=await fx.api("/api/fixed/errors/detail?id="+encodeURIComponent(row.id)); }catch(e){ cell.innerHTML=`<span style="color:#dc2626;font-size:12px">${esc(e.message)}</span>`; return; }
+    let d; try{ d=await fx.api("/api/fixed/errors/detail?id="+encodeURIComponent(row.id)+(row.src?"&src="+encodeURIComponent(row.src):"")); }catch(e){ cell.innerHTML=`<span style="color:#dc2626;font-size:12px">${esc(e.message)}</span>`; return; }
     if(!cell.isConnected) return;
     const pre=(html)=>`<pre>${html==null?"—":html}</pre>`;
     const draw=(req,res,unmasked,extra)=>`<div class="fe-io"><div><h5>Request ${unmasked?`<span class="fe-pii" title="Raw customer data fetched live from nexus — this view is recorded in the audit log">⚠ PII UNMASKED — audited</span>`:""}</h5>${pre(renderReq(req,row.step))}</div>
@@ -213,7 +244,7 @@
     const tl=(d.timeline||[]);
     cell.innerHTML=`<div class="fe-xgrid">
       <div class="fe-what"><span class="k">What happened: </span><b style="font-weight:600">${esc(d.event.message||d.event.label)}</b>${d.event.step?` <span class="k">· step ${esc(d.event.step)}</span>`:""}
-        <span class="rl" style="color:var(--muted);font-size:11px;margin-left:10px">${esc(d.event.label)} · ${esc(d.event.team)} · base P${d.event.basePriority}${d.event.order_number?` · order ${esc(d.event.order_number)}`:""}${d.event.acct_masked?` · acct ${esc(d.event.acct_masked)}`:""}${d.event.cust_masked?` · cust …${esc(d.event.cust_masked)}`:""}${d.event.dealer_name?` · ${esc(d.event.dealer_name)}`:""}</span></div>
+        <span class="rl" style="color:var(--muted);font-size:11px;margin-left:10px">${esc(d.event.chanLabel||row.chanLabel||"")}${d.event.typeLabel?` · ${esc(d.event.typeLabel)}`:""}${d.event.journey?` · ${esc(d.event.journey)}`:""}${d.event.workflow?` (${esc(d.event.workflow)})`:""} · ${esc(d.event.label)} · ${esc(d.event.team)} · base P${d.event.basePriority}${d.event.order_number?` · order ${esc(d.event.order_number)}`:""}${d.event.acct_masked?` · acct ${esc(d.event.acct_masked)}`:""}${d.event.cust_masked?` · cust …${esc(d.event.cust_masked)}`:""}${d.event.dealer_name?` · ${esc(d.event.dealer_name)}`:""}</span></div>
       <div id="feBodies">${(d.request!=null||d.response!=null)?draw(d.request,d.response,false):`<div style="color:var(--muted);font-size:12px">No captured request/response for this error (older event — re-ingest or backfill to populate).</div>`}</div>
       <div class="fe-sim"><b class="t">Similar cases <span class="rl" style="font-weight:400;color:var(--muted);font-size:10.5px">signature ${esc(d.event.signature||d.event.category)}</span></b>
         <div class="f"><span><b>${fmt(sim.d30)}</b> in 30d <span>(${fmt(sim.d7)} in 7d · ${fmt(sim.all)} ever)</span></span><span>last seen <b>${esc(rel(sim.lastSeen))}</b></span><span>affected today <b>${fmt(sim.affectedToday)}</b></span><span>median resolve <b>${sim.medianResolveMins!=null?sim.medianResolveMins+"m":"—"}</b></span>${sim.biggestDay?`<span>biggest day <b>${esc(sim.biggestDay.day)}</b> (${fmt(sim.biggestDay.count)})</span>`:""}</div></div>
@@ -227,7 +258,7 @@
     const $=s=>cell.querySelector(s);
     const tb=$("#feTrace"); if(tb) tb.onclick=()=>{ const t=$("#feTl"); t.hidden=!t.hidden; if(!t.innerHTML) t.innerHTML=fx.tbl(["TIME KSA","METHOD","ENDPOINT","STATUS","MS","ERROR","INFO"],tl.map(x=>[fmtT(x.created_at),esc(x.method||""),`<span class="mono">${esc(x.endpoint)}</span>`,`<b style="color:${x.status>=400?"#dc2626":x.status>=200?"var(--green,#0e9f5a)":"inherit"}">${esc(x.status==null?"—":x.status)}</b>`,esc(x.duration_ms==null?"—":x.duration_ms),esc(x.error_class||x.error_msg||""),esc(x.info||"")])); };
     const ub=$("#feUnmask"); if(ub) ub.onclick=async()=>{ if(!confirm("Fetch the RAW (unmasked) request/response for this failing step from nexus? This access is written to the audit log.")) return; ub.disabled=true; ub.textContent="fetching…";
-      try{ const u=await fx.api("/api/fixed/errors/detail?unmask=1&id="+encodeURIComponent(row.id)); const um=u.unmask||{};
+      try{ const u=await fx.api("/api/fixed/errors/detail?unmask=1&id="+encodeURIComponent(row.id)+(row.src?"&src="+encodeURIComponent(row.src):"")); const um=u.unmask||{};
         if(!um.unmaskAvailable){ ub.textContent="Unmask unavailable"; ub.title=um.error||"nexus not configured"; return; }
         if(!um.matched){ ub.textContent="no raw call matched"; return; }
         $("#feBodies").innerHTML=draw(um.request,um.response,true,`<div class="rl" style="font-size:10.5px;color:var(--muted);margin-top:6px">raw endpoint <span class="mono">${esc(um.endpoint||"")}</span> · ${fmtT(um.at)} · ${fmt(um.calls)} api_logs rows${um.context?` · <a href="#" id="feCtx">workflow context</a>`:""}</div>${um.context?`<pre id="feCtxPre" hidden style="margin-top:6px;max-height:260px;overflow:auto;background:var(--card2,#f8fafc);border:1px solid #b7791f;border-radius:10px;padding:12px;font-size:12px;white-space:pre-wrap;word-break:break-word">${esc(pretty(um.context))}</pre>`:""}`);
