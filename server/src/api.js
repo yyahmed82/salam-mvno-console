@@ -6067,4 +6067,5 @@ app.listen(PORT, async () => {
   try { require('./assist').startWarm(); } catch (e) { /* LLM warm-up is best-effort */ }
   try { demo.startWarmup(); } catch (e) { /* cache warm-up is best-effort */ }
   try { require('./prodHealth').start(); } catch (e) { console.error('prod-safety healthcheck:', e.message); }
+  try { respCache.startKeepWarm(); } catch (e) { /* keep-warm is best-effort */ }
 });

@@ -27,6 +27,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   level) — plain-text alternative kept. `node src/cli.js healthcheck [--always|--print]`.
 - Mail shell declares `color-scheme: light only` (+ `bgcolor` on the header/body cells) so Apple Mail / Outlook dark
   mode no longer invert it into a mint header on a dark body.
+- **Response cache made durable and self-warming** (`respCache.js`) — the "Loading…" after a deploy or a sync tick
+  is gone for good: (1) the cache is snapshotted to `cache/respcache.json` every minute and on shutdown and restored
+  at boot, every entry served instantly as *stale* while the real recompute runs behind it; (2) `invalidate()` after a
+  sync now marks entries stale instead of clearing them — nobody pays a full recompute after a tick; (3) **keep-warm**:
+  every TTL the top `RESP_CACHE_WARM_TOP` (40) most-requested URLs that went stale are re-fetched over loopback so hot
+  pages are fresh before anyone asks. `RESP_CACHE_FILE`, `RESP_CACHE_FILE_MAX_MB` (64) tune it.
 ### Fixed
 - Detail drawers (tickets, user panel) opened *under* the sticky header on desktop, hiding the title bar and its ×
   (`.drawer-ov` z-index 210 vs header 1200; the phone rule already had 1300). Base rule raised to 1250.
