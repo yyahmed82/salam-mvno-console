@@ -38,7 +38,7 @@
       </div>
       <div class="ld-sec"><h3>Needs attention <span>open incidents and open Fixed error categories</span></h3><div id="ldAttention" class="ld-att"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-quick">
-        <a href="#subscriber" class="ld-q">◉ Customer 360</a><a href="#alerts" class="ld-q">🔔 Alerts</a><a href="#troubleshoot" class="ld-q">⚡ Troubleshoot</a><a href="#fixed?tab=map" class="ld-q">🗺 SDA map</a><a href="#fixed?tab=errors" class="ld-q">⚠ Fixed errors</a><a href="#analytics" class="ld-q">📈 Analytics</a>
+        <a href="#subscriber" class="ld-q">◉ Customer 360</a><a href="#alerts" class="ld-q" data-biz="mobile">🔔 Alerts</a><a href="#troubleshoot" class="ld-q" data-biz="mobile">⚡ Troubleshoot</a><a href="#fixed?tab=map" class="ld-q" data-biz="fixed">🗺 SDA map</a><a href="#fixed?tab=errors" class="ld-q" data-biz="fixed">⚠ Fixed errors</a><a href="#fixed?tab=alerts" class="ld-q" data-biz="fixed">🔔 Fixed alerts</a><a href="#analytics" class="ld-q" data-biz="mobile">📈 Analytics</a>
       </div>
     </div>`;
     ensureCss(); load();
@@ -49,6 +49,12 @@
     const canM=views().includes("dashboard")&&biz!=="fixed", canF=views().includes("fixed")&&biz!=="mobile";
     // a single-business account sees a single-column home; the other column is removed, not greyed
     const mc=$("#ldMobile"), fc=$("#ldFixed"); if(mc) mc.hidden=(biz==="fixed"); if(fc) fc.hidden=(biz==="mobile");
+    /* single-business account: one full-width column (no empty twin), only that business's quick links,
+     * and the "Needs attention" heading names what it will show */
+    const wrap=$(".ld-wrap"); if(wrap) wrap.classList.toggle("ld-single", biz!=="both");
+    document.querySelectorAll(".ld-q[data-biz]").forEach(a=>{ a.hidden=(biz!=="both"&&a.dataset.biz!==biz); });
+    const attSpan=[...document.querySelectorAll("#view-landing .ld-sec h3 span")].find(x=>/incidents/.test(x.textContent));
+    if(attSpan) attSpan.textContent=biz==="mobile"?"open incidents, anomalies and error categories":biz==="fixed"?"open Fixed error categories":"open incidents and open Fixed error categories";
     const sub=$(".ld-sub"); if(sub&&biz!=="both") sub.textContent=sub.textContent.replace("one console, both businesses", biz==="fixed"?"Fixed business":"Mobile business");
     const P=(p,fb)=>api(p).catch(()=>fb);
     const now=Date.now(), d7=7*864e5;
@@ -161,7 +167,10 @@
     const errs=((f24&&f24.errors)||[]).filter(e=>e.open>0).slice(0,6);
     const right=errs.length?errs.map(e=>`<a href="#fixed?tab=errors" class="ld-row"><span class="ld-sev" style="background:${e.open>1000?"#dc2626":e.open>100?"#d97706":"#2563eb"}">${num(e.open)}</span><span class="ld-row-t">${esc(e.category)}</span><span class="ld-row-s">${num(e.n)} events · last ${ksa(e.last_at)}</span></a>`).join("")
       :`<div class="ld-loading">No open Fixed error categories ✅</div>`;
-    box.innerHTML=`<div class="ld-att-col"><div class="ld-att-h">📱 Mobile · incidents, anomalies, error categories (24 h)</div>${left}</div><div class="ld-att-col"><div class="ld-att-h">🏠 Fixed · open error categories (24 h)</div>${right}</div>`;
+    const bz=(sess().me||{}).business||"both";
+    const colM=`<div class="ld-att-col"><div class="ld-att-h">📱 Mobile · incidents, anomalies, error categories (24 h)</div>${left}</div>`;
+    const colF=`<div class="ld-att-col"><div class="ld-att-h">🏠 Fixed · open error categories (24 h)</div>${right}</div>`;
+    box.innerHTML=bz==="mobile"?colM:bz==="fixed"?colF:colM+colF;
   }
 
   function tips(root){ if(!root||!window.navTipShow) return; root.querySelectorAll("[data-tip]").forEach(el=>{ el.addEventListener("mouseenter",()=>window.navTipShow(el)); el.addEventListener("mouseleave",()=>window.navTipHide()); }); }
@@ -204,6 +213,7 @@
       .ld-green{border-left-color:#0e9f5a} .ld-blue{border-left-color:#2563eb} .ld-red{border-left-color:#dc2626} .ld-amber{border-left-color:#d97706}
       .ld-v{font-size:22px;font-weight:800;line-height:1.1} .ld-l{font-size:10px;letter-spacing:.6px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-top:3px} .ld-s{font-size:11px;color:var(--muted);margin-top:3px}
       .ld-att{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px} @media (max-width:1100px){ .ld-att{grid-template-columns:1fr} }
+      .ld-single .ld-cols,.ld-single .ld-att{grid-template-columns:1fr} .ld-single .ld-col .ld-grid{grid-template-columns:repeat(4,1fr)} @media (max-width:900px){ .ld-single .ld-col .ld-grid{grid-template-columns:repeat(2,1fr)} }
       .ld-att-col{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px} .ld-att-h{font-size:11px;letter-spacing:.8px;font-weight:800;color:var(--muted);margin-bottom:8px;text-transform:uppercase}
       .ld-row{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;padding:7px 8px;border-radius:10px;font-size:12.5px} .ld-row:hover{background:var(--bg)}
       .ld-sev{font-size:10px;font-weight:800;color:#fff;border-radius:6px;padding:2px 7px;min-width:26px;text-align:center} .ld-row-t{font-weight:600} .ld-row-s{margin-left:auto;color:var(--muted);font-size:11px}

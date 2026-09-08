@@ -37,6 +37,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   every TTL the top `RESP_CACHE_WARM_TOP` (40) most-requested URLs that went stale are re-fetched over loopback so hot
   pages are fresh before anyone asks. `RESP_CACHE_FILE`, `RESP_CACHE_FILE_MAX_MB` (64) tune it.
 ### Fixed
+- Home for a single-business account (Mobile-only / Fixed-only) no longer shows the other business's empty column
+  and empty "Needs attention" box: one full-width column, only that business's quick links, heading adapted.
 - Detail drawers (tickets, user panel) opened *under* the sticky header on desktop, hiding the title bar and its ×
   (`.drawer-ov` z-index 210 vs header 1200; the phone rule already had 1300). Base rule raised to 1250.
 
