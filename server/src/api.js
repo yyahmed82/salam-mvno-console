@@ -418,9 +418,10 @@ app.post('/api/users', requireCap('manageUsers'), async (req, res) => {
   res.json({ ok: true });
 });
 app.patch('/api/users/:id', requireCap('manageUsers'), async (req, res) => {
-  const { role, roles: rolesArr, enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen, business } = req.body || {};
+  const { role, roles: rolesArr, enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen, business, ack_mobile, ack_fixed } = req.body || {};
   const sets = [], vals = [];
-  const fields = { enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen };
+  const fields = { enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen,
+    ack_mobile: ack_mobile === undefined ? undefined : !!ack_mobile, ack_fixed: ack_fixed === undefined ? undefined : !!ack_fixed };
   if (business !== undefined && business !== null) {
     if (!roles.BUSINESSES.includes(String(business))) return res.status(400).json({ error: 'business must be mobile | fixed | both' });
     fields.business = String(business);
@@ -3082,12 +3083,44 @@ app.get('/api/incidents/stats', async (req, res) => {
       open_total: t.open_total, unacked: t.unacked, resolved_24h: t.resolved_24h });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* MY INCIDENTS (8 Sep 2026) — the open alerts the caller holds (ack_by) or is assigned to, both sides, with the
+ * clocks an on-call person needs: age since it fired, time since the ack, time in THEIR hands (since the last
+ * ownership change), and an SLA verdict. SLA targets (resolution) per severity — SLA_P1_H etc. in .env override:
+ * P1 4 h · P2 24 h · P3 72 h · P4 7 d. Ack targets: P1 15 min · P2 60 min · P3 4 h. Drives the Home "My incidents" card. */
+const SLA_RESOLVE_H = { P1: Number(process.env.SLA_P1_H) || 4, P2: Number(process.env.SLA_P2_H) || 24, P3: Number(process.env.SLA_P3_H) || 72, P4: Number(process.env.SLA_P4_H) || 168 };
+const SLA_ACK_MIN = { P1: 15, P2: 60, P3: 240, P4: 1440 };
+app.get('/api/incidents/mine', async (req, res) => {
+  try {
+    const me = String(req.sessionEmail || req.actor || '').toLowerCase(); if (!me) return res.json({ me: null, incidents: [] });
+    const rows = (await C.query(`SELECT a.*, r.alert_class,
+        (SELECT max(created_at) FROM incident_comments c WHERE c.alert_id = a.id AND c.author = 'system') AS last_handover_at
+      FROM alerts a LEFT JOIN alert_rules r ON r.key = a.rule_key
+      WHERE a.status = 'open' AND (lower(a.ack_by) = $1 OR lower(a.assignee) = $1)
+      ORDER BY CASE a.severity WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END, a.fired_at`, [me])).rows;
+    const now = Date.now();
+    const incidents = rows.filter(a => segment.userSees(req.business || 'both', segment.segOf(a))).map(a => {
+      const seg = segment.segOf(a);
+      const firedMs = new Date(a.fired_at).getTime(), ackMs = a.ack_at ? new Date(a.ack_at).getTime() : null;
+      const mineSince = a.last_handover_at ? new Date(a.last_handover_at).getTime() : (ackMs || firedMs);
+      const slaH = SLA_RESOLVE_H[a.severity] || SLA_RESOLVE_H.P4, dueMs = firedMs + slaH * 3600e3;
+      const ackTarget = SLA_ACK_MIN[a.severity] || SLA_ACK_MIN.P4, ackMin = ackMs ? Math.round((ackMs - firedMs) / 60000) : null;
+      return { id: a.id, rule_key: a.rule_key, name: a.name, severity: a.severity, team: a.team, alert_class: a.alert_class, segment: seg,
+        role: String(a.ack_by || '').toLowerCase() === me ? (String(a.assignee || '').toLowerCase() === me ? 'holder+assignee' : 'holder') : 'assignee',
+        ack_by: a.ack_by, assignee: a.assignee, fired_at: a.fired_at, ack_at: a.ack_at, last_seen_at: a.last_seen_at, breach_count: a.breach_count,
+        snoozed_until: a.snoozed_until && new Date(a.snoozed_until).getTime() > now ? a.snoozed_until : null,
+        age_min: Math.round((now - firedMs) / 60000), mine_min: Math.round((now - mineSince) / 60000), ack_min: ackMin, ack_target_min: ackTarget, ack_late: ackMin != null && ackMin > ackTarget,
+        sla_hours: slaH, due_at: new Date(dueMs).toISOString(), remaining_min: Math.round((dueMs - now) / 60000), overdue: now > dueMs,
+        link: `${seg === 'fixed' ? '#fixed-alerts' : '#alerts'}?id=${a.id}` };
+    });
+    res.json({ me, incidents, sla: { resolve_h: SLA_RESOLVE_H, ack_min: SLA_ACK_MIN } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 /* who can hold an ack on this side — for the hand-over picker (any ackErrors user; not the full user admin list) */
 app.get('/api/alerts/holders', async (req, res) => {
   try {
-    const seg = segment.forRequest(req, req.query.segment); const biz = segment.BUSINESS_OF[seg === 'all' ? 'mvno' : seg];
-    const r = await C.query(`SELECT email, name, business FROM console_users WHERE enabled = true AND (business = $1 OR business = 'both' OR business IS NULL) ORDER BY name NULLS LAST, email`, [biz]);
-    res.json({ segment: seg, holders: r.rows.map(u => ({ email: u.email, name: u.name || u.email.split('@')[0], business: u.business })) });
+    const seg = segment.forRequest(req, req.query.segment); const col = (seg === 'fixed') ? 'ack_fixed' : 'ack_mobile';
+    const r = await C.query(`SELECT email, name, business FROM console_users WHERE enabled = true AND ${col} = true ORDER BY name NULLS LAST, email`);
+    res.json({ segment: seg, holders: r.rows.map(u => ({ email: u.email, name: u.name || u.email.split('@')[0], business: u.business })), flag: col });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 /* one alert belongs to one business: a Mobile-only user cannot read / ack / snooze a Fixed incident and vice versa */
@@ -3199,9 +3232,10 @@ app.post('/api/alerts/:id/ack', requireCap('ackErrors'), async (req, res) => {
     const b = req.body || {}; const note = String(b.note || '').slice(0, 300).trim();
     let to = String(b.to || '').trim().toLowerCase();
     if (to) {
-      const u = (await C.query(`SELECT email, business, enabled FROM console_users WHERE lower(email)=$1`, [to])).rows[0];
+      const u = (await C.query(`SELECT email, business, enabled, ack_mobile, ack_fixed FROM console_users WHERE lower(email)=$1`, [to])).rows[0];
       if (!u || !u.enabled) return res.status(400).json({ error: `${to} is not an enabled console user` });
-      if (!segment.userSees(roles.normBusiness(u.business), segment.segOf(a))) return res.status(400).json({ error: `${to} is not on the ${segment.LABEL[segment.segOf(a)]} side — cannot hold this ack` });
+      const segA = segment.segOf(a), flag = segA === 'fixed' ? u.ack_fixed : u.ack_mobile;
+      if (!flag) return res.status(400).json({ error: `${to} is not an ack holder for ${segment.LABEL[segA]} — tick ACK · ${segment.SHORT[segA].toUpperCase()} in Settings → Users first` });
     } else to = req.actor;
     const prev = a.ack_by || null;
     const kind = !prev ? 'ack' : (to === req.actor && prev !== req.actor ? 'reack' : (to !== req.actor ? 'handover' : 'ack'));
@@ -3210,7 +3244,13 @@ app.post('/api/alerts/:id/ack', requireCap('ackErrors'), async (req, res) => {
     const line = kind === 'ack' ? `Acknowledged by ${to}` : kind === 'reack' ? `Ack taken over: ${prev} → ${to}` : `Ack handed over: ${prev || '—'} → ${to} by ${req.actor}`;
     if (kind !== 'ack' || note) await C.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1, 'system', $2)`, [req.params.id, line + (note ? ` — ${note}` : '')]);
     await audit(req, 'incident.' + kind, req.params.id, { from: prev, to, note: note || undefined });
-    res.json({ ok: true, kind, ack_by: to, previous: prev });
+    /* mail the new holder (focused incident mail + PDF) and the previous one (short notice) — best-effort, never blocking */
+    let mailed = null;
+    if (kind === 'handover' || kind === 'reack') {
+      try { mailed = await notify.sendHandoverMail({ ...a, ack_by: to }, { from: prev, to, by: req.actor, note, kind }); }
+      catch (e) { mailed = { error: e.message }; console.error('[handover mail]', e.message); }
+    }
+    res.json({ ok: true, kind, ack_by: to, previous: prev, mailed: mailed && { to: !!(mailed.to && mailed.to.sent), previous: !!(mailed.previous && mailed.previous.sent), error: (mailed.to && mailed.to.error) || mailed.error || undefined } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/alerts/:id/assign', requireCap('ackErrors'), async (req, res) => {

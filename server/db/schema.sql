@@ -186,6 +186,13 @@ ALTER TABLE console_users ADD COLUMN IF NOT EXISTS last_login  timestamptz;
 -- business scope (6 Sep 2026): which side of the console the user works on — 'mobile' | 'fixed' | 'both'.
 -- Applied on top of roles: a role's views are intersected with the business at session time (roles.scopeViews).
 ALTER TABLE console_users ADD COLUMN IF NOT EXISTS business    text NOT NULL DEFAULT 'both';
+-- ack holders (8 Sep 2026): who may take / receive an acknowledgement hand-over on each side. Settings → Users →
+-- ACK · MOBILE / ACK · FIXED. Seeded once from the existing "Mail alert" opt-in + business (the on-call people), then
+-- admin-managed. A hand-over to someone without the flag is refused.
+ALTER TABLE console_users ADD COLUMN IF NOT EXISTS ack_mobile boolean;
+ALTER TABLE console_users ADD COLUMN IF NOT EXISTS ack_fixed  boolean;
+UPDATE console_users SET ack_mobile = (mail_alert AND business IN ('mobile','both')) WHERE ack_mobile IS NULL;
+UPDATE console_users SET ack_fixed  = (mail_alert AND business IN ('fixed','both'))  WHERE ack_fixed  IS NULL;
 
 -- prod → local replica incremental-sync progress (one row per table)
 CREATE TABLE IF NOT EXISTS prod_sync_state (

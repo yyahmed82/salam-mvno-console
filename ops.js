@@ -1419,12 +1419,14 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <td><span class="status-pill ${u.enabled?'active':'blocked'}">${u.enabled?'Active':'Blocked'}</span><div class="u-last">${u.last_login?'seen '+fmtLogin(u.last_login):'never signed in'}</div></td>
         <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="mail_report" ${u.mail_report?'checked':''}></td>
         <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="mail_alert" ${u.mail_alert?'checked':''}></td>
+        <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="ack_mobile" ${u.ack_mobile?'checked':''} ${u.business==='fixed'?'disabled title="Fixed-only account"':'title="May take / receive a Mobile incident hand-over"'}></td>
+        <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="ack_fixed" ${u.ack_fixed?'checked':''} ${u.business==='mobile'?'disabled title="Mobile-only account"':'title="May take / receive a Fixed incident hand-over"'}></td>
         <td class="u-act u-sticky-r"><button type="button" class="ubtn edit" data-edit title="Edit name, mobile, team, roles…">✎ Edit</button><button type="button" class="ubtn ${u.enabled?'block':'unblock'}" data-block>${u.enabled?'Block':'Unblock'}</button></td>
       </tr>`;
     }).join("");
     const table = `<div class="um-wrap"><table class="umtable">
-      <tr><th class="u-sticky">USER</th><th>BUSINESS</th><th>ROLES</th><th>TAGS</th><th>STATUS</th><th>MAIL REPORT</th><th>MAIL ALERT</th><th class="u-sticky-r">ACTIONS</th></tr>
-      ${rows||`<tr><td colspan="8" style="color:var(--muted);padding:18px">No users yet.</td></tr>`}
+      <tr><th class="u-sticky">USER</th><th>BUSINESS</th><th>ROLES</th><th>TAGS</th><th>STATUS</th><th>MAIL REPORT</th><th>MAIL ALERT</th><th title="Who may take or receive a Mobile incident hand-over">ACK · MOBILE</th><th title="Who may take or receive a Fixed incident hand-over">ACK · FIXED</th><th class="u-sticky-r">ACTIONS</th></tr>
+      ${rows||`<tr><td colspan="10" style="color:var(--muted);padding:18px">No users yet.</td></tr>`}
     </table></div>`;
     window.__umUsers = users;   // the edit panel reads the full row from here
 

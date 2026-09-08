@@ -53,6 +53,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   the assignee. Every change is written as an *ownership* line in Details › Discussion ("Ack handed over: a → b by c —
   note") and audited (`incident.ack` / `incident.reack` / `incident.handover`). `ack_at` keeps the first ack so MTTA
   stays honest. The "N RULES" stat now counts the segment's rules.
+- **Ack holders are explicit.** Settings → Users has two new columns, **ACK · MOBILE** and **ACK · FIXED** — who may
+  take or receive an incident hand-over on each side (`console_users.ack_mobile / ack_fixed`, seeded once from
+  Mail-alert + business, then admin-managed; a Mobile-only account cannot be a Fixed holder and vice versa). The
+  hand-over picker lists only these people and the API refuses a hand-over to anyone else.
+- **Home › My incidents.** A reminder list of the open incidents I acknowledged or was handed (both businesses, per my
+  scope): severity, name, side, role (acked / assigned), fired N ago, **time in my hands** (since the last ownership
+  change), ack delay vs the ack target (P1 15 m · P2 60 m · P3 4 h), and the **SLA clock** — time left of the
+  resolution target (P1 4 h · P2 24 h · P3 72 h, `SLA_P1_H…` in .env) or "overdue by …", rows tinted when over.
+  Each row deep-links to the incident on the right side. `GET /api/incidents/mine`.
+- **Hand-over mail.** When an ack changes hands the new holder receives one mail in the alert template focused on that
+  incident — who handed it and why (note), observed vs threshold, fired / last seen / breaches, team, metric, the
+  rule's runbook as numbered steps, a deep link straight to the incident on the right side (`#alerts?id=` /
+  `#fixed-alerts?id=`), Inspect link for Fixed rules, and the same PDF report the digest attaches. The previous holder
+  gets a short "ack moved to …" notice (no PDF). Re-ack notifies the person who lost the ack. Best-effort, never
+  blocks the action; `mailed` in the API response says what went out.
 - **Two alert mails, one per business.** The digest is split by segment: `[Salam Ops · Fixed] N alert(s)` and
   `[Salam Ops · Mobile] N alert(s)`, each with its own intro, table, PDFs and console links. Recipients = users with
   Mail alert ON **whose business covers that side** (`console_users.business`: fixed → Fixed mail, mobile → Mobile

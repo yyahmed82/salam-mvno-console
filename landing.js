@@ -36,6 +36,7 @@
         <section class="ld-col" id="ldMobile"><div class="ld-colh"><span class="ld-ic">📱</span><div><h2>Mobile</h2><div class="ld-colsub">MVNO · selfcare app, DMS dealers, payments, activation · last 24 h</div></div><a href="#dashboard" class="ld-open">Dashboard →</a></div><div class="ld-body"><div class="ld-loading">Loading…</div></div></section>
         <section class="ld-col" id="ldFixed"><div class="ld-colh"><span class="ld-ic">🏠</span><div><h2>Fixed</h2><div class="ld-colsub">FTTH · 5G home · SDA dealers · e-purchase / QR · Salam Home app · last 24 h</div></div><a href="#fixed" class="ld-open">Overview →</a></div><div class="ld-body"><div class="ld-loading">Loading…</div></div></section>
       </div>
+      <div class="ld-sec" id="ldMineSec"><h3>My incidents <span>what I acknowledged or was handed — age, time in my hands, SLA</span></h3><div id="ldMine" class="ld-mine"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-sec"><h3>Needs attention <span>open incidents and open Fixed error categories</span></h3><div id="ldAttention" class="ld-att"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-quick">
         <a href="#subscriber" class="ld-q">◉ Customer 360</a><a href="#alerts" class="ld-q" data-biz="mobile">🔔 Alerts</a><a href="#troubleshoot" class="ld-q" data-biz="mobile">⚡ Troubleshoot</a><a href="#fixed?tab=map" class="ld-q" data-biz="fixed">🗺 SDA map</a><a href="#fixed?tab=errors" class="ld-q" data-biz="fixed">⚠ Fixed errors</a><a href="#fixed?tab=alerts" class="ld-q" data-biz="fixed">🔔 Fixed alerts</a><a href="#analytics" class="ld-q" data-biz="mobile">📈 Analytics</a>
@@ -46,6 +47,7 @@
 
   async function load(){
     const biz=(sess().me||{}).business||"both";
+    renderMine();   // independent of the business fetches below
     const canM=views().includes("dashboard")&&biz!=="fixed", canF=views().includes("fixed")&&biz!=="mobile";
     // a single-business account sees a single-column home; the other column is removed, not greyed
     const mc=$("#ldMobile"), fc=$("#ldFixed"); if(mc) mc.hidden=(biz==="fixed"); if(fc) fc.hidden=(biz==="mobile");
@@ -150,6 +152,29 @@
       </div>`;
   }
 
+  /* MY INCIDENTS — the open alerts I hold (ack) or am assigned; a reminder list with the three clocks and the SLA verdict */
+  async function renderMine(){
+    const box=$("#ldMine"); if(!box) return;
+    let d; try{ d=await api("/api/incidents/mine"); }catch(e){ box.innerHTML=`<div class="ld-loading">${esc(e.message)}</div>`; return; }
+    const list=(d&&d.incidents)||[];
+    if(!list.length){ box.innerHTML=`<div class="ld-loading">Nothing in your hands right now ✅ — incidents you acknowledge or receive by hand-over appear here.</div>`; return; }
+    const dur=m=>{ m=Math.max(0,Math.round(m||0)); if(m<60) return m+"m"; const h=Math.floor(m/60); if(h<48) return h+"h"+(m%60?String(m%60).padStart(2,"0"):""); return Math.floor(h/24)+"d "+(h%24)+"h"; };
+    const col=s=>s==="P1"?"#dc2626":s==="P2"?"#d97706":"#2563eb";
+    const rows=list.map(a=>{
+      const sla=a.overdue?`<span class="ld-sla bad">SLA overdue by ${dur(-a.remaining_min)}</span>`:a.remaining_min<a.sla_hours*60*0.25?`<span class="ld-sla warn">${dur(a.remaining_min)} left of ${a.sla_hours}h</span>`:`<span class="ld-sla ok">${dur(a.remaining_min)} left of ${a.sla_hours}h</span>`;
+      const ack=a.ack_min==null?`<span class="ld-sla warn">not acked</span>`:`acked in ${dur(a.ack_min)}${a.ack_late?` <span class="ld-sla bad">late (target ${dur(a.ack_target_min)})</span>`:""}`;
+      const seg=a.segment==="fixed"?`<span class="ld-segchip fx">🏠 FIXED</span>`:`<span class="ld-segchip mb">📱 MOBILE</span>`;
+      const role=a.role==="assignee"?"assigned to me":a.role==="holder+assignee"?"ack + assigned to me":"acked by me";
+      return `<a href="${esc(a.link)}" class="ld-row ld-mrow${a.overdue?" ld-overdue":""}">
+        <span class="ld-sev" style="background:${col(a.severity)}">${esc(a.severity)}</span>
+        <span class="ld-mmain"><span class="ld-row-t">${esc(a.name)}</span> ${seg}${a.snoozed_until?`<span class="ld-segchip" style="color:#7c3aed;border-color:#7c3aed">snoozed</span>`:""}<br>
+          <span class="ld-msub">${esc(role)} · ${esc(a.team||"")} · fired ${dur(a.age_min)} ago · in my hands ${dur(a.mine_min)} · ${ack}${a.breach_count>1?` · ×${a.breach_count}`:""}</span></span>
+        <span class="ld-row-s">${sla}</span></a>`;
+    }).join("");
+    const over=list.filter(a=>a.overdue).length;
+    box.innerHTML=`<div class="ld-att-col"><div class="ld-att-h">${list.length} open in my hands${over?` · <span style="color:#dc2626">${over} over SLA</span>`:""} · SLA P1 ${d.sla.resolve_h.P1}h · P2 ${d.sla.resolve_h.P2}h · P3 ${d.sla.resolve_h.P3}h</div>${rows}</div>`;
+  }
+
   function renderAttention({al,f24,anoms,merr}){
     const box=$("#ldAttention"); const ksa=t=>t?new Date(new Date(t).getTime()+3*3600e3).toISOString().slice(11,16)+" KSA":"—";
     const col=s=>s==="P1"?"#dc2626":s==="P2"?"#d97706":"#2563eb";
@@ -220,7 +245,11 @@
       .ld-quick{display:flex;gap:8px;flex-wrap:wrap}
       .ld-q{text-decoration:none;color:var(--ink);font-size:12px;font-weight:700;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:7px 13px;transition:all .15s ease}
       .ld-q:hover{border-color:var(--green);transform:translateY(-1px);box-shadow:0 6px 16px rgba(15,23,42,.08)}
-      .ld-loading{color:var(--muted);font-size:12.5px;padding:10px 2px}`;
+      .ld-loading{color:var(--muted);font-size:12.5px;padding:10px 2px}
+      .ld-mine{margin-bottom:16px} .ld-mrow{align-items:flex-start} .ld-mmain{flex:1;min-width:0} .ld-msub{font-size:11.5px;color:var(--muted)} .ld-overdue{background:rgba(220,38,38,.06)}
+      .ld-sla{font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;white-space:nowrap} .ld-sla.ok{color:#0e9f5a;background:rgba(14,159,90,.12)} .ld-sla.warn{color:var(--warn-fg,#b45309);background:rgba(217,119,6,.14)} .ld-sla.bad{color:#dc2626;background:rgba(220,38,38,.14)}
+      .ld-segchip{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.3px;padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--muted);margin-left:6px;vertical-align:1px} .ld-segchip.fx{color:#0e9f5a;border-color:#0e9f5a} .ld-segchip.mb{color:#2563eb;border-color:#2563eb}
+      @media (max-width:700px){ .ld-mrow{flex-wrap:wrap} .ld-mrow .ld-row-s{margin-left:36px} }`;
     document.head.appendChild(st);
   }
 

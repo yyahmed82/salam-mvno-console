@@ -267,4 +267,56 @@ async function sendAlertDigest(simNow, evals, opts = {}) {
     mails: parts.map(({ previewHtml, ...p }) => p) };
 }
 
-module.exports = { recipients, sendHtml, sendText, textToHtml, buildDigest, sendAlertDigest, smtpConfigured, mailStatus, esc, shell, fromAddress };
+/* ---- ACK HAND-OVER MAIL (8 Sep 2026) ----------------------------------------------------------------------------
+ * When an acknowledgement changes hands the NEW holder gets one mail in the alert template, focused on that single
+ * incident: who handed it over and why, observed vs threshold, breaches, the runbook steps, a deep link straight to
+ * the incident on the right side (#alerts?id= / #fixed-alerts?id=) and the same PDF report the digest attaches.
+ * The PREVIOUS holder gets a short notice (no PDF) so nobody keeps working an incident that is no longer theirs.
+ * Best-effort: called after the DB change, never blocks the API. */
+async function sendHandoverMail(alert, { from, to, by, note, kind } = {}) {
+  const SEG = require('./segment');
+  const seg = SEG.segOf(alert);
+  const rule = (await db.console.query(`SELECT r.*, mc.unit FROM alert_rules r LEFT JOIN metric_catalog mc ON mc.key = r.metric_key WHERE r.key = $1`, [alert.rule_key]).catch(() => ({ rows: [] }))).rows[0] || {};
+  const ev = { key: alert.rule_key, name: alert.name, severity: alert.severity, team: alert.team, metric_key: alert.metric_key, operator: alert.operator,
+    threshold: alert.threshold, value: alert.observed_value, sample: alert.sample, window_hours: alert.window_hours, unit: rule.unit || 'count',
+    segment: seg, fired: true, min_sample: rule.min_sample, description: rule.description, runbook: rule.runbook, trigger_codes: rule.trigger_codes };
+  const now = new Date();
+  let reports = { attachments: [], notes: [] };
+  try { reports = await require('./alertReport').buildFiredReports(now, [ev], { max: 1 }); } catch (e) { reports = { attachments: [], notes: [e.message] }; }
+  const link = `${CONSOLE_URL}#${seg === 'fixed' ? 'fixed-alerts' : 'alerts'}?id=${alert.id}`;
+  const who = e => esc(String(e || '—').split('@')[0]);
+  const steps = String(rule.runbook || '').split(/\n+|(?=\d\)\s)/).map(x => x.trim()).filter(Boolean);
+  const detail = [
+    ['Incident', `<b>${esc(alert.severity)} · ${esc(alert.name)}</b> ${segChip(ev)}`],
+    ['Observed', `<b>${fmtVal(alert.observed_value, ev.unit)}</b> vs threshold ${opLabel[alert.operator] || alert.operator} ${fmtVal(alert.threshold, ev.unit)} (sample ${alert.sample ?? '—'}, ${alert.window_hours}h window)`],
+    ['Fired', `${ksa(alert.fired_at)} KSA · last seen ${ksa(alert.last_seen_at)} KSA · ${alert.breach_count || 1} breach(es)`],
+    ['Team', esc(alert.team || '—')], ['Metric', `<span style="font-family:monospace;font-size:12px">${esc(alert.metric_key)}</span>`],
+    ...(alert.message ? [['Message', esc(alert.message)]] : []),
+    ...(rule.trigger_codes ? [['Trigger codes', esc(rule.trigger_codes)]] : []),
+  ];
+  const kv = detail.map(([k, v]) => `<tr><td style="padding:6px 10px 6px 0;color:#64748b;font-size:12px;white-space:nowrap;vertical-align:top">${k}</td><td style="padding:6px 0;font-size:13px;color:#20302a">${v}</td></tr>`).join('');
+  const intro = `
+    <div style="background:#eaf6ff;border:1px solid #bfdcf5;border-left:4px solid #0891b2;border-radius:8px;padding:12px 16px;margin-bottom:16px">
+      <div style="font-weight:800;color:#0c4a6e;font-size:13px;margin-bottom:4px">${kind === 'reack' ? `${who(to)} took over this incident` : `${who(by)} handed this incident to you`}${from ? ` — it was acknowledged by ${who(from)}` : ''}.</div>
+      ${note ? `<div style="font-size:13px;color:#334155;margin:4px 0"><b>Note:</b> ${esc(note)}</div>` : ''}
+      <div style="font-size:12.5px;color:#334155;margin-top:6px">You are now the acknowledged owner. Open the incident to see the guide, the discussion and to snooze / resolve: <a href="${link}" style="color:#0e9f5a;font-weight:700">Open incident ›</a>${FL.isFixed(ev) && FL.inspect(ev.key) ? ` · inspect: ${inspectHtml(ev, 'color:#0e9f5a;font-weight:700')}` : ''}</div>
+    </div>`;
+  const body = `${intro}
+    <table style="border-collapse:collapse;width:100%;margin-bottom:14px">${kv}</table>
+    ${steps.length ? `<div style="font-weight:800;font-size:12px;letter-spacing:.06em;color:#334155;margin:10px 0 6px">RUNBOOK</div><ol style="margin:0 0 12px 18px;padding:0;font-size:13px;color:#20302a;line-height:1.6">${steps.map(x => `<li>${esc(x.replace(/^\d+\)\s*/, ''))}</li>`).join('')}</ol>` : ''}
+    ${reports.attachments.length ? `<div style="font-size:12px;color:#64748b">Full report attached: <span style="font-family:monospace;font-size:11px">${esc(reports.attachments[0].filename)}</span> — KPIs, API evidence, history and the L1 action plan.</div>` : ''}
+    <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Operations Console · ${esc(SEG.LABEL[seg])} alerts · this change is recorded on the incident and in the audit trail</div>`;
+  const html = shell({ title: `Incident handed to you — ${SEG.LABEL[seg]} alerts`, badge: `OPERATIONS CONSOLE · ${SEG.SHORT[seg].toUpperCase()}`,
+    pill: `${alert.severity} · ACTION NEEDED`, pillColor: alert.severity === 'P1' ? '#dc2626' : alert.severity === 'P2' ? '#d97706' : '#64748b', bodyHtml: body });
+  const subject = `[Salam Ops · ${SEG.SHORT[seg]}] ${alert.severity} handed to you — ${alert.name}`;
+  const out = { to: null, previous: null };
+  try { out.to = await sendHtml([{ email: to }], subject, html, reports.attachments); } catch (e) { out.to = { sent: false, error: e.message }; }
+  if (from && from !== to && kind !== 'ack') {
+    const noteHtml = shell({ title: `Incident no longer yours — ${SEG.LABEL[seg]} alerts`, badge: `OPERATIONS CONSOLE · ${SEG.SHORT[seg].toUpperCase()}`, pill: 'FYI', pillColor: '#64748b',
+      bodyHtml: `<div style="font-size:13.5px;color:#20302a"><b>${esc(alert.severity)} · ${esc(alert.name)}</b> ${segChip(ev)}<br><br>${kind === 'reack' ? `${who(to)} took over the acknowledgement you held.` : `${who(by)} handed the acknowledgement you held to ${who(to)}.`}${note ? ` <b>Note:</b> ${esc(note)}` : ''}<br><br><a href="${link}" style="color:#0e9f5a;font-weight:700">Open incident ›</a></div>` });
+    try { out.previous = await sendHtml([{ email: from }], `[Salam Ops · ${SEG.SHORT[seg]}] ${alert.severity} ${alert.name} — ack moved to ${String(to).split('@')[0]}`, noteHtml, []); } catch (e) { out.previous = { sent: false, error: e.message }; }
+  }
+  return out;
+}
+
+module.exports = { recipients, sendHtml, sendText, textToHtml, buildDigest, sendAlertDigest, sendHandoverMail, smtpConfigured, mailStatus, esc, shell, fromAddress };
