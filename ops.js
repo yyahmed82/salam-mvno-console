@@ -1419,14 +1419,16 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <td><span class="status-pill ${u.enabled?'active':'blocked'}">${u.enabled?'Active':'Blocked'}</span><div class="u-last">${u.last_login?'seen '+fmtLogin(u.last_login):'never signed in'}</div></td>
         <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="mail_report" ${u.mail_report?'checked':''}></td>
         <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="mail_alert" ${u.mail_alert?'checked':''}></td>
-        <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="ack_mobile" ${u.ack_mobile?'checked':''} ${u.business==='fixed'?'disabled title="Fixed-only account"':'title="May take / receive a Mobile incident hand-over"'}></td>
-        <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="ack_fixed" ${u.ack_fixed?'checked':''} ${u.business==='mobile'?'disabled title="Mobile-only account"':'title="May take / receive a Fixed incident hand-over"'}></td>
+        <td><div class="um-ack">
+          <button type="button" class="tagchip mini um-ackchip ${u.ack_mobile?'on':''}" data-ack="ack_mobile" ${u.business==='fixed'?'disabled title="Fixed-only account — cannot hold Mobile incidents"':'title="May take / receive a Mobile incident hand-over"'}>📱 Mobile</button>
+          <button type="button" class="tagchip mini um-ackchip ${u.ack_fixed?'on':''}" data-ack="ack_fixed" ${u.business==='mobile'?'disabled title="Mobile-only account — cannot hold Fixed incidents"':'title="May take / receive a Fixed incident hand-over"'}>🏠 Fixed</button>
+        </div></td>
         <td class="u-act u-sticky-r"><button type="button" class="ubtn edit" data-edit title="Edit name, mobile, team, roles…">✎ Edit</button><button type="button" class="ubtn ${u.enabled?'block':'unblock'}" data-block>${u.enabled?'Block':'Unblock'}</button></td>
       </tr>`;
     }).join("");
     const table = `<div class="um-wrap"><table class="umtable">
-      <tr><th class="u-sticky">USER</th><th>BUSINESS</th><th>ROLES</th><th>TAGS</th><th>STATUS</th><th>MAIL REPORT</th><th>MAIL ALERT</th><th title="Who may take or receive a Mobile incident hand-over">ACK · MOBILE</th><th title="Who may take or receive a Fixed incident hand-over">ACK · FIXED</th><th class="u-sticky-r">ACTIONS</th></tr>
-      ${rows||`<tr><td colspan="10" style="color:var(--muted);padding:18px">No users yet.</td></tr>`}
+      <tr><th class="u-sticky">USER</th><th>BUSINESS</th><th>ROLES</th><th>TAGS</th><th>STATUS</th><th>MAIL REPORT</th><th>MAIL ALERT</th><th title="Who may take or receive an incident hand-over on each side">ACK HOLDER</th><th class="u-sticky-r">ACTIONS</th></tr>
+      ${rows||`<tr><td colspan="9" style="color:var(--muted);padding:18px">No users yet.</td></tr>`}
     </table></div>`;
     window.__umUsers = users;   // the edit panel reads the full row from here
 
@@ -1479,6 +1481,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       }));
       // notification checkboxes
       tr.querySelectorAll(".um-cellchk[data-field]").forEach(cb=>cb.addEventListener("change",()=>patch({[cb.dataset.field]:cb.checked})));
+      tr.querySelectorAll(".um-ackchip[data-ack]").forEach(b=>b.addEventListener("click",()=>{ if(b.disabled) return; const on=!b.classList.contains("on"); b.classList.toggle("on",on); patch({[b.dataset.ack]:on}); }));
       // edit → side panel with every field
       const ed=tr.querySelector("[data-edit]");
       if(ed) ed.addEventListener("click",()=>{ const u=(window.__umUsers||[]).find(x=>String(x.id)===String(id)); if(u) openUserPanel(u); });
@@ -1527,6 +1530,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <div class="um-checks">
           <label class="um-check"><input type="checkbox" id="udMailReport" ${u.mail_report?'checked':''}><span>Mail report</span></label>
           <label class="um-check"><input type="checkbox" id="udMailAlert" ${u.mail_alert?'checked':''}><span>Mail alert</span></label>
+          <label class="um-check" title="May take / receive a Mobile incident hand-over"><input type="checkbox" id="udAckMobile" ${u.ack_mobile?'checked':''} ${u.business==='fixed'?'disabled':''}><span>Ack holder · 📱 Mobile</span></label>
+          <label class="um-check" title="May take / receive a Fixed incident hand-over"><input type="checkbox" id="udAckFixed" ${u.ack_fixed?'checked':''} ${u.business==='mobile'?'disabled':''}><span>Ack holder · 🏠 Fixed</span></label>
           <label class="um-check"><input type="checkbox" id="udTour" ${u.tour_seen?'checked':''}><span>Quick tour seen</span> <span class="ud-hint">(untick to replay it at next sign-in)</span></label>
         </div>
         ${(lr.ops_roles&&lr.ops_roles.length)||lr.digital_id?`<div class="um-lbl">PROVENANCE</div><div class="ud-prov">Imported from ${esc(src)}${u.imported_at?' on '+fmtLogin(u.imported_at):''}${(lr.ops_roles&&lr.ops_roles.length)?` · legacy Fixed roles: <span class="mono">${esc(lr.ops_roles.join(', '))}</span>`:''}</div>`:''}
@@ -1550,7 +1555,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       const payload={ name:body.querySelector("#udName").value.trim(), mobile:body.querySelector("#udMobile").value.trim(), team:body.querySelector("#udTeam").value.trim(),
         business:(body.querySelector("#udBiz .bizchip.on")||{}).dataset.biz||"both", roles,
         tags:[...body.querySelectorAll("#udTags .tagchip.on")].map(x=>x.dataset.tag),
-        mail_report:body.querySelector("#udMailReport").checked, mail_alert:body.querySelector("#udMailAlert").checked, tour_seen:body.querySelector("#udTour").checked };
+        mail_report:body.querySelector("#udMailReport").checked, mail_alert:body.querySelector("#udMailAlert").checked, tour_seen:body.querySelector("#udTour").checked,
+        ack_mobile:body.querySelector("#udAckMobile").checked, ack_fixed:body.querySelector("#udAckFixed").checked };
       const btn=body.querySelector("#udSave"); btn.disabled=true; msg("Saving…");
       try{ await api("/api/users/"+u.id,{method:"PATCH",body:JSON.stringify(payload)}); msg("Saved."); setTimeout(closeUserPanel,350); renderUserMgmt(); }
       catch(e){ msg(e.message,true); btn.disabled=false; }

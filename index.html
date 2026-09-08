@@ -369,6 +369,8 @@
   [data-theme="dark"] .tagchip.on{color:#fff}
   /* ---- users table v2 (6 Sep 2026): actions in sight, edit panel for everything else ---- */
   .um-wrap{overflow-x:auto;margin-top:26px;border:1px solid var(--line);border-radius:12px}
+  .um-wrap table.umtable{min-width:1240px}   /* sticky ACTIONS must never sit on top of a data column — the wrapper scrolls instead */
+  .um-ack{display:flex;gap:6px;flex-wrap:wrap;min-width:150px} .um-ackchip[disabled]{opacity:.35;cursor:not-allowed}
   .um-wrap table.umtable{margin-top:0}
   .u-who{display:flex;flex-direction:column;gap:2px;min-width:200px} .u-who b{font-weight:700;color:var(--ink)} .u-who span{font-size:11px;color:var(--muted)}
   .u-last{font-size:10px;color:var(--muted);margin-top:4px;white-space:nowrap}
@@ -392,7 +394,8 @@
   /* phones: the table keeps only what the edit panel does not cover — user · status · actions; no sticky columns */
   @media (max-width:700px){ .ud-grid{grid-template-columns:1fr} .ud-danger{flex-direction:column;align-items:stretch}
     .umtable th:nth-child(2),.umtable td:nth-child(2),.umtable th:nth-child(3),.umtable td:nth-child(3),.umtable th:nth-child(4),.umtable td:nth-child(4),
-    .umtable th:nth-child(6),.umtable td:nth-child(6),.umtable th:nth-child(7),.umtable td:nth-child(7){display:none}
+    .umtable th:nth-child(6),.umtable td:nth-child(6),.umtable th:nth-child(7),.umtable td:nth-child(7),.umtable th:nth-child(8),.umtable td:nth-child(8){display:none}
+    .um-wrap table.umtable{min-width:0}
     .u-sticky,.u-sticky-r{position:static;box-shadow:none} .u-who{min-width:0} .u-who b{word-break:break-all}
     .u-act{flex-direction:column;align-items:stretch;gap:5px} .ubtn{padding:7px 8px;font-size:11px} table.umtable td,table.umtable th{padding:10px 7px} }
   /* 360 quick-access pill — deliberately the ONLY red element in the header: the customer
@@ -1677,67 +1680,67 @@
 <div id="ruleModal" class="modal-overlay"><div class="modal-card" id="ruleModalCard" style="max-width:560px"></div></div>
 <div id="panelModal" class="modal-overlay"><div class="modal-card" id="panelModalCard" style="max-width:720px"></div></div>
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
-<script src="base.js?v=20260908h"></script>
-<script src="navdrop.js?v=20260908h" defer></script>
-<script src="adaptive.js?v=20260908h" defer></script>
-<script src="ksatime.js?v=20260908h"></script>
-<script src="data.js?v=20260908h"></script>
-<script src="data2.js?v=20260908h"></script>
-<script src="samples.js?v=20260908h"></script>
-<script src="samples2.js?v=20260908h"></script>
-<script src="apidocs.js?v=20260908h"></script>
-<script src="xlsxout.js?v=20260908h"></script>
-<script src="persist.js?v=20260908h"></script>
-<script src="app.js?v=20260908h"></script>
-<script src="uinav.js?v=20260908h"></script>
-<script src="alertsview.js?v=20260908h"></script>
-<script src="ops.js?v=20260908h"></script>
-<script src="opsbar.js?v=20260908h"></script>
-<script src="analytics.js?v=20260908h"></script>
-<script src="topo2data.js?v=20260908h"></script>
-<script src="topology2.js?v=20260908h"></script>
-<script src="tapdocs.js?v=20260908h"></script>
-<script src="screensflow.js?v=20260908h"></script>
-<script src="home.js?v=20260908h"></script>
-<script src="monitoring.js?v=20260908h"></script>
-<script src="workbench.js?v=20260908h"></script>
-<script src="growth.js?v=20260908h"></script>
-<script src="dmsjourney.js?v=20260908h"></script>
-<script src="dms.js?v=20260908h"></script>
-<script src="landing.js?v=20260908h"></script>
-<script src="fixed.js?v=20260908h"></script>
-<script src="fixed-maps-ui.js?v=20260908h"></script>
-<script src="fixed-leaflet.js?v=20260908h"></script>
-<script src="fixed-map.js?v=20260908h"></script>
-<script src="fixed-qr.js?v=20260908h"></script>
-<script src="fixed-channel.js?v=20260908h"></script>
-<script src="fixed-dash.js?v=20260908h"></script>
-<script src="fixed-errors.js?v=20260908h"></script>
-<script src="fixed-alerts.js?v=20260908h"></script>
-<script src="fixed-playbook.js?v=20260908h"></script>
-<script src="fixed-diagrams.js?v=20260908h"></script>
-<script src="fixed-report.js?v=20260908h"></script>
-<script src="otodocs.js?v=20260908h"></script>
-<script src="salamdocs.js?v=20260908h"></script>
-<script src="slo.js?v=20260908h"></script>
-<script src="audit.js?v=20260908h"></script>
-<script src="notifycfg.js?v=20260908h"></script>
-<script src="notifyclone.js?v=20260908h"></script>
-<script src="democfg.js?v=20260908h"></script>
-<script src="sub360.js?v=20260908h"></script>
-<script src="rolesmatrix.js?v=20260908h"></script>
-<script src="i18n.js?v=20260908h"></script>
-<script src="settingsmenu.js?v=20260908h"></script>
-<script src="tour.js?v=20260908h"></script>
-<script src="helpmenu.js?v=20260908h"></script>
-<script src="assist.js?v=20260908h"></script>
-<script src="assistcfg.js?v=20260908h"></script>
-<script src="assistclone.js?v=20260908h"></script>
-<script src="navcfg.js?v=20260908h"></script>
-<script src="tickets.js?v=20260908h"></script>
-<script src="theme.js?v=20260908h"></script>
-<script src="router.js?v=20260908h"></script>
-<script src="live.js?v=20260908h"></script>
-<script src="oncall.js?v=20260908h"></script>
+<script src="base.js?v=20260908i"></script>
+<script src="navdrop.js?v=20260908i" defer></script>
+<script src="adaptive.js?v=20260908i" defer></script>
+<script src="ksatime.js?v=20260908i"></script>
+<script src="data.js?v=20260908i"></script>
+<script src="data2.js?v=20260908i"></script>
+<script src="samples.js?v=20260908i"></script>
+<script src="samples2.js?v=20260908i"></script>
+<script src="apidocs.js?v=20260908i"></script>
+<script src="xlsxout.js?v=20260908i"></script>
+<script src="persist.js?v=20260908i"></script>
+<script src="app.js?v=20260908i"></script>
+<script src="uinav.js?v=20260908i"></script>
+<script src="alertsview.js?v=20260908i"></script>
+<script src="ops.js?v=20260908i"></script>
+<script src="opsbar.js?v=20260908i"></script>
+<script src="analytics.js?v=20260908i"></script>
+<script src="topo2data.js?v=20260908i"></script>
+<script src="topology2.js?v=20260908i"></script>
+<script src="tapdocs.js?v=20260908i"></script>
+<script src="screensflow.js?v=20260908i"></script>
+<script src="home.js?v=20260908i"></script>
+<script src="monitoring.js?v=20260908i"></script>
+<script src="workbench.js?v=20260908i"></script>
+<script src="growth.js?v=20260908i"></script>
+<script src="dmsjourney.js?v=20260908i"></script>
+<script src="dms.js?v=20260908i"></script>
+<script src="landing.js?v=20260908i"></script>
+<script src="fixed.js?v=20260908i"></script>
+<script src="fixed-maps-ui.js?v=20260908i"></script>
+<script src="fixed-leaflet.js?v=20260908i"></script>
+<script src="fixed-map.js?v=20260908i"></script>
+<script src="fixed-qr.js?v=20260908i"></script>
+<script src="fixed-channel.js?v=20260908i"></script>
+<script src="fixed-dash.js?v=20260908i"></script>
+<script src="fixed-errors.js?v=20260908i"></script>
+<script src="fixed-alerts.js?v=20260908i"></script>
+<script src="fixed-playbook.js?v=20260908i"></script>
+<script src="fixed-diagrams.js?v=20260908i"></script>
+<script src="fixed-report.js?v=20260908i"></script>
+<script src="otodocs.js?v=20260908i"></script>
+<script src="salamdocs.js?v=20260908i"></script>
+<script src="slo.js?v=20260908i"></script>
+<script src="audit.js?v=20260908i"></script>
+<script src="notifycfg.js?v=20260908i"></script>
+<script src="notifyclone.js?v=20260908i"></script>
+<script src="democfg.js?v=20260908i"></script>
+<script src="sub360.js?v=20260908i"></script>
+<script src="rolesmatrix.js?v=20260908i"></script>
+<script src="i18n.js?v=20260908i"></script>
+<script src="settingsmenu.js?v=20260908i"></script>
+<script src="tour.js?v=20260908i"></script>
+<script src="helpmenu.js?v=20260908i"></script>
+<script src="assist.js?v=20260908i"></script>
+<script src="assistcfg.js?v=20260908i"></script>
+<script src="assistclone.js?v=20260908i"></script>
+<script src="navcfg.js?v=20260908i"></script>
+<script src="tickets.js?v=20260908i"></script>
+<script src="theme.js?v=20260908i"></script>
+<script src="router.js?v=20260908i"></script>
+<script src="live.js?v=20260908i"></script>
+<script src="oncall.js?v=20260908i"></script>
 </body>
 </html>
