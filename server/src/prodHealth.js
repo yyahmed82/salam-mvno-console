@@ -39,15 +39,19 @@ async function probe(cs, fn) {
 }
 
 /* console role footprint + shared-server saturation on ONE Postgres server */
-async function dbChecks(checks, label, cs, { shared, srcOnly } = {}) {
+async function dbChecks(checks, label, cs, { shared, srcOnly, local } = {}) {
   if (!cs) return;
   try {
     await probe(cs, async pool => {
       const mine = Number((await pool.query(`SELECT count(*) AS n FROM pg_stat_activity WHERE usename = current_user AND pid <> pg_backend_pid()`)).rows[0].n);
-      const w = srcOnly ? T.srcWarn : T.connWarn, c = srcOnly ? T.srcCrit : T.connCrit;
+      /* LOCAL replica (the selfcare copy prod-sync maintains on the console's own server): the connections are our
+       * pool (SOURCE_POOL_MAX, default 8) + the prod-sync writer + this probe — sized to the pool, never a prod risk.
+       * Thresholds for a REMOTE source (a real prod replica) stay at the donor's 6 / 10. */
+      const poolMax = Number(process.env.SOURCE_POOL_MAX) || 8;
+      const w = local ? poolMax + 4 : srcOnly ? T.srcWarn : T.connWarn, c = local ? poolMax + 10 : srcOnly ? T.srcCrit : T.connCrit;
       const ml = lvl(mine, w, c);
-      checks.push({ name: `${label} — console connections`, level: ml, prodImpact: ml === 'CRIT',
-        detail: `${mine} connections held by the console role on ${hostOf(cs)} (warn ≥${w}, crit ≥${c}).${srcOnly ? ' The watcher + unmask pools should stay small.' : ' During the shadow period the role is shared with the digital console — the count covers both.'}` });
+      checks.push({ name: `${label} — console connections`, level: ml, prodImpact: ml === 'CRIT' && !local,
+        detail: `${mine} connections held by the console role on ${hostOf(cs)} (warn ≥${w}, crit ≥${c}).${local ? ` Our own replica on the console server — pool max ${poolMax} (SOURCE_POOL_MAX) + prod-sync writer + probes; not a production system.` : srcOnly ? ' The watcher + unmask pools should stay small.' : ' The console_app role — the count covers every app using it on this server.'}` });
       if (shared) {
         const r = (await pool.query(`SELECT (SELECT count(*) FROM pg_stat_activity) AS used, current_setting('max_connections') AS max`)).rows[0];
         const u = Number(r.used), m = Number(r.max) || 100, pct = Math.round(u / m * 100);
@@ -88,8 +92,11 @@ async function run({ always = false, printOnly = false } = {}) {
   await dbChecks(checks, 'Console DB', process.env.CONSOLE_DATABASE_URL, { shared: 'unified_console · mvno_console · sda_ops live here' });
   if (process.env.OPS_DATABASE_URL && hostOf(process.env.OPS_DATABASE_URL) !== hostOf(process.env.CONSOLE_DATABASE_URL || ''))
     await dbChecks(checks, 'Ops DB', process.env.OPS_DATABASE_URL, { shared: 'SDA / EPurchase / PaymentsV2 live here too' });
-  await dbChecks(checks, 'Source DB (selfcare replica)', process.env.SOURCE_DATABASE_URL, { srcOnly: true });
-  if (process.env.NEXUS_DATABASE_URL) await dbChecks(checks, 'Nexus DB', process.env.NEXUS_DATABASE_URL, { srcOnly: true });
+  const consoleHost = hostOf(process.env.CONSOLE_DATABASE_URL || '');
+  const srcLocal = hostOf(process.env.SOURCE_DATABASE_URL || '') === consoleHost;
+  await dbChecks(checks, srcLocal ? 'Local replica (selfcare copy)' : 'Source DB (selfcare replica)', process.env.SOURCE_DATABASE_URL, { srcOnly: true, local: srcLocal });
+  if (process.env.NEXUS_DATABASE_URL) { const nxLocal = hostOf(process.env.NEXUS_DATABASE_URL) === consoleHost;
+    await dbChecks(checks, nxLocal ? 'Local Nexus copy' : 'Nexus DB', process.env.NEXUS_DATABASE_URL, { srcOnly: true, local: nxLocal }); }
   boxChecks(checks);
   await ingestChecks(checks);
 

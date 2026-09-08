@@ -233,15 +233,21 @@
     if(!sections.length){ grid.style.opacity=""; grid.innerHTML=`<div class="home-empty">No dashboards available yet.</div>`; return; }
     // "Today" → intra-day same-day window (clamped at 00:00 KSA); 7d/30d → plain hours window.
     const R=currentRange();
-    // build the new panels OFF-DOM, then swap them in atomically → no teardown flash on refresh
-    const next=document.createElement("div");
+    /* PROGRESSIVE RENDER (8 Sep 2026): sections used to be rendered one after another off-DOM and swapped in
+     * only when the LAST one finished — a single slow section held the whole dashboard on "Loading dashboards…".
+     * Now every section gets its title + a loader on screen immediately and fills in when its own data arrives;
+     * sections run concurrently, capped at 3 in flight so the replica pool is never stormed. Refresh keeps
+     * the old panels in place (dimmed) and swaps each section as it completes. */
+    const holders=[]; const next=document.createElement("div");
     for(const key of sections){
       const d=all.find(x=>x.key===key); if(!d) continue;
       next.appendChild(el("div","home-dash-title",`${esc(d.name||key)}<span class="ln"></span>`));
-      const holder=el("div");
-      next.appendChild(holder);
-      // FAIL-SOFT (3 Sep): one broken/slow section must never hold the whole dashboard on
-      // "Loading…" — render its error inline and keep going.
+      const holder=el("div"); holder.style.cssText="grid-column:span 12";
+      holder.innerHTML=`<div class="sub" style="padding:10px 2px">${window.salamLoader?window.salamLoader("Loading…"):"Loading…"}</div>`;
+      next.appendChild(holder); holders.push({key,d,holder});
+    }
+    if(firstPaint) grid.replaceChildren(...next.childNodes);
+    const renderOne=async({key,d,holder})=>{
       try{
         if(d._flow){ holder.style.cssText="grid-column:span 12"; await renderFlow(holder); }
         else if(d._screens){ holder.style.cssText="grid-column:span 12"; await window.screensFlowRender(holder, R); }
@@ -253,8 +259,10 @@
         else if(d._hyperpay){ holder.style.cssText="grid-column:span 12"; await renderHyperpay(holder, R); }
         else { holder.style.cssText="grid-column:span 12;display:grid;grid-template-columns:repeat(12,1fr);gap:12px"; await window.anaRenderDashboard(holder, key, R); if(key==="overview"){ await renderOutcomes(holder, R); await renderPayFunnel(holder, R); } }
       }catch(e){ holder.innerHTML=`<div class="rl" style="color:#dc2626;padding:8px 2px">Section failed to load: ${esc(String(e&&e.message||e).slice(0,140))}</div>`; }
-    }
-    grid.replaceChildren(...next.childNodes);
+    };
+    const queue=holders.slice(); const LANES=3;
+    await Promise.all(Array.from({length:Math.min(LANES,queue.length)},async()=>{ while(queue.length){ await renderOne(queue.shift()); } }));
+    if(!firstPaint) grid.replaceChildren(...next.childNodes);
     grid.style.opacity="";
   }
 

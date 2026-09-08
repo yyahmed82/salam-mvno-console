@@ -36,6 +36,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   sync now marks entries stale instead of clearing them — nobody pays a full recompute after a tick; (3) **keep-warm**:
   every TTL the top `RESP_CACHE_WARM_TOP` (40) most-requested URLs that went stale are re-fetched over loopback so hot
   pages are fresh before anyone asks. `RESP_CACHE_FILE`, `RESP_CACHE_FILE_MAX_MB` (64) tune it.
+- **Mobile dashboard renders progressively**: every section shows its title and a loader at once and fills in when its
+  own data arrives, three sections in flight at a time — before, all sections ran one after another off-screen and
+  the page sat on "Loading dashboards…" until the slowest finished.
+- **Healthcheck knows a local replica from a prod source**: when `SOURCE_DATABASE_URL` / `NEXUS_DATABASE_URL` point at
+  the console's own Postgres server (the copy prod-sync maintains) the probe is labelled *Local replica*, thresholds
+  follow `SOURCE_POOL_MAX` (+4 warn / +10 crit) and it can never flag *prod impact* — the CRIT "11 connections on the
+  selfcare replica" was our own pool on our own server.
 ### Fixed
 - Home for a single-business account (Mobile-only / Fixed-only) no longer shows the other business's empty column
   and empty "Needs attention" box: one full-width column, only that business's quick links, heading adapted.
