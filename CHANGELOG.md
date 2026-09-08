@@ -47,6 +47,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   one link away (`#fixed?tab=alerts`). Per-id routes (`/api/alerts/:id/*`, `/api/rules/:id`) refuse an alert or rule of
   the other business for a single-business user; the Fixed-team API allow-list gained alerts / incidents / rules /
   metrics series (all segment-scoped).
+- **Ack ownership can change hands — tracked.** On an acked incident (Mobile and Fixed): **Re-ack** takes the
+  acknowledgement over from the current holder; **Hand over** gives it to a colleague picked from the people who may
+  hold an ack on that side (`/api/alerts/holders?segment=`), with an optional note; the handed-to person also becomes
+  the assignee. Every change is written as an *ownership* line in Details › Discussion ("Ack handed over: a → b by c —
+  note") and audited (`incident.ack` / `incident.reack` / `incident.handover`). `ack_at` keeps the first ack so MTTA
+  stays honest. The "N RULES" stat now counts the segment's rules.
 - **Two alert mails, one per business.** The digest is split by segment: `[Salam Ops · Fixed] N alert(s)` and
   `[Salam Ops · Mobile] N alert(s)`, each with its own intro, table, PDFs and console links. Recipients = users with
   Mail alert ON **whose business covers that side** (`console_users.business`: fixed → Fixed mail, mobile → Mobile

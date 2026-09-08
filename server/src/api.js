@@ -3059,7 +3059,8 @@ app.get('/api/alerts/summary', async (req, res) => {
   const byTeam = (await C.query(
     `SELECT team, count(*) FILTER (WHERE status='open')::int AS open FROM alerts a WHERE ${W} GROUP BY team`)).rows;
   const latest = (await C.query(`SELECT max(sim_now) AS sim_now FROM sync_runs`)).rows[0];
-  res.json({ bySeverity: bySev, byTeam, latest_sim_now: latest && latest.sim_now, segment: seg });
+  const rules = (await C.query(`SELECT count(*)::int c FROM alert_rules r WHERE enabled AND ${segment.sqlWhere('r', 'key', seg)}`)).rows[0].c;
+  res.json({ bySeverity: bySev, byTeam, latest_sim_now: latest && latest.sim_now, segment: seg, rules });
 });
 
 /* ---- incident lifecycle (ack / assign / snooze / resolve / comment) ---- */
@@ -3079,6 +3080,14 @@ app.get('/api/incidents/stats', async (req, res) => {
        FROM alerts a WHERE ${W}`)).rows[0];
     res.json({ bySeverity, mtta_sec: t.mtta ? Math.round(t.mtta) : null, mttr_sec: t.mttr ? Math.round(t.mttr) : null,
       open_total: t.open_total, unacked: t.unacked, resolved_24h: t.resolved_24h });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+/* who can hold an ack on this side — for the hand-over picker (any ackErrors user; not the full user admin list) */
+app.get('/api/alerts/holders', async (req, res) => {
+  try {
+    const seg = segment.forRequest(req, req.query.segment); const biz = segment.BUSINESS_OF[seg === 'all' ? 'mvno' : seg];
+    const r = await C.query(`SELECT email, name, business FROM console_users WHERE enabled = true AND (business = $1 OR business = 'both' OR business IS NULL) ORDER BY name NULLS LAST, email`, [biz]);
+    res.json({ segment: seg, holders: r.rows.map(u => ({ email: u.email, name: u.name || u.email.split('@')[0], business: u.business })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 /* one alert belongs to one business: a Mobile-only user cannot read / ack / snooze a Fixed incident and vice versa */
@@ -3176,9 +3185,33 @@ app.get('/api/tap/reconcile', requireCap('manageSync'), async (req, res) => {
     res.json(type === 'duplicate' ? await tapRecon.reconcileDuplicate(opts) : await tapRecon.reconcileMismatch(opts));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* ACK OWNERSHIP (8 Sep 2026). One call, three cases:
+ *   body {}                 → ack by the caller (first ack), or RE-ACK: the caller takes the ack over from whoever holds it
+ *   body { to: <email> }    → HAND OVER: the ack (and the assignee) move to a colleague — an enabled console user whose
+ *                              business covers this alert's segment; `note` optional
+ * Every change of hands is written as a system comment on the incident ("Ack: a → b by c — note") so it shows in
+ * Details › Discussion, and audited as incident.ack / incident.reack / incident.handover. ack_at keeps the FIRST ack
+ * (MTTA stays honest); ack_by is the current holder. */
 app.post('/api/alerts/:id/ack', requireCap('ackErrors'), async (req, res) => {
-  try { await C.query(`UPDATE alerts SET ack_by=$1, ack_at=COALESCE(ack_at, now()) WHERE id=$2`, [req.actor, req.params.id]); await audit(req, 'incident.ack', req.params.id, {}); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    const a = req.alertRow || (await C.query(`SELECT * FROM alerts WHERE id=$1`, [req.params.id])).rows[0];
+    if (!a) return res.status(404).json({ error: 'not found' });
+    const b = req.body || {}; const note = String(b.note || '').slice(0, 300).trim();
+    let to = String(b.to || '').trim().toLowerCase();
+    if (to) {
+      const u = (await C.query(`SELECT email, business, enabled FROM console_users WHERE lower(email)=$1`, [to])).rows[0];
+      if (!u || !u.enabled) return res.status(400).json({ error: `${to} is not an enabled console user` });
+      if (!segment.userSees(roles.normBusiness(u.business), segment.segOf(a))) return res.status(400).json({ error: `${to} is not on the ${segment.LABEL[segment.segOf(a)]} side — cannot hold this ack` });
+    } else to = req.actor;
+    const prev = a.ack_by || null;
+    const kind = !prev ? 'ack' : (to === req.actor && prev !== req.actor ? 'reack' : (to !== req.actor ? 'handover' : 'ack'));
+    if (prev === to && !note) return res.json({ ok: true, unchanged: true, ack_by: to });
+    await C.query(`UPDATE alerts SET ack_by=$1, ack_at=COALESCE(ack_at, now())${to !== req.actor ? ', assignee=$1' : ''} WHERE id=$2`, [to, req.params.id]);
+    const line = kind === 'ack' ? `Acknowledged by ${to}` : kind === 'reack' ? `Ack taken over: ${prev} → ${to}` : `Ack handed over: ${prev || '—'} → ${to} by ${req.actor}`;
+    if (kind !== 'ack' || note) await C.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1, 'system', $2)`, [req.params.id, line + (note ? ` — ${note}` : '')]);
+    await audit(req, 'incident.' + kind, req.params.id, { from: prev, to, note: note || undefined });
+    res.json({ ok: true, kind, ack_by: to, previous: prev });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/alerts/:id/assign', requireCap('ackErrors'), async (req, res) => {
   try { await C.query(`UPDATE alerts SET assignee=$1 WHERE id=$2`, [(req.body || {}).assignee || null, req.params.id]); await audit(req, 'incident.assign', req.params.id, req.body); res.json({ ok: true }); }

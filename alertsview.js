@@ -70,7 +70,7 @@
       `<div class="sevcard sev-p1"><b>${sevMap.P1||0}</b><span>P1 CRITICAL OPEN</span></div>`+
       `<div class="sevcard sev-p2"><b>${sevMap.P2||0}</b><span>P2 OPEN</span></div>`+
       `<div class="sevcard sev-p3"><b>${sevMap.P3||0}</b><span>P3 OPEN</span></div>`+
-      `<div class="stat"><b>${totalOpen}</b><span>TOTAL OPEN · ${health.rules} RULES</span></div>`;
+      `<div class="stat"><b>${totalOpen}</b><span>TOTAL OPEN · ${sum.rules!=null?sum.rules:health.rules} RULES</span></div>`;
     /* MAIL DEEP LINKS must beat the REMEMBERED sub-tab. The page restores the last-used tab
      * (pf 'alerts_tab'), so a reader whose last visit ended on "Alert rules" arrived from a
      * mail link and saw... the rules list, because both handlers lived inside renderAlerts()
@@ -502,8 +502,9 @@
         : snoozed ? `<span style="color:#7c3aed;font-weight:700">snoozed</span>`
         : a.ack_at ? `<span style="color:#0891b2;font-weight:700">acked</span>`
         : `<span class="st-open">open${a.breach_count>1?` ×${a.breach_count}`:""}</span>`;
+      const me=((window.opsSession&&window.opsSession().me)||{}).email||"";
       const acts = (a.status==='open' && canAck()) ? `
-        ${a.ack_at?'':`<button class="pill" data-ack="${a.id}" style="padding:3px 8px">Ack</button>`}
+        ${a.ack_at?(a.ack_by&&a.ack_by!==me?`<button class="pill" data-reack="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Take the acknowledgement over from ${esc(a.ack_by)} — logged in the incident discussion and the audit trail">Re-ack</button> `:'')+`<button class="pill" data-handover="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Hand the acknowledgement to a colleague on this side — logged">Hand over</button>`:`<button class="pill" data-ack="${a.id}" style="padding:3px 8px">Ack</button>`}
         <button class="pill" data-snooze="${a.id}" style="padding:3px 8px">${snoozed?'Snoozed':'Snooze'}</button>
         <button class="pill" data-resolve="${a.id}" style="padding:3px 8px;border-left-color:var(--good)">Resolve</button>` : '';
       h += `<tr${isChild?' style="opacity:.62"':''}>
@@ -523,6 +524,8 @@
     $("#alBody").innerHTML = h;
     const body=$("#alBody");
     body.querySelectorAll("[data-ack]").forEach(b=>b.addEventListener("click",()=>incAction(b.dataset.ack,"ack")));
+    body.querySelectorAll("[data-reack]").forEach(b=>b.addEventListener("click",()=>{ const a=byId[b.dataset.reack]||{}; if(confirm(`Take over the acknowledgement from ${a.ack_by||"the current holder"}? This is logged on the incident.`)) incAction(b.dataset.reack,"ack"); }));
+    body.querySelectorAll("[data-handover]").forEach(b=>b.addEventListener("click",()=>handoverPanel(b, byId[b.dataset.handover])));
     body.querySelectorAll("[data-snooze]").forEach(b=>b.addEventListener("click",()=>{ const hrs=prompt("Snooze for how many hours?","1"); if(hrs) incAction(b.dataset.snooze,"snooze",{hours:Number(hrs)}); }));
     body.querySelectorAll("[data-resolve]").forEach(b=>b.addEventListener("click",()=>{ if(confirm("Resolve this incident?")) incAction(b.dataset.resolve,"resolve"); }));
     body.querySelectorAll("[data-det]").forEach(b=>b.addEventListener("click",()=>toggleDetail(b.dataset.det)));
@@ -562,6 +565,25 @@
       }
     }
   }
+  /* hand-over picker: colleagues who may hold an ack on THIS side (/api/alerts/holders?segment=), inline in the row */
+  let _holders=null, _holdersSeg=null;
+  async function holders(){ if(_holders && _holdersSeg===SEG) return _holders; const d=await api("/api/alerts/holders?segment="+SEG); _holders=d.holders||[]; _holdersSeg=SEG; return _holders; }
+  async function handoverPanel(btn, a){
+    const cell=btn.parentElement; if(!cell||cell.querySelector(".hoPanel")) return;
+    let list=[]; try{ list=await holders(); }catch(e){ banner(`Could not load colleagues: ${esc(e.message)}`); return; }
+    const me=((window.opsSession&&window.opsSession().me)||{}).email||"";
+    const opts=list.filter(u=>u.email!==(a.ack_by||"")).map(u=>`<option value="${esc(u.email)}"${u.email===me?" selected":""}>${esc(u.name)} · ${esc(u.email)}</option>`).join("");
+    const p=el("div","hoPanel"); p.style.cssText="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px";
+    p.innerHTML=`<span class="rl" style="color:var(--muted)">hand ack ${a.ack_by?`from <b>${esc(a.ack_by.split("@")[0])}</b>`:""} to</span>
+      <select class="fe-in" style="font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink);max-width:260px">${opts||'<option value="">no eligible colleague</option>'}</select>
+      <input placeholder="note (optional)" maxlength="300" style="font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink);width:180px">
+      <button class="pill" style="padding:3px 8px;border-left-color:var(--green,#0e9f5a)">Confirm</button><button class="pill" style="padding:3px 8px">Cancel</button>`;
+    cell.appendChild(p);
+    const [ok,cancel]=p.querySelectorAll("button"); const sel=p.querySelector("select"), note=p.querySelector("input");
+    cancel.onclick=()=>p.remove();
+    ok.onclick=()=>{ const to=sel.value; if(!to) return; incAction(a.id,"ack",{to, note:note.value.trim()}); };
+    sel.focus();
+  }
   async function incAction(id, action, payload){
     try{ await api(`/api/alerts/${id}/${action}`,{method:"POST",body:JSON.stringify(payload||{})}); renderAlerts(); }
     catch(e){ banner(`${action} failed: ${esc(e.message)}`); }
@@ -572,7 +594,9 @@
     row.removeAttribute("hidden");
     const cell=row.querySelector("td"); cell.innerHTML=`<div class="sub">Loading…</div>`;
     let d; try{ d=await api("/api/alerts/"+id); }catch(e){ cell.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
-    const comments=(d.comments||[]).map(c=>`<div style="margin:4px 0"><b>${esc((c.author||'').split("@")[0]||'—')}</b> <span class="rl">${timeAgo(c.created_at)}</span><br>${esc(c.body)}</div>`).join("")||`<div class="rl">No comments yet.</div>`;
+    const comments=(d.comments||[]).map(c=>c.author==='system'
+      ? `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #0891b2;background:rgba(8,145,178,.08);border-radius:6px"><span class="rl" style="color:#0891b2;font-weight:700">ownership</span> <span class="rl">${timeAgo(c.created_at)}</span><br>${esc(c.body)}</div>`
+      : `<div style="margin:4px 0"><b>${esc((c.author||'').split("@")[0]||'—')}</b> <span class="rl">${timeAgo(c.created_at)}</span><br>${esc(c.body)}</div>`).join("")||`<div class="rl">No comments yet.</div>`;
     cell.innerHTML=`<div style="padding:10px 6px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div><h5 style="margin:0 0 6px">RUNBOOK</h5>${d.runbook?`<div style="font-size:12.5px;white-space:pre-wrap">${esc(d.runbook)}</div>`:`<div class="rl">No runbook set for this rule. Add one in the rule editor.</div>`}
         <h5 style="margin:14px 0 6px">MESSAGE</h5><div class="mono" style="font-size:11.5px">${esc(d.alert.message||'')}</div></div>
