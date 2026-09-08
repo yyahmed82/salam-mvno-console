@@ -14,7 +14,7 @@
   const TONE={red:{bg:"rgba(220,76,76,.16)",fg:"#dc2626"},amber:{bg:"rgba(210,153,34,.16)",fg:"var(--warn-fg)"},muted:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"}};
   const ID_FIELDS=[["serviceNo","Service no. (FTTH… / 5G no.)"],["odb","ODB / plate no (ODB: prefix ok)"],["iccid","SIM ICCID"],["cpe","CPE serial"],["msisdn","MSISDN / mobile"],["custCode","Customer code (custCode)"],["customerId","Customer ID"],["workflowId","Workflow ID (wf_st_…)"]];
   const LS=k=>{ try{ return localStorage.getItem(k); }catch(e){ return null; } };
-  const S={ win:LS("fixed_err_win")||"today", channel:"", type:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", category:"", tech:"all", find:"", ids:{}, expanded:null, timer:null, tick:0 };
+  const S={ win:LS("fixed_err_win")||"today", channel:"", type:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", category:"", tech:"all", find:"", ids:{}, expanded:new Set(), timer:null, tick:0 };   // expanded = ids open at once (several rows can be open — compare cases side by side)
   /* channel + product type pills — same hue family in light and dark (tokens), never the violet business marker */
   const CH_STYLE={ sda:{bg:"rgba(14,159,90,.14)",fg:"var(--green,#0e9f5a)"}, qr:{bg:"rgba(13,148,136,.14)",fg:"#0d9488"}, web:{bg:"rgba(37,99,235,.13)",fg:"#2563eb"}, salamhome:{bg:"rgba(217,119,6,.14)",fg:"var(--warn-fg,#b45309)"} };
   const TY_STYLE={ ftth:{bg:"rgba(14,159,90,.12)",fg:"var(--green,#0e9f5a)"}, fttb:{bg:"rgba(5,150,105,.12)",fg:"#047857"}, "5gwl":{bg:"rgba(37,99,235,.12)",fg:"#2563eb"}, "5gfwa":{bg:"rgba(79,70,229,.12)",fg:"#4338ca"}, "5g":{bg:"rgba(37,99,235,.10)",fg:"#2563eb"}, lead:{bg:"rgba(217,119,6,.12)",fg:"var(--warn-fg,#b45309)"}, unknown:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"} };
@@ -131,7 +131,7 @@
     let deb=null; const go=()=>{ clearTimeout(deb); read(); S.category=""; load(host,fx,true); };
     host.querySelectorAll("input[id^=feId-],#feFind").forEach(i=>{ i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } }; i.oninput=()=>{ clearTimeout(deb); deb=setTimeout(go,450); }; });
     host.querySelector("#feXlsx").onclick=()=>exportBoard(host,fx,"xlsx"); host.querySelector("#fePdf").onclick=()=>exportBoard(host,fx,"pdf");
-    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",type:"",openOnly:true,team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},expanded:null}); render(host,fx); };
+    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",type:"",openOnly:true,team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},expanded:new Set()}); render(host,fx); };
     host.querySelector("#feFind").focus();
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }
@@ -192,7 +192,8 @@
       host.querySelectorAll(".fe-type").forEach(b=>b.onclick=()=>{ S.type=(S.type===b.dataset.v)?"":b.dataset.v; load(host,fx,true); });
       /* which read model answers which channel, and how fresh each is */
       const srcEl=$("#feSrc"); if(srcEl&&sum.sources&&sum.sources.length){ const SRC={ops:"sda_ops",beta:"sda_ops_beta"};
-        srcEl.innerHTML=sum.sources.map(x=>{ const bk=(x.buckets||[]).map(k=>CH_LABEL[k]||k).join(" · "); if(x.error) return `<span><b>${esc(bk)}</b> — <span class="stale">source unavailable</span> (${esc(SRC[x.src]||x.src)})</span>`;
+        srcEl.innerHTML=sum.sources.map(x=>{ const bk=(x.buckets||[]).map(k=>CH_LABEL[k]||k).join(" · "); if(x.error) return `<span><b>${esc(bk||SRC[x.src]||x.src)}</b> — <span class="stale">source unavailable</span> (${esc(SRC[x.src]||x.src)})</span>`;
+          if(x.stale) return `<span><span class="stale">${esc(SRC[x.src]||x.src)} stale</span> — last event ${esc(rel(x.latest))}; Web e-purchase + Salam Home app are read from sda_ops instead (app journeys appear under Web until opsb-ingest-watch is back)</span>`;
           const age=x.latest?Date.now()-new Date(x.latest).getTime():null; const stale=age==null||age>2*3600e3; return `<span><b>${esc(bk)}</b> ← ${esc(SRC[x.src]||x.src)} · last event <span class="${stale?"stale":""}">${esc(rel(x.latest))}</span></span>`; }).join(" &nbsp;·&nbsp; "); }
       const tiles=sum.byCategory.filter(c=>(!S.team||c.team===S.team)&&(S.prio===""||String(c.priority)===S.prio));
       $("#feTiles").innerHTML=tiles.length?tiles.map(c=>{ const on=S.category===c.category; const t=TONE[c.tone]||TONE.muted;
@@ -216,7 +217,7 @@
       if(r.chan==="salamhome") return `<span style="color:var(--muted)" title="Customer self-service in the Salam Home app — no dealer involved">customer (app)</span>`;
       return `<span style="color:var(--muted)" title="No dealer/staff captured for this journey">unattributed</span>`; };
     const status=r=>r.resolved?`<span class="fe-st resolved">resolved</span>`:r.acked?`<span class="fe-st acked" title="acked by ${esc(r.acked_by||"")}">acked</span>`:`<span class="fe-st open">open</span>`;
-    el.innerHTML=`<table class="fe-tbl"><thead><tr>${[["PRI"],["TIME"],["CATEGORY"],["CHANNEL"],["TYPE"],["DEALER / QR"],["REGION","c-region"],["STATUS"]].map(([h,c])=>`<th class="${c||""}">${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row${S.expanded===r.id?" open":""}" data-id="${esc(r.id)}" tabindex="0" title="Open: failed step, request / response, similar cases">
+    el.innerHTML=`<table class="fe-tbl"><thead><tr>${[["PRI"],["TIME"],["CATEGORY"],["CHANNEL"],["TYPE"],["DEALER / QR"],["REGION","c-region"],["STATUS"]].map(([h,c])=>`<th class="${c||""}">${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row${S.expanded.has(r.id)?" open":""}" data-id="${esc(r.id)}" tabindex="0" title="Open / close this row — several rows can stay open at once">
         <td>${prioBadge(r.priority)}</td><td style="white-space:nowrap">${fmtT(r.occurred_at)}</td>
         <td>${catBadge(r)}${r.code?`<span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:8px">${esc(r.code)}</span>`:""}</td>
         <td>${chanPill(r)}</td><td>${typePill(r)}</td>
@@ -226,10 +227,13 @@
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; e.preventDefault();
       const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${id.replace(/[^\w-]/g,"")}"]`); if(!x) return;
       const isOpen=!x.hidden;                                   // truth = the DOM, never a remembered id
-      el.querySelectorAll(".fe-x").forEach(o=>o.hidden=true); el.querySelectorAll(".fe-row.open").forEach(o=>o.classList.remove("open"));
-      if(isOpen){ S.expanded=null; return; }
-      S.expanded=id; x.hidden=false; tr.classList.add("open"); expand(host,fx,x.firstElementChild,rows.find(r=>r.id===id)); });
-    if(keepExpanded&&S.expanded){ const x=el.querySelector(`.fe-x[data-id="${String(S.expanded).replace(/[^\w-]/g,"")}"]`); const r=rows.find(r=>r.id===S.expanded); if(x&&r){ x.hidden=false; expand(host,fx,x.firstElementChild,r); } }
+      if(isOpen){ x.hidden=true; tr.classList.remove("open"); S.expanded.delete(id); return; }   // each row toggles on its own — others stay open
+      S.expanded.add(id); x.hidden=false; tr.classList.add("open"); expand(host,fx,x.firstElementChild,rows.find(r=>r.id===id)); });
+    if(keepExpanded&&S.expanded.size){ for(const id of S.expanded){ const x=el.querySelector(`.fe-x[data-id="${String(id).replace(/[^\w-]/g,"")}"]`); const r=rows.find(r=>r.id===id); if(x&&r){ x.hidden=false; expand(host,fx,x.firstElementChild,r); } } }
+    /* collapse-all appears once two or more rows are open */
+    const more=host.querySelector("#feMore"); if(more){ const old=host.querySelector("#feCollapse"); if(old) old.remove();
+      if(S.expanded.size>1) more.insertAdjacentHTML("beforebegin",`<div id="feCollapse" style="padding:8px 16px;text-align:right"><button type="button" class="fe-btn" id="feCollapseBtn">Collapse ${S.expanded.size} open rows</button></div>`);
+      const cb=host.querySelector("#feCollapseBtn"); if(cb) cb.onclick=()=>{ S.expanded.clear(); el.querySelectorAll(".fe-x").forEach(o=>o.hidden=true); el.querySelectorAll(".fe-row.open").forEach(o=>o.classList.remove("open")); cb.parentElement.remove(); }; }
   }
 
   async function expand(host,fx,cell,row){

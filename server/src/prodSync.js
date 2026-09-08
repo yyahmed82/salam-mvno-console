@@ -355,6 +355,11 @@ async function run({ tables, dryRun = false, date, from, to } = {}) {
     if (prod) await prod.end().catch(() => {});
   }
   const rows = results.reduce((a, r) => a + (r.rows || 0), 0);
+  /* New rows landed in the replica → every cached dashboard answer is now behind the data. Mark the response cache
+   * stale so the next hit (and the keep-warm loop) recomputes instead of serving the pre-sync figures for another
+   * TTL. Without this, after a backlog catch-up the KPI tiles kept showing the zeros computed while the replica
+   * was 6 h behind — restored from the on-disk snapshot at boot and refreshed only on their own TTL. */
+  if (!dryRun && rows > 0) { try { require('./respCache').invalidate(); console.log(`[prod-sync] ${rows} rows imported → response cache marked stale`); } catch (_) {} }
   return { dryRun, windowed: !!window, window, tables: list.length, rows, seconds: Math.round((Date.now() - started) / 1000), results };
 }
 

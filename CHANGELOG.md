@@ -33,6 +33,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   volume reads "down" and every rate is computed on a truncated tail — the 8 Sep 6 h lag opened two P1s and three
   anomalies that were all artefacts. Open alerts are left to resolve on the next fresh scan; the log says
   `[anomaly] source is Nm behind — paused`.
+- Fixed › Errors: **several rows can be open at once** — each row toggles on its own (no accordion), so two cases can be
+  compared side by side; a "Collapse N open rows" button appears once two or more are open; open rows survive the
+  60 s refresh. "Similar cases · median resolve" ignores rows whose resolved_at precedes occurred_at (it showed −79 m).
+- Fixed › Errors partition is **data-driven**: `sda_ops_beta` serves Web + Salam Home app only while its newest event is
+  within `OPS_BETA_STALE_MIN` (120) of prod's; otherwise every channel comes from `sda_ops` and the board says so
+  (the beta watcher had been silent since 22 Aug — a config-only partition would have shown "Web · 0" against 1 266
+  real rows). Re-checked every 60 s, logged on change.
+- Response cache: marked stale after every prod-sync run that imports rows (dashboards recompute instead of serving
+  pre-sync figures for another TTL); the on-disk snapshot is restored only when younger than
+  `RESP_CACHE_RESTORE_MAX_MIN` (30) — an old snapshot served zero-filled tiles after the replica outage.
 - Health self-check: "Alert engine · no snapshots yet" was a bug in the probe (it read `metric_snapshots.created_at`;
   the column is `computed_at`) — it now reports the real age of the last evaluation. ChatOps shows grey/optional when
   it is switched off with nothing configured; amber only when enabled-but-empty or configured-but-off.

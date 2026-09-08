@@ -185,8 +185,27 @@ const parseJson = s => { if (s == null) return null; if (typeof s === 'object') 
 
 function mount(app, deps) {
   const { gate, wrap, audit, db } = deps;
-  /* ---- the read models. split = both configured and different → partition (header); else one pool serves every bucket ---- */
-  const split = () => !!(db.ops && db.opsBeta && db.opsBeta !== db.ops);
+  /* ---- the read models. split = both configured, different AND the beta model is FRESH → partition (header);
+   * otherwise one pool (prod) serves every bucket. Freshness is decided from data, not config: the beta watcher
+   * (opsb-ingest-watch) stopped writing on 22 Aug 2026 without anyone noticing, and a partition that trusts a dead
+   * model would show "Web e-purchase · 0" while prod holds a thousand rows. Rule: beta is used only while its newest
+   * event is within BETA_STALE_MIN (default 120) of prod's newest event; re-checked every 60 s. ---- */
+  const BETA_STALE_MIN = Number(process.env.OPS_BETA_STALE_MIN) || 120;
+  const both = () => !!(db.ops && db.opsBeta && db.opsBeta !== db.ops);
+  const splitState = { at: 0, value: false, opsLatest: null, betaLatest: null, reason: 'not checked' };
+  const split = () => splitState.value;
+  async function refreshSplit() {
+    if (!both()) { splitState.value = false; splitState.reason = 'one read model'; return false; }
+    if (Date.now() - splitState.at < 60000) return splitState.value;
+    const latest = async pool => { try { const r = await pool.query(`SELECT max(occurred_at) AS m FROM error_events WHERE occurred_at >= now() - interval '30 days'`); return r.rows[0] && r.rows[0].m ? new Date(r.rows[0].m) : null; } catch (_) { return null; } };
+    const [o, b] = await Promise.all([latest(db.ops), latest(db.opsBeta)]);
+    splitState.at = Date.now(); splitState.opsLatest = o; splitState.betaLatest = b;
+    const ref = o || new Date();
+    const fresh = !!b && (ref.getTime() - b.getTime()) <= BETA_STALE_MIN * 60000;
+    if (fresh !== splitState.value) console.log(`[fixed-errors] beta read model ${fresh ? 'fresh — Web + Salam Home app served from sda_ops_beta' : `stale (newest ${b ? b.toISOString() : 'none'} vs prod ${ref.toISOString()}) — every channel served from sda_ops`}`);
+    splitState.value = fresh; splitState.reason = fresh ? 'beta fresh' : (b ? `beta stale: newest event ${b.toISOString()}` : 'beta empty');
+    return fresh;
+  }
   function sources() {
     const list = [];
     if (db.ops) list.push({ src: 'ops', pool: db.ops });
@@ -196,9 +215,11 @@ function mount(app, deps) {
   }
   const poolOf = src => (src === 'beta' && db.opsBeta) ? db.opsBeta : (db.ops || db.opsBeta);
   /* run `fn(pool, where, src)` on every source that has something to answer for this filter set; results in source order */
+  /* the sources that ANSWER right now: both when the partition is on, else prod alone (never both unsplit — that doubles) */
+  const active = () => { const all = sources(); return split() ? all : [all.find(x => x.src === 'ops') || all[0]]; };
   async function each(s, fn) {
-    const sp = split();
-    const jobs = sources().map(x => { const w = whereFor(s, x.src, sp); return w ? fn(x.pool, w, x.src).then(r => ({ src: x.src, r })) : null; }).filter(Boolean);
+    const sp = await refreshSplit();
+    const jobs = active().map(x => { const w = whereFor(s, x.src, sp); return w ? fn(x.pool, w, x.src).then(r => ({ src: x.src, r })) : null; }).filter(Boolean);
     return Promise.all(jobs);
   }
   /* the partition predicate alone (no user filters) — for the 3h escalation counts and freshness */
@@ -221,8 +242,9 @@ function mount(app, deps) {
 
   /* per-category last-3h volume → effective priority (same escalation as the prod board), summed over the sources */
   async function effByCategory() {
+    await refreshSplit();
     const last3h = {};
-    await Promise.all(sources().map(async x => {
+    await Promise.all(active().map(async x => {
       const r = await x.pool.query(`SELECT category, count(*)::int AS n FROM error_events e
         WHERE e.occurred_at >= now() - interval '3 hours' ${sliceOnly(x.src)} GROUP BY 1`);
       for (const row of r.rows) last3h[row.category] = (last3h[row.category] || 0) + n(row.n);
@@ -246,6 +268,7 @@ function mount(app, deps) {
   async function summary(q) {
     const s = baseWhere(q);
     const openOnly = q.openOnly === '1' || q.openOnly === 'true';
+    await refreshSplit();
     const [catParts, provs, chans, types, fresh] = await Promise.all([
       each(s, (pool, where) => pool.query(`SELECT e.category, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open,
           count(*) FILTER (WHERE e.occurred_at >= now() - interval '3 hours')::int AS last3h
@@ -254,7 +277,8 @@ function mount(app, deps) {
       grouped(q, CHANNEL_EXPR, 'channel', 10).catch(() => []),
       grouped(q, TYPE_EXPR, 'type', 10).catch(() => []),
       Promise.all(sources().map(async x => { try { const r = await x.pool.query(`SELECT max(occurred_at) AS latest FROM error_events e WHERE e.occurred_at >= now() - interval '30 days' ${sliceOnly(x.src)}`);
-        return { src: x.src, buckets: split() ? SRC_BUCKETS[x.src] : CHANNELS.map(c => c.key), latest: r.rows[0] && r.rows[0].latest || null }; } catch (e) { return { src: x.src, error: e.message }; } })),
+        const served = split() ? SRC_BUCKETS[x.src] : (x.src === 'ops' ? CHANNELS.map(c => c.key) : []);
+        return { src: x.src, buckets: served, latest: r.rows[0] && r.rows[0].latest || null, stale: x.src === 'beta' && both() && !split(), reason: x.src === 'beta' ? splitState.reason : undefined }; } catch (e) { return { src: x.src, error: e.message }; } })),
     ]);
     const cat = {};
     for (const p of catParts) for (const x of p.r.rows) { const c = cat[x.category] = cat[x.category] || { category: x.category, total: 0, open: 0, last3h: 0 }; c.total += n(x.total); c.open += n(x.open); c.last3h += n(x.last3h); }
@@ -269,7 +293,7 @@ function mount(app, deps) {
     const byChannel = CHANNELS.map(c => { const x = chans.find(y => y.key === c.key) || { open: 0, total: 0 }; return { channel: c.key, label: c.label, short: c.short, desc: c.desc, open: x.open, total: x.total }; });
     const byType = TYPES.map(t => { const x = types.find(y => y.key === t.key) || { open: 0, total: 0 }; return { type: t.key, label: t.label, desc: t.desc, open: x.open, total: x.total }; });
     return { window: s.window, from: s.from, to: s.to, channel: q.channel || '', type: s.type || '', openOnly, provider: q.provider || '',
-      byProvider, byChannel, byType, sources: fresh, split: split(),
+      byProvider, byChannel, byType, sources: fresh, split: split(), splitReason: splitState.reason,
       total: byCategory.reduce((a, c) => a + c.total, 0), open: byCategory.reduce((a, c) => a + c.open, 0),
       byCategory: openOnly ? byCategory.filter(c => c.open > 0) : byCategory, byTeam, byPriority, taxonomy: TAXONOMY, spike: SPIKE, channels: CHANNELS, types: TYPES };
   }
@@ -322,7 +346,7 @@ function mount(app, deps) {
           max(occurred_at) AS last_seen,
           count(DISTINCT attempt_id) FILTER (WHERE occurred_at::date = current_date)::int AS affected_today,
           (percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (resolved_at - occurred_at)) / 60.0)
-             FILTER (WHERE resolved AND resolved_at IS NOT NULL))::int AS median_resolve_mins
+             FILTER (WHERE resolved AND resolved_at IS NOT NULL AND resolved_at >= occurred_at))::int AS median_resolve_mins
         FROM error_events WHERE ${key}${ex}`, P),
       pool.query(`SELECT occurred_at::date AS day, count(*)::int AS n FROM error_events WHERE ${key}${ex} GROUP BY 1 ORDER BY n DESC LIMIT 1`, P),
     ]);

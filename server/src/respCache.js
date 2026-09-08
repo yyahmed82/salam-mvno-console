@@ -30,9 +30,15 @@ function load() {
   if (!TTL) return;
   try {
     const j = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    /* A snapshot is only useful across a quick restart (deploy). Older than RESP_CACHE_RESTORE_MAX_MIN (30) its
+     * answers describe another world — after the 8 Sep replica outage a restored snapshot served zero-filled
+     * dashboards as "stale hits" until every URL had been recomputed. Start cold instead; keep-warm refills it. */
+    const ageMin = j.savedAt ? (Date.now() - new Date(j.savedAt).getTime()) / 60000 : Infinity;
+    const maxMin = Number(process.env.RESP_CACHE_RESTORE_MAX_MIN) || 30;
+    if (ageMin > maxMin) { console.log(`[CACHE] snapshot is ${Math.round(ageMin)} min old (> ${maxMin}) — not restored, starting cold`); return; }
     let n = 0;
     for (const [k, e] of Object.entries(j.entries || {})) { if (e && e.body !== undefined) { store.set(k, { body: e.body, at: 1, url: e.url, n: e.n || 0 }); n++; } }
-    console.log(`[CACHE] restored ${n} responses from ${FILE} (served stale, refreshed in the background)`);
+    console.log(`[CACHE] restored ${n} responses from ${FILE} (${Math.round(ageMin)} min old — served stale, refreshed in the background)`);
   } catch (e) { if (e.code !== 'ENOENT') console.error('[CACHE] restore failed:', e.message); }
 }
 function save(reason) {
