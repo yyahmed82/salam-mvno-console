@@ -100,9 +100,9 @@ function buildEmail(d) {
   return { html, subject };
 }
 
-async function send(refIso) {
+async function send(refIso, opts = {}) {
   const data = await compute(refIso);
-  const to = await notify.recipients('mail_report');
+  const to = opts.to ? (Array.isArray(opts.to) ? opts.to : [opts.to]).map(e => ({ email: String(e) })) : await notify.recipients('mail_report');   // opts.to = test/send-to-one
   const { html, subject } = buildEmail(data);
   const r = await notify.sendHtml(to, subject, html);
   return { ...data, subject, previewHtml: html, sent: r.sent, dev: r.dev, error: r.error,
