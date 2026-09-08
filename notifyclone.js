@@ -12,7 +12,7 @@
   const api=(p,opts)=>window.fetch(API+p,Object.assign({headers:{"Content-Type":"application/json"}},opts)).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
   const SEVS=["P1","P2","P3"];
   const TIERS=[["l1_bss","L1 BSS"],["l2_bss","L2 BSS"],["l1_digital","L1 Digital"],["l2_digital","L2 Digital"],["l3_digital","L3 Digital"]];
-  let CH=null, ESC=null;
+  let CH=null, ESC=null, SN=null, CM=null;
   const host=()=>document.getElementById("notifyCfgClone");
   const q=sel=>{ const h=host(); return h?[...h.querySelectorAll(sel)]:[]; };
 
@@ -198,12 +198,73 @@
   async function render(){
     const h=host(); if(!h) return;
     h.innerHTML=`<div class="sub">Loading…</div>`;
-    try{ [CH,ESC]=await Promise.all([api("/api/chatops"),api("/api/escalation")]); }
+    try{ [CH,ESC,SN,CM]=await Promise.all([api("/api/chatops"),api("/api/escalation"),api("/api/servicenow/config").catch(()=>null),api("/api/comms/config").catch(()=>null)]); }
     catch(e){ h.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
-    h.innerHTML=chatopsPanel()+escalationPanel();
-    wire();
+    h.innerHTML=chatopsPanel()+snCfgPanel()+commsCfgPanel()+escalationPanel();
+    wire(); wireSn();
   }
 
+
+  /* ---- ServiceNow tickets (write path) + incident comms lists — Phase 1 of docs/SERVICENOW-INTEGRATION-PLAN.md ---- */
+  function snCfgPanel(){
+    const c=SN||{}; const p=c.poller||{};
+    const conn=!c.configured?`<b style="color:#d97706">credentials not set on 152</b> (SN_USER / SN_PASS) — network to ${esc(c.url||'servicehub.salam.sa')} is open`:`<b style="color:var(--good)">connected ✓</b> as ${esc(c.user||'')}${p.lastErr?` · <span style="color:#dc2626">poller: ${esc(p.lastErr)}</span>`:p.lastSync?` · state synced ${new Date(p.lastSync).toLocaleTimeString('en-GB',{timeZone:'Asia/Riyadh',hour:'2-digit',minute:'2-digit'})} KSA`:''}`;
+    return `<div class="panel">
+      <h2>ServiceNow tickets <span class="rl" style="font-weight:400">— ServiceHub · raise an INC from an acknowledged incident</span></h2>
+      <div class="sub">Manual first: after an L1 acknowledges an incident, <b>🎫 ServiceNow</b> appears on the row; the console pre-fills the INC, the person reviews and confirms. One INC per incident (<code>correlation_id ops-console:&lt;id&gt;</code>), state polled back every ${esc(p.everyMin||3)} min. Priority is derived by ServiceNow from impact × urgency (P1 → 1/1, P2 → 2/2, P3 → 3/3). Status: ${conn}.</div>
+      <div class="nc-form" style="margin-top:14px">
+        <label class="nc-row"><span>Ticket creation enabled <small class="rl">(off = dry run: shows the payload, sends nothing)</small></span>
+          <input type="checkbox" id="snWrite" ${c.writeEnabled?"checked":""}></label>
+        <label class="nc-row"><span>Assignment group · <b style="color:var(--green)">Mobile</b></span>
+          <input type="text" id="snGrpM" placeholder="MVNO-MS-App-Digital-Chnls" value="${esc(c.groupMobile||"")}"></label>
+        <label class="nc-row"><span>Assignment group · <b style="color:var(--purple)">Fixed</b></span>
+          <input type="text" id="snGrpF" placeholder="ask ITSM — e.g. Fixed-Ops-Digital" value="${esc(c.groupFixed||"")}"></label>
+        <label class="nc-row"><span>Category <small class="rl">(instance value, optional)</small></span>
+          <input type="text" id="snCat" placeholder="e.g. Application" value="${esc(c.category||"")}"></label>
+        <label class="nc-row"><span>Subcategory <small class="rl">(optional)</small></span>
+          <input type="text" id="snSub" placeholder="" value="${esc(c.subcategory||"")}"></label>
+        <label class="nc-row"><span>Caller</span>
+          <select id="snCaller"><option value="sender"${c.callerMode!=="service"?" selected":""}>the person who raises it (looked up by e-mail)</option><option value="service"${c.callerMode==="service"?" selected":""}>the integration service account</option></select></label>
+        <label class="nc-row"><span>Impacted service <small class="rl">(default text in the comms mail)</small></span>
+          <input type="text" id="snSvc" placeholder="e.g. Salam app · SADAD bill payment" value="${esc(c.impactedService||"")}"></label>
+      </div>
+      <div class="nc-actions">
+        <button class="pill" id="snSave" style="border-left-color:var(--green)">Save</button>
+        <button class="pill" id="snPing" style="border-left-color:var(--blue)">Test connection</button>
+        <button class="pill" id="snGroups" style="border-left-color:var(--blue)">List groups (MVNO…)</button>
+        <button class="pill" id="snChoices" style="border-left-color:var(--blue)">List categories</button>
+        <span id="snStatus" class="rl"></span></div>
+      <pre id="snOut" class="nc-pre" style="display:none;margin-top:8px;max-height:260px;overflow:auto"></pre>
+    </div>`;
+  }
+  function commsCfgPanel(){
+    const c=CM||{mobile:{},fixed:{}};
+    const side=(biz,label,color)=>`<h4 style="margin:14px 0 4px;color:${color}">${label}</h4>
+      <div class="nc-form">
+        <label class="nc-row"><span>P1 recipients</span><input type="text" id="cm_${biz}_P1" placeholder="list@salam.sa, name@salam.sa …" value="${esc(c[biz].P1||"")}"></label>
+        <label class="nc-row"><span>P2 recipients</span><input type="text" id="cm_${biz}_P2" placeholder="" value="${esc(c[biz].P2||"")}"></label>
+        <label class="nc-row"><span>P3 recipients</span><input type="text" id="cm_${biz}_P3" placeholder="" value="${esc(c[biz].P3||"")}"></label>
+        <label class="nc-row"><span>Standing bridge link <small class="rl">(optional)</small></span><input type="text" id="cm_${biz}_bridge" placeholder="https://teams.microsoft.com/l/meetup-join/…" value="${esc(c[biz].bridge||"")}"></label>
+        <label class="nc-row"><span>Signature <small class="rl">(e.g. MVNO L1 Team)</small></span><input type="text" id="cm_${biz}_from" placeholder="L1 Team" value="${esc(c[biz].from||"")}"></label>
+      </div>`;
+    return `<div class="panel">
+      <h2>Incident comms mail <span class="rl" style="font-weight:400">— the L1 “Critical Incident Notification”, sent from the console</span></h2>
+      <div class="sub">On an acknowledged incident, <b>✉ Comms</b> opens the notification pre-filled (priority, INC number, reported time, description, impact, service, status, bridge). L1 reviews and sends; updates and the resolved notice reuse the same template. Recipients per business × priority below — always Bcc, lists are never exposed, every send is logged on the incident.</div>
+      ${side("mobile","Mobile (MVNO)","var(--green)")}${side("fixed","Fixed","var(--purple)")}
+      <div class="nc-actions"><button class="pill" id="cmSave" style="border-left-color:var(--green)">Save lists</button><span id="cmStatus" class="rl"></span></div>
+    </div>`;
+  }
+  function wireSn(){
+    const st=$("#snStatus"), out=$("#snOut");
+    const show=(t)=>{ out.style.display="block"; out.textContent=typeof t==="string"?t:JSON.stringify(t,null,2); };
+    const b=(id,fn)=>{ const x=$(id); if(x) x.onclick=fn; };
+    b("#snSave",async()=>{ st.textContent="Saving…"; try{ SN={...SN,...(await api("/api/servicenow/config",{method:"PUT",body:JSON.stringify({writeEnabled:$("#snWrite").checked,groupMobile:$("#snGrpM").value.trim(),groupFixed:$("#snGrpF").value.trim(),category:$("#snCat").value.trim(),subcategory:$("#snSub").value.trim(),callerMode:$("#snCaller").value,impactedService:$("#snSvc").value.trim()})}))}; st.textContent=`Saved · ticket creation ${SN.writeEnabled?"ON":"off (dry run)"}`; }catch(e){ st.textContent="Error: "+e.message; } });
+    b("#snPing",async()=>{ st.textContent="Testing…"; try{ const r=await api("/api/servicenow/ping"); st.textContent=!r.configured?"Not configured — SN_USER / SN_PASS missing on 152":r.ok?`OK — ${r.sample} recent incident(s) readable`:`Failed: ${r.error}`; }catch(e){ st.textContent="Error: "+e.message; } });
+    b("#snGroups",async()=>{ st.textContent="Loading groups…"; try{ const r=await api("/api/servicenow/groups?q="+encodeURIComponent(prompt("Group name starts with…","MVNO")||"MVNO")); show((r.groups||[]).map(g=>g.name).join("\n")||"(none)"); st.textContent=`${(r.groups||[]).length} group(s)`; }catch(e){ st.textContent="Error: "+e.message; } });
+    b("#snChoices",async()=>{ st.textContent="Loading categories…"; try{ const r=await api("/api/servicenow/choices?element=category"); show((r.choices||[]).map(c=>`${c.value}  —  ${c.label}`).join("\n")||"(none)"); st.textContent=`${(r.choices||[]).length} categor(ies)`; }catch(e){ st.textContent="Error: "+e.message; } });
+    b("#cmSave",async()=>{ const s=$("#cmStatus"); s.textContent="Saving…"; const g=(biz,k)=>$(`#cm_${biz}_${k}`).value.trim();
+      try{ CM=await api("/api/comms/config",{method:"PUT",body:JSON.stringify({mobile:{P1:g("mobile","P1"),P2:g("mobile","P2"),P3:g("mobile","P3"),bridge:g("mobile","bridge"),from:g("mobile","from")},fixed:{P1:g("fixed","P1"),P2:g("fixed","P2"),P3:g("fixed","P3"),bridge:g("fixed","bridge"),from:g("fixed","from")}})}); s.textContent="Saved ✓"; }catch(e){ s.textContent="Error: "+e.message; } });
+  }
   window.openNotifyClone=function(){
     ensureView();
     document.querySelectorAll(".navtab").forEach(x=>x.classList.remove("active"));

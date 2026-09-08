@@ -499,13 +499,15 @@
         cr.role==='child'   ? `<br><span class="rl" style="color:#7c3aed">↳ correlated under <b>${esc(cr.parentName)}</b> · not separately paged</span>` :
         cr.role==='related' ? `<br><span class="rl" style="color:#0891b2">related to ${esc(cr.parentName)}</span>` :
         cr.role==='root'    ? `<br><span class="rl" style="color:#dc2626;font-weight:700">◆ root cause${childCount[a.rule_key]?` · ${childCount[a.rule_key]} correlated`:''}</span>${cr.impacts&&cr.impacts.length?`<br><span class="rl">blocks: ${cr.impacts.map(j=>`<span style="display:inline-block;background:var(--tint-red);color:var(--tint-red-fg);border-radius:4px;padding:0 5px;margin:1px 2px 0 0;font-size:10.5px">${esc(j)}</span>`).join("")}</span>`:''}` : '';
-      const stateTag = a.status!=='open' ? `<span class="st-resolved">resolved</span>`
+      const snChip = a.sn_number ? `<br><button class="pill" data-snopen="${a.id}" style="padding:1px 7px;font-size:10.5px;border-left-color:${/resolved|closed/i.test(a.sn_state||'')?'var(--good)':'#d97706'}" title="ServiceNow ${esc(a.sn_number)} · ${esc(a.sn_state||'New')}">🎫 ${esc(a.sn_number)} · ${esc(a.sn_state||'New')}</button>` : '';
+      const stateTag = (a.status!=='open' ? `<span class="st-resolved">resolved</span>`
         : snoozed ? `<span style="color:#7c3aed;font-weight:700">snoozed</span>`
         : a.ack_at ? `<span style="color:#0891b2;font-weight:700">acked</span>`
-        : `<span class="st-open">open${a.breach_count>1?` ×${a.breach_count}`:""}</span>`;
+        : `<span class="st-open">open${a.breach_count>1?` ×${a.breach_count}`:""}</span>`) + snChip;
       const me=((window.opsSession&&window.opsSession().me)||{}).email||"";
       const acts = (a.status==='open' && canAck()) ? `
         ${a.ack_at?(a.ack_by&&a.ack_by!==me?`<button class="pill" data-reack="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Take the acknowledgement over from ${esc(a.ack_by)} — logged in the incident discussion and the audit trail">Re-ack</button> `:'')+`<button class="pill" data-handover="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Hand the acknowledgement to a colleague on this side — logged">Hand over</button>`:`<button class="pill" data-ack="${a.id}" style="padding:3px 8px">Ack</button>`}
+        ${a.ack_at&&!a.sn_number?`<button class="pill" data-sn="${a.id}" style="padding:3px 8px;border-left-color:#2563eb" title="Raise this confirmed incident in ServiceNow (ServiceHub)">🎫 ServiceNow</button> `:''}${a.ack_at?`<button class="pill" data-comms="${a.id}" style="padding:3px 8px;border-left-color:#2563eb" title="Send the incident notification mail (L1 template)">✉ Comms</button> `:''}
         <button class="pill" data-snooze="${a.id}" style="padding:3px 8px">${snoozed?'Snoozed':'Snooze'}</button>
         <button class="pill" data-resolve="${a.id}" style="padding:3px 8px;border-left-color:var(--good)">Resolve</button>` : '';
       h += `<tr${isChild?' style="opacity:.62"':''}>
@@ -527,6 +529,9 @@
     body.querySelectorAll("[data-ack]").forEach(b=>b.addEventListener("click",()=>incAction(b.dataset.ack,"ack")));
     body.querySelectorAll("[data-reack]").forEach(b=>b.addEventListener("click",()=>{ const a=byId[b.dataset.reack]||{}; if(confirm(`Take over the acknowledgement from ${a.ack_by||"the current holder"}? This is logged on the incident.`)) incAction(b.dataset.reack,"ack"); }));
     body.querySelectorAll("[data-handover]").forEach(b=>b.addEventListener("click",()=>handoverPanel(b, byId[b.dataset.handover])));
+    SEG_ROWS=byId;
+    body.querySelectorAll("[data-sn],[data-snopen]").forEach(b=>b.addEventListener("click",()=>snPanel(b.dataset.sn||b.dataset.snopen)));
+    body.querySelectorAll("[data-comms]").forEach(b=>b.addEventListener("click",()=>snPanel(b.dataset.comms,"comms")));
     body.querySelectorAll("[data-snooze]").forEach(b=>b.addEventListener("click",()=>{ const hrs=prompt("Snooze for how many hours?","1"); if(hrs) incAction(b.dataset.snooze,"snooze",{hours:Number(hrs)}); }));
     body.querySelectorAll("[data-resolve]").forEach(b=>b.addEventListener("click",()=>{ if(confirm("Resolve this incident?")) incAction(b.dataset.resolve,"resolve"); }));
     body.querySelectorAll("[data-det]").forEach(b=>b.addEventListener("click",()=>toggleDetail(b.dataset.det)));
@@ -584,6 +589,115 @@
     cancel.onclick=()=>p.remove();
     ok.onclick=()=>{ const to=sel.value; if(!to) return; incAction(a.id,"ack",{to, note:note.value.trim()}); };
     sel.focus();
+  }
+  let SEG_ROWS={};
+  /* ---- ServiceNow ticket + incident comms (Phase 1: manual, after ack) ------------------------------
+   * The panel lives in the incident's detail row (#incdet_<id>): draft → Raise in ServiceNow → INC card with
+   * work notes, state refresh, comms history → Send incident comms (the L1 "Critical Incident Notification"). */
+  const inp=(id,v,ph,extra)=>`<input id="${id}" value="${esc(v==null?"":v)}" placeholder="${esc(ph||"")}" ${extra||""}>`;
+  const ta=(id,v,rows,ph)=>`<textarea id="${id}" rows="${rows||3}" placeholder="${esc(ph||"")}">${esc(v==null?"":v)}</textarea>`;
+  const IMP={"1":"1 — High","2":"2 — Medium","3":"3 — Low"};
+  const selImp=(id,v)=>`<select id="${id}">${["1","2","3"].map(x=>`<option value="${x}"${String(v)===x?" selected":""}>${IMP[x]}</option>`).join("")}</select>`;
+  const snStateColor=s=>/resolved|closed/i.test(s||"")?"var(--good)":/progress|hold/i.test(s||"")?"#0891b2":"#d97706";
+  async function snPanel(id, mode){
+    const row=$("#incdet_"+id); if(!row) return;
+    row.removeAttribute("hidden");
+    const cell=row.querySelector("td"); cell.innerHTML=`<div class="sub">Loading ServiceNow…</div>`;
+    let d; try{ d=await api(`/api/alerts/${id}/servicenow`); }catch(e){ cell.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
+    const a=(SEG_ROWS[id])||{};
+    const status=`<div class="rl" style="margin-bottom:8px">${d.configured?`ServiceNow connected · ${d.writeEnabled?'<b style="color:var(--good)">ticket creation ON</b>':'<b style="color:#d97706">dry run</b> — writes are off in Settings → Notifications → ServiceNow'}`:'<b style="color:#d97706">ServiceNow credentials not set on 152</b> — the console shows the draft; nothing is sent'}${d.poller&&d.poller.lastSync?` · state synced ${timeAgo(d.poller.lastSync)}`:''}</div>`;
+    const commsHist=(d.comms||[]).length?`<h5 style="margin:12px 0 4px">COMMS SENT</h5>`+(d.comms||[]).map(c=>`<div class="rl" style="margin:2px 0">${c.ok?'✅':'✗'} <b>${esc(c.kind)}</b> · ${esc(c.subject||'')} · ${c.n||0} recipient(s) · ${esc((c.sent_by||'').split('@')[0])} · ${timeAgo(c.sent_at)}${c.error?` · <span style="color:#dc2626">${esc(c.error)}</span>`:''}</div>`).join(""):"";
+    let h;
+    if(d.linked){
+      const L=d.linked;
+      h=`<div style="padding:10px 6px">${status}
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:10px 12px;border:1px solid var(--line);border-left:4px solid ${snStateColor(L.state)};border-radius:10px;background:var(--card,#fff)">
+          <a href="${esc(L.link||'#')}" target="_blank" rel="noopener" class="mono" style="font-size:15px;font-weight:800;color:var(--green)">${esc(L.number)} ↗</a>
+          <span class="rl">state <b style="color:${snStateColor(L.state)}">${esc(L.state||'New')}</b></span>
+          <span class="rl">raised by ${esc((L.created_by||'').split('@')[0])} · ${timeAgo(L.created_at)}</span>
+          ${L.synced_at?`<span class="rl">synced ${timeAgo(L.synced_at)}</span>`:''}
+          <button class="pill" id="snRefresh_${id}" style="padding:3px 8px;border-left-color:#0891b2">↻ Refresh state</button>
+          ${d.allowed?`<button class="pill" id="snComms_${id}" style="padding:3px 8px;border-left-color:var(--green)">✉ Send incident comms</button>`:''}
+        </div>
+        ${d.allowed?`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px">
+          <select id="snNoteKind_${id}" class="fe-in" style="font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink)"><option value="work_notes">Work note (internal)</option><option value="comments">Comment (customer-visible)</option></select>
+          <input id="snNote_${id}" class="jsearch" placeholder="Follow-up to post on ${esc(L.number)}…" style="flex:1;min-width:200px">
+          <button class="pill" id="snNoteSend_${id}" style="padding:3px 10px;border-left-color:var(--green)">Post to ServiceNow</button></div>`:''}
+        ${commsHist}
+        <div id="snComsHost_${id}"></div>
+        <div id="snMsg_${id}" class="rl" style="margin-top:6px"></div></div>`;
+    } else {
+      const f=d.draft||{};
+      const gate=!d.acked?`<div class="albanner">Acknowledge the incident first — only a confirmed incident is raised in ServiceNow.</div>`:!d.allowed?`<div class="albanner">Only the ack holder (${esc(a.ack_by||'—')}), an ACK · ${SEG==="fixed"?"FIXED":"MOBILE"} holder or an ops admin can raise this.</div>`:"";
+      h=`<div style="padding:10px 6px">${status}${gate}
+        <h5 style="margin:0 0 6px">RAISE IN SERVICENOW · ${esc(f.business||'')} <span class="rl">(review, then confirm — one INC per incident)</span></h5>
+        <div class="snf">
+          <label>Short description</label>${inp("snSd_"+id,f.short_description,"",'maxlength="160"')}
+          <label>Description</label>${ta("snDesc_"+id,f.description,9)}
+          <label>Impact</label>${selImp("snImp_"+id,f.impact)}
+          <label>Urgency</label>${selImp("snUrg_"+id,f.urgency)}
+          <label>Assignment group</label>${inp("snGrp_"+id,f.assignment_group,"e.g. MVNO-MS-App-Digital-Chnls (display name)")}
+          <label>Category</label>${inp("snCat_"+id,f.category,"optional — instance value")}
+          <label>Subcategory</label>${inp("snSub_"+id,f.subcategory,"optional")}
+          <label>Caller</label><div class="rl" style="padding-top:7px">${f.caller_email?esc(f.caller_email)+' (looked up by e-mail; falls back to the service account)':'service account'} · correlation <span class="mono">${esc(f.correlation_id||'')}</span></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+          <button class="pill" id="snRaise_${id}" style="border-left-color:var(--green)" ${(d.acked&&d.allowed)?'':'disabled'}>${d.writeEnabled&&d.configured?'🎫 Raise in ServiceNow':'🎫 Dry run — show what would be created'}</button>
+          <button class="pill" id="snClose_${id}">Close</button>
+          <span id="snMsg_${id}" class="rl"></span></div>
+        <pre id="snPayload_${id}" class="nc-pre" style="display:none;margin-top:8px;max-height:260px;overflow:auto"></pre>
+        ${commsHist}</div>`;
+    }
+    cell.innerHTML=h;
+    const msg=$("#snMsg_"+id);
+    const on=(sel,fn)=>{ const b=$(sel); if(b) b.onclick=fn; };
+    on("#snClose_"+id,()=>row.setAttribute("hidden",""));
+    on("#snRaise_"+id,async()=>{
+      const b=$("#snRaise_"+id); b.disabled=true; msg.textContent="Sending…";
+      try{ const r=await api(`/api/alerts/${id}/servicenow`,{method:"POST",body:JSON.stringify({short_description:$("#snSd_"+id).value.trim(),description:$("#snDesc_"+id).value,impact:$("#snImp_"+id).value,urgency:$("#snUrg_"+id).value,assignment_group:$("#snGrp_"+id).value.trim(),category:$("#snCat_"+id).value.trim(),subcategory:$("#snSub_"+id).value.trim()})});
+        if(r.dryRun){ msg.innerHTML=`<b style="color:#d97706">Not sent</b> — ${esc(r.reason)}. This is the exact payload that would be POSTed to /api/now/table/incident:`; const p=$("#snPayload_"+id); p.style.display="block"; p.textContent=JSON.stringify(r.payload,null,2); b.disabled=false; return; }
+        msg.innerHTML=`<b style="color:var(--good)">${esc(r.number)} ${r.reused?'linked':'created'}</b>`; setTimeout(()=>{ renderAlerts(); snPanel(id); },400);
+      }catch(e){ msg.innerHTML=`<span style="color:#dc2626">${esc(e.message)}</span>`; b.disabled=false; }
+    });
+    on("#snRefresh_"+id,async()=>{ msg.textContent="Refreshing…"; try{ const r=await api(`/api/alerts/${id}/servicenow/sync`,{method:"POST",body:"{}"}); msg.textContent=r.error?`Sync error: ${r.error}`:`Checked ${r.checked||0} linked ticket(s), ${r.changed||0} changed`; renderAlerts(); snPanel(id); }catch(e){ msg.textContent=e.message; } });
+    on("#snNoteSend_"+id,async()=>{ const t=$("#snNote_"+id).value.trim(); if(!t) return; msg.textContent="Posting…";
+      try{ const r=await api(`/api/alerts/${id}/servicenow/note`,{method:"POST",body:JSON.stringify({text:t,kind:$("#snNoteKind_"+id).value})}); msg.innerHTML=r.dryRun?`<b style="color:#d97706">Dry run</b> — would post ${esc(r.field)}: ${esc(r.body)}`:`<b style="color:var(--good)">Posted</b> as ${esc(r.field)}`; $("#snNote_"+id).value=""; }
+      catch(e){ msg.innerHTML=`<span style="color:#dc2626">${esc(e.message)}</span>`; } });
+    on("#snComms_"+id,()=>commsPanel(id,$("#snComsHost_"+id)));
+    if(mode==="comms"){ const host=$("#snComsHost_"+id); if(host) commsPanel(id,host); }
+  }
+  async function commsPanel(id, host){
+    if(!host||host.dataset.open) return; host.dataset.open="1";
+    host.innerHTML=`<div class="sub">Preparing the comms mail…</div>`;
+    let d; try{ d=await api(`/api/alerts/${id}/comms/draft`); }catch(e){ host.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; delete host.dataset.open; return; }
+    const kinds=[["initial","Initial notification"],["update","Status update"],["resolved","Resolved"]];
+    host.innerHTML=`<h5 style="margin:12px 0 6px">INCIDENT COMMS MAIL · ${esc(d.business)} <span class="rl">(same template as the L1 notification — review, then send · Bcc, lists never exposed)</span></h5>
+      ${d.previous?`<div class="rl" style="margin-bottom:6px">Last sent: <b>${esc(d.previous.kind)}</b> by ${esc((d.previous.sent_by||'').split('@')[0])} ${timeAgo(d.previous.sent_at)}</div>`:''}
+      <div class="snf">
+        <label>Mail type</label><select id="cmKind_${id}">${kinds.map(([k,l])=>`<option value="${k}"${d.kind===k?" selected":""}>${l}</option>`).join("")}</select>
+        <label>Subject title</label>${inp("cmTitle_"+id,d.title,"e.g. Bill Run SADAD Loading Slowness")}
+        <label>Priority · ticket · reported</label><div class="rl" style="padding-top:7px"><b>${esc(d.priority)}</b> · ${d.ticket?`<span class="mono">${esc(d.ticket)}</span>`:'<span style="color:#d97706">no ServiceNow ticket yet</span>'} · ${esc(d.reported)}</div>
+        <label>Issue description</label>${inp("cmDesc_"+id,d.description,"")}
+        <label>Business / service impact</label><select id="cmImp_${id}"><option${d.impact==="Yes"?" selected":""}>Yes</option><option${d.impact==="No"?" selected":""}>No</option><option${d.impact==="Partial"?" selected":""}>Partial</option></select>
+        <label>Impacted service / application</label>${inp("cmSvc_"+id,d.impacted_service,"")}
+        <label>Status update</label>${ta("cmStatus_"+id,d.status,3,"what is happening now")}
+        <label>Bridge link</label>${inp("cmBridge_"+id,d.bridge,"https://teams.microsoft.com/l/meetup-join/… (optional)")}
+        <label>Recipients</label>${ta("cmTo_"+id,(d.recipients||[]).join(", "),2,"comma-separated — prefilled from Settings → Notifications → Incident comms ("+esc(d.business)+" "+esc(d.priority)+" list)")}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+        <button class="pill" id="cmPrev_${id}" style="border-left-color:#2563eb">👁 Preview</button>
+        <button class="pill" id="cmSend_${id}" style="border-left-color:var(--green)">✉ Send to ${(d.recipients||[]).length} recipient(s)</button>
+        <button class="pill" id="cmCancel_${id}">Cancel</button>
+        <span id="cmMsg_${id}" class="rl"></span></div>
+      <iframe id="cmFrame_${id}" style="display:none;width:100%;height:520px;border:1px solid var(--line);border-radius:10px;background:#fff;margin-top:8px"></iframe>`;
+    const form=()=>({kind:$("#cmKind_"+id).value,title:$("#cmTitle_"+id).value.trim(),description:$("#cmDesc_"+id).value.trim(),impact:$("#cmImp_"+id).value,impacted_service:$("#cmSvc_"+id).value.trim(),status:$("#cmStatus_"+id).value.trim(),bridge:$("#cmBridge_"+id).value.trim(),recipients:$("#cmTo_"+id).value});
+    const msg=$("#cmMsg_"+id);
+    $("#cmTo_"+id).addEventListener("input",()=>{ const n=$("#cmTo_"+id).value.split(/[,;\s]+/).filter(x=>/@/.test(x)).length; $("#cmSend_"+id).textContent=`✉ Send to ${n} recipient(s)`; });
+    $("#cmCancel_"+id).onclick=()=>{ host.innerHTML=""; delete host.dataset.open; };
+    $("#cmPrev_"+id).onclick=async()=>{ msg.textContent="Rendering…"; try{ const r=await window.fetch(API+`/api/alerts/${id}/comms/preview`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(form())}); const html=await r.text(); const fr=$("#cmFrame_"+id); fr.style.display="block"; fr.srcdoc=html; msg.textContent=""; }catch(e){ msg.textContent=e.message; } };
+    $("#cmSend_"+id).onclick=async()=>{ const f=form(); if(!confirm(`Send the ${f.kind} comms mail "${d.priority}-${f.title}" now?`)) return; const b=$("#cmSend_"+id); b.disabled=true; msg.textContent="Sending…";
+      try{ const r=await api(`/api/alerts/${id}/comms`,{method:"POST",body:JSON.stringify(f)}); msg.innerHTML=r.ok?`<b style="color:var(--good)">Sent</b> "${esc(r.subject)}" to ${r.recipients} recipient(s)`:`<b style="color:#d97706">Not sent</b> — ${esc(r.error||(r.dev?'no SMTP (dev)':''))}`; setTimeout(()=>snPanel(id),800); }
+      catch(e){ msg.innerHTML=`<span style="color:#dc2626">${esc(e.message)}</span>`; b.disabled=false; } };
   }
   async function incAction(id, action, payload){
     try{ await api(`/api/alerts/${id}/${action}`,{method:"POST",body:JSON.stringify(payload||{})}); renderAlerts(); }

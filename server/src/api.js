@@ -22,6 +22,7 @@ const slo = require('./slo');
 const chatops = require('./chatops');
 const assist = require('./assist');
 const servicenow = require('./servicenow');
+const snTicket = require('./snTicket');     // ServiceNow write path (create / notes / poller) + incident comms mail
 const tapRecon = require('./tapRecon');
 const escalation = require('./escalation');
 const correlation = require('./correlation');
@@ -3145,6 +3146,69 @@ app.get('/api/alerts/:id', async (req, res) => {
     res.json({ alert: a, comments, runbook: rule.runbook || null, trigger_codes: rule.trigger_codes || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* ---- ServiceNow ticket for THIS incident (Phase 1, docs/SERVICENOW-INTEGRATION-PLAN.md) ----
+ * GET  → linked INC (if any) + the draft the console would create + comms history — one call for the panel
+ * POST → create (idempotent: one INC per alert; dry run while writes are off / creds missing)
+ * Who may raise / note / send comms: the ack holder of this incident, any ack holder of its business
+ * (console_users.ack_mobile / ack_fixed), or manageSync (ops admins). An un-acked incident cannot be sent —
+ * a human confirms it is real first (manual-first decision). */
+async function snAllowed(req, a) {
+  if (req.caps && req.caps.manageSync) return true;
+  if (a.ack_by && a.ack_by === req.actor) return true;
+  const seg = segment.segOf(a);
+  const u = (await C.query(`SELECT ack_mobile, ack_fixed FROM console_users WHERE lower(email)=lower($1)`, [req.actor])).rows[0];
+  return !!(u && (seg === 'fixed' ? u.ack_fixed : u.ack_mobile));
+}
+app.get('/api/alerts/:id/servicenow', async (req, res) => {
+  try {
+    const a = req.alertRow; const cfg = await snTicket.getSnConfig();
+    const linked = a.sn_number ? { number: a.sn_number, sys_id: a.sn_sys_id, state: a.sn_state, synced_at: a.sn_synced_at, created_by: a.sn_created_by, created_at: a.sn_created_at, link: servicenow.deepLink(a.sn_sys_id) } : null;
+    const draft = linked ? null : await snTicket.buildDraft(a, req.actor);
+    res.json({ configured: servicenow.snConfigured(), writeEnabled: !!cfg.writeEnabled, acked: !!a.ack_at, allowed: await snAllowed(req, a), linked, draft,
+      comms: await snTicket.commsHistory(a.id), poller: snTicket.status() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/alerts/:id/servicenow', requireCap('ackErrors'), async (req, res) => {
+  try {
+    const a = req.alertRow;
+    if (a.status !== 'open') return res.status(400).json({ error: 'incident is resolved — nothing to raise' });
+    if (!a.ack_at) return res.status(400).json({ error: 'acknowledge the incident first — only confirmed incidents go to ServiceNow' });
+    if (!(await snAllowed(req, a))) return res.status(403).json({ error: `only the ack holder (${a.ack_by || '—'}), an ACK · ${segment.SHORT[segment.segOf(a)].toUpperCase()} holder or an ops admin can raise this in ServiceNow` });
+    const out = await snTicket.createForAlert(a, req.body || {}, req.actor);
+    await audit(req, 'incident.servicenow.' + (out.dryRun ? 'dryrun' : out.existing ? 'existing' : out.reused ? 'link' : 'create'), req.params.id, { number: out.number, sys_id: out.sys_id, dryRun: !!out.dryRun, group: (req.body || {}).assignment_group });
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/alerts/:id/servicenow/note', requireCap('ackErrors'), async (req, res) => {
+  try {
+    const a = req.alertRow; const b = req.body || {};
+    if (!(await snAllowed(req, a))) return res.status(403).json({ error: 'not allowed on this incident' });
+    if (!String(b.text || '').trim()) return res.status(400).json({ error: 'empty note' });
+    const out = await snTicket.addNote(a, b.text, b.kind === 'comments' ? 'comments' : 'work_notes', req.actor);
+    await audit(req, 'incident.servicenow.note', req.params.id, { number: a.sn_number, kind: out.field, dryRun: !!out.dryRun });
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/alerts/:id/servicenow/sync', requireCap('ackErrors'), async (req, res) => {
+  try { res.json(await snTicket.syncLinked()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// incident comms mail — draft (prefilled template + configured lists) and send
+app.get('/api/alerts/:id/comms/draft', async (req, res) => {
+  try { res.json(await snTicket.commsDraft(req.alertRow, req.actor, req.query.kind)); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/alerts/:id/comms', requireCap('ackErrors'), async (req, res) => {
+  try {
+    const a = req.alertRow;
+    if (!(await snAllowed(req, a))) return res.status(403).json({ error: 'only the ack holder, an ack holder of this business or an ops admin can send incident comms' });
+    const out = await snTicket.sendComms(a, req.body || {}, req.actor);
+    await audit(req, 'incident.comms', req.params.id, { kind: (req.body || {}).kind || 'initial', subject: out.subject, recipients: out.recipients, ok: out.ok });
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/alerts/:id/comms/preview', async (req, res) => {   // rendered HTML of the mail for the panel
+  try { const d = await snTicket.commsDraft(req.alertRow, req.actor, (req.body || {}).kind); const f = { ...d, ...(req.body || {}) }; res.type('html').send(snTicket.commsHtml(f, segment.segOf(req.alertRow))); }
+  catch (e) { res.status(500).send(e.message); }
+});
 // READ-ONLY ServiceNow correlation: incidents this console alert likely caused
 app.get('/api/alerts/:id/tickets', async (req, res) => {
   try {
@@ -3155,6 +3219,28 @@ app.get('/api/alerts/:id/tickets', async (req, res) => {
 });
 app.get('/api/servicenow/ping', requireCap('manageSync'), async (req, res) => {
   try { res.json(await servicenow.ping()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+/* ServiceNow write settings + incident comms lists (Settings → Notifications) */
+app.get('/api/servicenow/config', requireCap('manageSync'), async (req, res) => {
+  try { res.json({ ...(await snTicket.getSnConfig()), configured: servicenow.snConfigured(), url: process.env.SN_URL || '', user: process.env.SN_USER ? process.env.SN_USER.replace(/^(.{2}).*$/, '$1***') : '', poller: snTicket.status() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/servicenow/config', requireCap('manageSync'), async (req, res) => {
+  try { const next = await snTicket.setSnConfig(req.body || {}); await audit(req, 'servicenow.config', null, { writeEnabled: next.writeEnabled, groupMobile: next.groupMobile, groupFixed: next.groupFixed }); res.json(next); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/servicenow/groups', requireCap('manageSync'), async (req, res) => {
+  try { res.json({ groups: await snTicket.listGroups(String(req.query.q || 'MVNO').slice(0, 40)) }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/servicenow/choices', requireCap('manageSync'), async (req, res) => {
+  try { const el = req.query.element === 'subcategory' ? 'subcategory' : 'category'; res.json({ element: el, choices: await snTicket.listChoices(el) }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/comms/config', requireCap('manageSync'), async (req, res) => {
+  try { res.json(await snTicket.getCommsConfig()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/comms/config', requireCap('manageSync'), async (req, res) => {
+  try { const next = await snTicket.setCommsConfig(req.body || {}); await audit(req, 'comms.config', null, { mobile: { P1: !!next.mobile.P1, P2: !!next.mobile.P2, bridge: !!next.mobile.bridge }, fixed: { P1: !!next.fixed.P1, P2: !!next.fixed.P2, bridge: !!next.fixed.bridge } }); res.json(next); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 /* One-click notify on-call for an open alert (Guided Response). Reuses ChatOps; force-sends past the
@@ -5619,11 +5705,16 @@ app.get('/api/health/selfcheck', requireCap('manageUsers'), async (req, res) => 
     push('sms', 'SMS paging (Unifonic)', creds ? 'ok' : 'off', creds ? 'Credentials present' : 'SMS_URL / SMS_APPSID not set (optional)');
   }
 
-  // 7) ServiceNow ticket correlation (read-only)
-  {
+  // 7) ServiceNow — correlation (read) + ticket creation (write, Settings → Notifications → ServiceNow) + poller
+  try {
     const ok = !!(process.env.SN_URL && process.env.SN_USER && process.env.SN_PASS);
-    push('servicenow', 'ServiceNow link', ok ? 'ok' : 'off', ok ? 'Configured (read-only correlation)' : 'SN_URL / SN_USER / SN_PASS not set (optional)');
-  }
+    const cfg = await snTicket.getSnConfig(); const st = snTicket.status();
+    const linked = (await C.query(`SELECT count(*)::int n FROM alerts WHERE sn_sys_id IS NOT NULL AND status='open'`)).rows[0].n;
+    const ageMin = st.lastSync ? Math.round((nowMs - st.lastSync.getTime()) / 60000) : null;
+    const state = !ok ? 'off' : st.lastErr ? 'warn' : 'ok';
+    push('servicenow', 'ServiceNow', state, !ok ? 'SN_USER / SN_PASS not set on 152 — network is open (401), waiting for the integration account'
+      : `Connected · tickets ${cfg.writeEnabled ? 'WRITE ON' : 'dry run (writes off)'} · groups ${cfg.groupMobile || '—'} / ${cfg.groupFixed || '— (Fixed not set)'} · ${linked} open incident(s) linked` + (st.lastErr ? ` · poller error: ${st.lastErr}` : ageMin != null ? ` · synced ${ageMin}m ago` : ' · poller not run yet'));
+  } catch (e) { push('servicenow', 'ServiceNow', 'warn', 'Status unreadable: ' + e.message); }
 
   // 8) Tap reconciliation key
   {
@@ -6179,6 +6270,7 @@ app.listen(PORT, async () => {
   try { await settings.applySchedule(); } catch (e) { console.error('scheduler init:', e.message); }
   try { require('./reportScheduler').start(); } catch (e) { console.error('sync-health scheduler:', e.message); }
   try { escalation.start(); } catch (e) { console.error('escalation scheduler:', e.message); }
+  try { snTicket.start(); } catch (e) { console.error('ServiceNow poller:', e.message); }
   try { require('./prodSyncScheduler').start(); } catch (e) { console.error('prod-sync scheduler:', e.message); }
   try { require('./sematiProbe').start(); } catch (e) { console.error('semati canary:', e.message); }
   try { require('./osbProbe').start(); } catch (e) { console.error('OSB fault watcher:', e.message); }

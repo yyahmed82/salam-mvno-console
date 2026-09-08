@@ -62,6 +62,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   change), ack delay vs the ack target (P1 15 m · P2 60 m · P3 4 h), and the **SLA clock** — time left of the
   resolution target (P1 4 h · P2 24 h · P3 72 h, `SLA_P1_H…` in .env) or "overdue by …", rows tinted when over.
   Each row deep-links to the incident on the right side. `GET /api/incidents/mine`.
+- **ServiceNow tickets from the console — Phase 1 (manual, after ack)** (`server/src/snTicket.js`,
+  docs/SERVICENOW-INTEGRATION-PLAN.md). On an acknowledged incident (Mobile and Fixed views) the ack holder — or any
+  ACK · MOBILE / ACK · FIXED holder, or an ops admin — gets **🎫 ServiceNow**: the console pre-fills the INC (short
+  description, full description with metric / observed / runbook / console link, impact × urgency from the severity,
+  assignment group per business, category), the person reviews and confirms → `POST /api/now/table/incident`.
+  One INC per incident (`correlation_id ops-console:<id>`, a retry re-links instead of duplicating); `sn_number /
+  sn_sys_id / sn_state` stored on the alert, a system comment and an audit row (`incident.servicenow.create`), the
+  row shows a **🎫 INC… · state** chip that opens the ticket panel with a link to ServiceHub, a work-note / comment
+  box (`PATCH work_notes|comments`, `incident.servicenow.note`) and **↻ Refresh state**. A poller (every `SN_SYNC_MIN`,
+  default 3) refreshes state / assignee of every open linked INC and writes state changes into the discussion.
+  **Dry run by default**: until Settings → Notifications → ServiceNow → *Ticket creation enabled* is ticked (or while
+  `SN_USER / SN_PASS` are empty) the button shows the exact payload and sends nothing — so the account can be dropped
+  in and the mapping tested without opening tickets. Settings also hold the assignment groups per business, category
+  / subcategory, caller mode, plus *Test connection*, *List groups*, *List categories* (read from the instance).
+  Health self-check line "ServiceNow" reports connection · write mode · groups · linked incidents · poller.
+- **Incident comms mail from the console.** **✉ Comms** on an acknowledged incident opens the L1 "Critical Incident
+  Notification" pre-filled — priority, ticket number (linked INC), reported date/time, issue description, business /
+  service impact, impacted service, status update, bridge link — with the recipients from Settings → Notifications →
+  *Incident comms* (per business × P1 / P2 / P3, standing bridge link, signature). Preview renders the mail inline;
+  Send goes Bcc, is logged in `incident_comms` and on the incident, mirrored as a ServiceNow work note when linked;
+  **Status update** and **Resolved** reuse the template (subject `P1-<title>`, `- Update`, `- Resolved`).
 - **ChatOps per business — separate Teams / Slack / WhatsApp / SMS channels for Fixed.** Settings → Notifications has a
   new **Fixed business channels** block (`chatops.fixed = { teamsUrl, slackUrl, waTo, smsTo }`): a Fixed alert
   (`segment.js` → fixed) is pushed **only** to the Fixed Teams workflow / Slack webhook / WhatsApp recipients / SMS

@@ -80,6 +80,28 @@ ALTER TABLE alerts ADD COLUMN IF NOT EXISTS note          text;
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS opened_wall   timestamptz NOT NULL DEFAULT now();
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS esc_level     integer NOT NULL DEFAULT 0;   -- tiers already paged
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS esc_last_at   timestamptz;
+-- ServiceNow link (snTicket.js): one INC per alert, state refreshed by the poller
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS sn_number     text;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS sn_sys_id     text;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS sn_state      text;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS sn_synced_at  timestamptz;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS sn_created_by text;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS sn_created_at timestamptz;
+CREATE INDEX IF NOT EXISTS alerts_sn_sys_id_idx ON alerts (sn_sys_id) WHERE sn_sys_id IS NOT NULL;
+-- incident comms mails sent from the console (the L1 "Critical Incident Notification" and its updates)
+CREATE TABLE IF NOT EXISTS incident_comms (
+  id        bigserial PRIMARY KEY,
+  alert_id  bigint NOT NULL,
+  kind      text NOT NULL DEFAULT 'initial',      -- initial | update | resolved
+  subject   text,
+  sent_to   text[] NOT NULL DEFAULT '{}',
+  sent_by   text,
+  sent_at   timestamptz NOT NULL DEFAULT now(),
+  fields    jsonb,
+  ok        boolean NOT NULL DEFAULT true,
+  error     text
+);
+CREATE INDEX IF NOT EXISTS incident_comms_alert_idx ON incident_comms (alert_id, sent_at DESC);
 ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS runbook   text;   -- what to do when this fires (text or URL)
 ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS alert_class text; -- technical | business (errclass.js split; 'mixed' retired 2026-08-11)
 -- unified console: which segment a rule / firing belongs to (plan §2.1) — 'mvno' (default) | 'fixed'
