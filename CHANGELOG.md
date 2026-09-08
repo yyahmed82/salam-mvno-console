@@ -33,6 +33,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   volume reads "down" and every rate is computed on a truncated tail — the 8 Sep 6 h lag opened two P1s and three
   anomalies that were all artefacts. Open alerts are left to resolve on the next fresh scan; the log says
   `[anomaly] source is Nm behind — paused`.
+- **Mobile ↔ Fixed segregation of alerts** (`server/src/segment.js`, one definition): a rule / firing is Fixed when
+  `alert_rules.segment='fixed'` or its key starts with `fixed_` (schema backfills the column at boot). The Mobile
+  endpoints — `/api/rules`, `/api/alerts`, `/api/alerts/summary`, `/api/incidents/stats` — now answer for **mvno
+  only** (`?segment=fixed|all` allowed for 'both' users; a Fixed-only user gets Fixed, a Mobile-only user Mobile);
+  Fixed › Alerts keeps `/api/fixed/alerts/*`. The Mobile Alerts header says "MOBILE · MVNO". Before, a Fixed rule
+  (`fixed_error_p0p1_categories`) sat in the Mobile list and was acked by the Mobile team.
+- **Two alert mails, one per business.** The digest is split by segment: `[Salam Ops · Fixed] N alert(s)` and
+  `[Salam Ops · Mobile] N alert(s)`, each with its own intro, table, PDFs and console links. Recipients = users with
+  Mail alert ON **whose business covers that side** (`console_users.business`: fixed → Fixed mail, mobile → Mobile
+  mail, both → both). A side with nothing firing sends nothing. Test mail (Settings / `cli.js testmail`) sends the
+  side(s) that contain the simulated rule.
 - Fixed › Errors: **several rows can be open at once** — each row toggles on its own (no accordion), so two cases can be
   compared side by side; a "Collapse N open rows" button appears once two or more are open; open rows survive the
   60 s refresh. "Similar cases · median resolve" ignores rows whose resolved_at precedes occurred_at (it showed −79 m).

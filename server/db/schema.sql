@@ -86,6 +86,10 @@ ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS alert_class text; -- technical 
 ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS segment text NOT NULL DEFAULT 'mvno';
 ALTER TABLE alerts      ADD COLUMN IF NOT EXISTS segment text NOT NULL DEFAULT 'mvno';
 CREATE INDEX IF NOT EXISTS idx_alerts_segment_fired ON alerts (segment, fired_at DESC);
+-- business segregation (8 Sep 2026): a fixed_* rule / firing is Fixed whatever the column says — backfill so the
+-- Mobile pages and the Mobile digest can filter on segment alone.
+UPDATE alert_rules SET segment='fixed' WHERE key LIKE 'fixed\_%' AND segment <> 'fixed';
+UPDATE alerts      SET segment='fixed' WHERE rule_key LIKE 'fixed\_%' AND segment <> 'fixed';
 
 -- incident discussion thread
 CREATE TABLE IF NOT EXISTS incident_comments (

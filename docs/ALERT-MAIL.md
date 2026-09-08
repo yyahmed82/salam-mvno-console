@@ -52,3 +52,20 @@ node src/cli.js testmail fixed_nafath_fail_spike y.yahmed.sns@salam.sa     # Fix
 node src/cli.js testmail payment_fail_rate    y.yahmed.sns@salam.sa     # Mobile: incident link + API-capture PDF
 ```
 Subject is prefixed `[TEST]`, the simulated row is marked **(SIMULATED — test mail)**, and only that address is mailed.
+
+## Business segregation (8 Sep 2026)
+
+One definition, `server/src/segment.js`: a rule / firing is **Fixed** when `alert_rules.segment='fixed'` or its key starts
+with `fixed_` (the schema backfills the column at boot); everything else is **Mobile (mvno)**.
+
+| Surface | Mobile team sees | Fixed team sees |
+|---|---|---|
+| Mobile › Alerts (`/api/alerts`, `/api/rules`, `/api/alerts/summary`, `/api/incidents/stats`) | mvno only | (page hidden by business scope; API answers Fixed for a fixed-only user) |
+| Fixed › Alerts (`/api/fixed/alerts/*`) | — | fixed only |
+| Alert mail | `[Salam Ops · Mobile] N alert(s)` | `[Salam Ops · Fixed] N alert(s)` |
+
+Recipients of each mail = enabled users with **Mail alert ON** whose `console_users.business` covers the side:
+`mobile` → Mobile mail only · `fixed` → Fixed mail only · `both` → both mails (Settings → Users → BUSINESS).
+A side with nothing firing sends nothing. Each mail carries only its own PDFs and console links. Test mail
+(Settings → Notifications / `node src/cli.js testmail <rule-key> <email>`) sends the side that contains the rule, `[TEST]`-prefixed.
+`?segment=fixed|all` on the Mobile endpoints is honoured only for `both` users (ops / super admins).

@@ -26,6 +26,7 @@ const tapRecon = require('./tapRecon');
 const escalation = require('./escalation');
 const correlation = require('./correlation');
 const anomaly = require('./anomaly');
+const segment = require('./segment');   // Mobile ↔ Fixed segregation of rules / alerts / digests
 const reliability = require('./reliability');
 const subscriber = require('./subscriber');
 const rolePerms = require('./rolePerms');
@@ -3014,16 +3015,21 @@ app.get('/api/health', async (req, res) => {
 // Fixed / Salam Home routes — all under /api/fixed/* (see fixed.js)
 require('./fixed').mount(app, { requireView, audit, requireCap });
 
+/* Mobile-side alert endpoints are SEGMENT-SCOPED (8 Sep 2026): they answer for 'mvno' unless ?segment=fixed|all is
+ * asked by a user whose business allows it (segment.forRequest). Fixed › Alerts has its own /api/fixed/alerts/*.
+ * Before this, a Fixed rule (fixed_error_p0p1_categories) sat in the Mobile list and the Mobile team acked it. */
 app.get('/api/rules', async (req, res) => {
+  const seg = segment.forRequest(req, req.query.segment);
   const rules = (await C.query(`SELECT r.*, mc.unit, mc.higher_is_bad FROM alert_rules r
-     LEFT JOIN metric_catalog mc ON mc.key=r.metric_key ORDER BY severity, name`)).rows;
-  const catalog = (await C.query(`SELECT * FROM metric_catalog ORDER BY key`)).rows;
-  res.json({ rules, catalog });
+     LEFT JOIN metric_catalog mc ON mc.key=r.metric_key WHERE ${segment.sqlWhere('r', 'key', seg)} ORDER BY severity, name`)).rows;
+  const catalog = (await C.query(`SELECT * FROM metric_catalog WHERE ${seg === 'all' ? 'TRUE' : seg === 'fixed' ? "key LIKE 'fixed\\_%'" : "key NOT LIKE 'fixed\\_%'"} ORDER BY key`)).rows;
+  res.json({ rules, catalog, segment: seg });
 });
 
 app.get('/api/alerts', async (req, res) => {
   const status = req.query.status || 'open';
-  const where = status === 'all' ? '' : `WHERE a.status=$1`;
+  const seg = segment.forRequest(req, req.query.segment);
+  const where = `WHERE ${segment.sqlWhere('a', 'rule_key', seg)}` + (status === 'all' ? '' : ` AND a.status=$1`);
   // alerts rows don't carry the class — join it live from alert_rules (errclass.js split)
   const rows = (await C.query(
     `SELECT a.*, r.alert_class FROM alerts a LEFT JOIN alert_rules r ON r.key = a.rule_key
@@ -3042,33 +3048,35 @@ app.get('/api/alerts', async (req, res) => {
     a.correlation = role ? { role, parent, parentName: parent ? (nameByKey[parent] || parent) : null,
       impacts: role === 'root' ? correlation.impactOf(a.rule_key) : null } : null;
   }
-  res.json({ alerts: rows });
+  res.json({ alerts: rows, segment: seg });
 });
 
 app.get('/api/alerts/summary', async (req, res) => {
+  const seg = segment.forRequest(req, req.query.segment); const W = segment.sqlWhere('a', 'rule_key', seg);
   const bySev = (await C.query(
     `SELECT severity, count(*) FILTER (WHERE status='open')::int AS open,
-            count(*)::int AS total FROM alerts GROUP BY severity`)).rows;
+            count(*)::int AS total FROM alerts a WHERE ${W} GROUP BY severity`)).rows;
   const byTeam = (await C.query(
-    `SELECT team, count(*) FILTER (WHERE status='open')::int AS open FROM alerts GROUP BY team`)).rows;
+    `SELECT team, count(*) FILTER (WHERE status='open')::int AS open FROM alerts a WHERE ${W} GROUP BY team`)).rows;
   const latest = (await C.query(`SELECT max(sim_now) AS sim_now FROM sync_runs`)).rows[0];
-  res.json({ bySeverity: bySev, byTeam, latest_sim_now: latest && latest.sim_now });
+  res.json({ bySeverity: bySev, byTeam, latest_sim_now: latest && latest.sim_now, segment: seg });
 });
 
 /* ---- incident lifecycle (ack / assign / snooze / resolve / comment) ---- */
 app.get('/api/incidents/stats', async (req, res) => {
   try {
+    const seg = segment.forRequest(req, req.query.segment); const W = segment.sqlWhere('a', 'rule_key', seg);
     const bySeverity = (await C.query(
       `SELECT severity, count(*)::int c, count(*) FILTER (WHERE ack_at IS NOT NULL)::int acked,
               count(*) FILTER (WHERE snoozed_until > now())::int snoozed
-       FROM alerts WHERE status='open' GROUP BY severity`)).rows;
+       FROM alerts a WHERE ${W} AND status='open' GROUP BY severity`)).rows;
     const t = (await C.query(
       `SELECT avg(EXTRACT(EPOCH FROM (ack_at-fired_at))) FILTER (WHERE ack_at IS NOT NULL AND fired_at > now()-interval '30 days') mtta,
               avg(EXTRACT(EPOCH FROM (resolved_at-fired_at))) FILTER (WHERE resolved_at IS NOT NULL AND fired_at > now()-interval '30 days') mttr,
               count(*) FILTER (WHERE status='open')::int open_total,
               count(*) FILTER (WHERE status='open' AND ack_at IS NULL)::int unacked,
               count(*) FILTER (WHERE resolved_at > now()-interval '24 hours')::int resolved_24h
-       FROM alerts`)).rows[0];
+       FROM alerts a WHERE ${W}`)).rows[0];
     res.json({ bySeverity, mtta_sec: t.mtta ? Math.round(t.mtta) : null, mttr_sec: t.mttr ? Math.round(t.mttr) : null,
       open_total: t.open_total, unacked: t.unacked, resolved_24h: t.resolved_24h });
   } catch (e) { res.status(500).json({ error: e.message }); }

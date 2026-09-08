@@ -51,11 +51,16 @@ function fmtVal(v, unit) {
 }
 
 // recipients opted into a given channel: 'mail_alert' (alerts) or 'mail_report' (reports)
-async function recipients(column = 'mail_alert') {
+// seg (optional) = 'mvno' | 'fixed' → only users whose BUSINESS covers that side (console_users.business: mobile | fixed | both).
+// A Fixed-team user never receives a Mobile alert mail and vice versa; 'both' receives both mails.
+async function recipients(column = 'mail_alert', seg) {
   const col = column === 'mail_report' ? 'mail_report' : 'mail_alert';
+  const SEG = require('./segment');
+  const biz = seg && SEG.BUSINESS_OF[seg] ? SEG.BUSINESS_OF[seg] : null;
   try {
     const r = await db.console.query(
-      `SELECT email, name FROM console_users WHERE enabled=true AND ${col}=true ORDER BY email`);
+      `SELECT email, name, business FROM console_users WHERE enabled=true AND ${col}=true${biz ? ` AND (business = $1 OR business = 'both' OR business IS NULL)` : ''} ORDER BY email`,
+      biz ? [biz] : []);
     return r.rows;
   } catch (e) { return []; }
 }
@@ -165,7 +170,9 @@ function inspectHtml(e, style) {
   return i ? `<a href="${i.url}" style="${style}">${esc(i.label)} ›</a>` : '';
 }
 
-function buildDigest(simNow, evals, reportNames = [], idByKey = {}) {
+function buildDigest(simNow, evals, reportNames = [], idByKey = {}, seg) {
+  const SEG = require('./segment');
+  const segLabel = seg ? SEG.LABEL[seg] : null;            // 'Mobile (MVNO)' | 'Fixed' — one mail per business
   const firing = evals.filter(e => e.fired);
   const th = 'padding:9px 12px;text-align:left;font-size:12px;color:#334155;background:#eef4f0;border-bottom:1px solid #dbe6df';
   const td = 'padding:10px 12px;font-size:13px;border-bottom:1px solid #eef2f6;vertical-align:top';
@@ -202,45 +209,61 @@ function buildDigest(simNow, evals, reportNames = [], idByKey = {}) {
       <b>All clear.</b> ${evals.length} rules evaluated — nothing firing. No action needed.
     </div>`;
   const body = `${intro}
-    <div style="color:#64748b;font-size:12px;margin-bottom:12px">At: ${ksa(simNow)} KSA · every row links to the console → <a href="${CONSOLE_URL}#alerts" style="color:#0e9f5a">Alerts</a> (Mobile) · <a href="${FL.alertsUrl()}" style="color:#0e9f5a">Fixed › Alerts</a> — acknowledge / history / rules; Fixed rows also carry an <b>Inspect</b> link to the map or the error board</div>
+    <div style="color:#64748b;font-size:12px;margin-bottom:12px">At: ${ksa(simNow)} KSA · every row links to the console → ${seg === 'fixed' ? `<a href="${FL.alertsUrl()}" style="color:#0e9f5a">Fixed › Alerts</a> — acknowledge / history / rules; each row also carries an <b>Inspect</b> link to the map or the error board` : seg === 'mvno' ? `<a href="${CONSOLE_URL}#alerts" style="color:#0e9f5a">Mobile › Alerts</a> — acknowledge / history / rules` : `<a href="${CONSOLE_URL}#alerts" style="color:#0e9f5a">Alerts</a> (Mobile) · <a href="${FL.alertsUrl()}" style="color:#0e9f5a">Fixed › Alerts</a>`}</div>
     <table style="border-collapse:collapse;width:100%;font-size:13px;border:1px solid #dbe6df">
       <tr><th style="${th}">Status</th><th style="${th}">Rule</th><th style="${th}">Metric</th><th style="${th}">Threshold</th><th style="${th}">Counts</th><th style="${th}">Details</th></tr>
       ${rows}
     </table>
     <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Operations Console · automated alert runner · reports attached per firing alert</div>`;
-  const html = shell({ title: 'Alerts — Operations Console',
+  const html = shell({ title: segLabel ? `${segLabel} alerts — Operations Console` : 'Alerts — Operations Console',
+    badge: segLabel ? `OPERATIONS CONSOLE · ${SEG.SHORT[seg].toUpperCase()}` : undefined,
     pill: firing.length ? `${firing.length} FIRING` : 'ALL CLEAR',
     pillColor: firing.length ? '#dc2626' : '#16a34a', bodyHtml: body });
-  const subject = `[Salam Ops] ${firing.length} alert(s) — ${ksa(simNow)} KSA`;
-  return { html, subject, firing: firing.length, total: evals.length };
+  const subject = `[Salam Ops${seg ? ' · ' + SEG.SHORT[seg] : ''}] ${firing.length} alert(s) — ${ksa(simNow)} KSA`;
+  return { html, subject, firing: firing.length, total: evals.length, segment: seg || null };
 }
 
+/* ONE MAIL PER BUSINESS (8 Sep 2026). The evaluations are split by segment (segment.js: alert_rules.segment, fixed_*
+ * prefix as fallback) and each side gets its own digest — its own subject ([Salam Ops · Fixed] / [Salam Ops · Mobile]),
+ * its own PDFs, its own recipients: users with Mail alert ON whose business covers that side. A Fixed-team user never
+ * sees a Mobile alert, a Mobile-team user never sees a Fixed one, 'both' receives the two mails. A side with nothing
+ * firing sends nothing (no all-clear noise); the ALL CLEAR mail only exists on the test path. */
 async function sendAlertDigest(simNow, evals, opts = {}) {
-  /* opts.to (string | string[]) overrides the recipient list — the TEST path: simulate a firing
-   * rule and mail only yourself, never the whole distribution. Subject gets a [TEST] prefix so a
-   * forwarded copy can never be mistaken for a live alert. */
-  const to = opts.to
-    ? (Array.isArray(opts.to) ? opts.to : [opts.to]).map(e => ({ email: String(e) }))
-    : await recipients('mail_alert');
-  /* per-alert PDF reports — best-effort and NEVER blocking: a broken report must not stop the
-   * mail, and a storm is capped inside buildFiredReports. */
-  let reports = { attachments: [], notes: [] };
-  try { reports = await require('./alertReport').buildFiredReports(simNow, evals); }
-  catch (e) { reports = { attachments: [], notes: ['report generation failed: ' + e.message] }; }
+  const SEG = require('./segment');
+  const testTo = opts.to ? (Array.isArray(opts.to) ? opts.to : [opts.to]).map(e => ({ email: String(e) })) : null;
   /* open-alert ids so every fired row/intro line deep-links to ITS incident (#alerts?id=N) */
   let idByKey = {};
   try {
     const r = await db.console.query(`SELECT rule_key, max(id) AS id FROM alerts WHERE status='open' GROUP BY 1`);
     r.rows.forEach(x => { idByKey[x.rule_key] = x.id; });
   } catch (e) { idByKey = {}; }
-  let { html, subject, firing, total } = buildDigest(simNow, evals, reports.attachments.map(a => a.filename), idByKey);
-  if (opts.to) subject = '[TEST] ' + subject;
-  const r = await sendHtml(to, subject, html, reports.attachments);
-  const base = { firing, total, subject, recipients: r.recipients, previewHtml: html,
-    attachments: reports.attachments.map(a => ({ filename: a.filename, bytes: a.content.length })),
-    reportNotes: reports.notes };
-  if (!to.length) return { ...base, sent: false, reason: 'No recipients — enable "Mail alert" for at least one user in User management.' };
-  return { ...base, sent: r.sent, dev: r.dev, error: r.error };
+  const parts = [];
+  for (const seg of SEG.SEGMENTS) {
+    const mine = evals.filter(e => SEG.segOf(e) === seg);
+    if (!mine.length) continue;
+    const firingN = mine.filter(e => e.fired).length;
+    if (!firingN && !testTo) continue;                                   // live path: quiet side → no mail
+    const to = testTo || await recipients('mail_alert', seg);
+    /* per-alert PDF reports — best-effort and NEVER blocking: a broken report must not stop the
+     * mail, and a storm is capped inside buildFiredReports. */
+    let reports = { attachments: [], notes: [] };
+    try { reports = await require('./alertReport').buildFiredReports(simNow, mine); }
+    catch (e) { reports = { attachments: [], notes: ['report generation failed: ' + e.message] }; }
+    let { html, subject, firing, total } = buildDigest(simNow, mine, reports.attachments.map(a => a.filename), idByKey, seg);
+    if (testTo) subject = '[TEST] ' + subject;
+    const r = to.length ? await sendHtml(to, subject, html, reports.attachments) : { sent: false, recipients: [] };
+    parts.push({ segment: seg, label: SEG.LABEL[seg], firing, total, subject, recipients: r.recipients, sent: r.sent, dev: r.dev, error: r.error,
+      reason: to.length ? undefined : `No recipients — no enabled user with "Mail alert" on and business = ${SEG.BUSINESS_OF[seg]} / both.`,
+      previewHtml: html, attachments: reports.attachments.map(a => ({ filename: a.filename, bytes: a.content.length })), reportNotes: reports.notes });
+  }
+  /* summary in the shape the callers / Settings test button already read; previewHtml = the mails one after the other */
+  const first = parts[0] || {};
+  return { sent: parts.some(p => p.sent), dev: parts.some(p => p.dev), error: parts.map(p => p.error).filter(Boolean).join(' · ') || undefined,
+    firing: parts.reduce((a, p) => a + p.firing, 0), total: evals.length, subject: parts.map(p => p.subject).join(' + ') || first.subject,
+    recipients: [...new Set(parts.flatMap(p => p.recipients || []))], previewHtml: parts.map(p => p.previewHtml).join('<hr style="margin:32px 0;border:0;border-top:2px dashed #cbd5e1">'),
+    attachments: parts.flatMap(p => p.attachments || []), reportNotes: parts.flatMap(p => p.reportNotes || []),
+    reason: parts.length ? (parts.every(p => !p.sent) ? parts.map(p => p.reason || p.error).filter(Boolean).join(' · ') || undefined : undefined) : 'nothing firing on either side',
+    mails: parts.map(({ previewHtml, ...p }) => p) };
 }
 
 module.exports = { recipients, sendHtml, sendText, textToHtml, buildDigest, sendAlertDigest, smtpConfigured, mailStatus, esc, shell, fromAddress };
