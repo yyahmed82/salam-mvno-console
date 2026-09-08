@@ -49,6 +49,32 @@ async function nexusLinkIds(key, ms) {
   } catch (e) { try { await c.query('ROLLBACK'); } catch (_) {} return { ids: [], reason: e.message }; }
   finally { c.release(); }
 }
+/* COMPLAINT TICKETS the customer opened from the Salam Home app (nexus `tickets`, 8 Sep 2026). The app posts them to
+ * the call-centre ticketing behind the SDM gateway (Remedy-style: category1/2/3, support group "Back Office", ITC) and
+ * mirrors id / type / status into nexus. Nothing else in the digital backend talks to ServiceNow or Remedy (checked
+ * salam-nexus master) — so this table is the only place a subscriber complaint is visible to us. Matched by the
+ * ticket's own phone number, the app user's phone number, or the user's national id; newest first; read-only. */
+async function findComplaints(key, ms, kind, unmask) {
+  if (!db.nexus) return { configured: false, rows: [] };
+  const alts = Array.from(new Set([String(key).trim(), ...ms])).filter(Boolean);
+  const c = await db.nexus.connect();
+  try {
+    await c.query('BEGIN READ ONLY'); await c.query('SET LOCAL statement_timeout = 8000');
+    const r = await c.query(`SELECT t."ticketID" AS ticket_id, t.type, t.status, t.description, t.name, t.email, t.phone_number, t.created_at, t.updated_at,
+         u.phone_number AS user_phone, u.national_id
+       FROM tickets t LEFT JOIN users u ON u.id = t."userId"
+       WHERE t.phone_number = ANY($1) OR u.phone_number = ANY($1)${kind === 'nid' ? ' OR u.national_id = $2' : ''}
+       ORDER BY t.created_at DESC LIMIT 50`, kind === 'nid' ? [alts, String(key).trim()] : [alts]);
+    await c.query('ROLLBACK');
+    const mEmail = e => { if (!e) return null; const [u, d] = String(e).split('@'); return (u || '').slice(0, 2) + '***' + (d ? '@' + d : ''); };
+    const rows = r.rows.map(x => ({ ticket_id: x.ticket_id, type: x.type, status: x.status, created_at: x.created_at, updated_at: x.updated_at,
+      description: String(x.description || '').slice(0, 300),
+      name: unmask ? x.name : (x.name ? String(x.name).split(/\s+/)[0] + ' …' : null),
+      email: unmask ? x.email : mEmail(x.email), phone: unmask ? (x.phone_number || x.user_phone) : tail(x.phone_number || x.user_phone, 4) }));
+    return { configured: true, rows, open: rows.filter(x => !/closed|resolved|cancel/i.test(x.status || '')).length };
+  } catch (e) { try { await c.query('ROLLBACK'); } catch (_) {} return { configured: true, error: e.message, rows: [] }; }
+  finally { c.release(); }
+}
 async function attemptsByIds(pool, ids, source) {
   if (!ids.length) return [];
   const r = await pool.query(`SELECT ${ATTEMPT_COLS}, '${source}' AS source
@@ -117,13 +143,15 @@ async function lookup(q, req) {
   try { inventory = await inventoryMod.inventory({ nid: kind === 'nid' ? key : null, workflowIds: wfIds, refresh: q.refresh === '1' }); }
   catch (e) { inventory = { available: false, reason: e.message }; }
   const invOut = inventoryMod.mask(inventory, unmask);
+  // complaint tickets from the Salam Home app (nexus) — by the key's phone spellings / national id; never blocks the lookup
+  const complaints = (kind === 'msisdn' || kind === 'nid') ? await findComplaints(key, ms, kind, unmask).catch(e => ({ configured: true, error: e.message, rows: [] })) : { configured: !!db.nexus, rows: [], skipped: 'complaints are matched by mobile number or national id' };
 
   if (!attempts.length) {
-    if (inventory && inventory.available) {
+    if ((inventory && inventory.available) || complaints.rows.length) {
       return { found: true, key, keyKind: keyKind(key), unmasked: unmask, customer: { cust_code: invOut.customer && invOut.customer.cust_code, customer_id: null, services: 0, orders: 0, attempts: 0, channels: [] },
-        services: [], attempts: [], errors: [], payments: await findPayments([key]), links: {}, sources: pools.map(([, s]) => s), link, inventory: invOut, inventory_summary: inventoryMod.summary(inventory) };
+        services: [], attempts: [], errors: [], payments: await findPayments([key]), links: {}, sources: pools.map(([, s]) => s), link, inventory: invOut, inventory_summary: inventoryMod.summary(inventory), complaints };
     }
-    return { found: false, key, keyKind: keyKind(key), link, inventory: invOut, payments: await findPayments([key]) };
+    return { found: false, key, keyKind: keyKind(key), link, inventory: invOut, payments: await findPayments([key]), complaints };
   }
 
   // every identifier this customer is known by → cross-search keys for payments and for the MVNO side
@@ -158,6 +186,7 @@ async function lookup(q, req) {
              cust_code: unmask ? [...ids.cust] : undefined, customer_id: unmask ? [...ids.customer] : undefined },
     sources: pools.map(([, s]) => s), link,
     inventory: invOut, inventory_summary: inventoryMod.summary(inventory),
+    complaints,
   };
 }
 

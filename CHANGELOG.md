@@ -62,6 +62,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   change), ack delay vs the ack target (P1 15 m · P2 60 m · P3 4 h), and the **SLA clock** — time left of the
   resolution target (P1 4 h · P2 24 h · P3 72 h, `SLA_P1_H…` in .env) or "overdue by …", rows tinted when over.
   Each row deep-links to the incident on the right side. `GET /api/incidents/mine`.
+- **Customer 360 › Fixed: complaint tickets from the Salam Home app.** A new card lists the complaints the customer
+  opened in the app (nexus `tickets`, joined to `users` by the ticket's phone number, the app user's phone number or
+  the national id): opened, ticket id, type, status (open in red, resolved green), description, masked contact —
+  header count in the Fixed summary line. The app posts these to the call-centre ticketing behind the SDM gateway
+  (Remedy-style categories, support group "Back Office" / ITC) and mirrors id + status; a review of salam-nexus
+  master found no other ITSM (ServiceNow / Remedy) integration in the digital backend. Read-only, 8 s timeout,
+  matched by mobile number or national id only.
 - **ServiceNow tickets from the console — Phase 1 (manual, after ack)** (`server/src/snTicket.js`,
   docs/SERVICENOW-INTEGRATION-PLAN.md). On an acknowledged incident (Mobile and Fixed views) the ack holder — or any
   ACK · MOBILE / ACK · FIXED holder, or an ops admin — gets **🎫 ServiceNow**: the console pre-fills the INC (short
