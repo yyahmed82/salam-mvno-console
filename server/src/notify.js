@@ -239,6 +239,7 @@ async function sendAlertDigest(simNow, evals, opts = {}) {
   } catch (e) { idByKey = {}; }
   const parts = [];
   for (const seg of SEG.SEGMENTS) {
+    if (opts.segment && opts.segment !== seg) continue;                  // test path: only the side of the simulated rule
     const mine = evals.filter(e => SEG.segOf(e) === seg);
     if (!mine.length) continue;
     const firingN = mine.filter(e => e.fired).length;

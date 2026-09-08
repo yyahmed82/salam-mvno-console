@@ -3865,15 +3865,15 @@ app.post('/api/alerts/notify', requireCap('manageSync'), async (req, res) => {
   try {
     const simNow = await boardNow(req.body && req.body.sim);
     const { evals } = await evaluate(simNow);
-    const fire = req.body && req.body.fire;
+    const fire = req.body && req.body.fire; let onlySeg;
     if (fire) {
       if (!req.body.to) return res.status(400).json({ error: 'simulation requires "to" — a test alert must not mail the whole list' });
       const ev = evals.find(e => e.key === fire) || evals.find(e => e.metric_key === fire);
       if (!ev) return res.status(400).json({ error: `no enabled rule matches "${fire}"` });
-      ev.fired = true; ev.simulated = true;
+      ev.fired = true; ev.simulated = true; onlySeg = segment.segOf(ev);              // test mail = the side of that rule only
       if (ev.value == null) { ev.value = ev.threshold; ev.sample = ev.min_sample || 1; ev.counts = 'SIMULATED for mail test'; }
     }
-    const out = await notify.sendAlertDigest(simNow, evals, { to: req.body && req.body.to });
+    const out = await notify.sendAlertDigest(simNow, evals, { to: req.body && req.body.to, segment: onlySeg });
     await audit(req, 'alert.notify', null, { sent: out.sent, firing: out.firing, recipients: out.recipients,
       test_to: (req.body && req.body.to) || null, simulated_rule: fire || null });
     res.json(out);

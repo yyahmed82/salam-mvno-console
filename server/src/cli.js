@@ -70,7 +70,7 @@ async function main() {
       const ev = evals.find(e => e.key === fire) || evals.find(e => e.metric_key === fire);
       if (!ev) throw new Error(`no enabled rule matches "${fire}" — keys: ${evals.map(e => e.key).join(', ')}`);
       ev.fired = true; ev.simulated = true;
-      const out = await notify.sendAlertDigest(when, evals, { to });
+      const out = await notify.sendAlertDigest(when, evals, { to, segment: require('./segment').segOf(ev) });   // only the side the rule belongs to
       console.log(JSON.stringify({ sent: out.sent, dev: out.dev, error: out.error, reason: out.reason, subject: out.subject,
         recipients: out.recipients, attachments: out.attachments, reportNotes: out.reportNotes, segment: ev.segment }, null, 1));
     } else {
