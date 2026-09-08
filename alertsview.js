@@ -7,20 +7,27 @@
   const el = (t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
   const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
   const API = window.API_BASE;
+  /* SEGMENT (8 Sep 2026): the same incident UI serves both businesses. 'mvno' at #alerts, 'fixed' at #fixed-alerts —
+   * the server scopes /api/alerts, /api/alerts/summary, /api/incidents/stats and /api/rules to the segment asked. */
+  let SEG = "mvno";
+  const SEG_PATHS = /^\/api\/(alerts(\/summary)?|incidents\/stats|rules)(\?|$)/;
+  const withSeg = path => SEG_PATHS.test(path) ? path + (path.includes("?") ? "&" : "?") + "segment=" + SEG : path;
+  const hashOf = () => SEG === "fixed" ? "fixed-alerts" : "alerts";
+  window.alertsSegment = () => SEG;
   let atab = (window.pf && window.pf.get('alerts_tab','open')) || "open";
   /* After a mail deep link (#alerts?id=… / ?rule=…) is handled, strip the query from the URL
    * WITHOUT firing hashchange (replaceState). Two reasons: a re-click of the SAME mail link then
    * produces a real hash change and works again (same-hash clicks fire no event at all), and a
    * later manual reload doesn't replay the jump. */
   function deepLinkDone(){
-    try{ if(/[?&](id|rule)=/.test(location.hash||"")) history.replaceState(null, "", location.pathname + location.search + "#alerts"); }catch(e){}
+    try{ if(/[?&](id|rule)=/.test(location.hash||"")) history.replaceState(null, "", location.pathname + location.search + "#" + hashOf()); }catch(e){}
     // with the query gone, refresh cycles can't replay the jump — so the consumed markers can
     // reset, which is what lets a SECOND click on the very same mail link work
     setTimeout(()=>{ window.__alertDeepDone=""; window.__ruleDeepDone=""; window.__alertDeepTried=""; }, 0);
   }
 
   async function api(path, opts){
-    const r = await fetch(API+path, Object.assign({headers:{"Content-Type":"application/json"}}, opts));
+    const r = await fetch(API+withSeg(path), Object.assign({headers:{"Content-Type":"application/json"}}, opts));
     if(!r.ok) throw new Error("HTTP "+r.status);
     return r.json();
   }
@@ -955,7 +962,23 @@
    * page looked broken while nothing had actually failed. Expose an opener the router can call
    * and self-heal if the view is already active at boot. */
   let loaded=false;
-  function open(){ if(!loaded){ loaded=true; bind(); } load(); }
+  /* header pill + subtitle follow the segment; the anomaly / error-class tabs are Mobile-only */
+  function paintSeg(){
+    const pill=$("#alSegPill"), sub=$("#alSegSub");
+    if(pill){ pill.textContent = SEG==="fixed" ? "FIXED · FTTH · 5G · APP" : "MOBILE · MVNO"; }
+    if(sub){ sub.textContent = SEG==="fixed" ? "Fixed rules only (fixed_* metrics over sda_ops) — Mobile alerts live under Mobile › Alerts" : "Mobile (MVNO) rules only — Fixed alerts live under Fixed › Alerts"; }
+    document.querySelectorAll('#alTabs [data-atab="anomaly"],#alTabs [data-atab="errclass"]').forEach(b=>b.classList.toggle("hidden", SEG==="fixed"));
+    const lg=$("#alFixedLegacy"); if(lg) lg.hidden = SEG!=="fixed";
+    if(SEG==="fixed" && (atab==="anomaly"||atab==="errclass")) atab="open";
+  }
+  function open(seg){
+    const want = seg==="fixed" ? "fixed" : "mvno";
+    const changed = want!==SEG; SEG = want;
+    if(!loaded){ loaded=true; bind(); }
+    paintSeg();
+    if(changed){ _rbPromise=null; }                      // runbooks / rules cache is per segment
+    load();
+  }
   window.openAlerts=open;
   document.querySelectorAll(".navtab").forEach(b=>{
     if(b.dataset.view==="alerts") b.addEventListener("click", open);

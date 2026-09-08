@@ -39,6 +39,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   only** (`?segment=fixed|all` allowed for 'both' users; a Fixed-only user gets Fixed, a Mobile-only user Mobile);
   Fixed › Alerts keeps `/api/fixed/alerts/*`. The Mobile Alerts header says "MOBILE · MVNO". Before, a Fixed rule
   (`fixed_error_p0p1_categories`) sat in the Mobile list and was acked by the Mobile team.
+- **Fixed › Alerts is now the full incident view** — the same UI as Mobile (P1/P2/P3 tiles, open / unacked / MTTA /
+  MTTR, Technical / Business chips, Guide, Details with runbook + discussion, Ack, Snooze, Resolve, History, **Metric
+  charts** with baselines, Alert rules editor) at `#fixed-alerts`, served by the shared engine scoped to `segment=fixed`
+  (`alertsview.js` is segment-aware: `openAlerts('fixed'|'mvno')`; header pill FIXED · FTTH · 5G · APP; the Mobile-only
+  anomaly / error-class tabs hide). The Fixed nav item opens it; the previous rules / history / prod-engine page stays
+  one link away (`#fixed?tab=alerts`). Per-id routes (`/api/alerts/:id/*`, `/api/rules/:id`) refuse an alert or rule of
+  the other business for a single-business user; the Fixed-team API allow-list gained alerts / incidents / rules /
+  metrics series (all segment-scoped).
 - **Two alert mails, one per business.** The digest is split by segment: `[Salam Ops · Fixed] N alert(s)` and
   `[Salam Ops · Mobile] N alert(s)`, each with its own intro, table, PDFs and console links. Recipients = users with
   Mail alert ON **whose business covers that side** (`console_users.business`: fixed → Fixed mail, mobile → Mobile

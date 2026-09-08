@@ -12,8 +12,8 @@
   function pageName(t){ const sp=t.querySelector("span:not(.num)"); if(!sp) return t.textContent.trim(); const tn=Array.from(sp.childNodes).find(n=>n.nodeType===3&&n.textContent.trim()); return tn?tn.textContent.trim():sp.textContent.trim(); }
   function sync(){
     if(window.FIXED_PAGES) document.querySelectorAll('.navtab[data-fxtab]').forEach(b=>{ if(!window.FIXED_PAGES[b.dataset.fxtab]) b.classList.add("hidden"); });
-    const m=/^#fixed(?:\?tab=([a-z]+))?/.exec(location.hash||"");
-    if(m){ const cur=m[1]||"overview"; document.querySelectorAll('.navtab[data-fxtab]').forEach(b=>b.classList.toggle("active", b.dataset.fxtab===cur));
+    const m=/^#fixed(?:-([a-z]+))?(?:\?tab=([a-z]+))?/.exec(location.hash||"");   // #fixed · #fixed?tab=x · #fixed-alerts (incident view)
+    if(m){ const cur=m[2]||m[1]||"overview"; document.querySelectorAll('.navtab[data-fxtab]').forEach(b=>b.classList.toggle("active", b.dataset.fxtab===cur));
       document.querySelectorAll('.navtab:not([data-fxtab]).active').forEach(b=>b.classList.remove("active")); }   // one current page: never Mobile + Fixed together
     else document.querySelectorAll('.navtab[data-fxtab].active').forEach(b=>b.classList.remove("active"));         // left the Fixed hub → its group button goes off
     drops().forEach(d=>{
@@ -62,7 +62,13 @@
     document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeAll(); });
     document.querySelectorAll('.navtab[data-fxtab]').forEach(b=>b.addEventListener("click", e=>{
       if(!e.isTrusted) return;                                   // synthetic click from router.clickNav → ignore
-      const k=b.dataset.fxtab, h="fixed"+(k==="overview"?"":"?tab="+k);
+      const k=b.dataset.fxtab;
+      /* Fixed › Alerts = the full incident view (same UI as Mobile: guide, details, ack, snooze, resolve, discussion,
+       * metric charts, rules) scoped to the Fixed segment — routed by router.js as #fixed-alerts */
+      if(k==="alerts"){ e.preventDefault(); e.stopImmediatePropagation();
+        document.querySelectorAll(".navtab").forEach(x=>x.classList.toggle("active", x===b));
+        if(location.hash!=="#fixed-alerts") location.hash="#fixed-alerts"; else if(window.openAlerts) window.openAlerts("fixed"); return; }
+      const h="fixed"+(k==="overview"?"":"?tab="+k);
       document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active", v.id==="view-fixed"));
       document.querySelectorAll(".navtab").forEach(x=>x.classList.toggle("active", x===b));
       if(location.hash!=="#"+h) location.hash="#"+h; else if(window.openFixed) window.openFixed(k);

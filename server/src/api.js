@@ -125,7 +125,7 @@ app.use(async (req, _res, next) => {
 // (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
 // through the stripped views (every Fixed route is requireView-gated). Kept as an allow-list so a new
 // Mobile endpoint is closed for the Fixed team by default.
-const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck)/;
+const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series)/;   // alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
 app.use('/api/', (req, res, next) => {
   if (req.business === 'fixed' && !FIXED_TEAM_ALLOW.test(req.originalUrl.split('?')[0]))
     return res.status(403).json({ error: 'Not available for the Fixed team — this endpoint belongs to the Mobile side.', business: 'fixed' });
@@ -3081,9 +3081,22 @@ app.get('/api/incidents/stats', async (req, res) => {
       open_total: t.open_total, unacked: t.unacked, resolved_24h: t.resolved_24h });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* one alert belongs to one business: a Mobile-only user cannot read / ack / snooze a Fixed incident and vice versa */
+async function alertScoped(req, res) {
+  const a = (await C.query(`SELECT * FROM alerts WHERE id=$1`, [req.params.id])).rows[0];
+  if (!a) { res.status(404).json({ error: 'not found' }); return null; }
+  const seg = segment.segOf(a);
+  if (!segment.userSees(req.business || 'both', seg)) { res.status(403).json({ error: `This is a ${segment.LABEL[seg]} alert — not part of your business.`, segment: seg }); return null; }
+  return a;
+}
+app.use('/api/rules/:id', (req, res, next) => { if (!/^\d+$/.test(String(req.params.id))) return next();
+  C.query(`SELECT key, segment FROM alert_rules WHERE id=$1`, [req.params.id]).then(r => { const rule = r.rows[0]; if (!rule) return next();
+    const seg = segment.segOf(rule); if (!segment.userSees(req.business || 'both', seg)) return res.status(403).json({ error: `This is a ${segment.LABEL[seg]} rule — not part of your business.`, segment: seg }); next(); })
+    .catch(e => res.status(500).json({ error: e.message })); });
+app.use('/api/alerts/:id', (req, res, next) => { if (!/^\d+$/.test(String(req.params.id))) return next(); alertScoped(req, res).then(a => { if (a) { req.alertRow = a; next(); } }).catch(e => res.status(500).json({ error: e.message })); });
 app.get('/api/alerts/:id', async (req, res) => {
   try {
-    const a = (await C.query(`SELECT * FROM alerts WHERE id=$1`, [req.params.id])).rows[0];
+    const a = req.alertRow || (await C.query(`SELECT * FROM alerts WHERE id=$1`, [req.params.id])).rows[0];
     if (!a) return res.status(404).json({ error: 'not found' });
     const comments = (await C.query(`SELECT author, body, created_at FROM incident_comments WHERE alert_id=$1 ORDER BY created_at`, [req.params.id])).rows;
     const rule = (await C.query(`SELECT runbook, trigger_codes FROM alert_rules WHERE key=$1`, [a.rule_key])).rows[0] || {};
