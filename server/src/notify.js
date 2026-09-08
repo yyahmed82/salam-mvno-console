@@ -79,10 +79,17 @@ async function sendHtml(to, subject, html, attachments, text) {
       auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
     });
     const withLogo = [brand.attachment(), ...(attachments || [])];   // CID logo for the shell header
-    await t.sendMail({ from: fromAddress(),
-      to: emails.join(','), subject, html, ...(text ? { text } : {}), attachments: withLogo });
+    /* BULK PRIVACY (8 Sep 2026): recipients of a digest / report / healthcheck do not know each other, so a
+     * multi-recipient mail never lists them in To. MAIL_BULK_MODE=bcc (default): ONE message, To = the sender
+     * address, everyone in Bcc. MAIL_BULK_MODE=individual: one personal message per recipient (N sends).
+     * Single-recipient mails (OTP, ticket updates) are unchanged. */
+    const mode = (process.env.MAIL_BULK_MODE || 'bcc').toLowerCase();
+    const msg = { from: fromAddress(), subject, html, ...(text ? { text } : {}), attachments: withLogo };
+    if (emails.length <= 1) await t.sendMail({ ...msg, to: emails[0] });
+    else if (mode === 'individual') { for (const e of emails) await t.sendMail({ ...msg, to: e }); }
+    else await t.sendMail({ ...msg, to: fromAddress(), bcc: emails.join(',') });
     mailOk();
-    return { ...base, sent: true };
+    return { ...base, sent: true, bulk: emails.length > 1 ? mode : null };
   } catch (e) { mailFail(e.message); return { ...base, sent: false, error: e.message }; }
 }
 

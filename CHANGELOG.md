@@ -25,6 +25,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   CRIT every run, WARN on change / throttle, OK as recovery notice, `HEALTHCHECK_ALWAYS=1` for the old every-run
   behaviour. Laid out like the Sync Health mail — status line, key/value block, one table row per probe (colour by
   level) — plain-text alternative kept. `node src/cli.js healthcheck [--always|--print]`.
+- **Bulk mails never expose the list**: any mail with more than one recipient goes To = the console's own address with
+  everyone in **Bcc** (`MAIL_BULK_MODE=bcc`, default) or as one personal message per recipient (`MAIL_BULK_MODE=individual`).
+  Single-recipient mails (OTP, ticket updates) unchanged.
 - Mail shell declares `color-scheme: light only` (+ `bgcolor` on the header/body cells) so Apple Mail / Outlook dark
   mode no longer invert it into a mint header on a dark body.
 - **Response cache made durable and self-warming** (`respCache.js`) — the "Loading…" after a deploy or a sync tick
