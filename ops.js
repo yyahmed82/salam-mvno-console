@@ -1423,7 +1423,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
           <button type="button" class="tagchip mini um-ackchip ${u.ack_mobile?'on':''}" data-ack="ack_mobile" ${u.business==='fixed'?'disabled title="Fixed-only account — cannot hold Mobile incidents"':'title="May take / receive a Mobile incident hand-over"'}>📱 Mobile</button>
           <button type="button" class="tagchip mini um-ackchip ${u.ack_fixed?'on':''}" data-ack="ack_fixed" ${u.business==='mobile'?'disabled title="Mobile-only account — cannot hold Fixed incidents"':'title="May take / receive a Fixed incident hand-over"'}>🏠 Fixed</button>
         </div></td>
-        <td class="u-act u-sticky-r"><button type="button" class="ubtn edit" data-edit title="Edit name, mobile, team, roles…">✎ Edit</button><button type="button" class="ubtn ${u.enabled?'block':'unblock'}" data-block>${u.enabled?'Block':'Unblock'}</button></td>
+        <td class="u-act u-sticky-r"><div class="u-actin"><button type="button" class="ubtn edit" data-edit title="Edit name, mobile, team, roles…">✎ Edit</button><button type="button" class="ubtn ${u.enabled?'block':'unblock'}" data-block>${u.enabled?'Block':'Unblock'}</button></div></td>
       </tr>`;
     }).join("");
     const table = `<div class="um-wrap"><table class="umtable">
