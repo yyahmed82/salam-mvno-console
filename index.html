@@ -324,6 +324,9 @@
   .um-biz{display:inline-flex;gap:4px;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--bg)}
   .bizchip{border:0;background:transparent;color:var(--muted);border-radius:999px;padding:5px 12px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s,color .15s,box-shadow .15s;white-space:nowrap}
   .um-biz.mini .bizchip{padding:3px 9px;font-size:11px}
+  /* users table: BUSINESS stacked vertically, ROLES in two tidy columns — both columns take a third of the width they did */
+  .umtable .um-biz.mini{display:inline-flex;flex-direction:column;gap:3px;border-radius:12px;padding:4px} .umtable .um-biz.mini .bizchip{text-align:left;padding:4px 10px;border-radius:8px}
+  .umtable .um-rolecell{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px;min-width:0;width:max-content}
   .bizchip:hover{color:var(--ink)} .bizchip.on{color:#fff;box-shadow:0 2px 8px rgba(2,6,23,.15)}
   .bizchip.kind.on{background:var(--solid)}
   .bizchip.mobile.on{background:#7c3aed} .bizchip.fixed.on{background:var(--green)} .bizchip.both.on{background:linear-gradient(90deg,#7c3aed,var(--green))}
@@ -369,7 +372,7 @@
   [data-theme="dark"] .tagchip.on{color:#fff}
   /* ---- users table v2 (6 Sep 2026): actions in sight, edit panel for everything else ---- */
   .um-wrap{overflow-x:auto;margin-top:26px;border:1px solid var(--line);border-radius:12px}
-  .um-wrap table.umtable{min-width:1240px}   /* sticky ACTIONS must never sit on top of a data column — the wrapper scrolls instead */
+  .um-wrap table.umtable{min-width:1120px}   /* sticky ACTIONS must never sit on top of a data column — the wrapper scrolls instead */
   .um-ack{display:flex;gap:6px;flex-wrap:wrap;min-width:160px} .um-ackchip{font-size:9.5px;padding:4px 10px;letter-spacing:.3px} .um-ackchip.on{background:var(--green,#0e9f5a);border-color:var(--green,#0e9f5a);color:#fff} .um-ackchip[disabled]{opacity:.3;cursor:not-allowed}
   .um-wrap table.umtable{margin-top:0}
   .u-who{display:flex;flex-direction:column;gap:2px;min-width:200px} .u-who b{font-weight:700;color:var(--ink)} .u-who span{font-size:11px;color:var(--muted)}
@@ -1682,67 +1685,67 @@
 <div id="ruleModal" class="modal-overlay"><div class="modal-card" id="ruleModalCard" style="max-width:560px"></div></div>
 <div id="panelModal" class="modal-overlay"><div class="modal-card" id="panelModalCard" style="max-width:720px"></div></div>
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
-<script src="base.js?v=20260908j"></script>
-<script src="navdrop.js?v=20260908j" defer></script>
-<script src="adaptive.js?v=20260908j" defer></script>
-<script src="ksatime.js?v=20260908j"></script>
-<script src="data.js?v=20260908j"></script>
-<script src="data2.js?v=20260908j"></script>
-<script src="samples.js?v=20260908j"></script>
-<script src="samples2.js?v=20260908j"></script>
-<script src="apidocs.js?v=20260908j"></script>
-<script src="xlsxout.js?v=20260908j"></script>
-<script src="persist.js?v=20260908j"></script>
-<script src="app.js?v=20260908j"></script>
-<script src="uinav.js?v=20260908j"></script>
-<script src="alertsview.js?v=20260908j"></script>
-<script src="ops.js?v=20260908j"></script>
-<script src="opsbar.js?v=20260908j"></script>
-<script src="analytics.js?v=20260908j"></script>
-<script src="topo2data.js?v=20260908j"></script>
-<script src="topology2.js?v=20260908j"></script>
-<script src="tapdocs.js?v=20260908j"></script>
-<script src="screensflow.js?v=20260908j"></script>
-<script src="home.js?v=20260908j"></script>
-<script src="monitoring.js?v=20260908j"></script>
-<script src="workbench.js?v=20260908j"></script>
-<script src="growth.js?v=20260908j"></script>
-<script src="dmsjourney.js?v=20260908j"></script>
-<script src="dms.js?v=20260908j"></script>
-<script src="landing.js?v=20260908j"></script>
-<script src="fixed.js?v=20260908j"></script>
-<script src="fixed-maps-ui.js?v=20260908j"></script>
-<script src="fixed-leaflet.js?v=20260908j"></script>
-<script src="fixed-map.js?v=20260908j"></script>
-<script src="fixed-qr.js?v=20260908j"></script>
-<script src="fixed-channel.js?v=20260908j"></script>
-<script src="fixed-dash.js?v=20260908j"></script>
-<script src="fixed-errors.js?v=20260908j"></script>
-<script src="fixed-alerts.js?v=20260908j"></script>
-<script src="fixed-playbook.js?v=20260908j"></script>
-<script src="fixed-diagrams.js?v=20260908j"></script>
-<script src="fixed-report.js?v=20260908j"></script>
-<script src="otodocs.js?v=20260908j"></script>
-<script src="salamdocs.js?v=20260908j"></script>
-<script src="slo.js?v=20260908j"></script>
-<script src="audit.js?v=20260908j"></script>
-<script src="notifycfg.js?v=20260908j"></script>
-<script src="notifyclone.js?v=20260908j"></script>
-<script src="democfg.js?v=20260908j"></script>
-<script src="sub360.js?v=20260908j"></script>
-<script src="rolesmatrix.js?v=20260908j"></script>
-<script src="i18n.js?v=20260908j"></script>
-<script src="settingsmenu.js?v=20260908j"></script>
-<script src="tour.js?v=20260908j"></script>
-<script src="helpmenu.js?v=20260908j"></script>
-<script src="assist.js?v=20260908j"></script>
-<script src="assistcfg.js?v=20260908j"></script>
-<script src="assistclone.js?v=20260908j"></script>
-<script src="navcfg.js?v=20260908j"></script>
-<script src="tickets.js?v=20260908j"></script>
-<script src="theme.js?v=20260908j"></script>
-<script src="router.js?v=20260908j"></script>
-<script src="live.js?v=20260908j"></script>
-<script src="oncall.js?v=20260908j"></script>
+<script src="base.js?v=20260908k"></script>
+<script src="navdrop.js?v=20260908k" defer></script>
+<script src="adaptive.js?v=20260908k" defer></script>
+<script src="ksatime.js?v=20260908k"></script>
+<script src="data.js?v=20260908k"></script>
+<script src="data2.js?v=20260908k"></script>
+<script src="samples.js?v=20260908k"></script>
+<script src="samples2.js?v=20260908k"></script>
+<script src="apidocs.js?v=20260908k"></script>
+<script src="xlsxout.js?v=20260908k"></script>
+<script src="persist.js?v=20260908k"></script>
+<script src="app.js?v=20260908k"></script>
+<script src="uinav.js?v=20260908k"></script>
+<script src="alertsview.js?v=20260908k"></script>
+<script src="ops.js?v=20260908k"></script>
+<script src="opsbar.js?v=20260908k"></script>
+<script src="analytics.js?v=20260908k"></script>
+<script src="topo2data.js?v=20260908k"></script>
+<script src="topology2.js?v=20260908k"></script>
+<script src="tapdocs.js?v=20260908k"></script>
+<script src="screensflow.js?v=20260908k"></script>
+<script src="home.js?v=20260908k"></script>
+<script src="monitoring.js?v=20260908k"></script>
+<script src="workbench.js?v=20260908k"></script>
+<script src="growth.js?v=20260908k"></script>
+<script src="dmsjourney.js?v=20260908k"></script>
+<script src="dms.js?v=20260908k"></script>
+<script src="landing.js?v=20260908k"></script>
+<script src="fixed.js?v=20260908k"></script>
+<script src="fixed-maps-ui.js?v=20260908k"></script>
+<script src="fixed-leaflet.js?v=20260908k"></script>
+<script src="fixed-map.js?v=20260908k"></script>
+<script src="fixed-qr.js?v=20260908k"></script>
+<script src="fixed-channel.js?v=20260908k"></script>
+<script src="fixed-dash.js?v=20260908k"></script>
+<script src="fixed-errors.js?v=20260908k"></script>
+<script src="fixed-alerts.js?v=20260908k"></script>
+<script src="fixed-playbook.js?v=20260908k"></script>
+<script src="fixed-diagrams.js?v=20260908k"></script>
+<script src="fixed-report.js?v=20260908k"></script>
+<script src="otodocs.js?v=20260908k"></script>
+<script src="salamdocs.js?v=20260908k"></script>
+<script src="slo.js?v=20260908k"></script>
+<script src="audit.js?v=20260908k"></script>
+<script src="notifycfg.js?v=20260908k"></script>
+<script src="notifyclone.js?v=20260908k"></script>
+<script src="democfg.js?v=20260908k"></script>
+<script src="sub360.js?v=20260908k"></script>
+<script src="rolesmatrix.js?v=20260908k"></script>
+<script src="i18n.js?v=20260908k"></script>
+<script src="settingsmenu.js?v=20260908k"></script>
+<script src="tour.js?v=20260908k"></script>
+<script src="helpmenu.js?v=20260908k"></script>
+<script src="assist.js?v=20260908k"></script>
+<script src="assistcfg.js?v=20260908k"></script>
+<script src="assistclone.js?v=20260908k"></script>
+<script src="navcfg.js?v=20260908k"></script>
+<script src="tickets.js?v=20260908k"></script>
+<script src="theme.js?v=20260908k"></script>
+<script src="router.js?v=20260908k"></script>
+<script src="live.js?v=20260908k"></script>
+<script src="oncall.js?v=20260908k"></script>
 </body>
 </html>
