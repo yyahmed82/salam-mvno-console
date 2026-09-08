@@ -5483,7 +5483,7 @@ app.get('/api/health/selfcheck', requireCap('manageUsers'), async (req, res) => 
   try {
     const rc = (await C.query(`SELECT count(*)::int c FROM alert_rules WHERE enabled`)).rows[0].c;
     let lastEval = null;
-    try { lastEval = (await C.query(`SELECT max(created_at) m FROM metric_snapshots`)).rows[0].m; } catch (e) {}
+    try { lastEval = (await C.query(`SELECT max(computed_at) m FROM metric_snapshots`)).rows[0].m; } catch (e) {}   // column is computed_at (created_at never existed → the probe always said "no snapshots yet")
     const ageMin = lastEval ? Math.round((nowMs - new Date(lastEval).getTime()) / 60000) : null;
     const st = rc === 0 ? 'fail' : (ageMin == null || ageMin > 30) ? 'warn' : 'ok';
     push('alert_engine', 'Alert engine', st, `${rc} rules enabled` + (ageMin != null ? ` · last evaluation ${ageMin}m ago` : ' · no snapshots yet'));
@@ -5498,8 +5498,9 @@ app.get('/api/health/selfcheck', requireCap('manageUsers'), async (req, res) => 
     if (cfg.waPhoneId && cfg.waToken && cfg.waTo) chans.push('WhatsApp');
     const smsReady = !!(process.env.SMS_URL && process.env.SMS_APPSID) && !!(cfg.smsTo || process.env.SMS_TO) && cfg.smsEnabled;
     if (smsReady) chans.push('SMS');
-    const st = !cfg.enabled ? 'warn' : chans.length === 0 ? 'warn' : 'ok';
-    push('chatops', 'ChatOps notify', st, (cfg.enabled ? 'Enabled' : 'Disabled') + ' · ' + (chans.length ? chans.join(' · ') : 'no channels configured'));
+    // switched off AND nothing configured = an optional integration nobody set up (grey), not a warning; enabled-but-empty or configured-but-off = warn
+    const st = (!cfg.enabled && chans.length === 0) ? 'off' : (!cfg.enabled || chans.length === 0) ? 'warn' : 'ok';
+    push('chatops', 'ChatOps notify', st, (cfg.enabled ? 'Enabled' : 'Disabled') + ' · ' + (chans.length ? chans.join(' · ') : 'no channels configured (optional — Teams / Slack / WhatsApp webhook in Settings → Notifications)'));
   } catch (e) { push('chatops', 'ChatOps notify', 'warn', 'Config unreadable: ' + e.message); }
 
   // 6) SMS creds (Unifonic) — high-severity paging path

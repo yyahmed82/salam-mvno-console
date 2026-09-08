@@ -272,6 +272,15 @@ async function detectAndRaise(nowIso, cfgIn) {
   const cfg = cfgIn || await getConfig();
   if (!cfg.enabled || !cfg.raiseAlerts) return { opened: 0, resolved: 0, scanned: 0 };
   const now = nowIso || new Date().toISOString();
+  /* Data-freshness gate. When the upstream source is behind, the newest hours are EMPTY in our copy: every volume
+   * reads "down", every gateway "failing over", every rate is computed on a truncated tail — and the engine used
+   * to open P1s on that (8 Sep: source 6 h behind → 2×P1 + 3 anomalies, all artefacts). While the newest payments
+   * row is older than staleGateMin (default 60), no NEW anomaly / gateway alert is opened; open ones are left as
+   * they are (they resolve on the next fresh scan). The dashboard banner already says the data is behind. */
+  let lagMin = null;
+  try { const r = await db.source.query(`SELECT max(created_at) AS m FROM payments`); if (r.rows[0] && r.rows[0].m) lagMin = Math.round((Date.now() - new Date(r.rows[0].m).getTime()) / 60000); } catch (_) {}
+  const gate = Number(cfg.staleGateMin) > 0 ? Number(cfg.staleGateMin) : 60;
+  if (lagMin != null && lagMin > gate) { console.log(`[anomaly] source is ${lagMin}m behind (gate ${gate}m) — anomaly / gateway alerts paused, nothing opened`); return { opened: 0, resolved: 0, scanned: 0, paused: true, lagMin }; }
   const { anomalies } = await scan(now, cfg);
   const active = new Map(anomalies.map(a => [`anomaly:${a.journey}:${a.kind}`, a]));
   // per-gateway drops (payment gateways / couriers) → gateway:<journey>:<vendor>

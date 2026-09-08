@@ -28,6 +28,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   block lists Channel and Type.
 - Live paging cursor is now the timestamp of the last row (sources are merged), `OPS_BETA_POOL_MAX` (2) for the beta
   pool. Phone: the table scrolls sideways, an opened row's detail stays pinned to the screen.
+- Anomaly engine: **no new anomaly / gateway-down alert while the source is behind** (newest payments row older than
+  `anomaly.staleGateMin`, default 60 min). A lagging upstream replica empties the newest hours of our copy, so every
+  volume reads "down" and every rate is computed on a truncated tail — the 8 Sep 6 h lag opened two P1s and three
+  anomalies that were all artefacts. Open alerts are left to resolve on the next fresh scan; the log says
+  `[anomaly] source is Nm behind — paused`.
+- Health self-check: "Alert engine · no snapshots yet" was a bug in the probe (it read `metric_snapshots.created_at`;
+  the column is `computed_at`) — it now reports the real age of the last evaluation. ChatOps shows grey/optional when
+  it is switched off with nothing configured; amber only when enabled-but-empty or configured-but-off.
 - Fixed › Diagrams on prod: the four iframe pages (`fixed-diagrams/*.html` + mermaid) were never in the deploy bundle
   ("Cannot GET /fixed-diagrams/salam-journeys-explorer.html") — `deploy.sh` now ships the folder like `assets/`.
 - Healthcheck: "console connections" warn / crit now default to the console's own pool budget (+2 / +8, computed from the

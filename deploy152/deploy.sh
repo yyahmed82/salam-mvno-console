@@ -118,6 +118,7 @@ else
   cp -f /tmp/csync/server/test-smtp.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/sync-watchdog.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/sql.cjs "$APP/server/" 2>/dev/null || true          # csql (read-only query tool)
+  cp -f /tmp/csync/server/check-fixed-sources.cjs "$APP/server/" 2>/dev/null || true   # Fixed › Errors read-model census
   cp -f /tmp/csync/server/purge-user-secrets.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/dms-discover.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/dms-business-discover.cjs "$APP/server/" 2>/dev/null || true
