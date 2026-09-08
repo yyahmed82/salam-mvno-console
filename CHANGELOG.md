@@ -44,6 +44,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   follow `SOURCE_POOL_MAX` (+4 warn / +10 crit) and it can never flag *prod impact* — the CRIT "11 connections on the
   selfcare replica" was our own pool on our own server.
 ### Fixed
+- Order-status-flow → **Timeline →** opened an empty "Transaction timeline" (0 events): the button passes the
+  onboarding order uuid and the reference resolver only knew payment uuids / trace ids, so it fell through to
+  the case analyzer. The resolver now looks up `onboarding_orders.id` first and anchors the full customer
+  timeline on the order's MSISDN and time.
 - Home for a single-business account (Mobile-only / Fixed-only) no longer shows the other business's empty column
   and empty "Needs attention" box: one full-width column, only that business's quick links, heading adapted.
 - Detail drawers (tickets, user panel) opened *under* the sticky header on desktop, hiding the title bar and its ×

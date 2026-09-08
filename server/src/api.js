@@ -2654,6 +2654,20 @@ async function resolveSearchReference(raw) {
       note: `"${id}" looks like a CMS checkout code, but no checkout (or no customer identifier on it) matches. ` +
             `Check the code in the admin panel, or search by MOBILE / ORDER ID.` };
   }
+  // 0b) ONBOARDING ORDER id (uuid = onboarding_orders.id) — what the Order-status-flow "Timeline →" button
+  //     passes. Resolve to the customer's MSISDN (or national id) anchored at the order time, so the full
+  //     end-to-end timeline (eligibility · payment · Nafath · activation · delivery) is assembled — before
+  //     this, an order uuid fell through to the case analyzer and came back "0 events".
+  if (isUuid) {
+    try {
+      const oq = await db.source.query(
+        `SELECT mobile_number m, nationality_id_number nid, created_at FROM onboarding_orders WHERE id = $1::uuid LIMIT 1`, [id]);
+      if (oq.rows.length) {
+        const r = oq.rows[0]; const ident = r.m || r.nid;
+        if (ident) return { kind: 'payment', identifier: ident, at: r.created_at, note: `resolved from onboarding order ${id}` };
+      }
+    } catch (e) { /* fall through */ }
+  }
   // 1) payment row? (uuid = payments.id; gateway ref = payment_reference_id, 120-day window)
   try {
     const pq = isUuid
