@@ -162,8 +162,9 @@ function segChip(e) {
     : '<span style="display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.3px;padding:1px 6px;border-radius:999px;background:#f1e9fe;color:#5b21b6;margin-right:5px;vertical-align:1px">📱 MOBILE</span>';
 }
 function openUrl(e, idByKey) {
-  if (FL.isFixed(e)) return FL.alertsUrl();
-  return `${CONSOLE_URL}#alerts${e.fired && idByKey[e.key] ? `?id=${idByKey[e.key]}` : `?rule=${encodeURIComponent(e.key)}`}`;
+  // Fixed rows open the Fixed incident view (#fixed-alerts — ack / snooze / guide, 8 Sep 2026), Mobile rows the Mobile one
+  const board = FL.isFixed(e) ? 'fixed-alerts' : 'alerts';
+  return `${CONSOLE_URL}#${board}${e.fired && idByKey[e.key] ? `?id=${idByKey[e.key]}` : `?rule=${encodeURIComponent(e.key)}`}`;
 }
 function inspectHtml(e, style) {
   const i = e.fired && FL.isFixed(e) ? FL.inspect(e.key) : null;

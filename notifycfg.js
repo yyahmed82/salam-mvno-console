@@ -21,10 +21,10 @@
   }
 
   function chatopsPanel(){
-    const c=CH||{};
+    const c=CH||{}; const f=c.fixed||{};
     return `<div class="panel">
       <h2>Teams, Slack &amp; WhatsApp notifications</h2>
-      <div class="sub">Push new incidents to a channel. <b>Teams</b> is the primary channel — paste the webhook URL from a Teams <b>Workflow</b> (the classic Incoming Webhook connector was retired May 2026). Slack and WhatsApp are optional.</div>
+      <div class="sub">Push new incidents to a channel. <b>Teams</b> is the primary channel — paste the webhook URL from a Teams <b>Workflow</b> (the classic Incoming Webhook connector was retired May 2026). Slack and WhatsApp are optional. The webhooks and recipients in this first block are the <b style="color:var(--green)">Mobile (MVNO)</b> channels; the <b style="color:var(--purple)">Fixed</b> business has its own block below.</div>
       <div class="nc-form" style="margin-top:14px">
         <label class="nc-row"><span>Enabled</span>
           <input type="checkbox" id="ncEnabled" ${c.enabled?"checked":""}></label>
@@ -56,7 +56,7 @@
           <input type="text" id="ncWaBase" placeholder="empty = graph.facebook.com directly · or http://172.31.38.115:8089" value="${esc(c.waBaseUrl||"")}"></label>
       </div>
       <div class="sub" style="margin-top:-4px;margin-bottom:8px">152 has no direct internet — point <b>API base</b> at the nginx relay on the reverse proxy (115), which forwards only to graph.facebook.com and only from this host. Env <code>WA_BASE_URL</code> overrides this field.</div>
-      <h4 style="margin:18px 0 4px">SMS <span class="rl" style="font-weight:400">— Unifonic (credentials in server env; secret)</span></h4>
+      <h4 style="margin:18px 0 4px">SMS <span class="rl" style="font-weight:400">— Unifonic (credentials in server env; secret) · Mobile recipients</span></h4>
       <div class="sub" style="margin-bottom:10px">Text the on-call number for high-severity incidents. Provider URL / AppSid / sender live in the server env (<code>SMS_*</code>) — here you control the toggle, recipients and severity. ${c.smsConfigured?'<b style="color:var(--good)">Provider configured ✓</b>':'<b style="color:#dc2626">Provider env not set</b>'}</div>
       <div class="nc-form">
         <label class="nc-row"><span>Send SMS</span>
@@ -66,10 +66,23 @@
         <label class="nc-row"><span>Send for ≥</span>
           <select id="ncSmsMin">${["P1","P2","P3"].map(s=>`<option ${(c.smsMinSeverity||"P1")===s?"selected":""}>${s}</option>`).join("")}</select></label>
       </div>
+      <h4 style="margin:18px 0 4px">Fixed business channels <span class="rl" style="font-weight:400">— FTTH · 5G home · e-purchase · Salam Home app</span></h4>
+      <div class="sub" style="margin-bottom:10px">Fixed alerts (<code>fixed_*</code> rules) are delivered <b>only</b> to these channels and Mobile alerts only to the ones above — the two businesses never share a Teams room, a WhatsApp list or an SMS list, and neither side falls back to the other. Same webhook format, same message template; WhatsApp uses the sender / token / template above with its own recipients. ${c.fixedTeamsConfigured?'<b style="color:var(--good)">Teams ✓</b> ':''}${c.fixedSlackConfigured?'<b style="color:var(--good)">Slack ✓</b> ':''}${c.fixedWhatsappConfigured?'<b style="color:var(--good)">WhatsApp ✓</b>':''}</div>
+      <div class="nc-form">
+        <label class="nc-row"><span>Teams webhook URL <small class="rl">(Fixed workflow)</small></span>
+          <input type="password" id="ncFxTeams" placeholder="https://…logic.azure.com/workflows/… (a different Workflow than Mobile)" value="${esc(f.teamsUrl||"")}"></label>
+        <label class="nc-row"><span>Slack webhook URL <small class="rl">(optional)</small></span>
+          <input type="password" id="ncFxSlack" placeholder="https://hooks.slack.com/services/…" value="${esc(f.slackUrl||"")}"></label>
+        <label class="nc-row"><span>WhatsApp recipients <small class="rl">(Fixed on-call)</small></span>
+          <input type="text" id="ncFxWaTo" placeholder="9665xxxxxxxx, 9665yyyyyyyy (E.164, no +)" value="${esc(f.waTo||"")}"></label>
+        <label class="nc-row"><span>SMS recipients <small class="rl">(Fixed on-call)</small></span>
+          <input type="text" id="ncFxSmsTo" placeholder="9665xxxxxxxx (blank = no SMS for Fixed)" value="${esc(f.smsTo||"")}"></label>
+      </div>
       <div class="nc-actions">
         <button class="pill" id="ncSave" style="border-left-color:var(--green)">Save</button>
         <span class="rl">Test as</span>
         <select id="ncTestSev" class="nc-inline">${["P1","P2","P3"].map(s=>`<option ${s==="P2"?"selected":""}>${s}</option>`).join("")}</select>
+        <select id="ncTestSeg" class="nc-inline"><option value="mvno">Mobile channels</option><option value="fixed">Fixed channels</option></select>
         <button class="pill" id="ncTest" style="border-left-color:var(--blue)">Send test</button>
         <span id="ncStatus" class="rl"></span>
       </div>
@@ -133,16 +146,17 @@
         enabled:$("#ncEnabled").checked, slackUrl:$("#ncSlack").value.trim(), teamsUrl:$("#ncTeams").value.trim(),
         minSeverity:$("#ncMin").value, baseUrl:$("#ncBase").value.trim(),
         waPhoneId:$("#ncWaPhone").value.trim(), waToken:$("#ncWaToken").value.trim(), waTo:$("#ncWaTo").value.trim(), waTemplate:$("#ncWaTpl").value.trim(), waTemplateLang:$("#ncWaTplLang").value.trim()||"en", waApiVersion:$("#ncWaVer").value.trim(), waBaseUrl:$("#ncWaBase").value.trim(),
-        smsEnabled:$("#ncSmsEnabled").checked, smsTo:$("#ncSmsTo").value.trim(), smsMinSeverity:$("#ncSmsMin").value})});
-        st.textContent=`Saved · Slack ${CH.slackConfigured?"✓":"—"} · Teams ${CH.teamsConfigured?"✓":"—"} · WhatsApp ${CH.whatsappConfigured?"✓":"—"} · SMS ${CH.smsConfigured?(CH.smsEnabled?"on":"off"):"env✗"}`;
+        smsEnabled:$("#ncSmsEnabled").checked, smsTo:$("#ncSmsTo").value.trim(), smsMinSeverity:$("#ncSmsMin").value,
+        fixed:{ teamsUrl:$("#ncFxTeams").value.trim(), slackUrl:$("#ncFxSlack").value.trim(), waTo:$("#ncFxWaTo").value.trim(), smsTo:$("#ncFxSmsTo").value.trim() }})});
+        st.textContent=`Saved · Mobile: Slack ${CH.slackConfigured?"✓":"—"} · Teams ${CH.teamsConfigured?"✓":"—"} · WhatsApp ${CH.whatsappConfigured?"✓":"—"} · SMS ${CH.smsConfigured?(CH.smsEnabled?"on":"off"):"env✗"}  |  Fixed: Slack ${CH.fixedSlackConfigured?"✓":"—"} · Teams ${CH.fixedTeamsConfigured?"✓":"—"} · WhatsApp ${CH.fixedWhatsappConfigured?"✓":"—"} · SMS ${CH.fixedSmsConfigured&&CH.smsEnabled?"on":"—"}`;
       }catch(e){ st.textContent="Error: "+e.message; }
     });
     $("#ncTest").addEventListener("click",async()=>{
       const st=$("#ncStatus"); st.textContent="Sending test…";
-      try{ const r=await api("/api/chatops/test",{method:"POST",body:JSON.stringify({severity:$("#ncTestSev").value})});
-        const ch=(r.channels||[]);
-        st.textContent = ch.length ? ch.map(c=>`${c.name} ${c.sent?"✓":"✗ "+(c.error||"")}`).join(" · ")
-          : (r.dev?"No webhook set — preview below (dev mode)":"nothing sent");
+      try{ const r=await api("/api/chatops/test",{method:"POST",body:JSON.stringify({severity:$("#ncTestSev").value, segment:$("#ncTestSeg").value})});
+        const ch=(r.channels||[]); const biz=r.business?`[${r.business}] `:"";
+        st.textContent = biz + (ch.length ? ch.map(c=>`${c.name} ${c.sent?"✓":"✗ "+(c.error||"")}`).join(" · ")
+          : (r.dev?"No "+(r.business||"")+" channel set — preview below (dev mode)":"nothing sent"));
         $("#ncPreview").innerHTML =
           (r.whatsappPreview ? `<div class="rl">WhatsApp message preview</div><pre class="nc-pre">${esc(r.whatsappPreview)}</pre>` : "") +
           (r.slackPreview ? `<div class="rl">Slack message preview</div><pre class="nc-pre">${esc(JSON.stringify(r.slackPreview,null,2))}</pre>` : "");

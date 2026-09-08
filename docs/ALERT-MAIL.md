@@ -69,3 +69,16 @@ Recipients of each mail = enabled users with **Mail alert ON** whose `console_us
 A side with nothing firing sends nothing. Each mail carries only its own PDFs and console links. Test mail
 (Settings → Notifications / `node src/cli.js testmail <rule-key> <email>`) sends the side that contains the rule, `[TEST]`-prefixed.
 `?segment=fixed|all` on the Mobile endpoints is honoured only for `both` users (ops / super admins).
+
+### ChatOps (Teams / Slack / WhatsApp / SMS) per business
+
+`console_settings.chatops` carries the **Mobile** channels at the top level (`teamsUrl`, `slackUrl`, `waTo`, `smsTo`) and
+the **Fixed** channels under `fixed: { teamsUrl, slackUrl, waTo, smsTo }` (Settings → Notifications → *Fixed business
+channels*). `chatops.notifyIncident(alert)` resolves the destinations with `channelsFor(cfg, segOf(alert))`: a Fixed
+alert goes only to `fixed.*`, a Mobile alert only to the top-level channels, no fallback either way (an empty side is
+logged as `dev/no-channel · Fixed`). `enabled`, `minSeverity`, the WhatsApp sender (`waPhoneId`, `waToken`,
+`waTemplate`, `waBaseUrl` relay) and the SMS provider env are shared. Messages are tagged with the business and link to
+`#fixed-alerts?id=N` or `#alerts?id=N`. Test each side from the settings page ("Send test" → Mobile / Fixed channels) or
+`curl -s -X POST -H 'Content-Type: application/json' -d '{"severity":"P2","segment":"fixed"}' …/api/chatops/test`.
+The Health self-check shows `ChatOps notify · Enabled · Mobile: Teams · WhatsApp · Fixed: Teams` and warns while a side
+has no channel.

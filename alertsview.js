@@ -301,7 +301,7 @@
     const names = br.slice(0,3).map(c=>`<b>${esc(mLabel(c.m))}</b> is at <b>${esc(c.latest)}</b> (${esc(c.breachSev)})`).join("; ")
       + (br.length>3 ? ` — and ${br.length-3} more` : "");
     const advice = (worst==="P1"||worst==="P2")
-      ? `Start with the ${worst==="P1"?"red":"amber"} card${br.length>1?"s":""} at the top — each one explains what the metric means and when it alerts. Click a card for its firing history, and open the <b>Troubleshoot</b> board to find the affected orders.`
+      ? `Start with the ${worst==="P1"?"red":"amber"} card${br.length>1?"s":""} at the top — each one explains what the metric means and when it alerts. Click a card for its firing history, and open the <b>${SEG==="fixed"?"Fixed › Errors":"Troubleshoot"}</b> board to find the affected ${SEG==="fixed"?"orders across SDA · QR · Web · Salam Home app":"orders"}.`
       : `These are low-severity (P3) — worth a look, but not urgent. Click a card for its firing history.`;
     return `<div class="mtriage ${cls}"><span class="mtri-ico">⚠</span><div>
       <b>${br.length} of ${total} metrics ${br.length===1?"is":"are"} alerting right now${worst==="P1"?" — includes a P1 critical":""}.</b>
@@ -413,7 +413,7 @@
       <div class="gract">
         ${canAck()?`<button class="pill" id="grnotify_${a.id}" style="border-left-color:#dc2626">⚡ Notify on-call</button><span class="grres" id="grnres_${a.id}"></span>`:''}
         <button class="pill" id="grtixbtn_${a.id}" style="border-left-color:#2563eb">🎫 Related tickets</button>
-        <button class="pill" id="grts_${a.id}" style="border-left-color:var(--green)">🔧 Open in Troubleshoot</button>
+        <button class="pill" id="grts_${a.id}" style="border-left-color:var(--green)">${SEG==="fixed"?"⚠ Open Fixed › Errors":"🔧 Open in Troubleshoot"}</button>
       </div>
       <div id="grtix_${a.id}"></div>
     </div>`;
@@ -449,7 +449,8 @@
     cell.innerHTML = guideHtml(a, _rbMap ? (_rbMap[a.rule_key]||null) : undefined);
     const nb=$("#grnotify_"+id); if(nb) nb.onclick=()=>grNotify(id);
     const tb=$("#grtixbtn_"+id); if(tb) tb.onclick=()=>grTickets(id);
-    const ts=$("#grts_"+id); if(ts) ts.onclick=()=>{ if(window.setConsoleHash) window.setConsoleHash("troubleshoot"); };
+    // Fixed alerts troubleshoot on the Fixed error control board (all channels); Mobile keeps the MVNO Troubleshoot page
+    const ts=$("#grts_"+id); if(ts) ts.onclick=()=>{ if(window.setConsoleHash) window.setConsoleHash(SEG==="fixed"?"fixed?tab=errors":"troubleshoot"); };
     if(!_rbMap){                                        // fill steps in when rules arrive; never blocks the table render
       const map = await loadRunbooks();
       const steps=$("#grsteps_"+id);

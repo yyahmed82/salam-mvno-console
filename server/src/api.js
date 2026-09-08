@@ -3679,8 +3679,12 @@ app.get('/api/assist/ping', requireCap('manageSync'), requireRoot('assist_config
 function chatopsPublic(c) {
   // never leak the WhatsApp bearer token to the client; expose a "configured" flag instead
   const { waToken, ...rest } = c;
+  const f = c.fixed || {};
   return { ...rest, slackConfigured: !!c.slackUrl, teamsConfigured: !!c.teamsUrl,
     whatsappConfigured: !!(c.waPhoneId && waToken && c.waTo), waTokenSet: !!waToken,
+    // Fixed business channels — same sender/token, separate webhooks + recipients
+    fixedTeamsConfigured: !!f.teamsUrl, fixedSlackConfigured: !!f.slackUrl,
+    fixedWhatsappConfigured: !!(c.waPhoneId && waToken && f.waTo), fixedSmsConfigured: !!f.smsTo,
     smsConfigured: require('./sms').smsConfigured() };   // SMS provider creds live in server env
 }
 app.get('/api/chatops', requireCap('manageSync'), async (req, res) => {
@@ -3694,18 +3698,26 @@ app.put('/api/chatops', requireCap('manageSync'), async (req, res) => {
     // waBaseUrl = the 115:8089 nginx relay (152 has no internet) — it was missing from this
     // whitelist, so the settings form saved it and the server silently dropped it.
     ['enabled', 'slackUrl', 'teamsUrl', 'minSeverity', 'baseUrl', 'waPhoneId', 'waToken', 'waTo', 'waTemplate', 'waTemplateLang', 'waGroupId', 'waApiVersion', 'waBaseUrl', 'smsEnabled', 'smsTo', 'smsMinSeverity'].forEach(k => { if (k in b) patch[k] = b[k]; });
+    if (b.fixed && typeof b.fixed === 'object') patch.fixed = b.fixed;   // { teamsUrl, slackUrl, waTo, smsTo } — merged key by key in setConfig
     const next = await chatops.setConfig(patch);
-    await audit(req, 'chatops.config', null, { enabled: next.enabled, minSeverity: next.minSeverity, slack: !!next.slackUrl, teams: !!next.teamsUrl, whatsapp: !!(next.waPhoneId && next.waToken && next.waTo) });
+    await audit(req, 'chatops.config', null, { enabled: next.enabled, minSeverity: next.minSeverity, slack: !!next.slackUrl, teams: !!next.teamsUrl, whatsapp: !!(next.waPhoneId && next.waToken && next.waTo),
+      fixed: { teams: !!next.fixed.teamsUrl, slack: !!next.fixed.slackUrl, whatsapp: !!(next.waPhoneId && next.waToken && next.fixed.waTo), sms: !!next.fixed.smsTo } });
     res.json(chatopsPublic(next));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/chatops/test', requireCap('manageSync'), async (req, res) => {
   try {
-    const sample = { id: 0, name: 'Test alert — ChatOps wiring', severity: (req.body || {}).severity || 'P2', team: 'Digital Ops',
-      metric_key: 'payment_success_rate', operator: 'lt', threshold: 0.95, observed_value: 0.912, sample: 340, window_hours: 1,
-      unit: 'rate', message: 'This is a test notification from the Salam console.' };
+    // body.segment 'fixed' tests the FIXED channels (fixed.* webhooks / recipients); anything else tests Mobile
+    const fixed = (req.body || {}).segment === 'fixed';
+    const sample = fixed
+      ? { id: 0, name: 'Test alert — ChatOps wiring (Fixed)', severity: (req.body || {}).severity || 'P2', team: 'Fixed Ops', segment: 'fixed',
+          metric_key: 'fixed_error_p0p1_categories', operator: 'gt', threshold: 0, observed_value: 3, sample: 120, window_hours: 1,
+          unit: 'count', message: 'This is a test notification for the Fixed business (FTTH · 5G home · e-purchase · Salam Home app).' }
+      : { id: 0, name: 'Test alert — ChatOps wiring', severity: (req.body || {}).severity || 'P2', team: 'Digital Ops',
+          metric_key: 'payment_success_rate', operator: 'lt', threshold: 0.95, observed_value: 0.912, sample: 340, window_hours: 1,
+          unit: 'rate', message: 'This is a test notification from the Salam console.' };
     const out = await chatops.notifyIncident(sample, { kind: 'test' });
-    await audit(req, 'chatops.test', null, { channels: out.channels });
+    await audit(req, 'chatops.test', null, { segment: out.segment, channels: out.channels });
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -5586,15 +5598,19 @@ app.get('/api/health/selfcheck', requireCap('manageUsers'), async (req, res) => 
   // 5) ChatOps notification channels
   try {
     const cfg = await chatops.getConfig();
-    const chans = [];
-    if (cfg.teamsUrl) chans.push('Teams');
-    if (cfg.slackUrl) chans.push('Slack');
-    if (cfg.waPhoneId && cfg.waToken && cfg.waTo) chans.push('WhatsApp');
-    const smsReady = !!(process.env.SMS_URL && process.env.SMS_APPSID) && !!(cfg.smsTo || process.env.SMS_TO) && cfg.smsEnabled;
-    if (smsReady) chans.push('SMS');
-    // switched off AND nothing configured = an optional integration nobody set up (grey), not a warning; enabled-but-empty or configured-but-off = warn
-    const st = (!cfg.enabled && chans.length === 0) ? 'off' : (!cfg.enabled || chans.length === 0) ? 'warn' : 'ok';
-    push('chatops', 'ChatOps notify', st, (cfg.enabled ? 'Enabled' : 'Disabled') + ' · ' + (chans.length ? chans.join(' · ') : 'no channels configured (optional — Teams / Slack / WhatsApp webhook in Settings → Notifications)'));
+    const smsEnv = !!(process.env.SMS_URL && process.env.SMS_APPSID) && cfg.smsEnabled;
+    // one channel list per business — Fixed alerts only ever reach the Fixed channels, so both sides must be wired
+    const list = (seg) => { const ch = chatops.channelsFor(cfg, seg); const out = [];
+      if (ch.teamsUrl) out.push('Teams'); if (ch.slackUrl) out.push('Slack');
+      if (cfg.waPhoneId && cfg.waToken && ch.waTo) out.push('WhatsApp');
+      if (smsEnv && (seg === 'fixed' ? ch.smsTo : (ch.smsTo || process.env.SMS_TO))) out.push('SMS');
+      return out; };
+    const mob = list('mvno'), fix = list('fixed');
+    const any = mob.length + fix.length;
+    // switched off AND nothing configured = an optional integration nobody set up (grey), not a warning; enabled-but-a-side-empty or configured-but-off = warn
+    const st = (!cfg.enabled && any === 0) ? 'off' : (!cfg.enabled || !mob.length || !fix.length) ? 'warn' : 'ok';
+    const side = (name, l) => `${name}: ${l.length ? l.join(' · ') : 'none'}`;
+    push('chatops', 'ChatOps notify', st, (cfg.enabled ? 'Enabled' : 'Disabled') + ' · ' + (any ? `${side('Mobile', mob)} · ${side('Fixed', fix)}` : 'no channels configured (optional — Teams / Slack / WhatsApp per business in Settings → Notifications)'));
   } catch (e) { push('chatops', 'ChatOps notify', 'warn', 'Config unreadable: ' + e.message); }
 
   // 6) SMS creds (Unifonic) — high-severity paging path

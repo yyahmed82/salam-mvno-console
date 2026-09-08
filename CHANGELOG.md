@@ -62,6 +62,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   change), ack delay vs the ack target (P1 15 m · P2 60 m · P3 4 h), and the **SLA clock** — time left of the
   resolution target (P1 4 h · P2 24 h · P3 72 h, `SLA_P1_H…` in .env) or "overdue by …", rows tinted when over.
   Each row deep-links to the incident on the right side. `GET /api/incidents/mine`.
+- **ChatOps per business — separate Teams / Slack / WhatsApp / SMS channels for Fixed.** Settings → Notifications has a
+  new **Fixed business channels** block (`chatops.fixed = { teamsUrl, slackUrl, waTo, smsTo }`): a Fixed alert
+  (`segment.js` → fixed) is pushed **only** to the Fixed Teams workflow / Slack webhook / WhatsApp recipients / SMS
+  recipients, a Mobile alert only to the existing (Mobile) ones — neither side falls back to the other, an empty side
+  simply logs `dev/no-channel · Fixed`. Same payloads (Adaptive Card / blocks / template), the WhatsApp sender, token,
+  template and relay are shared (one business number, two recipient lists). Every message now carries the business
+  (`P1 · Fixed · <name>`, a *Business* fact on the card) and deep-links to the right incident view
+  (`#fixed-alerts?id=N` / `#alerts?id=N` — the `?incident=` links ChatOps used before were not understood by the page).
+  "Send test" has a **Mobile channels / Fixed channels** selector (`POST /api/chatops/test {segment:'fixed'}`), the
+  Health self-check lists channels per side (`Mobile: Teams · WhatsApp · Fixed: Teams`) and warns while one side has
+  none, and the digest mail's Fixed rows now open the Fixed incident view instead of the legacy Fixed › Alerts tab.
+- **Fixed incident guide → Fixed › Errors.** On `#fixed-alerts` the guide's "Open in Troubleshoot" button is
+  "Open Fixed › Errors" (`#fixed?tab=errors`, all four channels); Mobile keeps the MVNO Troubleshoot board.
 - **Hand-over mail.** When an ack changes hands the new holder receives one mail in the alert template focused on that
   incident — who handed it and why (note), observed vs threshold, fired / last seen / breaches, team, metric, the
   rule's runbook as numbered steps, a deep link straight to the incident on the right side (`#alerts?id=` /
