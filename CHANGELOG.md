@@ -26,6 +26,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   each Alerts page — "N Mobile alerts unacknowledged beyond SLA — worst P1 … open 34 min · Reminder 3 sent · next
   repeat in 12 min", colour by level, click opens the incident — and a **⏰ R2 · 17 min** chip in the STATUS cell of the
   alert row (🚨 at R3). `GET /api/ack-sla/status?segment=` feeds them (own side(s) only).
+- Management contacts are picked from the **users list** (chips + autocomplete on name / email / team, ↑↓ Enter, Backspace
+  removes; an address outside the console can still be typed) — one picker per business. `GET /api/ack-sla/people`.
+- **Latency alerting configuration moved** from Monitoring › Gateway to **Mobile › Alerts › Alert rules › Latency thresholds**
+  (last section; `latencycfg.js`): global p95, manual per-API overrides and the per-API lines from history all live with
+  the other alert configuration. Monitoring › Gateway keeps a one-line summary with a "Configure…" link
+  (`#alerts?tab=rules&sec=latency`); `#alerts?tab=<open|all|rules|metrics|oncall>` now forces that sub-tab.
 - API: `GET/PUT /api/ack-sla` (manageSync), `GET /api/ack-sla/status`, `POST /api/ack-sla/preview`, `POST /api/ack-sla/tick`.
   Schema: `alerts.ack_reminder_level`, `alerts.ack_reminder_at`, table `alert_reminders` (self-seeded at boot).
 

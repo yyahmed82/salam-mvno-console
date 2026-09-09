@@ -3891,6 +3891,11 @@ app.get('/api/ack-sla/status', async (req, res) => {
     res.json(st);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// people picker for the management lists: enabled console users (email, name, business, roles) — no PII beyond the directory
+app.get('/api/ack-sla/people', requireCap('manageSync'), async (req, res) => {
+  try { res.json({ people: (await C.query(`SELECT email, name, business, role, roles, team FROM console_users WHERE enabled = true ORDER BY coalesce(name, email)`)).rows }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
 // mail one reminder level to the requester (preview of the HTML), using a real open alert of that side or a sample
 app.post('/api/ack-sla/preview', requireCap('manageSync'), async (req, res) => {
   try {

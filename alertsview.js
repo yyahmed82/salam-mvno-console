@@ -92,6 +92,8 @@
         deepLinkDone();
       }).catch(()=>{});
     }
+    // #alerts?tab=rules (e.g. the "Configure…" link from Monitoring › Gateway) forces that sub-tab once
+    const _mt=/[?&]tab=(open|all|rules|metrics|oncall)/.exec(location.hash||""); if(_mt && _mt[1]!==window.__alertTabDeep){ window.__alertTabDeep=_mt[1]; atab=_mt[1]; if(window.pf) window.pf.set('alerts_tab',atab); }
     const _tabs=$("#alTabs"); if(_tabs) _tabs.querySelectorAll(".pill").forEach(p=>p.classList.toggle("active", p.dataset.atab===atab));
     if(atab==="rules") renderRules();
     else if(atab==="metrics") renderMetrics();
@@ -894,8 +896,11 @@
     if(canEdit) h += `<div id="ecSection" style="margin-top:24px"></div>`;
     // anomaly-engine signals (seasonal baseline) — individually configurable, appended below the threshold rules
     if(canEdit) h += `<div id="anomSection" style="margin-top:24px">${window.salamLoader?window.salamLoader("Loading anomaly signals…"):"Loading anomaly signals…"}</div>`;
+    // Mobile only — latency alerting configuration (global p95, per-API overrides, per-API lines from history), last section
+    if(SEG!=="fixed") h += `<div id="latSection" style="margin-top:24px"><h5 style="margin:0 0 6px;font-size:12px;letter-spacing:.06em;color:var(--muted)">LATENCY THRESHOLDS · api_latency_p95 / api_latency_per_api / api_latency_storm</h5><div id="latencyCfg"></div></div>`;
     $("#alBody").innerHTML = h;
     if(SEG!=="fixed") renderGateways();
+    if(SEG!=="fixed"&&window.renderLatencyConfig) window.renderLatencyConfig($("#latencyCfg"));
     if(canEdit) renderErrClass();
     wireClsBar(renderRules);
     $("#alBody").querySelectorAll("input[data-rid]").forEach(cb=>{

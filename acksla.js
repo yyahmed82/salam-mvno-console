@@ -52,7 +52,9 @@
   window.renderAckSlaSettings=async function(host){
     if(!host) return; ensureCss();
     host.innerHTML=`<div class="sub">Loading acknowledgement SLA…</div>`;
-    let d,st; try{ [d,st]=await Promise.all([api("/api/ack-sla"), fetchStatus()]); }catch(e){ host.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
+    let d,st,people=[]; try{ [d,st]=await Promise.all([api("/api/ack-sla"), fetchStatus()]); }catch(e){ host.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
+    try{ people=(await api("/api/ack-sla/people")).people||[]; }catch(e){ people=[]; }
+    const person=em=>people.find(p=>String(p.email).toLowerCase()===String(em).toLowerCase());
     const cfg=d.config; const canEdit=window.opsCan&&window.opsCan("manageSync");
     const me=((window.opsSession&&window.opsSession().me)||{}).email||"";
     const card=([b,label,color,seg])=>{
@@ -72,12 +74,17 @@
       return `<div class="acksla-card" style="border-top:3px solid ${color}">
         <div class="acksla-h"><b style="color:${color}">${label}</b><label class="switch" title="Reminders for this business"><input type="checkbox" data-k="${b}.enabled" ${c.enabled?"checked":""} ${canEdit?"":"disabled"}><span class="slider"></span></label></div>
         <div style="overflow-x:auto"><table class="alerts acksla-t"><tr><th>PRIORITY</th><th>REMINDER 1<br><span class="rl">min after fired</span></th><th>REMINDER 2<br><span class="rl">warning</span></th><th>REMINDER 3<br><span class="rl">+ escalation</span></th><th>REPEAT R3<br><span class="rl">every … min</span></th><th>INFORM<br><span class="rl">management</span></th></tr>${rows}</table></div>
-        <div class="rl" style="margin:8px 0 4px">Management contacts (for information at reminder 3 — separate mail, never in the team's recipient list)</div>
-        <textarea data-k="${b}.management" rows="2" placeholder="name@salam.sa, name2@salam.sa" ${canEdit?"":"disabled"} style="width:100%;font:inherit;font-size:12.5px">${esc(c.management)}</textarea>
+        <div class="rl" style="margin:8px 0 4px;font-weight:700">Management — ${label.replace(/^\S+\s/,"")} <span style="font-weight:400;color:var(--muted)">· informed at reminder 3 (separate mail, never in the team's recipient list)</span></div>
+        <div class="acksla-pick" data-pick="${b}" ${canEdit?"":"data-ro=1"}>
+          <div class="acksla-chips">${c.management.split(", ").filter(Boolean).map(em=>chip(em)).join("")}</div>
+          ${canEdit?`<input class="acksla-pin" placeholder="type a name or email — pick from the users list…" autocomplete="off"><div class="acksla-dd" hidden></div>`:""}
+          <input type="hidden" data-k="${b}.management" value="${esc(c.management)}">
+        </div>
         <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px">
           <label style="display:flex;gap:6px;align-items:center;font-size:12.5px"><label class="switch"><input type="checkbox" data-k="${b}.chatops" ${c.chatops?"checked":""} ${canEdit?"":"disabled"}><span class="slider"></span></label> also post reminders 2 &amp; 3 to the ${label.replace(/^\S+\s/,"")} Teams / WhatsApp channels</label>
           ${canEdit?`<span class="rl">Preview to <b>${esc(me.split("@")[0])}</b>:</span>${[1,2,3].map(l=>`<button class="pill" data-prev="${b}" data-lv="${l}" style="padding:3px 9px;border-left-color:${LV[l].c}">✉ R${l}</button>`).join("")}`:""}
         </div>${live}</div>`; };
+    function chip(em){ const p=person(em); const biz=p?(p.business==='fixed'?'🏠':p.business==='mobile'?'📱':'📱🏠'):''; return `<span class="acksla-pchip" data-em="${esc(em)}"><b>${esc(p&&p.name?p.name:em.split("@")[0])}</b><span class="rl">${esc(em)}${p&&p.team?' · '+esc(p.team):''} ${biz}</span>${canEdit?`<button type="button" class="acksla-x" title="Remove">✕</button>`:""}</span>`; }
     const hist=(d.history||[]).slice(0,12);
     host.innerHTML=`
       <div class="acksla-intro">
@@ -89,7 +96,27 @@
       ${hist.length?`<div class="rl" style="font-weight:800;letter-spacing:.06em;margin:16px 0 6px">LAST REMINDERS SENT</div><div style="overflow-x:auto"><table class="alerts" style="font-size:11.5px"><tr><th>WHEN</th><th>SIDE</th><th>LEVEL</th><th>ALERT</th><th>OPEN FOR</th><th>MAILED<br><span class="rl">ack holders</span></th><th>MGMT</th><th>CHATOPS</th><th>OUTCOME</th></tr>
         ${hist.map(r=>`<tr><td class="mono">${ksa(r.sent_at)}</td><td>${r.business==='fixed'?'🏠 Fixed':'📱 Mobile'}</td><td><span class="acksla-chip" style="background:${LV[r.level].c}">R${r.level}</span></td><td><b style="color:${sevC(r.severity)}">${esc(r.severity||'')}</b> ${esc(r.name||('#'+r.alert_id))}</td><td>${mins(r.elapsed_min)}</td><td>${r.recipients} <span class="rl">(${r.holders||0})</span></td><td>${r.management||'—'}</td><td>${(r.channels||[]).length?(r.channels||[]).map(c=>esc(c.channel||c.name||'?')).join('/'):'—'}</td><td>${r.mail_ok?'<span style="color:var(--good)">sent</span>':`<span style="color:#d97706">${esc(r.error||'not sent')}</span>`}${r.ack_at?` · acked by ${esc(String(r.ack_by||'').split('@')[0])}`:r.status!=='open'?' · resolved':''}</td></tr>`).join("")}</table></div>`:""}`;
     if(!canEdit) return;
-    const collect=()=>{ const out={}; host.querySelectorAll("[data-k]").forEach(el=>{ const path=el.dataset.k.split("."); let o=out; for(let i=0;i<path.length-1;i++){ o[path[i]]=o[path[i]]||{}; o=o[path[i]]; } o[path[path.length-1]]=el.type==="checkbox"?el.checked:(el.tagName==="TEXTAREA"?el.value:Number(el.value)); }); return out; };
+    /* management pickers: chips + autocomplete over the console users (keyboard: ↑↓ Enter, Esc) */
+    host.querySelectorAll(".acksla-pick").forEach(pk=>{
+      const hid=pk.querySelector("input[type=hidden]"), chips=pk.querySelector(".acksla-chips"), inp=pk.querySelector(".acksla-pin"), dd=pk.querySelector(".acksla-dd");
+      const list=()=>[...chips.querySelectorAll(".acksla-pchip")].map(x=>x.dataset.em);
+      const sync=()=>{ hid.value=list().join(", "); };
+      const add=em=>{ em=String(em||"").trim().toLowerCase(); if(!em||!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)||list().includes(em)) return; chips.insertAdjacentHTML("beforeend",chip(em)); wireX(); sync(); inp.value=""; dd.hidden=true; };
+      const wireX=()=>chips.querySelectorAll(".acksla-x").forEach(x=>x.onclick=()=>{ x.closest(".acksla-pchip").remove(); sync(); });
+      wireX();
+      let sel=0;
+      const paint=()=>{ const q=inp.value.trim().toLowerCase(); const have=list();
+        const m=people.filter(p=>!have.includes(String(p.email).toLowerCase())&&(!q||String(p.email).toLowerCase().includes(q)||String(p.name||"").toLowerCase().includes(q)||String(p.team||"").toLowerCase().includes(q))).slice(0,8);
+        if(!m.length&&!(q.includes("@"))){ dd.hidden=true; return; }
+        sel=Math.min(sel,Math.max(0,m.length-1));
+        dd.innerHTML=m.map((p,i)=>`<div class="acksla-opt${i===sel?" on":""}" data-em="${esc(p.email)}"><b>${esc(p.name||p.email.split("@")[0])}</b> <span class="rl">${esc(p.email)}${p.team?' · '+esc(p.team):''} · ${p.business==='fixed'?'Fixed':p.business==='mobile'?'Mobile':'Both'}</span></div>`).join("")+(q.includes("@")&&!m.some(p=>p.email.toLowerCase()===q)?`<div class="acksla-opt${m.length===sel?" on":""}" data-em="${esc(q)}"><b>Add address</b> <span class="rl">${esc(q)} (not a console user)</span></div>`:"");
+        dd.hidden=false; dd.querySelectorAll(".acksla-opt").forEach(o=>o.onmousedown=e=>{ e.preventDefault(); add(o.dataset.em); }); };
+      inp.addEventListener("input",()=>{ sel=0; paint(); });
+      inp.addEventListener("focus",paint);
+      inp.addEventListener("blur",()=>setTimeout(()=>{ dd.hidden=true; },120));
+      inp.addEventListener("keydown",e=>{ const opts=dd.querySelectorAll(".acksla-opt"); if(e.key==="ArrowDown"){ sel=Math.min(opts.length-1,sel+1); paint(); e.preventDefault(); } else if(e.key==="ArrowUp"){ sel=Math.max(0,sel-1); paint(); e.preventDefault(); } else if(e.key==="Enter"){ e.preventDefault(); const o=opts[sel]; if(o) add(o.dataset.em); else add(inp.value); } else if(e.key==="Escape"){ dd.hidden=true; } else if(e.key==="Backspace"&&!inp.value){ const last=chips.querySelector(".acksla-pchip:last-child"); if(last){ last.remove(); sync(); } } });
+    });
+    const collect=()=>{ const out={}; host.querySelectorAll("[data-k]").forEach(el=>{ const path=el.dataset.k.split("."); let o=out; for(let i=0;i<path.length-1;i++){ o[path[i]]=o[path[i]]||{}; o=o[path[i]]; } o[path[path.length-1]]=el.type==="checkbox"?el.checked:(el.tagName==="TEXTAREA"||el.type==="hidden"?el.value:Number(el.value)); }); return out; };
     const msg=(t,c)=>{ const m=$("#ackslaMsg"); if(m){ m.textContent=t; m.style.color=c||"var(--muted)"; } };
     $("#ackslaSave").addEventListener("click",async()=>{ msg("Saving…"); try{ await api("/api/ack-sla",{method:"PUT",body:JSON.stringify(collect())}); _st=null; msg("Saved ✓ — applies from the next check (every minute)","var(--good)"); setTimeout(()=>window.renderAckSlaSettings(host),900); }catch(e){ msg(e.message,"#dc2626"); } });
     $("#ackslaTick").addEventListener("click",async()=>{ msg("Checking…"); try{ const r=await api("/api/ack-sla/tick",{method:"POST"}); _st=null; msg(r.skipped?`skipped — ${r.skipped}`:`${r.checked} unacknowledged checked · ${r.sent} reminder(s) sent`, r.sent?"#d97706":"var(--good)"); if(r.sent) setTimeout(()=>window.renderAckSlaSettings(host),900); }catch(e){ msg(e.message,"#dc2626"); } });
@@ -109,6 +136,13 @@
       .acksla-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:14px}
       .acksla-t input[type=number]{width:72px;font:inherit;font-size:12.5px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:inherit}
       .acksla-t th{white-space:nowrap}.acksla-t td{vertical-align:middle}
+      .acksla-pick{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:6px 8px}
+      .acksla-chips{display:flex;flex-wrap:wrap;gap:6px}
+      .acksla-pchip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-left:3px solid #7f1d1d;border-radius:8px;padding:3px 8px;font-size:12px;line-height:1.3}
+      .acksla-pchip .rl{font-size:10.5px}.acksla-x{border:0;background:none;color:#dc2626;font-weight:800;cursor:pointer;padding:0 2px;font-size:12px}
+      .acksla-pin{width:100%;border:0;outline:0;background:transparent;font:inherit;font-size:12.5px;padding:6px 2px 2px;color:inherit}
+      .acksla-dd{position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(2,6,23,.25);max-height:260px;overflow:auto;margin-top:4px}
+      .acksla-opt{padding:7px 10px;cursor:pointer;font-size:12.5px;border-bottom:1px solid var(--line)}.acksla-opt:last-child{border-bottom:0}.acksla-opt.on,.acksla-opt:hover{background:rgba(14,159,90,.12)}
       .acksla-live{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
       .acksla-row{display:flex;gap:8px;align-items:center;padding:4px 0;text-decoration:none;color:inherit;font-size:12.5px;border-bottom:1px solid var(--line)}
       .acksla-row:last-child{border-bottom:0}.acksla-n{flex:1;min-width:0}

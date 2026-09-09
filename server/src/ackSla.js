@@ -208,7 +208,7 @@ async function buildMail(a, { level, repeat, elapsedMin, business, seg, cfg, sib
     : `First reminder. Every ${bizShort} <b>ACK holder</b> receives this so that whoever is available can take it; from reminder 2 the whole ${bizShort} team is informed. Acknowledging (one click on <b>Ack</b>) stops the reminders and tells the team who owns it.`;
   const ladder = `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:10px 0 4px;font-size:11.5px">
       <tr>${[[1, L.r1], [2, L.r2], [3, L.r3]].map(([lv, m]) => `<td style="padding:4px 10px;border-radius:6px;margin-right:4px;background:${lv <= level ? LEVEL[lv].color : '#e2e8f0'};color:${lv <= level ? '#fff' : '#64748b'};font-weight:700;letter-spacing:.04em">${lv <= level ? '●' : '○'} R${lv} · ${m ? m + ' min' : 'off'}</td><td style="width:6px"></td>`).join('')}
-      <td style="padding:4px 10px;border-radius:6px;background:${L.management && cfg.management ? (level >= 3 ? '#7f1d1d' : '#e2e8f0') : '#f1f5f9'};color:${level >= 3 && L.management ? '#fff' : '#64748b'};font-weight:700">${L.management && listOf(cfg.management).length ? 'MGMT at R3' : 'no mgmt step'}</td></tr></table>`;
+      <td style="padding:4px 10px;border-radius:6px;background:${L.management ? (level >= 3 ? '#7f1d1d' : '#e2e8f0') : '#f1f5f9'};color:${level >= 3 && L.management ? '#fff' : '#64748b'};font-weight:700">${L.management ? (listOf(cfg.management).length ? `MGMT at R3 · ${listOf(cfg.management).length}` : 'MGMT at R3 · no contacts set') : 'no mgmt step'}</td></tr></table>`;
   const detail = [
     ['Alert', `<b style="color:${sevColor(a.severity)}">${esc(a.severity)}</b> · <b>${esc(a.name)}</b>`],
     ['Business', `${bizLabel}${a.team ? ` · team ${esc(a.team)}` : ''}`],
