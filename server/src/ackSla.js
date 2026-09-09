@@ -95,8 +95,9 @@ async function ensureSchema() {
   await db.console.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_reminder_at timestamptz`);
   await db.console.query(`CREATE TABLE IF NOT EXISTS alert_reminders (
       id bigserial PRIMARY KEY, alert_id bigint NOT NULL, level smallint NOT NULL, business text NOT NULL, severity text,
-      elapsed_min integer NOT NULL, recipients integer NOT NULL DEFAULT 0, management integer NOT NULL DEFAULT 0,
+      elapsed_min integer NOT NULL, recipients integer NOT NULL DEFAULT 0, holders integer NOT NULL DEFAULT 0, management integer NOT NULL DEFAULT 0,
       channels jsonb NOT NULL DEFAULT '[]'::jsonb, mail_ok boolean, error text, sent_at timestamptz NOT NULL DEFAULT now())`);
+  await db.console.query(`ALTER TABLE alert_reminders ADD COLUMN IF NOT EXISTS holders integer NOT NULL DEFAULT 0`);
   await db.console.query(`CREATE INDEX IF NOT EXISTS idx_alert_reminders_alert ON alert_reminders (alert_id, sent_at DESC)`);
 }
 
@@ -204,7 +205,7 @@ async function buildMail(a, { level, repeat, elapsedMin, business, seg, cfg, sib
     ? `This is the third reminder. Management (${listOf(cfg.management).length || 0} contact${listOf(cfg.management).length === 1 ? '' : 's'}) has been copied for information${L.repeat ? ` and this reminder repeats every ${L.repeat} min until the alert is acknowledged` : ''}. Please take ownership now — one click on <b>Ack</b> stops every reminder.`
     : level === 2
     ? `Second reminder. The alert has not been acknowledged by anyone on L1 or L2 for ${mins(elapsedMin)}. If you are available, open it and press <b>Ack</b>; at ${L.r3} min management is informed automatically.`
-    : `First reminder. Every ${bizShort} member receives this so that whoever is available can take it. Acknowledging (one click on <b>Ack</b>) stops the reminders and tells the team who owns it.`;
+    : `First reminder. Every ${bizShort} <b>ACK holder</b> receives this so that whoever is available can take it; from reminder 2 the whole ${bizShort} team is informed. Acknowledging (one click on <b>Ack</b>) stops the reminders and tells the team who owns it.`;
   const ladder = `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:10px 0 4px;font-size:11.5px">
       <tr>${[[1, L.r1], [2, L.r2], [3, L.r3]].map(([lv, m]) => `<td style="padding:4px 10px;border-radius:6px;margin-right:4px;background:${lv <= level ? LEVEL[lv].color : '#e2e8f0'};color:${lv <= level ? '#fff' : '#64748b'};font-weight:700;letter-spacing:.04em">${lv <= level ? '●' : '○'} R${lv} · ${m ? m + ' min' : 'off'}</td><td style="width:6px"></td>`).join('')}
       <td style="padding:4px 10px;border-radius:6px;background:${L.management && cfg.management ? (level >= 3 ? '#7f1d1d' : '#e2e8f0') : '#f1f5f9'};color:${level >= 3 && L.management ? '#fff' : '#64748b'};font-weight:700">${L.management && listOf(cfg.management).length ? 'MGMT at R3' : 'no mgmt step'}</td></tr></table>`;
@@ -243,16 +244,31 @@ async function buildMail(a, { level, repeat, elapsedMin, business, seg, cfg, sib
   return { html, subject, link };
 }
 
+/* WHO receives a reminder — driven by the ACK-holder flags in the users list (console_users.ack_mobile / ack_fixed):
+ *   R1        → the ack holders of that side only — the people who can actually press Ack
+ *   R2 / R3   → the ack holders + every other member of that side with Alert mail on (the whole business is made aware;
+ *               the holders remain the ones addressed). Management is a separate list, mailed separately at R3. */
+async function audience(seg, level) {
+  const col = seg === 'fixed' ? 'ack_fixed' : 'ack_mobile', biz = SEG.BUSINESS_OF[seg];
+  const wide = level >= 2 ? ` OR (mail_alert = true AND (business = $1 OR business = 'both' OR business IS NULL))` : '';
+  try {
+    const rows = (await db.console.query(`SELECT email, name, business, ${col} AS holder FROM console_users WHERE enabled = true AND (${col} = true${wide}) ORDER BY ${col} DESC NULLS LAST, email`, [biz])).rows;
+    if (rows.length) return rows;
+    // nobody flagged as ACK holder on this side yet (users list → ACK HOLDER) — never let a reminder go nowhere: fall back to the alert-mail audience
+    return (await db.console.query(`SELECT email, name, business, false AS holder FROM console_users WHERE enabled = true AND mail_alert = true AND (business = $1 OR business = 'both' OR business IS NULL) ORDER BY email`, [biz])).rows;
+  } catch (e) { return []; }
+}
 async function sendReminder(a, ctx) {
   const notify = require('./notify');
   const { level, business, seg, cfg, elapsedMin, repeat } = ctx;
   const L = cfg[a.severity] || cfg.P3;
-  const team = await notify.recipients('mail_alert', seg);
+  const team = await audience(seg, level);
   let attachments = [];
   try { const rule = { key: a.rule_key, name: a.name, severity: a.severity, team: a.team, metric_key: a.metric_key, operator: a.operator, threshold: a.threshold, value: a.observed_value, sample: a.sample, window_hours: a.window_hours, segment: seg, fired: true, description: a.description, runbook: a.runbook, trigger_codes: a.trigger_codes };
     attachments = (await require('./alertReport').buildFiredReports(new Date(), [rule], { max: 1 })).attachments || []; } catch (_) { attachments = []; }
   const m = await buildMail(a, ctx);
-  const out = { recipients: team.length, management: 0, channels: [], mail: null, mgmt: null };
+  const holders = team.filter(u => u.holder).length;
+  const out = { recipients: team.length, holders, management: 0, channels: [], mail: null, mgmt: null };
   out.mail = await notify.sendHtml(team, m.subject, m.html, attachments).catch(e => ({ sent: false, error: e.message }));
   const mgmt = level >= 3 && L.management ? listOf(cfg.management) : [];
   if (mgmt.length) {
@@ -266,12 +282,12 @@ async function sendReminder(a, ctx) {
       out.channels = (c && c.channels) || []; } catch (e) { out.channels = [{ error: e.message }]; }
   }
   const ok = !!(out.mail && out.mail.sent);
-  await db.console.query(`INSERT INTO alert_reminders (alert_id, level, business, severity, elapsed_min, recipients, management, channels, mail_ok, error) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [a.id, level, business, a.severity, elapsedMin, out.recipients, out.management, JSON.stringify(out.channels), ok, out.mail && out.mail.error ? out.mail.error : (out.mail && out.mail.dev ? 'no SMTP (dev)' : null)]).catch(() => {});
-  const line = `${LEVEL[level].word}${repeat ? ' (repeat)' : ''}: unacknowledged for ${mins(elapsedMin)} — mailed ${out.recipients} ${SEG.SHORT[seg]} member(s)${out.management ? `, escalation to ${out.management} management contact(s)` : ''}${out.channels.length ? `, ChatOps ${out.channels.map(c => c.channel || c.name || 'channel').join('/')}` : ''}${ok ? '' : out.mail && out.mail.dev ? ' (no SMTP configured)' : ` — mail failed: ${(out.mail && (out.mail.error || out.mail.reason)) || 'unknown'}`}`;
+  await db.console.query(`INSERT INTO alert_reminders (alert_id, level, business, severity, elapsed_min, recipients, holders, management, channels, mail_ok, error) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [a.id, level, business, a.severity, elapsedMin, out.recipients, holders, out.management, JSON.stringify(out.channels), ok, out.mail && out.mail.error ? out.mail.error : (out.mail && out.mail.dev ? 'no SMTP (dev)' : null)]).catch(() => {});
+  const line = `${LEVEL[level].word}${repeat ? ' (repeat)' : ''}: unacknowledged for ${mins(elapsedMin)} — mailed ${out.recipients} ${SEG.SHORT[seg]} member(s) (${holders} ack holder${holders === 1 ? '' : 's'}${level >= 2 ? ' + the wider team' : ''})${out.management ? `, escalation to ${out.management} management contact(s)` : ''}${out.channels.length ? `, ChatOps ${out.channels.map(c => c.channel || c.name || 'channel').join('/')}` : ''}${ok ? '' : out.mail && out.mail.dev ? ' (no SMTP configured)' : ` — mail failed: ${(out.mail && (out.mail.error || out.mail.reason)) || 'unknown'}`}`;
   await db.console.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`, [a.id, line]).catch(() => {});
-  await db.console.query(`INSERT INTO audit_log (actor, role, action, target, detail) VALUES ('scheduler','system','incident.reminder',$1,$2)`, [String(a.id), JSON.stringify({ level, repeat: !!repeat, business, severity: a.severity, elapsed_min: elapsedMin, recipients: out.recipients, management: out.management, channels: out.channels, mail_ok: ok })]).catch(() => {});
-  return { recipients: out.recipients, management: out.management, channels: out.channels, mail_ok: ok, error: out.mail && out.mail.error };
+  await db.console.query(`INSERT INTO audit_log (actor, role, action, target, detail) VALUES ('scheduler','system','incident.reminder',$1,$2)`, [String(a.id), JSON.stringify({ level, repeat: !!repeat, business, severity: a.severity, elapsed_min: elapsedMin, recipients: out.recipients, holders, management: out.management, channels: out.channels, mail_ok: ok })]).catch(() => {});
+  return { recipients: out.recipients, holders, management: out.management, channels: out.channels, mail_ok: ok, error: out.mail && out.mail.error };
 }
 
 /* preview: mail one level to a single address (the requester) using a real open alert of that side, or a sample */

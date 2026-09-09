@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS alert_reminders (
   severity    text,
   elapsed_min integer NOT NULL,
   recipients  integer NOT NULL DEFAULT 0,
+  holders     integer NOT NULL DEFAULT 0,   -- how many of them are ACK holders of that side
   management  integer NOT NULL DEFAULT 0,
   channels    jsonb NOT NULL DEFAULT '[]'::jsonb,
   mail_ok     boolean,

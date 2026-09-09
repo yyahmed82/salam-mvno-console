@@ -11,7 +11,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   **Reminder 2** (warning — also posted to that business's Teams / WhatsApp channels when ChatOps is on), **Reminder 3**
   (critical) plus a **separate for-information mail to management**, then Reminder 3 repeats every N minutes until
   someone presses Ack. Defaults: P1 5 / 15 / 30 min, repeat 30; P2 15 / 30 / 60, repeat 60; P3 30 / 60 / 120, no
-  management step. Reminders stop on Ack / Snooze / Resolve; correlated children under an open root are not reminded
+  management step. Audience follows the **ACK holder** flags of the users list (`ack_mobile` / `ack_fixed`): Reminder 1
+  goes to the ack holders of that side only (the people who can press Ack); Reminders 2 and 3 add every other member of
+  that side with Alert mail on. Reminders stop on Ack / Snooze / Resolve; correlated children under an open root are not reminded
   separately. Every send is a system comment on the incident, an `incident.reminder` audit row and a row in the new
   `alert_reminders` table (level, recipients, management, channels, outcome). Team mails go Bcc through the existing
   bulk sender; the management mail is a distinct template (no action expected) and never exposes the team list.
