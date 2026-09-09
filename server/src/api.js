@@ -3232,6 +3232,8 @@ app.post('/api/alerts/:id/comms/preview', async (req, res) => {   // rendered HT
   try { const d = await snTicket.commsDraft(req.alertRow, req.actor, (req.body || {}).kind); const f = { ...d, ...(req.body || {}) }; res.type('html').send(snTicket.commsHtml(f, segment.segOf(req.alertRow))); }
   catch (e) { res.status(500).send(e.message); }
 });
+// The cases behind an alert — the exact rows the metric counted when it fired (json preview · xlsx · pdf)
+require('./alertCases').mount(app, { audit });
 // READ-ONLY ServiceNow correlation: incidents this console alert likely caused
 app.get('/api/alerts/:id/tickets', async (req, res) => {
   try {

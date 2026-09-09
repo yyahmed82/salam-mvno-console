@@ -416,7 +416,12 @@
         ${canAck()?`<button class="pill" id="grnotify_${a.id}" style="border-left-color:#dc2626">⚡ Notify on-call</button><span class="grres" id="grnres_${a.id}"></span>`:''}
         <button class="pill" id="grtixbtn_${a.id}" style="border-left-color:#2563eb">🎫 Related tickets</button>
         <button class="pill" id="grts_${a.id}" style="border-left-color:var(--green)">${SEG==="fixed"?"⚠ Open Fixed › Errors":"🔧 Open in Troubleshoot"}</button>
+        <span class="rl" style="margin-left:6px;color:var(--muted)">Affected cases:</span>
+        <button class="pill" id="grcases_${a.id}" style="border-left-color:#0891b2" title="Preview the exact rows the metric counted when this alert fired">📋 Preview</button>
+        <button class="pill" id="grcx_${a.id}" style="border-left-color:var(--green)" title="Excel — every case (up to 5 000) + the alert sheet">⬇ XLSX</button>
+        <button class="pill" id="grcp_${a.id}" style="border-left-color:var(--teal,#0f766e)" title="PDF — the alert, its window and the cases (up to 400)">⬇ PDF</button>
       </div>
+      <div id="grcases_out_${a.id}"></div>
       <div id="grtix_${a.id}"></div>
     </div>`;
   }
@@ -453,6 +458,9 @@
     const tb=$("#grtixbtn_"+id); if(tb) tb.onclick=()=>grTickets(id);
     // Fixed alerts troubleshoot on the Fixed error control board (all channels); Mobile keeps the MVNO Troubleshoot page
     const ts=$("#grts_"+id); if(ts) ts.onclick=()=>{ if(window.setConsoleHash) window.setConsoleHash(SEG==="fixed"?"fixed?tab=errors":"troubleshoot"); };
+    const cb=$("#grcases_"+id); if(cb) cb.onclick=()=>grCases(id);
+    const cx=$("#grcx_"+id); if(cx) cx.onclick=()=>grCasesFile(id,"xlsx",cx);
+    const cp=$("#grcp_"+id); if(cp) cp.onclick=()=>grCasesFile(id,"pdf",cp);
     if(!_rbMap){                                        // fill steps in when rules arrive; never blocks the table render
       const map = await loadRunbooks();
       const steps=$("#grsteps_"+id);
@@ -700,6 +708,35 @@
     $("#cmSend_"+id).onclick=async()=>{ const f=form(); if(!confirm(`Send the ${f.kind} comms mail "${d.priority}-${f.title}" now?`)) return; const b=$("#cmSend_"+id); b.disabled=true; msg.textContent="Sending…";
       try{ const r=await api(`/api/alerts/${id}/comms`,{method:"POST",body:JSON.stringify(f)}); msg.innerHTML=r.ok?`<b style="color:var(--good)">Sent</b> "${esc(r.subject)}" to ${r.recipients} recipient(s)`:`<b style="color:#d97706">Not sent</b> — ${esc(r.error||(r.dev?'no SMTP (dev)':''))}`; setTimeout(()=>snPanel(id),800); }
       catch(e){ msg.innerHTML=`<span style="color:#dc2626">${esc(e.message)}</span>`; b.disabled=false; } };
+  }
+  /* ---- AFFECTED CASES — the exact rows the metric counted when the alert fired (server: alertCases.js) ---- */
+  async function grCases(id){
+    const host=$("#grcases_out_"+id); if(!host) return;
+    if(host.dataset.open){ host.innerHTML=""; delete host.dataset.open; return; } host.dataset.open="1";
+    host.innerHTML=`<div class="rl" style="margin:6px 0">Loading the cases behind this alert…</div>`;
+    let d; try{ d=await api(`/api/alerts/${id}/cases`); }catch(e){ host.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
+    const meta=(d.meta||[]).filter(([k])=>["Evaluated at","Window","Dimension","Rows","What the rows are"].includes(k));
+    let h=`<div style="margin:8px 0 4px;padding:10px 12px;border:1px solid var(--line);border-left:4px solid #0891b2;border-radius:10px;background:var(--card,#fff)">
+      <div style="font-weight:800;font-size:12px;letter-spacing:.04em;margin-bottom:6px">AFFECTED CASES · ${esc(d.metric)}</div>
+      ${meta.map(([k,v])=>`<div class="rl" style="margin:1px 0"><span style="color:var(--muted);display:inline-block;min-width:130px">${esc(k)}</span> ${esc(v)}</div>`).join("")}`;
+    if(!d.supported){ h+=`<div class="rl" style="margin-top:6px;color:#d97706">This metric is not row-based — ${esc(d.reason||"")}.</div></div>`; host.innerHTML=h; return; }
+    if(!d.rows.length){ h+=`<div class="okbox" style="margin-top:6px">No rows in the evaluation window — the alert may have been kept open by an earlier evaluation; try the XLSX export with the first-firing time.</div></div>`; host.innerHTML=h; return; }
+    const head=d.head.slice(0,8);
+    const fmtv=(k,v)=>{ if(v==null) return "—"; if(/_at$|^ts$/.test(k)&&!isNaN(Date.parse(v))) return new Date(v).toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"}); const s=typeof v==="object"?JSON.stringify(v):String(v); return s.length>90?s.slice(0,89)+"…":s; };
+    h+=`<div style="overflow:auto;max-height:420px;margin-top:8px"><table class="alerts" style="font-size:11.5px"><tr>${head.map(([,l])=>`<th>${esc(l)}</th>`).join("")}</tr>${d.rows.map(r=>`<tr>${head.map(([k])=>`<td class="${/_at$|^ts$|^id$|ref|msisdn|mobile/.test(k)?'mono':''}" style="font-size:11px">${esc(fmtv(k,r[k]))}</td>`).join("")}</tr>`).join("")}</table></div>
+      <div class="rl" style="margin-top:6px;color:var(--muted)">Preview shows ${d.rows.length}${d.capped?" of more":""} row(s) and the first ${head.length} columns — the XLSX carries every row and column.</div></div>`;
+    host.innerHTML=h;
+  }
+  async function grCasesFile(id, format, btn){
+    const old=btn.textContent; btn.disabled=true; btn.textContent="… building";
+    try{
+      const r=await window.fetch(API+`/api/alerts/${id}/cases?format=${format}`);
+      if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||("HTTP "+r.status)); }
+      const cd=r.headers.get("Content-Disposition")||""; const m=/filename="([^"]+)"/.exec(cd);
+      const blob=await r.blob(); const href=URL.createObjectURL(blob); const a=document.createElement("a");
+      a.href=href; a.download=m?m[1]:`alert-${id}-cases.${format}`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(href),2000);
+    }catch(e){ banner(`Export failed — ${esc(e.message)}`); }
+    finally{ btn.disabled=false; btn.textContent=old; }
   }
   async function incAction(id, action, payload){
     try{ await api(`/api/alerts/${id}/${action}`,{method:"POST",body:JSON.stringify(payload||{})}); renderAlerts(); }

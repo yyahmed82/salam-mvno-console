@@ -1009,4 +1009,6 @@ const METRICS = {
   }
 }
 
-module.exports = { METRICS };
+/* SQL fragments shared with alertCases.js (the row-level twin of every compute) — keep them in ONE place */
+const SQL = { SEMATI_UNION, SEM_TRANSPORT, SEM_UNAVAIL, SEM_ENDPOINT, GW_CASE, NAFATH_SUCCESS, NAFATH_FAILED, DELIVERY_FAILED, DELIVERY_COMPLETED };
+module.exports = { METRICS, SQL };

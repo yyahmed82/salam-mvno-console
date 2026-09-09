@@ -62,6 +62,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   change), ack delay vs the ack target (P1 15 m · P2 60 m · P3 4 h), and the **SLA clock** — time left of the
   resolution target (P1 4 h · P2 24 h · P3 72 h, `SLA_P1_H…` in .env) or "overdue by …", rows tinted when over.
   Each row deep-links to the incident on the right side. `GET /api/incidents/mine`.
+- **Affected cases behind an alert — preview · XLSX · PDF, exact to the metric** (`server/src/alertCases.js`,
+  `GET /api/alerts/:id/cases?format=json|xlsx|pdf&at=last|first`, cap `export` for files, audited
+  `alert.cases.export`). In the guided-response box of every alert (Mobile and Fixed) three new actions list the
+  rows the metric actually counted when the rule fired: the NUMERATOR of the metric's own SQL inside
+  `[last_seen_at − window, last_seen_at]` (or the first firing with `at=first`), with the same table, predicate and
+  dimension filter as `metrics.js` / `fixedMetrics.js` — 50 metrics covered (payments, gateways, stuck / duplicate,
+  Nafath, Semati family, activation / BSS / SOAP 1500 / dominant code, eligibility, onboarding, plan change,
+  ownership, delivery, app error log, OTP; Fixed: P0/P1 error categories, timeout dealers, Nafath / Semati 5G,
+  Manafith, conversion drop, off-hours SDA, stagnating dealers, incident tickets). Rate metrics report the
+  denominator; count metrics list exactly the counted rows; the 10 aggregate / probe metrics say so instead of
+  guessing. `metrics.js` now exports its shared SQL fragments so both sides stay one definition. PII masked as on
+  the board; XLSX up to 5 000 rows (+ an Alert sheet with rule, window, dimension, denominator), PDF up to 400.
 - **Payment gateway registry — enabling / disabling a gateway is now one audited toggle** (`server/src/gateways.js`,
   Mobile › Alerts › Alert rules › *Payment gateways*, `GET/PUT /api/gateways`). Since UPG and Tap were switched off
   on 3 Sep 16:27 KSA the console kept treating them as live: `upg_hard_down` opened P1s, the seasonal per-gateway
