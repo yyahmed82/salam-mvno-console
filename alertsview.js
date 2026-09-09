@@ -1153,6 +1153,7 @@
   });
   function bind(){
     $("#alRefresh").addEventListener("click", load);
+    const hx=$("#alHistoryX"); if(hx){ if(!(window.opsCan&&window.opsCan("export"))) hx.hidden=true; hx.addEventListener("click",()=>{ const d=prompt("Alert history — how many days back? (1–365)","30"); if(!d) return; const n=Math.min(365,Math.max(1,Number(d)||30)); window.location.href=API+`/api/alerts/history?segment=${SEG}&days=${n}&format=xlsx`; }); }
     $("#alSyncNow").addEventListener("click", async ()=>{
       $("#alSyncNow").textContent="… syncing";
       try{ const r=await api("/api/sync",{method:"POST",body:JSON.stringify({})}); banner(`Sync done @ ${timeAgo(r.sim_now)} — ${r.written} snapshots, +${r.opened} opened / ${r.resolved} resolved.`); }

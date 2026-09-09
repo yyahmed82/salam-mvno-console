@@ -38,6 +38,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   `reopenMin` (60) of its last incident resolving **re-opens that incident** (ack / owner / discussion kept,
   `breach_count`++, new `alerts.reopen_count`++, system comment, no new mail), and an open incident resolves only after
   the condition has been clear for `clearHoldMin` (15). Both editable without restart.
+- **⬇ History XLSX** on both Alerts pages (`alertHistory.js`, cap export, audited): every incident of the business over N days
+  with Summary per rule (incidents, breaches, re-opens, ack %, median minutes to ack, reminders), Incidents, Updates
+  (incident timeline), Audit and Reminders sheets — the evidence pack for the SLA reviews. `GET /api/alerts/history`.
 - API: `GET/PUT /api/ack-sla` (manageSync), `GET/PUT /api/alert-flap`, `GET /api/ack-sla/status`, `POST /api/ack-sla/preview`, `POST /api/ack-sla/tick`.
   Schema: `alerts.ack_reminder_level`, `alerts.ack_reminder_at`, table `alert_reminders` (self-seeded at boot).
 
