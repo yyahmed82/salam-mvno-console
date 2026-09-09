@@ -80,7 +80,8 @@ ALTER TABLE alerts ADD COLUMN IF NOT EXISTS note          text;
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS opened_wall   timestamptz NOT NULL DEFAULT now();
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS esc_level     integer NOT NULL DEFAULT 0;   -- tiers already paged
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_reminder_level integer NOT NULL DEFAULT 0;   -- acknowledgement SLA: highest reminder sent (0..3)
-ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_reminder_at    timestamptz;                   -- last reminder / escalation send
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_reminder_at    timestamptz;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reopen_count       integer NOT NULL DEFAULT 0;   -- flap control: times the same incident re-opened                   -- last reminder / escalation send
 -- Acknowledgement-SLA reminder log (ackSla.js): one row per reminder / escalation mail
 CREATE TABLE IF NOT EXISTS alert_reminders (
   id          bigserial PRIMARY KEY,

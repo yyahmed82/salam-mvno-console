@@ -92,9 +92,11 @@
         <div class="rl" style="margin-top:6px">L1 receives every alert by mail with the SOP the moment it fires. When <b>nobody on L1 / L2 acknowledges</b> it, the console reminds the <b>ACK holders</b> of that side (users list → ACK · MOBILE / ACK · FIXED), then from reminder 2 the whole business: <b style="color:${LV[1].c}">Reminder 1</b> (notice) → <b style="color:${LV[2].c}">Reminder 2</b> (warning, + ChatOps) → <b style="color:${LV[3].c}">Reminder 3</b> (critical) with a separate <b>for-information mail to management</b>, then repeats until someone presses Ack. Reminders stop on Ack / Snooze / Resolve; correlated children are not reminded separately; timing is wall-clock from the moment the alert opened. Each send is logged on the incident, in the audit trail and shown as a notice on the home page and the Alerts pages.</div>
       </div>
       <div class="acksla-grid">${BZ.map(card).join("")}</div>
+      <div class="acksla-intro" id="ackslaFlap" style="margin-top:12px"><div class="sub">Loading flap control…</div></div>
       ${canEdit?`<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn" id="ackslaSave">Save acknowledgement SLA</button><button class="pill" id="ackslaTick" style="padding:5px 12px" title="Evaluate every open unacknowledged alert now (sends what is due)">▷ Run check now</button><span id="ackslaMsg" class="rl"></span></div>`:""}
       ${hist.length?`<div class="rl" style="font-weight:800;letter-spacing:.06em;margin:16px 0 6px">LAST REMINDERS SENT</div><div style="overflow-x:auto"><table class="alerts" style="font-size:11.5px"><tr><th>WHEN</th><th>SIDE</th><th>LEVEL</th><th>ALERT</th><th>OPEN FOR</th><th>MAILED<br><span class="rl">ack holders</span></th><th>MGMT</th><th>CHATOPS</th><th>OUTCOME</th></tr>
         ${hist.map(r=>`<tr><td class="mono">${ksa(r.sent_at)}</td><td>${r.business==='fixed'?'🏠 Fixed':'📱 Mobile'}</td><td><span class="acksla-chip" style="background:${LV[r.level].c}">R${r.level}</span></td><td><b style="color:${sevC(r.severity)}">${esc(r.severity||'')}</b> ${esc(r.name||('#'+r.alert_id))}</td><td>${mins(r.elapsed_min)}</td><td>${r.recipients} <span class="rl">(${r.holders||0})</span></td><td>${r.management||'—'}</td><td>${(r.channels||[]).length?(r.channels||[]).map(c=>esc(c.channel||c.name||'?')).join('/'):'—'}</td><td>${r.mail_ok?'<span style="color:var(--good)">sent</span>':`<span style="color:#d97706">${esc(r.error||'not sent')}</span>`}${r.ack_at?` · acked by ${esc(String(r.ack_by||'').split('@')[0])}`:r.status!=='open'?' · resolved':''}</td></tr>`).join("")}</table></div>`:""}`;
+    renderFlap($("#ackslaFlap"), canEdit);
     if(!canEdit) return;
     /* management pickers: chips + autocomplete over the console users (keyboard: ↑↓ Enter, Esc) */
     host.querySelectorAll(".acksla-pick").forEach(pk=>{
@@ -123,6 +125,17 @@
     host.querySelectorAll("[data-prev]").forEach(b=>b.addEventListener("click",async()=>{ const t=b.textContent; b.textContent="…"; try{ const r=await api("/api/ack-sla/preview",{method:"POST",body:JSON.stringify({business:b.dataset.prev,level:Number(b.dataset.lv)})}); msg(r.mail&&r.mail.sent?`Preview R${r.level} mailed to ${r.to} (alert: ${r.alert.severity} ${r.alert.name})${r.management_mail?' + the management mail':''}`:`not sent — ${(r.mail&&(r.mail.error||r.mail.reason))||'no SMTP configured'}`, r.mail&&r.mail.sent?"var(--good)":"#d97706"); }catch(e){ msg(e.message,"#dc2626"); } b.textContent=t; }));
   };
 
+  /* flap control — one incident per problem: re-open within N min instead of a new incident; resolve only after N min clear */
+  async function renderFlap(host, canEdit){
+    if(!host) return; let v; try{ v=await api("/api/alert-flap"); }catch(e){ host.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
+    host.innerHTML=`<div style="font-weight:700">Flap control <span class="rl" style="font-weight:400;color:var(--muted)">· one incident per problem — measured 5–9 Sep: the payment failure storm re-opened 257 times in 4 days because every threshold crossing was a new incident (new mail, new row to acknowledge)</span></div>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12.5px">
+        <label>Re-open the same incident if the rule fires again within <input type="number" min="0" max="1440" id="flapReopen" value="${v.reopenMin}" ${canEdit?"":"disabled"} style="width:70px;font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:inherit"> min of resolving (ack, owner and discussion kept; no new mail)</label>
+        <label>Resolve only after the condition has been clear for <input type="number" min="0" max="240" id="flapHold" value="${v.clearHoldMin}" ${canEdit?"":"disabled"} style="width:60px;font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:inherit"> min</label>
+        ${canEdit?`<button class="pill" id="flapSave" style="padding:4px 12px;border-left-color:var(--green)">Save flap control</button><span id="flapMsg" class="rl"></span>`:""}
+      </div>`;
+    const b=$("#flapSave"); if(b) b.onclick=async()=>{ const m=$("#flapMsg"); m.textContent="Saving…"; try{ const r=await api("/api/alert-flap",{method:"PUT",body:JSON.stringify({reopenMin:Number($("#flapReopen").value),clearHoldMin:Number($("#flapHold").value)})}); m.textContent=`Saved ✓ — re-open ${r.reopenMin} min · clear-hold ${r.clearHoldMin} min (applies from the next sync tick)`; m.style.color="var(--good)"; }catch(e){ m.textContent=e.message; m.style.color="#dc2626"; } };
+  }
   function ensureCss(){
     if(document.getElementById("acksla-css")) return;
     const st=document.createElement("style"); st.id="acksla-css"; st.textContent=`

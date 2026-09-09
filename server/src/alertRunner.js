@@ -97,6 +97,8 @@ async function runAlerts(simNow) {
            WHERE id=$1`,
           [openRow.id, now, ev.value, ev.sample, msg]);
         updated++;
+      } else if (await reopenRecent(c, rule, ev, now, msg)) {
+        updated++;                                   // flap: same incident re-opened, no new page / mail
       } else {
         await c.query(
           `INSERT INTO alerts (rule_id, rule_key, name, severity, team, status, metric_key,
@@ -110,11 +112,44 @@ async function runAlerts(simNow) {
         ev.justOpened = true;
       }
     } else if (openRow) {
+      // clear-hold: the condition must stay clear for `clearHoldMin` before the incident resolves
+      const held = (new Date(now) - new Date(openRow.last_seen_at)) / 60000;
+      if (held < flapCfg().clearHoldMin) continue;
       await c.query(`UPDATE alerts SET status='resolved', resolved_at=$2 WHERE id=$1`, [openRow.id, now]);
       resolved++;
     }
   }
   return { opened, resolved, updated, evals, simNow: now };
+}
+
+/* FLAP CONTROL (10 Sep 2026). Measured 5–9 Sep on Mobile: 872 incident rows in 4 days for 40 rules — the payment
+ * failure storm alone re-opened 257 times because the metric oscillated around its threshold: every crossing was a
+ * NEW incident (new mail, new page, new row to acknowledge). Two knobs, settings key 'alert_flap':
+ *   reopenMin   (default 60): a rule that fires again within N min of its last incident RESOLVING re-opens THAT
+ *               incident (ack / owner / discussion kept, breach_count++, reopen_count++) instead of opening a new one
+ *   clearHoldMin (default 15): an open incident resolves only after the condition has been clear for N min
+ * Both read at tick time, no restart needed. */
+let _flap = null, _flapAt = 0;
+function flapCfg() { return _flap || { reopenMin: 60, clearHoldMin: 15 }; }
+async function loadFlap() {
+  if (_flap && Date.now() - _flapAt < 60000) return _flap;
+  try { const v = (await require('./settings').getSetting('alert_flap')) || {}; _flap = { reopenMin: Number(v.reopenMin) >= 0 ? Number(v.reopenMin) : 60, clearHoldMin: Number(v.clearHoldMin) >= 0 ? Number(v.clearHoldMin) : 15 }; }
+  catch (_) { _flap = { reopenMin: 60, clearHoldMin: 15 }; }
+  _flapAt = Date.now(); return _flap;
+}
+async function reopenRecent(c, rule, ev, now, msg) {
+  const cfg = await loadFlap(); if (!cfg.reopenMin) return false;
+  const prev = (await c.query(
+    `SELECT id, ack_by FROM alerts WHERE rule_key=$1 AND status='resolved' AND resolved_at >= $2::timestamptz - ($3 || ' minutes')::interval ORDER BY id DESC LIMIT 1`,
+    [rule.key, now, String(cfg.reopenMin)])).rows[0];
+  if (!prev) return false;
+  await c.query(
+    `UPDATE alerts SET status='open', resolved_at=NULL, last_seen_at=$2, observed_value=$3, sample=$4,
+       peak_value=GREATEST(coalesce(peak_value,0),$3), breach_count=breach_count+1, reopen_count=coalesce(reopen_count,0)+1, message=$5
+     WHERE id=$1`, [prev.id, now, ev.value, ev.sample, msg]);
+  await c.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`,
+    [prev.id, `Re-opened: condition returned within ${cfg.reopenMin} min of resolving (flap) — same incident${prev.ack_by ? `, still owned by ${prev.ack_by}` : ''}`]).catch(() => {});
+  return true;
 }
 
 function fmt(v, rule) {

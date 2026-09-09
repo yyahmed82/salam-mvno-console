@@ -127,7 +127,7 @@ app.use(async (req, _res, next) => {
 // (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
 // through the stripped views (every Fixed route is requireView-gated). Kept as an allow-list so a new
 // Mobile endpoint is closed for the Fixed team by default.
-const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla)/;   // alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
+const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap)/;   // alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
 app.use('/api/', (req, res, next) => {
   if (req.business === 'fixed' && !FIXED_TEAM_ALLOW.test(req.originalUrl.split('?')[0]))
     return res.status(403).json({ error: 'Not available for the Fixed team — this endpoint belongs to the Mobile side.', business: 'fixed' });
@@ -3849,6 +3849,17 @@ app.post('/api/chatops/test', requireCap('manageSync'), async (req, res) => {
     const out = await chatops.notifyIncident(sample, { kind: 'test' });
     await audit(req, 'chatops.test', null, { segment: out.segment, channels: out.channels });
     res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+/* flap control (alertRunner.reopenRecent / clear-hold) — settings key alert_flap */
+app.get('/api/alert-flap', requireCap('manageSync'), async (req, res) => {
+  try { const v = (await settings.getSetting('alert_flap')) || {}; res.json({ reopenMin: Number(v.reopenMin) >= 0 ? Number(v.reopenMin) : 60, clearHoldMin: Number(v.clearHoldMin) >= 0 ? Number(v.clearHoldMin) : 15 }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/alert-flap', requireCap('manageSync'), async (req, res) => {
+  try {
+    const b = req.body || {}; const next = { reopenMin: Math.min(1440, Math.max(0, Number(b.reopenMin) || 0)), clearHoldMin: Math.min(240, Math.max(0, Number(b.clearHoldMin) || 0)) };
+    await settings.setSetting('alert_flap', next); await audit(req, 'alert_flap.config', null, next); res.json(next);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/escalation', requireCap('manageSync'), async (req, res) => {

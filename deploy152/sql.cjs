@@ -19,11 +19,12 @@
 process.env.TZ = 'UTC'; // half 1 of the TZ fix: node-pg parses `timestamp WITHOUT time zone` in process TZ
 
 const args = process.argv.slice(2);
-let useConsole = false, useProd = false, fromFile = null, sqlParts = [];
+let useConsole = false, useProd = false, useNexus = false, fromFile = null, sqlParts = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--console') useConsole = true;
   else if (a === '--prod') useProd = true;   // read-only peek at PRODUCTION (the sync source)
+  else if (a === '--nexus') useNexus = true; // Fixed backend (nexus: workflow_states / api_logs) — read-only
   else if (a === '-f' || a === '--file') fromFile = args[++i];
   // psql muscle memory: accept -c / --command so `csql -c "SELECT …"` works. Without this the
   // flag was joined INTO the query, which then failed the read-only guard with a misleading
@@ -56,9 +57,9 @@ if (/\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|copy|vacuum
 /* --prod reads PRODUCTION directly (the same connection the replica sync pulls from). Same
  * read-only guards apply, and the tool never writes — but say so loudly, because a heavy query
  * here lands on the live database rather than the replica. */
-const url = useProd ? process.env.PROD_DATABASE_URL
+const url = useNexus ? process.env.NEXUS_DATABASE_URL : useProd ? process.env.PROD_DATABASE_URL
   : (useConsole ? process.env.CONSOLE_DATABASE_URL : process.env.SOURCE_DATABASE_URL);
-const which = useProd ? 'PROD_DATABASE_URL' : (useConsole ? 'CONSOLE_DATABASE_URL' : 'SOURCE_DATABASE_URL');
+const which = useNexus ? 'NEXUS_DATABASE_URL' : useProd ? 'PROD_DATABASE_URL' : (useConsole ? 'CONSOLE_DATABASE_URL' : 'SOURCE_DATABASE_URL');
 if (!url) { console.error(`Missing ${which} in env. Did you \`set -a; . ../.env; set +a\`?`); process.exit(2); }
 if (useProd) console.error('⚠ Reading PRODUCTION (read-only, 60s timeout). Keep queries indexed and small.');
 
@@ -85,7 +86,7 @@ const pool = new Pool({ connectionString: url, max: 1, statement_timeout: 60000,
       console.log(cols.map(k => '-'.repeat(w[k])).join('  '));
       rows.forEach(row => console.log(cols.map(k => cell(row[k]).padEnd(w[k])).join('  ')));
     }
-    console.error(`\n(${rows.length} row${rows.length === 1 ? '' : 's'} · ${ms} ms · ${useProd ? 'PRODUCTION' : useConsole ? 'CONSOLE' : 'SOURCE/replica'} db · UTC)`);
+    console.error(`\n(${rows.length} row${rows.length === 1 ? '' : 's'} · ${ms} ms · ${useNexus ? 'NEXUS (Fixed)' : useProd ? 'PRODUCTION' : useConsole ? 'CONSOLE' : 'SOURCE/replica'} db · UTC)`);
   } catch (e) {
     console.error('SQL error:', e.message);
     process.exitCode = 1;

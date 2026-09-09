@@ -32,7 +32,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   (last section; `latencycfg.js`): global p95, manual per-API overrides and the per-API lines from history all live with
   the other alert configuration. Monitoring › Gateway keeps a one-line summary with a "Configure…" link
   (`#alerts?tab=rules&sec=latency`); `#alerts?tab=<open|all|rules|metrics|oncall>` now forces that sub-tab.
-- API: `GET/PUT /api/ack-sla` (manageSync), `GET /api/ack-sla/status`, `POST /api/ack-sla/preview`, `POST /api/ack-sla/tick`.
+- **Flap control** (`alertRunner.js`, settings key `alert_flap`, Settings › SLA › Flap control): measured 5–9 Sep on Mobile —
+  872 incident rows in 4 days for 40 rules, the payment failure storm alone re-opened 257 times because every threshold
+  crossing was a new incident (new mail, new page, new row to acknowledge). Now a rule that fires again within
+  `reopenMin` (60) of its last incident resolving **re-opens that incident** (ack / owner / discussion kept,
+  `breach_count`++, new `alerts.reopen_count`++, system comment, no new mail), and an open incident resolves only after
+  the condition has been clear for `clearHoldMin` (15). Both editable without restart.
+- API: `GET/PUT /api/ack-sla` (manageSync), `GET/PUT /api/alert-flap`, `GET /api/ack-sla/status`, `POST /api/ack-sla/preview`, `POST /api/ack-sla/tick`.
   Schema: `alerts.ack_reminder_level`, `alerts.ack_reminder_at`, table `alert_reminders` (self-seeded at boot).
 
 ## [2.0.0-alpha.18] — 2026-09-08 — Fixed › Errors: every channel, with Channel and Type

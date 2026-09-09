@@ -93,6 +93,7 @@ const listOf = s => cleanList(s).split(', ').filter(Boolean);
 async function ensureSchema() {
   await db.console.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_reminder_level integer NOT NULL DEFAULT 0`);
   await db.console.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_reminder_at timestamptz`);
+  await db.console.query(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reopen_count integer NOT NULL DEFAULT 0`);
   await db.console.query(`CREATE TABLE IF NOT EXISTS alert_reminders (
       id bigserial PRIMARY KEY, alert_id bigint NOT NULL, level smallint NOT NULL, business text NOT NULL, severity text,
       elapsed_min integer NOT NULL, recipients integer NOT NULL DEFAULT 0, holders integer NOT NULL DEFAULT 0, management integer NOT NULL DEFAULT 0,
