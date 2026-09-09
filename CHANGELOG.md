@@ -62,6 +62,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   change), ack delay vs the ack target (P1 15 m · P2 60 m · P3 4 h), and the **SLA clock** — time left of the
   resolution target (P1 4 h · P2 24 h · P3 72 h, `SLA_P1_H…` in .env) or "overdue by …", rows tinted when over.
   Each row deep-links to the incident on the right side. `GET /api/incidents/mine`.
+- **Affected cases — whole population, unmasked, latency covered (9 Sep, second pass).** The export now holds
+  the WHOLE population the metric evaluated (for "Nafath failure rate 0.51 (n=47)": all 47 requests) with a
+  **Counted** flag on the numerator rows (the 24 failures) — counted rows first, ● marker and red tint in the preview
+  and PDF, a "Counted only" toggle in the preview, population and counted with the exact percentage in the Alert
+  sheet. Identities are **not masked** in this section (decision: L1/L2 already work with them) and every preview
+  (`alert.cases.view`) and file (`alert.cases.export`) is audited with actor, alert, population and counted.
+  `api_latency_p95` and `api_technical_fail_rate` are now row-based when the API-traffic collector is on: every call
+  of the API in the window, counted = slower than the API's threshold (Settings → API latency) or technical failure,
+  slowest first, with code / message / class / host / transaction id. XLSX cap raised to 10 000 rows.
 - **Affected cases behind an alert — preview · XLSX · PDF, exact to the metric** (`server/src/alertCases.js`,
   `GET /api/alerts/:id/cases?format=json|xlsx|pdf&at=last|first`, cap `export` for files, audited
   `alert.cases.export`). In the guided-response box of every alert (Mobile and Fixed) three new actions list the

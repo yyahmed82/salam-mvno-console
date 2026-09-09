@@ -714,18 +714,22 @@
     const host=$("#grcases_out_"+id); if(!host) return;
     if(host.dataset.open){ host.innerHTML=""; delete host.dataset.open; return; } host.dataset.open="1";
     host.innerHTML=`<div class="rl" style="margin:6px 0">Loading the cases behind this alert…</div>`;
-    let d; try{ d=await api(`/api/alerts/${id}/cases`); }catch(e){ host.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
-    const meta=(d.meta||[]).filter(([k])=>["Evaluated at","Window","Dimension","Rows","What the rows are"].includes(k));
+    let d; try{ d=await api(`/api/alerts/${id}/cases`); }catch(e){ host.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; delete host.dataset.open; return; }
+    const meta=(d.meta||[]).filter(([k])=>["Evaluated at","Window","Dimension","Population","Counted","What the rows are"].includes(k));
     let h=`<div style="margin:8px 0 4px;padding:10px 12px;border:1px solid var(--line);border-left:4px solid #0891b2;border-radius:10px;background:var(--card,#fff)">
       <div style="font-weight:800;font-size:12px;letter-spacing:.04em;margin-bottom:6px">AFFECTED CASES · ${esc(d.metric)}</div>
       ${meta.map(([k,v])=>`<div class="rl" style="margin:1px 0"><span style="color:var(--muted);display:inline-block;min-width:130px">${esc(k)}</span> ${esc(v)}</div>`).join("")}`;
     if(!d.supported){ h+=`<div class="rl" style="margin-top:6px;color:#d97706">This metric is not row-based — ${esc(d.reason||"")}.</div></div>`; host.innerHTML=h; return; }
-    if(!d.rows.length){ h+=`<div class="okbox" style="margin-top:6px">No rows in the evaluation window — the alert may have been kept open by an earlier evaluation; try the XLSX export with the first-firing time.</div></div>`; host.innerHTML=h; return; }
+    if(!d.rows.length){ h+=`<div class="okbox" style="margin-top:6px">No rows in the evaluation window — the alert may have been kept open by an earlier evaluation.</div></div>`; host.innerHTML=h; return; }
     const head=d.head.slice(0,8);
     const fmtv=(k,v)=>{ if(v==null) return "—"; if(/_at$|^ts$/.test(k)&&!isNaN(Date.parse(v))) return new Date(v).toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"}); const s=typeof v==="object"?JSON.stringify(v):String(v); return s.length>90?s.slice(0,89)+"…":s; };
-    h+=`<div style="overflow:auto;max-height:420px;margin-top:8px"><table class="alerts" style="font-size:11.5px"><tr>${head.map(([,l])=>`<th>${esc(l)}</th>`).join("")}</tr>${d.rows.map(r=>`<tr>${head.map(([k])=>`<td class="${/_at$|^ts$|^id$|ref|msisdn|mobile/.test(k)?'mono':''}" style="font-size:11px">${esc(fmtv(k,r[k]))}</td>`).join("")}</tr>`).join("")}</table></div>
-      <div class="rl" style="margin-top:6px;color:var(--muted)">Preview shows ${d.rows.length}${d.capped?" of more":""} row(s) and the first ${head.length} columns — the XLSX carries every row and column.</div></div>`;
+    const rowsHtml=only=>d.rows.filter(r=>!only||r.counted).map(r=>`<tr style="${r.counted?'background:rgba(220,38,38,.06)':''}"><td style="text-align:center;color:#dc2626;font-weight:800">${r.counted?'●':''}</td>${head.map(([k])=>`<td class="${/_at$|^ts$|^id$|ref|msisdn|mobile|nid/.test(k)?'mono':''}" style="font-size:11px">${esc(fmtv(k,r[k]))}</td>`).join("")}</tr>`).join("");
+    h+=`<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><span class="rl">${d.kind==="rate"?`<b style="color:#dc2626">●</b> = counted in the numerator (${d.counted} of ${d.population})`:`${d.counted} counted row(s)`}</span>
+        ${d.kind==="rate"?`<button class="pill" id="grconly_${id}" style="padding:2px 9px;font-size:11px;border-left-color:#dc2626">Counted only</button>`:''}</div>
+      <div style="overflow:auto;max-height:440px;margin-top:6px"><table class="alerts" id="grctab_${id}" style="font-size:11.5px"><tr><th>●</th>${head.map(([,l])=>`<th>${esc(l)}</th>`).join("")}</tr>${rowsHtml(false)}</table></div>
+      <div class="rl" style="margin-top:6px;color:var(--muted)">Preview: ${d.rows.length}${d.capped?" of "+d.population:""} row(s), first ${head.length} columns, identities unmasked — the XLSX carries the whole population (up to 10 000 rows) with every column; each preview / export is audited.</div></div>`;
     host.innerHTML=h;
+    const ob=$("#grconly_"+id); if(ob){ let only=false; ob.onclick=()=>{ only=!only; ob.textContent=only?"All rows":"Counted only"; const t=$("#grctab_"+id); t.innerHTML=`<tr><th>●</th>${head.map(([,l])=>`<th>${esc(l)}</th>`).join("")}</tr>`+rowsHtml(only); }; }
   }
   async function grCasesFile(id, format, btn){
     const old=btn.textContent; btn.disabled=true; btn.textContent="… building";
