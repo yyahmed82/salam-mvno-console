@@ -232,6 +232,8 @@ async function listVendors(journey, fromIso, toIso) {
 async function scanGateways(nowIso, cfgIn) {
   const cfg = cfgIn || await getConfig();
   const now = nowIso || new Date().toISOString();
+  // gateways switched off in Settings → Payment gateways are expected to be silent — never a "drop"
+  let off = []; try { off = await require('./gateways').disabledVendorKeys(); } catch (e) { off = []; }
   const toIso = new Date(new Date(now).getTime() + 3600e3).toISOString();
   const nowHr = (() => { const d = new Date(now); d.setUTCMinutes(0, 0, 0, 0); return +d; })();
   const drops = [];
@@ -241,6 +243,7 @@ async function scanGateways(nowIso, cfgIn) {
     const fromIso = new Date(new Date(now).getTime() - eff.lookbackWeeks * 7 * 86400e3).toISOString();
     let vendors; try { vendors = await listVendors(journey, fromIso, now); } catch (e) { continue; }
     for (const vendor of vendors) {
+      if (journey === 'payment' && off.includes(require('./gateways').keyOf(vendor))) continue;
       let series; try { series = await vendorSeries(journey, vendor, fromIso, toIso); } catch (e) { continue; }
       const complete = series.filter(s => +new Date(s.hour) < nowHr);   // ignore the partial current hour
       if (complete.length < 24) continue;

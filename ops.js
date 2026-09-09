@@ -472,6 +472,13 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
    * count charge ATTEMPTS; here we show FINAL outcomes) — funnel per gateway, retry-success %,
    * decline reasons and a 14-day abandonment/decline trend. Payment tile only. */
   let _upgVendor = "";
+  /* PAYMENT GATEWAY REGISTRY (9 Sep 2026): ⇄ UPG is the UPG (SalamPay) gateway's own DB — it only knows UPG (vendor
+   * 'salam') charges, so the button appears only on UPG rows and only while UPG is enabled in Settings → Payment
+   * gateways. Disabled gateways are labelled as such in the deep-dive chips. */
+  let _gwReg=null; async function gwRegistry(){ if(_gwReg && Date.now()-_gwReg.at<60000) return _gwReg; try{ const d=await api("/api/gateways"); _gwReg={at:Date.now(),map:Object.fromEntries((d.gateways||[]).map(g=>[g.key,g]))}; }catch(_){ _gwReg={at:Date.now(),map:{}}; } return _gwReg; }
+  const isUpgRow = v => /salam|upg|merchalink/i.test(String(v||""));
+  const upgOn = () => !_gwReg || !_gwReg.map.salam || _gwReg.map.salam.enabled!==false;
+  const gwOff = v => { const k=/salam|upg|merchalink/i.test(String(v||""))?"salam":/hyper/i.test(String(v||""))?"hyperpay":/tap/i.test(String(v||""))?"tap":/apollo/i.test(String(v||""))?"apollo":null; const g=k&&_gwReg&&_gwReg.map[k]; return g&&g.enabled===false?g:null; };
   async function renderUpgDeep(){
     const feed=$("#errFeed"); if(!feed||!feed.parentNode) return;
     let host=document.getElementById("upgDeep");
@@ -479,17 +486,18 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     if(!host){ host=document.createElement("div"); host.id="upgDeep"; const cb=document.getElementById("codeBreak"); (cb&&cb.parentNode?cb.parentNode:feed.parentNode).insertBefore(host, cb?cb.nextSibling:feed); }
     host.innerHTML=`<div class="sub" style="margin:10px 0 6px">Loading UPG deep-dive…</div>`;
     const simQ=errState.sim?`&sim=${encodeURIComponent(errState.sim)}`:"";
-    let d; try{ d=await api(`/api/payments/deep-dive?window=${errState.window}${simQ}${_upgVendor?`&vendor=${encodeURIComponent(_upgVendor)}`:""}`); }
+    let d; try{ [d]=await Promise.all([api(`/api/payments/deep-dive?window=${errState.window}${simQ}${_upgVendor?`&vendor=${encodeURIComponent(_upgVendor)}`:""}`), gwRegistry()]); }
     catch(e){ host.innerHTML=""; return; }
+    const liveGw=_gwReg?Object.values(_gwReg.map).filter(g=>g.enabled).map(g=>g.label):[];
     const wrap=x=>`<div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;background:var(--card)">
-      <div style="font-weight:800;font-size:12.5px;margin-bottom:2px">UPG / PAYMENTS DEEP-DIVE <span class="rl" style="font-weight:600">· final outcomes, not attempts · ${d.sim?`${d.hours}h window ending ${esc(KT.dt(d.sim))}Z`:`last ${d.hours}h`} · click any number for the cases</span></div>${x}</div>`;
+      <div style="font-weight:800;font-size:12.5px;margin-bottom:2px">PAYMENTS DEEP-DIVE <span class="rl" style="font-weight:600">· ${liveGw.length?`live gateway${liveGw.length>1?"s":""}: <b style="color:var(--green)">${esc(liveGw.join(" · "))}</b> · `:""}final outcomes, not attempts · ${d.sim?`${d.hours}h window ending ${esc(KT.dt(d.sim))}Z`:`last ${d.hours}h`} · click any number for the cases</span></div>${x}</div>`;
     const F=d.funnel||[];
     if(!F.length){ host.innerHTML=wrap(`<div class="rl">No payments in this window.</div>`); return; }
     // vendor chips
     const vends=[...new Set(F.map(f=>f.vendor))];
     const chips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px;align-items:center">
       <button class="teamchip ${_upgVendor===""?"active":""}" data-uv="">All gateways</button>
-      ${vends.map(v=>`<button class="teamchip ${_upgVendor===v?"active":""}" data-uv="${esc(v)}">${esc(v==='salam'?'UPG (salam)':v)}</button>`).join("")}
+      ${vends.map(v=>{ const off=gwOff(v); return `<button class="teamchip ${_upgVendor===v?"active":""}" data-uv="${esc(v)}" ${off?`title="disabled in Settings → Payment gateways${off.since?" since "+new Date(off.since).toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})+" KSA":""} — rows here predate the switch-off" style="opacity:.6"`:""}>${esc(v==='salam'?'UPG (salam)':v)}${off?' <span style="font-size:9.5px;font-weight:800;letter-spacing:.04em">· OFF</span>':''}</button>`; }).join("")}
       <span style="flex:1"></span>
       <input id="udSearch" class="mono" placeholder="MSISDN / customer ID / service no…" style="padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--card2);color:var(--ink);font-size:11px;width:210px">
       <button class="pill" id="udSearchGo" style="padding:3px 9px;font-size:11px;border-left-color:#0e9f5a" title="All transactions for this customer, end to end (incl. ⇄ UPG)">💳 Customer 360</button></div>`;
@@ -557,7 +565,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const body=card.querySelector(".modal-body");
     const R=d.rows||[];
     if(!R.length){ body.innerHTML=`<div class="rl">No cases in this slice.</div>`; return; }
-    body.innerHTML=`<div class="rl" style="margin-bottom:6px">${d.total.toLocaleString()} case(s)${d.total>R.length?` — showing latest ${R.length}`:""}${day?` on ${esc(day)}`:""}. Timeline = the customer's journey (app side); ⇄ UPG = the gateway's view of the same payment.</div>
+    body.innerHTML=`<div class="rl" style="margin-bottom:6px">${d.total.toLocaleString()} case(s)${d.total>R.length?` — showing latest ${R.length}`:""}${day?` on ${esc(day)}`:""}. Timeline = the customer's journey (app side)${R.some(r=>isUpgRow(r.vendor))&&upgOn()?"; ⇄ UPG = the UPG gateway's view of the same payment (UPG rows only — HyperPay has no gateway-side feed yet)":""}.</div>
       <table class="alerts"><tr><th>WHEN (KSA)</th><th>MOBILE</th><th>AMOUNT</th><th>GW</th><th>CONTEXT</th><th>REASON</th><th></th></tr>${
       R.map(r=>`<tr>
         <td class="mono" style="font-size:10.5px">${esc(KT.md(r.created_at))}</td>
@@ -567,7 +575,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <td style="font-size:11px">${esc(clipTxt(r.reason&&r.reason!=="—"?r.reason:"",42))}</td>
         <td style="white-space:nowrap">
           ${r.payment_on_id?`<button class="pill" style="padding:3px 8px" data-udt="${esc(r.payment_on_type==='OnboardingOrder'?r.payment_on_id:'')}" data-udr="pay:${esc(r.id)}">Timeline</button>`:""}
-          ${r.ref?`<button class="pill" style="padding:3px 7px;border-left-color:#ea580c" data-udu="${esc(r.ref)}">⇄ UPG</button>`:""}
+          ${r.ref&&isUpgRow(r.vendor)&&upgOn()?`<button class="pill" style="padding:3px 7px;border-left-color:#ea580c" data-udu="${esc(r.ref)}">⇄ UPG</button>`:""}
         </td></tr>`).join("")}</table>`;
     body.querySelectorAll("[data-udt]").forEach(b=>b.addEventListener("click",()=>{ $("#panelModal").classList.remove("open"); openTimeline(b.dataset.udt||null,false,b.dataset.udr); }));
     body.querySelectorAll("[data-udu]").forEach(b=>b.addEventListener("click",()=>window.opsUpgTrace(b.dataset.udu)));
@@ -698,6 +706,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   async function loadErrors(){
     syncErrRange();
     renderErrRange();
+    gwRegistry().catch(()=>{});                        // registry (which gateways are live) — gates the ⇄ UPG actions
     const simQ = errState.sim?`&sim=${encodeURIComponent(errState.sim)}`:'';
     let sum;
     try { sum = await api(`/api/errors/summary?window=${errState.window}${simQ}${errState.team?`&team=${encodeURIComponent(errState.team)}`:''}`); }
@@ -789,7 +798,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       <td class="mono">${esc(r.mobile||'—')}</td>
       <td style="font-size:12px">${r.gw?gwBadge(r.gw):''}${esc(r.detail||'')}</td>
       <td style="white-space:nowrap"><button class="pill" data-row="${esc(r.id||'')}" data-oid="${esc(r.order_id||'')}" style="padding:4px 10px">Timeline →</button>${
-        ((r.category==='payment'||r.category==='payment_stuck')&&r.ref)?` <button class="pill" data-upg="${esc(r.ref)}" style="padding:4px 8px;border-left-color:#ea580c" title="Gateway side: every charge attempt on this invoice + state transitions">⇄ UPG</button>`:''}</td>
+        ((r.category==='payment'||r.category==='payment_stuck')&&r.ref&&isUpgRow(r.gw)&&upgOn())?` <button class="pill" data-upg="${esc(r.ref)}" style="padding:4px 8px;border-left-color:#ea580c" title="UPG gateway side: every charge attempt on this invoice + state transitions (UPG rows only)">⇄ UPG</button>`:''}</td>
     </tr>`; });
     h+=`</table>`;
     $("#errFeed").innerHTML=h;
@@ -1814,7 +1823,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <td style="font-size:11px"><span style="color:${col};font-weight:700">${esc(r.status)}</span>${r.decline&&r.decline!=="—"?`<br><span class="rl" style="font-size:10px">${esc(String(r.decline).slice(0,48))}</span>`:(r.fail_reason?`<br><span class="rl" style="font-size:10px">${esc(String(r.fail_reason).slice(0,48))}</span>`:"")}</td>
         <td style="white-space:nowrap">
           ${r.on_id&&r.payment_on_type==="OnboardingOrder"?`<button class="pill" style="padding:3px 8px" data-c3t="${esc(r.on_id)}" data-c3r="pay:${esc(r.id)}">Timeline</button>`:""}
-          ${r.ref&&d.upg_available?`<button class="pill" style="padding:3px 7px;border-left-color:#ea580c" data-c3u="${esc(r.ref)}">⇄ UPG</button>`:""}
+          ${r.ref&&d.upg_available&&isUpgRow(r.vendor)&&upgOn()?`<button class="pill" style="padding:3px 7px;border-left-color:#ea580c" data-c3u="${esc(r.ref)}">⇄ UPG</button>`:""}
         </td></tr>`; }).join("")}</table>
       <div class="rl" style="margin-top:8px">⇄ UPG opens the gateway's record of that exact payment — charge attempts, bank state log and webhook delivery. Lookups are audited.</div>`;
     body.querySelectorAll("[data-c3t]").forEach(b=>b.addEventListener("click",()=>{ $("#panelModal").classList.remove("open"); openTimeline(b.dataset.c3t||null,false,b.dataset.c3r); }));
@@ -1934,7 +1943,24 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
    * panels every few seconds mid-analysis. The page now loads on entry and on user-driven
    * range/filter changes only; a browser refresh (or re-entering the view) fetches fresh data. */
   document.addEventListener("uinavchange", ()=>{ if($("#view-errors").classList.contains("active")) loadErrors(); });
-  const errExp=$("#errExport"); if(errExp) errExp.addEventListener("click", ()=> window.opsExport(errState.lastFeed, `errors_${errState.window}h`, errExp));
+  /* Troubleshoot export — server-side, exactly as filtered (window / pinned range end, team, category, class, code, gateway, search) */
+  async function errExport(format){
+    const btn=$(format==="pdf"?"#errPdf":"#errXlsx"); if(!btn||btn.disabled) return;
+    const old=btn.textContent; btn.disabled=true; btn.textContent="… building";
+    try{
+      const p=new URLSearchParams({format, window:String(errState.window)});
+      if(errState.sim) p.set("sim",errState.sim); if(errState.team) p.set("team",errState.team); if(errState.category) p.set("category",errState.category);
+      if(errState.q) p.set("q",errState.q); if(errState.codeFilter) p.set("code",errState.codeFilter); if(errState.gwFilter) p.set("gw",errState.gwFilter); if(errState.clsFilter) p.set("cls",errState.clsFilter);
+      const r=await window.fetch(API+"/api/errors/export?"+p.toString());
+      if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||("HTTP "+r.status)); }
+      const cd=r.headers.get("Content-Disposition")||""; const m=/filename="([^"]+)"/.exec(cd);
+      const blob=await r.blob(); const href=URL.createObjectURL(blob); const a=document.createElement("a");
+      a.href=href; a.download=m?m[1]:`troubleshoot.${format}`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(href),2000);
+    }catch(e){ alert("Export failed — "+e.message); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
+  const errX=$("#errXlsx"); if(errX) errX.addEventListener("click",()=>errExport("xlsx"));
+  const errP=$("#errPdf"); if(errP) errP.addEventListener("click",()=>errExport("pdf"));
   $("#userChip").addEventListener("click", openRoleModal);
 
   // ================= LOGIN GATE =================

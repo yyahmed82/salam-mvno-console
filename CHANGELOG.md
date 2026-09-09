@@ -62,6 +62,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   change), ack delay vs the ack target (P1 15 m · P2 60 m · P3 4 h), and the **SLA clock** — time left of the
   resolution target (P1 4 h · P2 24 h · P3 72 h, `SLA_P1_H…` in .env) or "overdue by …", rows tinted when over.
   Each row deep-links to the incident on the right side. `GET /api/incidents/mine`.
+- **Payment gateway registry — enabling / disabling a gateway is now one audited toggle** (`server/src/gateways.js`,
+  Mobile › Alerts › Alert rules › *Payment gateways*, `GET/PUT /api/gateways`). Since UPG and Tap were switched off
+  on 3 Sep 16:27 KSA the console kept treating them as live: `upg_hard_down` opened P1s, the seasonal per-gateway
+  drop detector paged "UPG down" hourly, Troubleshoot offered ⇄ UPG on HyperPay rows, and the HyperPay watch relied
+  on a hard-coded cutover. The registry (settings key `gateways`, seeded UPG/Tap OFF · HyperPay ON since the cutover)
+  now drives all of it: rules whose `dim.gateway` / `dim.vendor` is a disabled gateway are **paused** (⏸ chip in the
+  rules list, "paused — UPG gateway disabled since …" in the evaluation, open alerts resolve on the next tick and
+  are auto-resolved with a system comment the moment a gateway is switched off); the anomaly drop detector skips
+  disabled vendors; the HyperPay cutover clamp reads `since` of the enabled gateway (env `HYPERPAY_CUTOVER` stays
+  the fallback); Troubleshoot shows ⇄ UPG only on UPG rows and only while UPG is enabled, the deep-dive header
+  names the live gateway(s) and marks disabled ones "· OFF"; the Health self-check reports the registry and warns
+  when the data disagrees (payments still arriving on a "disabled" gateway, or none on an "enabled" one). The
+  settings card shows per gateway: state, since/by, traffic in 24 h + last success from the replica, the rules it
+  pauses, open alerts, a note.
+- **Troubleshoot export — analysed PDF + complete XLSX, exactly as filtered** (`server/src/errorsExport.js`,
+  `GET /api/errors/export?format=xlsx|pdf`, cap `export`, audited `errors.export`). Same idea as Fixed › Errors:
+  window / pinned range end, team, category, Business/Technical class, decline code, gateway and search all
+  apply. XLSX = *Failures* (every row up to 5 000: time, category, class, reason, team, identifier, mobile,
+  gateway, detail, order, gateway ref) + *Summary* (filters, totals with Business/Technical split, by category, by
+  team, payment decline codes with share, declines by gateway, rows by gateway, gateway registry). PDF = the
+  analysed report with the same sections and up to 400 rows (technical rows in red). PII masked as on the board
+  unless the exporting role holds `unmaskPII`. The old client-side "⤓ Export" (120 visible rows to CSV) is replaced
+  by **⬇ XLSX** / **⬇ PDF** beside the title.
 - **On-call snapshot per business.** The phone-sized on-call page (`#oncall`) now exists for both teams and sits as an
   **◔ On-call** tab under each Alerts page: Mobile › Alerts › On-call (`#oncall` — /api/noc status, payment /
   activation success, errors today, orders, Mobile incidents, anomalies, freshness) and Fixed › Alerts › On-call

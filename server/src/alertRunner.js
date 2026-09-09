@@ -1,6 +1,7 @@
 /* Alert runner: for each enabled rule, read the latest snapshot at sim_now
  * matching its metric+window+dimension, compare, then open / update / resolve. */
 const db = require('./db');
+const gateways = require('./gateways');   // payment-gateway registry: rules scoped to a DISABLED gateway are paused
 
 const OPS = {
   gt: (a, b) => a > b, gte: (a, b) => a >= b,
@@ -51,9 +52,13 @@ async function evaluate(simNow) {
     const value = snap ? snap.value : null;
     const sample = snap ? snap.sample : null;
     const enoughSample = value != null && Number(sample) >= rule.min_sample;
-    const fired = !!(snap && inWindow && value != null && enoughSample && OPS[rule.operator](Number(value), Number(rule.threshold)));
+    // a per-gateway rule (dim.gateway / dim.vendor) whose gateway is switched off in Settings → Payment gateways never
+    // fires: a silent gateway is the expected state, not an outage. Its open alert resolves on this tick.
+    let paused = null; try { paused = await gateways.pausedReason(rule); } catch (e) { paused = null; }
+    const fired = !paused && !!(snap && inWindow && value != null && enoughSample && OPS[rule.operator](Number(value), Number(rule.threshold)));
     let counts;
-    if (!inWindow) counts = `outside active window (${activeLabel(rule)})`;
+    if (paused) counts = paused;
+    else if (!inWindow) counts = `outside active window (${activeLabel(rule)})`;
     else if (!snap || value == null) counts = 'no data in window';
     else if (!enoughSample) counts = `observed ${fmt(value, rule)} (sample ${sample} < min ${rule.min_sample})`;
     else counts = `observed ${fmt(value, rule)} (sample ${sample}, ${rule.window_hours}h)`;
@@ -61,7 +66,7 @@ async function evaluate(simNow) {
       id: rule.id, key: rule.key, name: rule.name, severity: rule.severity, team: rule.team,
       metric_key: rule.metric_key, operator: rule.operator, threshold: Number(rule.threshold),
       min_sample: rule.min_sample, unit: rule.unit, window_hours: Number(rule.window_hours),
-      active: activeLabel(rule), value, sample, fired, counts, segment: rule.segment || 'mvno'
+      active: activeLabel(rule), value, sample, fired, counts, segment: rule.segment || 'mvno', paused: !!paused
     });
   }
   return { now, evals };

@@ -27,6 +27,7 @@ const tapRecon = require('./tapRecon');
 const escalation = require('./escalation');
 const correlation = require('./correlation');
 const anomaly = require('./anomaly');
+const gateways = require('./gateways');   // payment-gateway registry (Settings → Payment gateways)
 const segment = require('./segment');   // Mobile ↔ Fixed segregation of rules / alerts / digests
 const reliability = require('./reliability');
 const subscriber = require('./subscriber');
@@ -488,6 +489,8 @@ app.get('/api/errors/feed', async (req, res) => {
     res.json({ feed: roles.maskDeep(rows, allowUnmask), now, unmasked: allowUnmask });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// Troubleshoot export — analysed PDF + complete XLSX, exactly as filtered (window, team, category, class, code, gateway, search)
+require('./errorsExport').mount(app, { boardNow, audit });
 // Per-category failure breakdown by provider code · message (Semati responseCode·responseMessage,
 // Nafath status·message) — powers the Troubleshoot code filter.
 app.get('/api/errors/code-breakdown', async (req, res) => {
@@ -530,7 +533,7 @@ app.get('/api/home/hyperpay', async (req, res) => {
     // CUTOVER CLAMP: HyperPay went live for customer payments 3 Sep 2026 16:27 KSA — nothing
     // before that belongs in this view (earlier hyper rows = dealer top-ups / test noise, and
     // the -10001 track would otherwise count UPG/Tap-era errors). Env-overridable.
-    const CUTOVER = process.env.HYPERPAY_CUTOVER || '2026-09-03T16:27:00+03:00';
+    const CUTOVER = await gateways.cutover();   // `since` of the enabled gateway (registry), env HYPERPAY_CUTOVER as fallback
     const to = req.query.to || new Date().toISOString();
     let from = req.query.from || new Date(Date.now() - 24 * 3600e3).toISOString();
     if (new Date(from) < new Date(CUTOVER)) from = new Date(CUTOVER).toISOString();
@@ -1827,6 +1830,14 @@ app.get('/api/monitoring/health', async (req, res) => {
       `${f.ok.toLocaleString()}/${f.total.toLocaleString()} success (${rate == null ? '—' : rate + '%'}) · ${f.declined.toLocaleString()} declined · ${f.stuck} stuck`);
   } catch (e) { push('payments_funnel', 'Payments (24h)', 'fail', e.message); }
 
+  // Payment gateway registry — which gateways are live, and whether the data agrees
+  try {
+    const g = await gateways.status();
+    const on = g.gateways.filter(x => x.enabled), off = g.gateways.filter(x => !x.enabled);
+    const warn = g.gateways.filter(x => x.warning);
+    push('gateways', 'Payment gateways', warn.length ? 'warn' : 'ok',
+      `Enabled: ${on.map(x => x.label).join(', ') || 'none'} · disabled: ${off.map(x => x.label).join(', ') || 'none'}` + (warn.length ? ' · ' + warn.map(x => `${x.label}: ${x.warning}`).join(' · ') : ' · rules / drop detector / UI follow the registry'));
+  } catch (e) { push('gateways', 'Payment gateways', 'warn', 'Registry unreadable: ' + e.message); }
   // UPG payment gateway DB (read-only correlation source)
   try {
     const u = await timed(5000, () => require('./upgLink').ping());
@@ -3025,7 +3036,19 @@ app.get('/api/rules', async (req, res) => {
   const rules = (await C.query(`SELECT r.*, mc.unit, mc.higher_is_bad FROM alert_rules r
      LEFT JOIN metric_catalog mc ON mc.key=r.metric_key WHERE ${segment.sqlWhere('r', 'key', seg)} ORDER BY severity, name`)).rows;
   const catalog = (await C.query(`SELECT * FROM metric_catalog WHERE ${seg === 'all' ? 'TRUE' : seg === 'fixed' ? "key LIKE 'fixed\\_%'" : "key NOT LIKE 'fixed\\_%'"} ORDER BY key`)).rows;
+  for (const r of rules) { try { r.paused = await gateways.pausedReason(r); } catch (e) { r.paused = null; } }   // per-gateway rules of a disabled gateway
   res.json({ rules, catalog, segment: seg });
+});
+/* ---- Payment gateway registry: which customer gateways are live (drives rules, drop detector, UI, cutover) ---- */
+app.get('/api/gateways', async (req, res) => {
+  try { res.json(await gateways.status()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/gateways', requireCap('manageSync'), async (req, res) => {
+  try {
+    const out = await gateways.setConfig(req.body || {}, req.actor);
+    await audit(req, 'gateways.config', null, { changes: out.changes, vendors: Object.fromEntries(Object.entries(out.config.vendors).map(([k, v]) => [k, v.enabled])) });
+    res.json(await gateways.status());
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/alerts', async (req, res) => {

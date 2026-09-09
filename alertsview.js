@@ -782,6 +782,37 @@
       else if(side==='techundo') o.tech_remove=o.tech_remove.filter(x=>x!==c);
       save(o); }));
   }
+
+  /* ---- PAYMENT GATEWAY REGISTRY (Mobile › Alerts › Alert rules) ------------------------------------------------
+   * Which customer gateways are live. Disabling one pauses its per-gateway rules (open alerts resolve), mutes the
+   * seasonal drop detector for it, hides its correlation actions in Troubleshoot and moves the HyperPay cutover. */
+  async function renderGateways(){
+    const host=$("#gwSection"); if(!host) return;
+    let d; try{ d=await api("/api/gateways"); }catch(e){ host.innerHTML=`<div class="rl">${esc(e.message)}</div>`; return; }
+    const canEdit = window.opsCan && window.opsCan("manageSync");
+    const ks=iso=>iso?new Date(iso).toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})+" KSA":"—";
+    const rows=(d.gateways||[]).map(g=>`<tr>
+      <td><label class="switch"><input type="checkbox" data-gw="${esc(g.key)}" ${g.enabled?"checked":""} ${canEdit?"":"disabled"}><span class="slider"></span></label></td>
+      <td><b>${esc(g.label)}</b><br><span class="rl" style="color:var(--muted)">${esc(g.long)}</span></td>
+      <td>${g.enabled?'<b style="color:var(--green)">ENABLED</b>':'<b style="color:#dc2626">DISABLED</b>'}<br><span class="rl" style="color:var(--muted)">since ${ks(g.since)}${g.by?" · "+esc(String(g.by).split("@")[0]):""}</span></td>
+      <td class="mono" style="font-size:11px">${g.traffic?`${Number(g.traffic.n24).toLocaleString()} / 24h · ${Number(g.traffic.ok24).toLocaleString()} ok<br><span style="color:var(--muted)">last success ${ks(g.traffic.last_success)}</span>`:'<span class="rl">no traffic in 30 d</span>'}${g.warning?`<br><span style="color:#d97706;font-weight:700">⚠ ${esc(g.warning)}</span>`:""}</td>
+      <td style="font-size:11.5px">${(g.rules||[]).length?g.rules.map(r=>`<span class="pill" style="padding:1px 7px;font-size:10.5px;border-left-color:${g.enabled?sevColor(r.severity):"var(--muted)"};${g.enabled?"":"opacity:.6"}">${esc(r.severity)} ${esc(r.name)}${g.enabled?"":" · paused"}</span>`).join(" "):'<span class="rl">—</span>'}${g.open_alerts?`<br><span style="color:#dc2626;font-weight:700">${g.open_alerts} open alert(s)</span>`:""}</td>
+      <td><input data-gwnote="${esc(g.key)}" value="${esc(g.note||"")}" placeholder="why / change ref" ${canEdit?"":"disabled"} style="font:inherit;font-size:11.5px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink);width:100%;min-width:160px"></td>
+    </tr>`).join("");
+    host.innerHTML=`<div class="apanel"><div class="ah"><b>Payment gateways — which ones are live</b>
+        <span class="rl" style="font-weight:600;font-size:11px;color:var(--muted)">· disabling a gateway pauses its watchdog rules (open alerts auto-resolve), mutes the seasonal drop detector for it, hides ⇄ UPG on Troubleshoot rows and sets the HyperPay cutover (${esc(ks(d.cutover))}) · audited</span></div>
+      <div class="abody" style="overflow-x:auto"><table class="alerts" style="min-width:900px"><tr><th>ON</th><th>GATEWAY</th><th>STATE</th><th>TRAFFIC (replica)</th><th>RULES SCOPED TO IT</th><th>NOTE</th></tr>${rows}</table>
+      ${d.traffic_error?`<div class="rl" style="color:#d97706;margin-top:6px">traffic unavailable: ${esc(d.traffic_error)}</div>`:""}
+      ${canEdit?`<div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="pill" id="gwSave" style="border-left-color:var(--green)">Save gateways</button><span id="gwStatus" class="rl"></span></div>`:""}</div></div>`;
+    const save=$("#gwSave"); if(save) save.onclick=async()=>{
+      const vendors={}; host.querySelectorAll("[data-gw]").forEach(c=>{ vendors[c.dataset.gw]={enabled:c.checked, note:(host.querySelector(`[data-gwnote="${c.dataset.gw}"]`)||{}).value||""}; });
+      const off=(d.gateways||[]).filter(g=>g.enabled && vendors[g.key] && !vendors[g.key].enabled).map(g=>g.label);
+      if(off.length && !confirm(`Mark ${off.join(", ")} as DISABLED? Its per-gateway alerts will be resolved and its rules paused until re-enabled.`)) return;
+      const st=$("#gwStatus"); st.textContent="Saving…";
+      try{ await api("/api/gateways",{method:"PUT",body:JSON.stringify({vendors})}); st.textContent="Saved ✓"; renderGateways(); if(typeof renderRules==="function") setTimeout(renderRules,300); }
+      catch(e){ st.textContent="Error: "+e.message; }
+    };
+  }
   async function renderRules(){
     const data = await api("/api/rules");
     const rules = data.rules||[];
@@ -801,7 +832,7 @@
       h += `<tr class="rule-row">
         <td><label class="switch"><input type="checkbox" data-rid="${r.id}" ${r.enabled?"checked":""} ${canEdit?'':'disabled'}><span class="slider"></span></label></td>
         <td><span class="sevpill" style="background:${sevColor(r.severity)}">${esc(r.severity)}</span></td>
-        <td><b>${esc(r.name)}</b>${clsChip(r.alert_class)}${r.builtin?' <span class="rl" style="font-size:10px">builtin</span>':''}<br><span style="color:var(--muted);font-size:11px">${esc(r.description||"")}</span></td>
+        <td><b>${esc(r.name)}</b>${clsChip(r.alert_class)}${r.builtin?' <span class="rl" style="font-size:10px">builtin</span>':''}${r.paused?` <span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#d97706;color:#d97706" title="${esc(r.paused)}">⏸ paused · gateway disabled</span>`:''}<br><span style="color:var(--muted);font-size:11px">${esc(r.description||"")}</span></td>
         <td>${esc(r.team||"—")}</td>
         <td class="mono">${esc(r.metric_key)}</td>
         <td class="mono" style="font-size:10.5px;max-width:210px;white-space:normal">${r.trigger_codes?esc(r.trigger_codes):'<span class="rl">—</span>'}</td>
@@ -816,10 +847,12 @@
     /* TKT-000017 — Business/Technical CODE CLASSIFICATION, editable without a deploy. This is the
      * classifier every feed/tile/alert metric uses; a code moved to Business stops counting as
      * technical from save time (history keeps its ingest-time class). */
+    if(SEG!=="fixed") h += `<div id="gwSection" style="margin-top:24px">${window.salamLoader?window.salamLoader("Loading payment gateways…"):"Loading payment gateways…"}</div>`;
     if(canEdit) h += `<div id="ecSection" style="margin-top:24px"></div>`;
     // anomaly-engine signals (seasonal baseline) — individually configurable, appended below the threshold rules
     if(canEdit) h += `<div id="anomSection" style="margin-top:24px">${window.salamLoader?window.salamLoader("Loading anomaly signals…"):"Loading anomaly signals…"}</div>`;
     $("#alBody").innerHTML = h;
+    if(SEG!=="fixed") renderGateways();
     if(canEdit) renderErrClass();
     wireClsBar(renderRules);
     $("#alBody").querySelectorAll("input[data-rid]").forEach(cb=>{
