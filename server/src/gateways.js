@@ -19,7 +19,9 @@
  * replica so the settings card can show "still receiving traffic" when someone disables a gateway that is not off. */
 'use strict';
 const db = require('./db');
-const settings = require('./settings');
+// settings.js → alertRunner.js → gateways.js → settings.js is a require cycle (the scheduler lives in settings.js), so
+// settings must be resolved at CALL time — a top-level require sees a half-initialised module and getSetting is undefined.
+const settings = { getSetting: k => require('./settings').getSetting(k), setSetting: (k, v) => require('./settings').setSetting(k, v) };
 
 const VENDORS = {
   salam:    { label: 'UPG',      long: 'UPG — SalamPay / Merchalink (in-house gateway)', gw: 'UPG' },
