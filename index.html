@@ -1349,7 +1349,7 @@
     <div class="helpmenu" id="helpMenu">
       <div class="hm-group" data-i18n="group.guide">GUIDE</div>
       <button class="hm-tour" id="hmTour"><span class="hm-ic">▶</span><span data-i18n-html="menu.tour">Guided tour<small>Replay the 60-second walkthrough</small></span></button>
-      <button class="hm-tour" id="hmOncall"><span class="hm-ic">◔</span><span>On-call view<small>Mobile incident snapshot</small></span></button>
+      <button class="hm-tour" id="hmOncall"><span class="hm-ic">◔</span><span>On-call view<small>Phone snapshot · #oncall (Mobile) · #fixed-oncall (Fixed)</small></span></button>
       <div class="hm-group" data-i18n="group.feedback">FEEDBACK</div>
       <button class="hm-tour" id="hmRaiseTicket"><span class="hm-ic">✎</span><span data-i18n-html="menu.raiseTicket">Raise a ticket<small>Suggest an improvement or report an issue</small></span></button>
     </div>
@@ -1681,6 +1681,7 @@
         <button class="pill" data-atab="all">History</button>
         <button class="pill" data-atab="metrics">Metric charts</button>
         <button class="pill" data-atab="rules">Alert rules</button>
+        <button class="pill" data-atab="oncall" title="Phone-sized snapshot for the on-call engineer of this business — status, KPIs, open incidents">◔ On-call</button>
       </div>
       <div id="alBody"></div>
     </div>
@@ -1692,67 +1693,67 @@
 <div id="ruleModal" class="modal-overlay"><div class="modal-card" id="ruleModalCard" style="max-width:560px"></div></div>
 <div id="panelModal" class="modal-overlay"><div class="modal-card" id="panelModalCard" style="max-width:720px"></div></div>
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
-<script src="base.js?v=20260908n"></script>
-<script src="navdrop.js?v=20260908n" defer></script>
-<script src="adaptive.js?v=20260908n" defer></script>
-<script src="ksatime.js?v=20260908n"></script>
-<script src="data.js?v=20260908n"></script>
-<script src="data2.js?v=20260908n"></script>
-<script src="samples.js?v=20260908n"></script>
-<script src="samples2.js?v=20260908n"></script>
-<script src="apidocs.js?v=20260908n"></script>
-<script src="xlsxout.js?v=20260908n"></script>
-<script src="persist.js?v=20260908n"></script>
-<script src="app.js?v=20260908n"></script>
-<script src="uinav.js?v=20260908n"></script>
-<script src="alertsview.js?v=20260908n"></script>
-<script src="ops.js?v=20260908n"></script>
-<script src="opsbar.js?v=20260908n"></script>
-<script src="analytics.js?v=20260908n"></script>
-<script src="topo2data.js?v=20260908n"></script>
-<script src="topology2.js?v=20260908n"></script>
-<script src="tapdocs.js?v=20260908n"></script>
-<script src="screensflow.js?v=20260908n"></script>
-<script src="home.js?v=20260908n"></script>
-<script src="monitoring.js?v=20260908n"></script>
-<script src="workbench.js?v=20260908n"></script>
-<script src="growth.js?v=20260908n"></script>
-<script src="dmsjourney.js?v=20260908n"></script>
-<script src="dms.js?v=20260908n"></script>
-<script src="landing.js?v=20260908n"></script>
-<script src="fixed.js?v=20260908n"></script>
-<script src="fixed-maps-ui.js?v=20260908n"></script>
-<script src="fixed-leaflet.js?v=20260908n"></script>
-<script src="fixed-map.js?v=20260908n"></script>
-<script src="fixed-qr.js?v=20260908n"></script>
-<script src="fixed-channel.js?v=20260908n"></script>
-<script src="fixed-dash.js?v=20260908n"></script>
-<script src="fixed-errors.js?v=20260908n"></script>
-<script src="fixed-alerts.js?v=20260908n"></script>
-<script src="fixed-playbook.js?v=20260908n"></script>
-<script src="fixed-diagrams.js?v=20260908n"></script>
-<script src="fixed-report.js?v=20260908n"></script>
-<script src="otodocs.js?v=20260908n"></script>
-<script src="salamdocs.js?v=20260908n"></script>
-<script src="slo.js?v=20260908n"></script>
-<script src="audit.js?v=20260908n"></script>
-<script src="notifycfg.js?v=20260908n"></script>
-<script src="notifyclone.js?v=20260908n"></script>
-<script src="democfg.js?v=20260908n"></script>
-<script src="sub360.js?v=20260908n"></script>
-<script src="rolesmatrix.js?v=20260908n"></script>
-<script src="i18n.js?v=20260908n"></script>
-<script src="settingsmenu.js?v=20260908n"></script>
-<script src="tour.js?v=20260908n"></script>
-<script src="helpmenu.js?v=20260908n"></script>
-<script src="assist.js?v=20260908n"></script>
-<script src="assistcfg.js?v=20260908n"></script>
-<script src="assistclone.js?v=20260908n"></script>
-<script src="navcfg.js?v=20260908n"></script>
-<script src="tickets.js?v=20260908n"></script>
-<script src="theme.js?v=20260908n"></script>
-<script src="router.js?v=20260908n"></script>
-<script src="live.js?v=20260908n"></script>
-<script src="oncall.js?v=20260908n"></script>
+<script src="base.js?v=20260909a"></script>
+<script src="navdrop.js?v=20260909a" defer></script>
+<script src="adaptive.js?v=20260909a" defer></script>
+<script src="ksatime.js?v=20260909a"></script>
+<script src="data.js?v=20260909a"></script>
+<script src="data2.js?v=20260909a"></script>
+<script src="samples.js?v=20260909a"></script>
+<script src="samples2.js?v=20260909a"></script>
+<script src="apidocs.js?v=20260909a"></script>
+<script src="xlsxout.js?v=20260909a"></script>
+<script src="persist.js?v=20260909a"></script>
+<script src="app.js?v=20260909a"></script>
+<script src="uinav.js?v=20260909a"></script>
+<script src="alertsview.js?v=20260909a"></script>
+<script src="ops.js?v=20260909a"></script>
+<script src="opsbar.js?v=20260909a"></script>
+<script src="analytics.js?v=20260909a"></script>
+<script src="topo2data.js?v=20260909a"></script>
+<script src="topology2.js?v=20260909a"></script>
+<script src="tapdocs.js?v=20260909a"></script>
+<script src="screensflow.js?v=20260909a"></script>
+<script src="home.js?v=20260909a"></script>
+<script src="monitoring.js?v=20260909a"></script>
+<script src="workbench.js?v=20260909a"></script>
+<script src="growth.js?v=20260909a"></script>
+<script src="dmsjourney.js?v=20260909a"></script>
+<script src="dms.js?v=20260909a"></script>
+<script src="landing.js?v=20260909a"></script>
+<script src="fixed.js?v=20260909a"></script>
+<script src="fixed-maps-ui.js?v=20260909a"></script>
+<script src="fixed-leaflet.js?v=20260909a"></script>
+<script src="fixed-map.js?v=20260909a"></script>
+<script src="fixed-qr.js?v=20260909a"></script>
+<script src="fixed-channel.js?v=20260909a"></script>
+<script src="fixed-dash.js?v=20260909a"></script>
+<script src="fixed-errors.js?v=20260909a"></script>
+<script src="fixed-alerts.js?v=20260909a"></script>
+<script src="fixed-playbook.js?v=20260909a"></script>
+<script src="fixed-diagrams.js?v=20260909a"></script>
+<script src="fixed-report.js?v=20260909a"></script>
+<script src="otodocs.js?v=20260909a"></script>
+<script src="salamdocs.js?v=20260909a"></script>
+<script src="slo.js?v=20260909a"></script>
+<script src="audit.js?v=20260909a"></script>
+<script src="notifycfg.js?v=20260909a"></script>
+<script src="notifyclone.js?v=20260909a"></script>
+<script src="democfg.js?v=20260909a"></script>
+<script src="sub360.js?v=20260909a"></script>
+<script src="rolesmatrix.js?v=20260909a"></script>
+<script src="i18n.js?v=20260909a"></script>
+<script src="settingsmenu.js?v=20260909a"></script>
+<script src="tour.js?v=20260909a"></script>
+<script src="helpmenu.js?v=20260909a"></script>
+<script src="assist.js?v=20260909a"></script>
+<script src="assistcfg.js?v=20260909a"></script>
+<script src="assistclone.js?v=20260909a"></script>
+<script src="navcfg.js?v=20260909a"></script>
+<script src="tickets.js?v=20260909a"></script>
+<script src="theme.js?v=20260909a"></script>
+<script src="router.js?v=20260909a"></script>
+<script src="live.js?v=20260909a"></script>
+<script src="oncall.js?v=20260909a"></script>
 </body>
 </html>

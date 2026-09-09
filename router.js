@@ -11,7 +11,7 @@
     analytics:{view:"analytics"}, growth:{view:"monitoring",monTab:"resellers"}, resellers:{view:"monitoring",monTab:"resellers"},
     dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, sla:{sla:true}, slo:{sla:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
     alerts:{view:"alerts"}, "fixed-alerts":{view:"alerts",seg:"fixed"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"},journeys:{view:"explorer"}, integrations:{view:"integrations"},
-    subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true},
+    subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true}, "fixed-oncall":{oncall:true,seg:"fixed"},
     settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
     "settings-notify":{notifyClone:true}, "settings-notify-clone":{notifyClone:true},
     "settings-assist":{assistClone:true}, "settings-assist-clone":{assistClone:true},
@@ -112,7 +112,7 @@
     else if(r.notifyClone){ window.openNotifyClone && window.openNotifyClone(); }
     else if(r.assistClone){ window.openAssistClone && window.openAssistClone(); }
     else if(r.demoCfg){ window.openDemoSettings && window.openDemoSettings(); }
-    else if(r.oncall){ window.openOncall && window.openOncall(); }
+    else if(r.oncall){ window.openOncall && window.openOncall(r.seg==="fixed"?"fixed":"mvno"); if(r.seg==="fixed"){ const fb=document.querySelector('.navtab[data-fxtab="alerts"]'); if(fb) fb.classList.add("active"); } }
     else if(r.settings){ window.openSettings && window.openSettings(r.settings);
       const fn=SEG_RENDER[r.settings]; if(fn && window[fn]) window[fn](); }
     else if(r.audit){ if(window.openAudit) window.openAudit(); else window.opsGoHome && window.opsGoHome(); }

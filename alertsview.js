@@ -95,6 +95,8 @@
     const _tabs=$("#alTabs"); if(_tabs) _tabs.querySelectorAll(".pill").forEach(p=>p.classList.toggle("active", p.dataset.atab===atab));
     if(atab==="rules") renderRules();
     else if(atab==="metrics") renderMetrics();
+    else if(atab==="oncall"){ const b=$("#alBody"); b.innerHTML=""; if(window.renderOncallInto) window.renderOncallInto(b, SEG); else b.innerHTML='<div class="albanner">on-call module not loaded</div>';
+      b.insertAdjacentHTML("afterbegin",`<div class="rl" style="max-width:640px;margin:0 auto 10px;color:var(--muted)">Share this snapshot with the on-call phone: <a href="#${SEG==="fixed"?"fixed-oncall":"oncall"}" style="color:var(--green)">${location.origin+location.pathname}#${SEG==="fixed"?"fixed-oncall":"oncall"}</a> — full-screen, single column, refreshes with the live sync.</div>`); }
     else renderAlerts();
   }
 

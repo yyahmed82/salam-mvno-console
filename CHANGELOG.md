@@ -62,6 +62,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   change), ack delay vs the ack target (P1 15 m · P2 60 m · P3 4 h), and the **SLA clock** — time left of the
   resolution target (P1 4 h · P2 24 h · P3 72 h, `SLA_P1_H…` in .env) or "overdue by …", rows tinted when over.
   Each row deep-links to the incident on the right side. `GET /api/incidents/mine`.
+- **On-call snapshot per business.** The phone-sized on-call page (`#oncall`) now exists for both teams and sits as an
+  **◔ On-call** tab under each Alerts page: Mobile › Alerts › On-call (`#oncall` — /api/noc status, payment /
+  activation success, errors today, orders, Mobile incidents, anomalies, freshness) and Fixed › Alerts › On-call
+  (`#fixed-oncall` — status derived from the open Fixed alerts, attempts 24 h, conversion, Nafath fail rate, open
+  errors across all channels, Fixed incidents with ack holder and INC chip, top error categories, watcher freshness).
+  Incident rows deep-link to the incident (`?id=`); the tab shows the share link for the on-call phone; the help-menu
+  entry opens the Fixed snapshot for Fixed-only users.
 - **Customer 360 › Fixed: complaint tickets from the Salam Home app.** A new card lists the complaints the customer
   opened in the app (nexus `tickets`, joined to `users` by the ticket's phone number, the app user's phone number or
   the national id): opened, ticket id, type, status (open in red, resolved green), description, masked contact —
