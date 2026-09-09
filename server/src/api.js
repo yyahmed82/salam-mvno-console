@@ -2495,11 +2495,30 @@ app.put('/api/monitoring/latency-thresholds', requireCap('manageSync'), async (r
       const key = String(k).slice(0, 300); const ms = Number(v);
       if (key && ms > 0 && ms <= 600000) perApi[key] = ms;
     }
-    const value = { globalMs, perApi };
+    // keep the history-derived lines (perApiAuto) and the auto config — this form edits global + MANUAL overrides only
+    const cur = (await settings.getSetting('api_latency_thresholds')) || {};
+    const value = { globalMs, perApi, perApiAuto: cur.perApiAuto || {}, auto: cur.auto || null };
     await settings.setSetting('api_latency_thresholds', value);
-    await audit(req, 'monitoring.latency_thresholds', null, { globalMs, overrides: Object.keys(perApi).length });
-    res.json(value);
+    await audit(req, 'monitoring.latency_thresholds', null, { globalMs, overrides: Object.keys(perApi).length, auto: Object.keys(value.perApiAuto).length });
+    res.json(await require('./apiTraffic').latencyThresholds());
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+/* Per-API thresholds from history (apiLatencyBaseline.js): preview the top-N suggestion, apply it, toggle nightly re-apply */
+app.get('/api/monitoring/latency-baseline', async (req, res) => {
+  try { res.json(await require('./apiLatencyBaseline').suggest(req.query || {})); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/monitoring/latency-baseline/apply', requireCap('manageSync'), async (req, res) => {
+  try {
+    const b = req.body || {}; const out = await require('./apiLatencyBaseline').apply(b, req.actor);
+    await audit(req, 'monitoring.latency_baseline.apply', null, { applied: out.applied, params: out.auto && { days: out.auto.days, topN: out.auto.topN, mult: out.auto.mult, floorMs: out.auto.floorMs, enabled: out.auto.enabled }, source: out.source });
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/monitoring/latency-baseline/auto', requireCap('manageSync'), async (req, res) => {
+  try { const b = req.body || {}; const patch = {}; for (const k of ['days', 'topN', 'mult', 'floorMs']) if (b[k] != null && Number(b[k]) > 0) patch[k] = Number(b[k]);
+    const auto = await require('./apiLatencyBaseline').setEnabled(!!b.enabled, patch);
+    await audit(req, 'monitoring.latency_baseline.auto', null, { enabled: auto.enabled, days: auto.days, topN: auto.topN, mult: auto.mult, floorMs: auto.floorMs }); res.json(auto); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 /* Customer payments 360 — EVERY transaction for one MSISDN, end to end. App-side rows here;
  * each row carries payment_reference_id, which the UI's ⇄ UPG button resolves into the gateway
@@ -6296,6 +6315,7 @@ app.listen(PORT, async () => {
   try { require('./reportScheduler').start(); } catch (e) { console.error('sync-health scheduler:', e.message); }
   try { escalation.start(); } catch (e) { console.error('escalation scheduler:', e.message); }
   try { snTicket.start(); } catch (e) { console.error('ServiceNow poller:', e.message); }
+  try { require('./apiLatencyBaseline').start(); } catch (e) { console.error('latency baseline:', e.message); }
   try { require('./prodSyncScheduler').start(); } catch (e) { console.error('prod-sync scheduler:', e.message); }
   try { require('./sematiProbe').start(); } catch (e) { console.error('semati canary:', e.message); }
   try { require('./osbProbe').start(); } catch (e) { console.error('OSB fault watcher:', e.message); }

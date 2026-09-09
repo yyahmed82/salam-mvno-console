@@ -62,6 +62,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   change), ack delay vs the ack target (P1 15 m · P2 60 m · P3 4 h), and the **SLA clock** — time left of the
   resolution target (P1 4 h · P2 24 h · P3 72 h, `SLA_P1_H…` in .env) or "overdue by …", rows tinted when over.
   Each row deep-links to the incident on the right side. `GET /api/incidents/mine`.
+- **Per-API latency thresholds from history are back** (`server/src/apiLatencyBaseline.js`, Monitoring › Gateway ›
+  Latency alerting › *Per-API thresholds from history*). The migration kept only the global p95 line, so every API
+  was judged against one number. Now a daily roll-up (`api_traffic_daily`: path × KSA day, calls, avg, p50 / p95 /
+  p99, technical fails; kept 400 days, backfilled from the 7-day event table at first boot, refreshed every 6 h)
+  feeds a suggestion for the **top-N APIs by calls** over a lookback (3 / 7 / 14 / 30 days): threshold = the API's
+  baseline p95 (median of its daily p95s) × multiplier (default 2), never below a floor (default 1 000 ms), rounded up
+  to 50 ms. *Preview* shows calls, avg, baseline p95, max p95, technical fails, the current line and its source, and
+  the suggestion; *Apply* writes them as `perApiAuto` (audited `monitoring.latency_baseline.apply`); *recalibrate
+  automatically* re-applies after every roll-up so each line follows its API's own normal. Manual overrides are kept
+  separately and always win; `latencyThresholds()` merges auto under manual, so the rules, the per-API health table
+  and the alert-cases export all use the same effective line. Saving the manual form no longer wipes the auto set.
 - **Affected cases — whole population, unmasked, latency covered (9 Sep, second pass).** The export now holds
   the WHOLE population the metric evaluated (for "Nafath failure rate 0.51 (n=47)": all 47 requests) with a
   **Counted** flag on the numerator rows (the 24 failures) — counted rows first, ● marker and red tint in the preview

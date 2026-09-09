@@ -455,9 +455,11 @@ async function latencyThresholds() {
     if (!r.rowCount) return { ...THRESH_DEFAULTS };
     const v = r.rows[0].value || {};
     const globalMs = Number(v.globalMs) > 0 ? Number(v.globalMs) : THRESH_DEFAULTS.globalMs;
-    const perApi = {};
-    for (const [k, ms] of Object.entries(v.perApi || {})) if (Number(ms) > 0) perApi[k] = Number(ms);
-    return { globalMs, perApi };
+    // perApi = the effective per-API lines: history-derived (perApiAuto, apiLatencyBaseline.js) under manual overrides
+    const manual = {}, perApiAuto = {};
+    for (const [k, ms] of Object.entries(v.perApiAuto || {})) if (Number(ms) > 0) perApiAuto[k] = Number(ms);
+    for (const [k, ms] of Object.entries(v.perApi || {})) if (Number(ms) > 0) manual[k] = Number(ms);
+    return { globalMs, perApi: { ...perApiAuto, ...manual }, manual, perApiAuto, auto: v.auto || null };
   } catch (e) { return { ...THRESH_DEFAULTS }; }
 }
 
