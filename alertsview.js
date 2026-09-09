@@ -823,6 +823,8 @@
     if(canEdit) h += `<button class="pill" id="newRuleBtn" style="border-left-color:var(--green)">+ New rule</button>`;
     if(canMail) h += `<button class="pill" id="mailDigestBtn" style="border-left-color:#2563eb">✉ Send email digest</button>`;
     h += `<span class="rl" style="align-self:center">Recipients = users with <b>Mail alert</b> on (Settings → User management). Digest also auto-emails when a new alert fires.</span></div>`;
+    // PAYMENT GATEWAYS first — which gateways are live decides which per-gateway rules below can fire at all
+    if(SEG!=="fixed") h += `<div id="gwSection" style="margin:4px 0 16px">${window.salamLoader?window.salamLoader("Loading payment gateways…"):"Loading payment gateways…"}</div>`;
     h += clsBar("rules", rules);
     const list = CLSFILTER.rules==="all" ? rules : rules.filter(r=>r.alert_class===CLSFILTER.rules);
     h += `<table class="alerts"><tr><th>ON</th><th>SEV</th><th>RULE</th><th>TEAM</th><th>METRIC</th><th>TRIGGER CODES</th><th>CONDITION</th><th>WINDOW</th><th>ACTIVE (KSA)</th><th></th></tr>`;
@@ -847,7 +849,6 @@
     /* TKT-000017 — Business/Technical CODE CLASSIFICATION, editable without a deploy. This is the
      * classifier every feed/tile/alert metric uses; a code moved to Business stops counting as
      * technical from save time (history keeps its ingest-time class). */
-    if(SEG!=="fixed") h += `<div id="gwSection" style="margin-top:24px">${window.salamLoader?window.salamLoader("Loading payment gateways…"):"Loading payment gateways…"}</div>`;
     if(canEdit) h += `<div id="ecSection" style="margin-top:24px"></div>`;
     // anomaly-engine signals (seasonal baseline) — individually configurable, appended below the threshold rules
     if(canEdit) h += `<div id="anomSection" style="margin-top:24px">${window.salamLoader?window.salamLoader("Loading anomaly signals…"):"Loading anomaly signals…"}</div>`;
