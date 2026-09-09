@@ -3,6 +3,30 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.19] — 2026-09-10 — Acknowledgement SLA: reminders 1 / 2 / 3 + management escalation
+### Added
+- **Acknowledgement SLA** (`server/src/ackSla.js`, `acksla.js`). L1 already receives every alert by mail with the SOP the
+  moment it fires; this is the safety net for the alert **nobody on L1 / L2 acknowledges**. Wall-clock from the moment the
+  alert opened (`alerts.opened_wall`, never the sim clock): **Reminder 1** (notice) to every member of the business,
+  **Reminder 2** (warning — also posted to that business's Teams / WhatsApp channels when ChatOps is on), **Reminder 3**
+  (critical) plus a **separate for-information mail to management**, then Reminder 3 repeats every N minutes until
+  someone presses Ack. Defaults: P1 5 / 15 / 30 min, repeat 30; P2 15 / 30 / 60, repeat 60; P3 30 / 60 / 120, no
+  management step. Reminders stop on Ack / Snooze / Resolve; correlated children under an open root are not reminded
+  separately. Every send is a system comment on the incident, an `incident.reminder` audit row and a row in the new
+  `alert_reminders` table (level, recipients, management, channels, outcome). Team mails go Bcc through the existing
+  bulk sender; the management mail is a distinct template (no action expected) and never exposes the team list.
+- **Configurable in Settings › SLA › "Acknowledgement SLA"**: master switch, then two cards — **Mobile** and **Fixed** —
+  each with the per-priority ladder (R1 / R2 / R3 minutes, repeat interval, "inform management" per priority), the
+  management contacts, the ChatOps toggle, **✉ R1 / R2 / R3 preview** mails to yourself (real open alert of that side
+  or a sample), the live list of unacknowledged alerts with their next due step, **▷ Run check now**, and the last
+  reminders sent. Validation keeps the ladder increasing; 0 disables a step.
+- **Reflected on the dashboards**: a notice / warning / critical banner on the home page (under GLOBAL STATUS) and on
+  each Alerts page — "N Mobile alerts unacknowledged beyond SLA — worst P1 … open 34 min · Reminder 3 sent · next
+  repeat in 12 min", colour by level, click opens the incident — and a **⏰ R2 · 17 min** chip in the STATUS cell of the
+  alert row (🚨 at R3). `GET /api/ack-sla/status?segment=` feeds them (own side(s) only).
+- API: `GET/PUT /api/ack-sla` (manageSync), `GET /api/ack-sla/status`, `POST /api/ack-sla/preview`, `POST /api/ack-sla/tick`.
+  Schema: `alerts.ack_reminder_level`, `alerts.ack_reminder_at`, table `alert_reminders` (self-seeded at boot).
+
 ## [2.0.0-alpha.18] — 2026-09-08 — Fixed › Errors: every channel, with Channel and Type
 ### Changed
 - **Fixed › Errors covers all four Fixed channels** — SDA dealer app, QR codes, **Web e-purchase (consumer-direct)** and

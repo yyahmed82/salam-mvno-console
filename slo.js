@@ -36,9 +36,12 @@
       <h2 style="margin-top:24px">Anomaly detection</h2>
       <div class="sub">Live signals vs each journey's seasonal baseline (hour-of-week median, robust z-score) — catches spikes &amp; drops a fixed threshold would miss.</div>
       <div id="anomBoard" style="margin-top:10px"></div>
+      <h2 style="margin-top:24px">Acknowledgement SLA — reminders &amp; escalation</h2>
+      <div class="sub">What happens when nobody on L1 / L2 acknowledges an alert: reminder 1 → reminder 2 (warning) → reminder 3 + management escalation, per business and per priority.</div>
+      <div id="ackSlaBoard" style="margin-top:10px"></div>
     </div>`;
     $("#vendWin").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ vendWin=Number(b.dataset.h); $("#vendWin").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); loadVendors(); }));
-    loadSlos(); loadVendors(); loadAnomalies();
+    loadSlos(); loadVendors(); loadAnomalies(); if(window.renderAckSlaSettings) window.renderAckSlaSettings($("#ackSlaBoard"));
   }
 
   async function loadAnomalies(){

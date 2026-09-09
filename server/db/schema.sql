@@ -79,6 +79,24 @@ ALTER TABLE alerts ADD COLUMN IF NOT EXISTS note          text;
 -- on-call escalation tracking (real wall-clock timing, independent of the sim clock)
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS opened_wall   timestamptz NOT NULL DEFAULT now();
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS esc_level     integer NOT NULL DEFAULT 0;   -- tiers already paged
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_reminder_level integer NOT NULL DEFAULT 0;   -- acknowledgement SLA: highest reminder sent (0..3)
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_reminder_at    timestamptz;                   -- last reminder / escalation send
+-- Acknowledgement-SLA reminder log (ackSla.js): one row per reminder / escalation mail
+CREATE TABLE IF NOT EXISTS alert_reminders (
+  id          bigserial PRIMARY KEY,
+  alert_id    bigint NOT NULL,
+  level       smallint NOT NULL,
+  business    text NOT NULL,
+  severity    text,
+  elapsed_min integer NOT NULL,
+  recipients  integer NOT NULL DEFAULT 0,
+  management  integer NOT NULL DEFAULT 0,
+  channels    jsonb NOT NULL DEFAULT '[]'::jsonb,
+  mail_ok     boolean,
+  error       text,
+  sent_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_alert_reminders_alert ON alert_reminders (alert_id, sent_at DESC);
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS esc_last_at   timestamptz;
 -- ServiceNow link (snTicket.js): one INC per alert, state refreshed by the poller
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS sn_number     text;

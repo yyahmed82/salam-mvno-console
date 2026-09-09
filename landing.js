@@ -30,6 +30,7 @@
           <div class="ld-sub">${esc(today())} · KSA · one console, both businesses</div></div>
         <div class="ld-hero-r"><div class="ld-status-lbl">GLOBAL STATUS</div><div id="ldStatus" class="ld-status"><span class="ld-loading">checking…</span></div></div>
       </div>
+      <div id="ldAckSla"></div>
       <div id="ldInsights" class="ld-insights"></div>
       <div class="ld-sec"><h3>Growth <span>7 days vs the 7 before · 30-day trend</span></h3><div id="ldGrowth" class="ld-growth"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-cols">
@@ -48,6 +49,7 @@
   async function load(){
     const biz=(sess().me||{}).business||"both";
     renderMine();   // independent of the business fetches below
+    if(window.ackSlaNotice) window.ackSlaNotice(biz==="fixed"?"fixed":biz==="mobile"?"mvno":null, $("#ldAckSla"));   // unacknowledged-beyond-SLA notice
     const canM=views().includes("dashboard")&&biz!=="fixed", canF=views().includes("fixed")&&biz!=="mobile";
     // a single-business account sees a single-column home; the other column is removed, not greyed
     const mc=$("#ldMobile"), fc=$("#ldFixed"); if(mc) mc.hidden=(biz==="fixed"); if(fc) fc.hidden=(biz==="mobile");

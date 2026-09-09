@@ -320,4 +320,4 @@ async function sendHandoverMail(alert, { from, to, by, note, kind } = {}) {
   return out;
 }
 
-module.exports = { recipients, sendHtml, sendText, textToHtml, buildDigest, sendAlertDigest, sendHandoverMail, smtpConfigured, mailStatus, esc, shell, fromAddress };
+module.exports = { recipients, sendHtml, sendText, textToHtml, buildDigest, sendAlertDigest, sendHandoverMail, smtpConfigured, mailStatus, esc, shell, fromAddress, CONSOLE_URL };

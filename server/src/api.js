@@ -127,7 +127,7 @@ app.use(async (req, _res, next) => {
 // (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
 // through the stripped views (every Fixed route is requireView-gated). Kept as an allow-list so a new
 // Mobile endpoint is closed for the Fixed team by default.
-const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series)/;   // alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
+const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla)/;   // alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
 app.use('/api/', (req, res, next) => {
   if (req.business === 'fixed' && !FIXED_TEAM_ALLOW.test(req.originalUrl.split('?')[0]))
     return res.status(403).json({ error: 'Not available for the Fixed team — this endpoint belongs to the Mobile side.', business: 'fixed' });
@@ -3870,6 +3870,39 @@ app.get('/api/escalation/oncall', requireCap('manageSync'), async (req, res) => 
   try { res.json({ tier: req.query.tier, people: await escalation.onCall(req.query.tier) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* ── Acknowledgement SLA (ackSla.js): reminders 1/2/3 + management escalation for unacknowledged alerts ── */
+const ackSla = require('./ackSla');
+app.get('/api/ack-sla', requireCap('manageSync'), async (req, res) => {
+  try { res.json({ config: await ackSla.getConfig(), defaults: ackSla.DEFAULT_LADDER, history: await ackSla.history({ limit: 40 }) }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/ack-sla', requireCap('manageSync'), async (req, res) => {
+  try {
+    const next = await ackSla.setConfig(req.body || {});
+    await audit(req, 'ack_sla.config', null, { enabled: next.enabled, mobile: next.mobile, fixed: next.fixed });
+    res.json({ config: next });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+// live picture for the home notice, the Alerts banner and the STATUS chip — every signed-in user, own side(s) only
+app.get('/api/ack-sla/status', async (req, res) => {
+  try {
+    const seg = req.query.segment ? segment.forRequest(req, req.query.segment) : null;
+    const st = await ackSla.status(seg);
+    if (!seg) { const biz = req.business || 'both'; if (biz === 'mobile') st.fixed = null; if (biz === 'fixed') st.mobile = null; }
+    res.json(st);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// mail one reminder level to the requester (preview of the HTML), using a real open alert of that side or a sample
+app.post('/api/ack-sla/preview', requireCap('manageSync'), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const out = await ackSla.preview({ business: b.business, level: b.level, to: b.to || req.actor, alertId: b.alertId });
+    await audit(req, 'ack_sla.preview', String(out.alert.id), { business: b.business, level: out.level, to: out.to });
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/ack-sla/tick', requireCap('manageSync'), async (req, res) => {
+  try { const out = await ackSla.tick(); await audit(req, 'ack_sla.tick', null, { sent: out.sent, checked: out.checked }); res.json(out); } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 /* ---- shared navigation config (tab order + visibility) ----
  * Everyone reads it (so both boards render the shared layout); only super-admins
@@ -6314,6 +6347,7 @@ app.listen(PORT, async () => {
   try { await settings.applySchedule(); } catch (e) { console.error('scheduler init:', e.message); }
   try { require('./reportScheduler').start(); } catch (e) { console.error('sync-health scheduler:', e.message); }
   try { escalation.start(); } catch (e) { console.error('escalation scheduler:', e.message); }
+  try { ackSla.start(); } catch (e) { console.error('ack-sla scheduler:', e.message); }
   try { snTicket.start(); } catch (e) { console.error('ServiceNow poller:', e.message); }
   try { require('./apiLatencyBaseline').start(); } catch (e) { console.error('latency baseline:', e.message); }
   try { require('./prodSyncScheduler').start(); } catch (e) { console.error('prod-sync scheduler:', e.message); }

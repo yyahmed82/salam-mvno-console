@@ -500,7 +500,7 @@
       $("#alBody").innerHTML = strip + clsBar("alerts", allRows) + `<div class="okbox" style="margin-top:6px">No ${atab==="all"?"":"open "}alerts${CLSFILTER.alerts!=="all"?" in this class":""}. ${atab==="open"&&CLSFILTER.alerts==="all"?"All clear — or run a sync/simulate to evaluate rules against the replica.":""}</div>`;
       wireClsBar(renderAlerts); return;
     }
-    let h = strip + clsBar("alerts", allRows) + `<table class="alerts"><tr><th>SEV</th><th>INCIDENT</th><th>TEAM</th><th>OBSERVED</th><th>STATUS</th><th>OWNER</th><th>FIRST → LAST</th><th>ACTIONS</th></tr>`;
+    let h = strip + `<div id="alAckSla"></div>` + clsBar("alerts", allRows) + `<table class="alerts"><tr><th>SEV</th><th>INCIDENT</th><th>TEAM</th><th>OBSERVED</th><th>STATUS</th><th>OWNER</th><th>FIRST → LAST</th><th>ACTIONS</th></tr>`;
     ordered.forEach(a=>{
       const snoozed = a.snoozed_until && new Date(a.snoozed_until)>new Date();
       const cr = a.correlation||null;
@@ -513,7 +513,7 @@
       const stateTag = (a.status!=='open' ? `<span class="st-resolved">resolved</span>`
         : snoozed ? `<span style="color:#7c3aed;font-weight:700">snoozed</span>`
         : a.ack_at ? `<span style="color:#0891b2;font-weight:700">acked</span>`
-        : `<span class="st-open">open${a.breach_count>1?` ×${a.breach_count}`:""}</span>`) + snChip;
+        : `<span class="st-open">open${a.breach_count>1?` ×${a.breach_count}`:""}</span>`) + (window.ackSlaChip?window.ackSlaChip(a):"") + snChip;
       const me=((window.opsSession&&window.opsSession().me)||{}).email||"";
       const acts = (a.status==='open' && canAck()) ? `
         ${a.ack_at?(a.ack_by&&a.ack_by!==me?`<button class="pill" data-reack="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Take the acknowledgement over from ${esc(a.ack_by)} — logged in the incident discussion and the audit trail">Re-ack</button> `:'')+`<button class="pill" data-handover="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Hand the acknowledgement to a colleague on this side — logged">Hand over</button>`:`<button class="pill" data-ack="${a.id}" style="padding:3px 8px">Ack</button>`}
@@ -536,6 +536,7 @@
     h += `</table>`;
     $("#alBody").innerHTML = h;
     const body=$("#alBody");
+    if(window.ackSlaNotice) window.ackSlaNotice(SEG, $("#alAckSla"));   // "N unacknowledged beyond SLA" notice for this side
     body.querySelectorAll("[data-ack]").forEach(b=>b.addEventListener("click",()=>incAction(b.dataset.ack,"ack")));
     body.querySelectorAll("[data-reack]").forEach(b=>b.addEventListener("click",()=>{ const a=byId[b.dataset.reack]||{}; if(confirm(`Take over the acknowledgement from ${a.ack_by||"the current holder"}? This is logged on the incident.`)) incAction(b.dataset.reack,"ack"); }));
     body.querySelectorAll("[data-handover]").forEach(b=>b.addEventListener("click",()=>handoverPanel(b, byId[b.dataset.handover])));
