@@ -91,7 +91,7 @@ async function suggest(opts = {}) {
       suggested, current: manual != null ? manual : (auto != null ? auto : thr.globalMs), current_source: manual != null ? 'manual' : auto != null ? 'auto' : 'global',
       ratio_now: thr.globalMs ? Math.round(100 * base / (manual != null ? manual : auto != null ? auto : thr.globalMs)) : null };
   });
-  return { params: { days, topN, mult, floorMs }, source, globalMs: thr.globalMs, rows, config: cfg };
+  return { params: { days, topN, mult, floorMs }, source, globalMs: thr.globalMs, rows: out, config: cfg };
 }
 
 async function getConfig() { const v = (await settings.get('api_latency_thresholds')) || {}; return { ...DEFAULTS, ...(v.auto || {}) }; }
