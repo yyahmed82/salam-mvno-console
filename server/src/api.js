@@ -3107,7 +3107,8 @@ app.get('/api/alerts', async (req, res) => {
   res.json({ alerts: rows, segment: seg });
 });
 
-require('./alertHistory').mount(app, { audit });   // must precede /api/alerts/:id — XLSX history export for the SLA reviews
+require('./alertHistory').mount(app, { audit });    // must precede /api/alerts/:id — XLSX history export for the SLA reviews
+require('./alertActivity').mount(app, { audit });   // WHO DID WHAT on alerts/rules/config (11 Sep 2026) — same ordering rule
 app.get('/api/alerts/summary', async (req, res) => {
   const seg = segment.forRequest(req, req.query.segment); const W = segment.sqlWhere('a', 'rule_key', seg);
   const bySev = (await C.query(
@@ -4124,13 +4125,30 @@ app.patch('/api/rules/:id', requireCap('editRules'), async (req, res) => {
   for (const k of allowed) if (b[k] !== undefined) { vals.push(b[k]); sets.push(`${k}=$${vals.length}`); }
   if (b.dim !== undefined) { vals.push(JSON.stringify(b.dim || {})); sets.push(`dim=$${vals.length}`); }
   if (!sets.length) return res.json({ ok: true });
+  /* change history (11 Sep 2026): snapshot BEFORE the update so the history shows field-level from → to */
+  const before = (await C.query(`SELECT * FROM alert_rules WHERE id=$1`, [req.params.id])).rows[0];
   vals.push(req.params.id);
   await C.query(`UPDATE alert_rules SET ${sets.join(',')}, updated_at=now() WHERE id=$${vals.length}`, vals);
   await audit(req, 'rule.update', req.params.id, b);
+  if (before) {
+    const diff = {}; const norm = v => (v === undefined || v === null || v === '') ? null : (typeof v === 'object' ? JSON.stringify(v) : String(v));
+    for (const k of allowed.concat(['dim'])) if (b[k] !== undefined && norm(before[k]) !== norm(b[k])) diff[k] = { from: before[k] ?? null, to: b[k] ?? null };
+    if (Object.keys(diff).length) {
+      const action = Object.keys(diff).length === 1 && diff.enabled ? (b.enabled ? 'enable' : 'disable') : 'update';
+      await C.query(`INSERT INTO alert_rule_changes (rule_id, rule_key, action, actor, changes) VALUES ($1,$2,$3,$4,$5)`, [before.id, before.key, action, req.actor, JSON.stringify(diff)]).catch(() => {});
+    }
+  }
   res.json({ ok: true });
 });
 
 // firing history + config-change log for one rule
+app.get('/api/rules/changes', async (req, res) => {
+  try {
+    const seg = segment.forRequest(req, req.query.segment);
+    const rows = (await C.query(`SELECT c.id, c.rule_id, c.rule_key, r.name, c.action, c.actor, c.changes, c.at FROM alert_rule_changes c JOIN alert_rules r ON r.id=c.rule_id WHERE ${segment.sqlWhere('r', 'key', seg)} ORDER BY c.at DESC LIMIT $1`, [Math.min(500, Number(req.query.limit) || 100)])).rows;
+    res.json({ changes: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/api/rules/:id/history', async (req, res) => {
   try {
     const rule = (await C.query(`SELECT * FROM alert_rules WHERE id=$1`, [req.params.id])).rows[0];
@@ -4143,7 +4161,9 @@ app.get('/api/rules/:id/history', async (req, res) => {
       `SELECT actor, role, action, detail, at AS created_at FROM audit_log
        WHERE action LIKE 'rule.%' AND (target=$1 OR target=$2) ORDER BY at DESC LIMIT 50`,
       [rule.key, String(rule.id)])).rows;
-    res.json({ rule: { id: rule.id, key: rule.key, name: rule.name }, fires, changes });
+    // field-level history (alert_rule_changes, 11 Sep 2026+); older edits only exist as audit rows without the "from" side
+    const edits = (await C.query(`SELECT id, action, actor, changes, at FROM alert_rule_changes WHERE rule_key=$1 OR rule_id=$2 ORDER BY at DESC LIMIT 100`, [rule.key, rule.id]).catch(() => ({ rows: [] }))).rows;
+    res.json({ rule: { id: rule.id, key: rule.key, name: rule.name, updated_at: rule.updated_at }, fires, changes, edits, lastEdit: edits[0] || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -6188,6 +6208,8 @@ app.post('/api/rules', requireCap('editRules'), async (req, res) => {
        b.min_sample || 0, b.team || null, b.severity || 'P3', b.channel || 'any',
        JSON.stringify(b.dim || {}), b.active_from ?? null, b.active_to ?? null, b.runbook || null, b.trigger_codes || null]);
     await audit(req, 'rule.create', key, b);
+    await C.query(`INSERT INTO alert_rule_changes (rule_id, rule_key, action, actor, changes) SELECT id, key, 'create', $2, $3 FROM alert_rules WHERE key=$1`,
+      [key, req.actor, JSON.stringify(Object.fromEntries(Object.entries(b).map(([k, v]) => [k, { from: null, to: v }])))]).catch(() => {});
     res.json({ ok: true, key });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -93,9 +93,10 @@
       }).catch(()=>{});
     }
     // #alerts?tab=rules (e.g. the "Configure…" link from Monitoring › Gateway) forces that sub-tab once
-    const _mt=/[?&]tab=(open|all|rules|metrics|oncall)/.exec(location.hash||""); if(_mt && _mt[1]!==window.__alertTabDeep){ window.__alertTabDeep=_mt[1]; atab=_mt[1]; if(window.pf) window.pf.set('alerts_tab',atab); }
+    const _mt=/[?&]tab=(open|all|rules|metrics|oncall|activity)/.exec(location.hash||""); if(_mt && _mt[1]!==window.__alertTabDeep){ window.__alertTabDeep=_mt[1]; atab=_mt[1]; if(window.pf) window.pf.set('alerts_tab',atab); }
     const _tabs=$("#alTabs"); if(_tabs) _tabs.querySelectorAll(".pill").forEach(p=>p.classList.toggle("active", p.dataset.atab===atab));
     if(atab==="rules") renderRules();
+    else if(atab==="activity") renderActivity();
     else if(atab==="metrics") renderMetrics();
     else if(atab==="oncall"){ const b=$("#alBody"); b.innerHTML=""; if(window.renderOncallInto) window.renderOncallInto(b, SEG); else b.innerHTML='<div class="albanner">on-call module not loaded</div>';
       b.insertAdjacentHTML("afterbegin",`<div class="rl" style="max-width:640px;margin:0 auto 10px;color:var(--muted)">Share this snapshot with the on-call phone: <a href="#${SEG==="fixed"?"fixed-oncall":"oncall"}" style="color:var(--green)">${location.origin+location.pathname}#${SEG==="fixed"?"fixed-oncall":"oncall"}</a> — full-screen, single column, refreshes with the live sync.</div>`); }
@@ -900,7 +901,9 @@
     if(canEdit) h += `<div id="anomSection" style="margin-top:24px">${window.salamLoader?window.salamLoader("Loading anomaly signals…"):"Loading anomaly signals…"}</div>`;
     // Mobile only — latency alerting configuration (global p95, per-API overrides, per-API lines from history), last section
     if(SEG!=="fixed") h += `<div id="latSection" style="margin-top:24px"><h5 style="margin:0 0 6px;font-size:12px;letter-spacing:.06em;color:var(--muted)">LATENCY THRESHOLDS · api_latency_p95 / api_latency_per_api / api_latency_storm</h5><div id="latencyCfg"></div></div>`;
+    h += `<div id="ruleChanges" style="margin-top:24px"></div>`;
     $("#alBody").innerHTML = h;
+    renderRuleChanges();
     if(SEG!=="fixed") renderGateways();
     if(SEG!=="fixed"&&window.renderLatencyConfig) window.renderLatencyConfig($("#latencyCfg"));
     if(canEdit) renderErrClass();
@@ -917,6 +920,70 @@
     const nb=$("#newRuleBtn"); if(nb) nb.addEventListener("click", ()=>openRuleModal(null));
     const mb=$("#mailDigestBtn"); if(mb) mb.addEventListener("click", ()=>sendDigest(mb));
     if(canEdit) renderAnomalySignals();
+  }
+
+  /* ---- ACTIVITY LOG (11 Sep 2026): who did what on incidents, rules and the alerting configuration ----
+   * One row per console-user action, in plain words, with the exact before → after for rule edits.
+   * Filters (user / kind / period / free text) are server-side; XLSX export carries a per-user summary. */
+  const ACT={days:30,user:"",action:"all",q:""};
+  async function renderActivity(){
+    const b=$("#alBody");
+    b.innerHTML=window.salamLoader?window.salamLoader("Loading activity…"):"Loading…";
+    let d; try{ d=await api(`/api/alerts/activity?segment=${SEG}&days=${ACT.days}&user=${encodeURIComponent(ACT.user)}&action=${ACT.action}&q=${encodeURIComponent(ACT.q)}`); }
+    catch(e){ b.innerHTML=`<div class="albanner">Could not load the activity log — ${esc(e.message)}</div>`; return; }
+    const rows=d.activity||[], users=d.users||[];
+    const canX=window.opsCan&&window.opsCan("export");
+    const byUser={}; rows.forEach(r=>{ (byUser[r.actor_short] ||= {n:0,inc:0,rule:0,cfg:0}); byUser[r.actor_short].n++; byUser[r.actor_short][r.scope==="incident"?"inc":r.scope==="rule"?"rule":"cfg"]++; });
+    const tops=Object.entries(byUser).sort((a,b)=>b[1].n-a[1].n).slice(0,6);
+    const scopePill=sc=>`<span class="pill" style="padding:1px 7px;font-size:10.5px;cursor:default;border-left-color:${sc==="incident"?"var(--green)":sc==="rule"?"#2563eb":"#d97706"}">${sc}</span>`;
+    const sevCol=s=>s==="P1"?"#dc2626":s==="P2"?"#d97706":"var(--muted)";
+    let h=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <select id="acDays" class="jsearch">${[1,7,30,90,180].map(n=>`<option value="${n}" ${ACT.days==n?"selected":""}>last ${n} day${n>1?"s":""}</option>`).join("")}</select>
+      <select id="acUser" class="jsearch"><option value="">All users</option>${users.map(u=>`<option value="${esc(u)}" ${ACT.user===u?"selected":""}>${esc(u.split("@")[0])}</option>`).join("")}</select>
+      <select id="acAction" class="jsearch">${[["all","All actions"],["incident","On incidents (ack · handover · resolve · SNOW · comms)"],["rule","On alert rules (create · edit · enable)"],["config","On configuration (SLA · flap · anomaly · latency · agents)"]].map(([v,l])=>`<option value="${v}" ${ACT.action===v?"selected":""}>${l}</option>`).join("")}</select>
+      <input id="acQ" class="jsearch" type="search" placeholder="search user · action · incident · field…" value="${esc(ACT.q)}" style="min-width:230px;flex:1">
+      ${canX?`<button class="pill" id="acX" style="border-left-color:#2563eb">⤓ Export XLSX</button>`:""}
+      <span class="rl">${rows.length} action(s) · ${Object.keys(byUser).length} user(s)</span></div>`;
+    if(tops.length) h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${tops.map(([u,s])=>`<div class="stat" style="min-width:130px;cursor:pointer" data-acu="${esc(u)}"><b>${s.n}</b><span>${esc(u)} · ${s.inc} inc · ${s.rule} rule${s.cfg?` · ${s.cfg} cfg`:""}</span></div>`).join("")}</div>`;
+    if(!rows.length) h+=`<div class="okbox">No console-user action recorded for this filter. Everything a user does on an incident (acknowledge, hand over, snooze, resolve, ServiceNow, customer comms), on a rule (create, edit with before → after, enable/disable) and on the alerting configuration (SLA ladder, flap control, anomaly, latency, agents) is logged here with the exact detail.</div>`;
+    else h+=`<table class="alerts"><tr><th>WHEN (KSA)</th><th>USER</th><th>WHAT WAS DONE</th><th>DETAIL — exactly what changed</th><th>ON</th><th>SCOPE</th></tr>`+rows.map(r=>`<tr>
+      <td class="mono" style="color:var(--muted);white-space:nowrap">${esc(r.at_ksa)}</td>
+      <td><b>${esc(r.actor_short)}</b>${r.role?`<div class="rl">${esc(r.role)}</div>`:""}</td>
+      <td style="font-weight:700">${esc(r.label)}</td>
+      <td class="mono" style="font-size:11.5px;max-width:430px;word-break:break-word">${esc(r.what||"—")}</td>
+      <td style="max-width:230px">${r.scope==="incident"?`<a href="#${SEG==="fixed"?"fixed-alerts":"alerts"}?id=${r.target_id}" style="color:var(--green);text-decoration:none">${esc(r.target_name)}</a>`:r.scope==="rule"?`<button class="pill" data-achist="${esc(String(r.target_id))}" style="padding:2px 8px">${esc(r.target_name)}</button>`:`<span class="rl">console-wide</span>`}${r.severity?` <span style="color:${sevCol(r.severity)};font-weight:700">${esc(r.severity)}</span>`:""}</td>
+      <td>${scopePill(r.scope)}</td></tr>`).join("")+`</table>`;
+    b.innerHTML=h;
+    const re=()=>renderActivity();
+    $("#acDays").addEventListener("change",e=>{ ACT.days=Number(e.target.value); re(); });
+    $("#acUser").addEventListener("change",e=>{ ACT.user=e.target.value; re(); });
+    $("#acAction").addEventListener("change",e=>{ ACT.action=e.target.value; re(); });
+    let t=null; $("#acQ").addEventListener("input",e=>{ clearTimeout(t); ACT.q=e.target.value; t=setTimeout(re,350); });
+    b.querySelectorAll("[data-acu]").forEach(c=>c.addEventListener("click",()=>{ const full=users.find(u=>u.split("@")[0]===c.dataset.acu); ACT.user=full||c.dataset.acu; re(); }));
+    b.querySelectorAll("[data-achist]").forEach(x=>x.addEventListener("click",async()=>{ try{ const rl=(await api("/api/rules")).rules||[]; const r=rl.find(y=>String(y.key)===x.dataset.achist||String(y.id)===x.dataset.achist); if(r) openHistory(r.id,r); }catch(e){} }));
+    const xb=$("#acX"); if(xb) xb.addEventListener("click",async()=>{
+      const old=xb.textContent; xb.disabled=true; xb.textContent="… building";
+      try{ const r=await window.fetch(API+`/api/alerts/activity?segment=${SEG}&days=${ACT.days}&user=${encodeURIComponent(ACT.user)}&action=${ACT.action}&q=${encodeURIComponent(ACT.q)}&format=xlsx`);
+        if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||("HTTP "+r.status)); }
+        const cd=r.headers.get("Content-Disposition")||""; const m=/filename="([^"]+)"/.exec(cd); const blob=await r.blob(); const href=URL.createObjectURL(blob);
+        const a=document.createElement("a"); a.href=href; a.download=m?m[1]:`alert_activity_${SEG}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(href),2000); }
+      catch(e){ banner("Export failed — "+e.message); } finally{ xb.disabled=false; xb.textContent=old; } });
+  }
+
+  /* ---- rule change feed (11 Sep 2026): every edit / create / enable / disable on this side, newest first ---- */
+  async function renderRuleChanges(){
+    const box=$("#ruleChanges"); if(!box) return;
+    let d; try{ d=await api("/api/rules/changes?segment="+SEG+"&limit=40"); }catch(e){ box.innerHTML=""; return; }
+    const rows=d.changes||[];
+    let h=`<h5 style="margin:0 0 6px;font-size:12px;letter-spacing:.06em;color:var(--muted)">RULE CHANGE HISTORY · last ${rows.length} · who changed what</h5>`;
+    if(!rows.length){ box.innerHTML=h+`<div class="okbox">No rule edits recorded yet — tracking started 11 Sep 2026; every save, enable/disable and new rule lands here with the before/after values.</div>`; return; }
+    h+=`<table class="alerts"><tr><th>WHEN (KSA)</th><th>WHO</th><th>ACTION</th><th>RULE</th><th>CHANGES</th></tr>`+rows.map(r=>`<tr>
+      <td class="mono" style="color:var(--muted);white-space:nowrap">${window.KT?KT.dt(r.at):esc(r.at)}</td><td>${esc((r.actor||'—').split('@')[0])}</td>
+      <td><span class="mono" style="color:${r.action==='disable'?'#b91c1c':r.action==='enable'||r.action==='create'?'var(--green)':'#2563eb'};font-weight:700">${esc(r.action)}</span></td>
+      <td><button class="pill" data-hist="${r.rule_id}" style="padding:2px 8px">${esc(r.name||r.rule_key)}</button></td>
+      <td class="mono" style="font-size:11.5px">${Object.entries(r.changes||{}).slice(0,6).map(([k,v])=>`${esc(k)}: <span style="color:#b91c1c">${fmtV(v.from)}</span> → <span style="color:var(--green)">${fmtV(v.to)}</span>`).join(" · ")}${Object.keys(r.changes||{}).length>6?` · +${Object.keys(r.changes).length-6} more`:''}</td></tr>`).join("")+`</table>`;
+    box.innerHTML=h;
+    box.querySelectorAll("[data-hist]").forEach(b=>b.addEventListener("click",()=>{ const rid=b.dataset.hist; const r=rows.find(x=>String(x.rule_id)===rid); openHistory(rid,{name:r&&r.name}); }));
   }
 
   /* ---- anomaly-engine signals: enable/disable + tune sensitivity/lookback per signal ---- */
@@ -1063,6 +1130,7 @@
     $("#ruX").onclick=()=>$("#ruleModal").classList.remove("open");
   }
 
+  const fmtV=v=>v===null||v===undefined||v===''?'<span class="rl">—</span>':esc(typeof v==='object'?JSON.stringify(v):String(v)).slice(0,300);
   async function openHistory(id, rule){
     const card=$("#ruleModalCard");
     card.innerHTML=`<div class="modal-head"><span class="path">History · ${esc(rule?rule.name:'')}</span><span class="x" id="ruX">×</span></div>
@@ -1083,9 +1151,13 @@
         <td class="mono" style="color:var(--muted)">${timeAgo(f.last_seen_at)}</td>
         <td class="mono" style="color:var(--muted)">${f.resolved_at?timeAgo(f.resolved_at):'—'}</td>
       </tr>`).join("")+`</table>`; }
-    h+=`<h5 style="margin:16px 0 6px">CONFIG CHANGES (${changes.length})</h5>`;
-    if(!changes.length) h+=`<div class="okbox">No configuration changes recorded.</div>`;
-    else { h+=`<table class="alerts"><tr><th>WHEN</th><th>WHO</th><th>ACTION</th></tr>`+
+    const edits=d.edits||[];
+    h+=`<h5 style="margin:16px 0 6px">CHANGE HISTORY (${edits.length}) <span class="rl" style="font-weight:400">· who changed what, field by field</span></h5>`;
+    if(!edits.length) h+=`<div class="okbox">No edits recorded since change tracking started (11 Sep 2026).${changes.length?` ${changes.length} earlier edit(s) exist in the audit log below.`:''}</div>`;
+    else h+=edits.map(e=>`<div style="border:1px solid var(--line);border-left:3px solid ${e.action==='create'?'var(--green)':e.action==='disable'?'#dc2626':e.action==='enable'?'var(--green)':'#2563eb'};border-radius:8px;padding:8px 10px;margin:6px 0">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline"><b>${esc(e.action)}</b><span>${esc((e.actor||'—').split('@')[0])}</span><span class="mono rl">${window.KT?KT.dt(e.at):esc(e.at)} KSA · ${timeAgo(e.at)}</span></div>
+        <table class="alerts" style="margin-top:6px"><tr><th>FIELD</th><th>FROM</th><th>TO</th></tr>${Object.entries(e.changes||{}).map(([k,v])=>`<tr><td class="mono">${esc(k)}</td><td class="mono" style="color:#b91c1c;max-width:260px;word-break:break-word">${fmtV(v.from)}</td><td class="mono" style="color:var(--green);max-width:260px;word-break:break-word">${fmtV(v.to)}</td></tr>`).join("")}</table></div>`).join("");
+    if(changes.length){ h+=`<h5 style="margin:16px 0 6px">AUDIT LOG (${changes.length})</h5><table class="alerts"><tr><th>WHEN</th><th>WHO</th><th>ACTION</th></tr>`+
       changes.map(c=>`<tr><td class="mono" style="color:var(--muted)">${timeAgo(c.created_at)}</td><td>${esc(c.actor||'—')}</td><td class="mono">${esc(c.action)}</td></tr>`).join("")+`</table>`; }
     card.querySelector(".modal-body").innerHTML=h;
   }
@@ -1098,7 +1170,7 @@
     const chOpts=CHANNELS.map(c=>`<option value="${c}" ${sel((rule&&rule.channel)||'any',c)}>${c==='any'?'Any':c}</option>`).join("");
     const g=(k,d)=> rule&&rule[k]!=null?rule[k]:d;
     card.innerHTML=`<div class="modal-head"><span class="path">${isEdit?'Edit alert rule'+(rule.builtin?' (builtin)':''):'New alert rule'}</span><span class="x" id="ruX">×</span></div>
-      <div class="modal-body">
+      <div class="modal-body">${isEdit?`<div id="ruLast" class="rl" style="margin:-2px 0 8px"></div>`:''}
         <div class="ffull"><label>NAME</label><input id="ru_name" placeholder="e.g. Payment failure spike (web)" value="${esc(g('name',''))}"></div>
         <div class="fgrid" style="margin-top:10px">
           <div><label>METRIC</label><select id="ru_metric">${opts}</select></div>
@@ -1122,6 +1194,9 @@
         </div>
       </div>`;
     $("#ruleModal").classList.add("open");
+    if(isEdit){ api("/api/rules/"+rule.id+"/history").then(d=>{ const el=$("#ruLast"); if(!el) return; const e=d.lastEdit;
+      el.innerHTML=e?`Last changed by <b>${esc((e.actor||'—').split('@')[0])}</b> · ${window.KT?KT.dt(e.at):esc(e.at)} KSA · ${esc(e.action)} (${Object.keys(e.changes||{}).join(', ')||'—'}) · <a href="#" id="ruLastHist" style="color:var(--green)">full history</a>`:`No edits recorded since 11 Sep 2026 · <a href="#" id="ruLastHist" style="color:var(--green)">history</a>`;
+      const a=$("#ruLastHist"); if(a) a.onclick=ev=>{ ev.preventDefault(); openHistory(rule.id, rule); }; }).catch(()=>{}); }
     const gather=()=>({name:$("#ru_name").value.trim(), metric_key:$("#ru_metric").value, operator:$("#ru_op").value,
       threshold:Number($("#ru_thr").value), window_hours:Number($("#ru_win").value), min_sample:Number($("#ru_min").value),
       severity:$("#ru_sev").value, channel:$("#ru_ch").value, team:$("#ru_team").value||null, description:$("#ru_desc").value.trim(), trigger_codes:$("#ru_codes").value.trim()||null,

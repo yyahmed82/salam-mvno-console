@@ -3,6 +3,30 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.21] — 2026-09-11 — Activity log (who did what) · rule change history · reminder-1 fix
+### Added
+- **Alerts › Activity log** (`alertActivity.js`, new tab): every CONSOLE-USER action on alerting, in plain words —
+  on incidents (acknowledge, take over, hand over + note, assign, snooze, resolve, ServiceNow create/link/note,
+  customer comms, notify), on rules (create, edit with the exact `field: old → new`, enable/disable, re-seed) and on
+  the configuration (acknowledgement SLA ladder, flap control, anomaly engine, latency thresholds, escalation,
+  gateways, AI-agent policy). Filters by user / kind / period / free text, per-user tiles, links back to the incident
+  or the rule's history, and an XLSX export with a per-user summary sheet (`alert.activity.export`, audited).
+  API: `GET /api/alerts/activity?segment&days&user&action&q[&format=xlsx]`.
+- **Alert rule change history**: every save, enable/disable and new rule is recorded field by field (before → after,
+  who, when KSA) in `alert_rule_changes`. Shown in the rule's History modal ("Change history"), as a "Last changed by …"
+  line at the top of the Edit dialog, and as a "Rule change history" feed at the bottom of Alerts › Alert rules
+  (per business). API: `GET /api/rules/changes?segment&limit`, `edits`/`lastEdit` on `GET /api/rules/:id/history`.
+- Healthcheck "shared server saturation" now lists the top connection holders (user@client · app · idle age) and the
+  number of pgAdmin sessions — needs `pg_read_all_stats` on the console role (granted on 121, 10 Sep).
+- `sql.cjs --csv <file>` export.
+### Fixed
+- **Acknowledgement reminder 1 never sent since 9 Sep 09:52** ("not sent · 0 (0)"): the audience query for R1 bound a
+  parameter it did not use → Postgres error swallowed → empty audience. Business filter now always in the query; the
+  fallback to the Mail-alert audience works for R1 as designed; audience errors are logged.
+- Healthcheck CRIT mails: on change, then every `HC_CRIT_THROTTLE_MIN` (30) — not every 5-minute run.
+- Daily agent report goes to super admins only (or `AGENT_REPORT_TO`).
+- Agent 1 signature upsert type clash; LLM layer retries without `format=json` on empty Ollama answers.
+
 ## [2.0.0-alpha.20] — 2026-09-10 — AI agents (on-prem, separate PM2 services) + LLM layer with failover
 ### Added
 - **`server/src/llm.js`** — the one LLM layer for Yusr and the agents. PRIMARY (Ollama on 152 today) + optional FALLBACK

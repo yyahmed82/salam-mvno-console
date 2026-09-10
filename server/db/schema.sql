@@ -69,6 +69,17 @@ CREATE TABLE IF NOT EXISTS alerts (
   breach_count  integer NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_open ON alerts (status, rule_key);
+-- rule change history (11 Sep 2026): field-level before/after of every edit, create, toggle, reseed — who/when/what
+CREATE TABLE IF NOT EXISTS alert_rule_changes (
+  id        bigserial PRIMARY KEY,
+  rule_id   bigint,
+  rule_key  text NOT NULL,
+  action    text NOT NULL,                 -- create | update | enable | disable | reseed
+  actor     text,
+  changes   jsonb NOT NULL DEFAULT '{}',   -- { field: { from, to } }
+  at        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_rule_changes_key ON alert_rule_changes (rule_key, at DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_fired ON alerts (fired_at DESC);
 -- incident lifecycle fields on a firing (idempotent)
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ack_by        text;
