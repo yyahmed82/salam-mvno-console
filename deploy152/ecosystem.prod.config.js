@@ -54,5 +54,33 @@ module.exports = {
     error_file: path.join(APP_DIR, 'logs/console.err.log'),
     merge_logs: true,
     time: true
+  },
+  /* AI agents (10 Sep 2026) — separate processes, same .env and modules; a crash or a slow model never touches the
+   * console. Disable with AGENT_LOG_ENABLED=0 / AGENT_INCIDENT_ENABLED=0 (the process idles instead of exiting). */
+  {
+    name: (env.PM2_NAME || 'salam-unified').replace(/-unified$|$/, '') + '-agent-log',
+    cwd: path.join(APP_DIR, 'server'),
+    script: 'src/agentLog.js',
+    env,
+    max_restarts: 10,
+    restart_delay: 15000,
+    kill_timeout: 8000,
+    out_file: path.join(APP_DIR, 'logs/agent-log.out.log'),
+    error_file: path.join(APP_DIR, 'logs/agent-log.err.log'),
+    merge_logs: true,
+    time: true
+  },
+  {
+    name: (env.PM2_NAME || 'salam-unified').replace(/-unified$|$/, '') + '-agent-incident',
+    cwd: path.join(APP_DIR, 'server'),
+    script: 'src/agentIncident.js',
+    env,
+    max_restarts: 10,
+    restart_delay: 15000,
+    kill_timeout: 8000,
+    out_file: path.join(APP_DIR, 'logs/agent-incident.out.log'),
+    error_file: path.join(APP_DIR, 'logs/agent-incident.err.log'),
+    merge_logs: true,
+    time: true
   }]
 };

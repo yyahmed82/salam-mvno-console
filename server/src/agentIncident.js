@@ -1,0 +1,146 @@
+/* agentIncident.js — AGENT 2 · INCIDENT OPERATIONS (separate PM2 service `salam-agent-incident`, 10 Sep 2026).
+ *
+ * Loop (every AGENT_INCIDENT_INTERVAL_MIN, default 3): every OPEN alert that has no triage yet gets one —
+ *   1. deterministic first (no model): duplicate of an already-triaged open incident of the same rule (same
+ *      root, within 60 min) · flapping (reopen_count ≥ 3) · what the same rule did in the last 30 days (count,
+ *      median lifetime, how it was usually closed) · what else fired around the same minute (correlation) ·
+ *      the busiest error signatures Agent 1 saw in the last 2 h for that side;
+ *   2. then ONE LLM call with that evidence (JSON out): probable cause, customer impact, suggested team,
+ *      the first concrete action, priority hint, confidence;
+ *   3. the result is stored in agent_triage and posted as a SYSTEM comment on the incident — so it shows in the
+ *      incident drawer, in the history XLSX and in the reminder mails. Nothing is silent.
+ * Autonomy is opt-in per rule (settings key 'agent_incident'):
+ *   { mode:'advise'|'assist', autoTeam:[rule keys…], autoResolveDup:[rule keys…] }
+ *   'assist' + rule in autoTeam     → alerts.team is set to the suggested team when it is empty (audited comment)
+ *   'assist' + rule in autoResolveDup → an incident detected as an exact duplicate is resolved with a comment
+ *   Everything else stays advisory: humans acknowledge, assign, close. Reminders/escalations remain ackSla.js.
+ * Never writes to production or replica DBs; only unified_console. Disable with AGENT_INCIDENT_ENABLED=0 (idles). */
+'use strict';
+process.env.TZ = process.env.TZ || 'UTC';
+const db = require('./db');
+const llm = require('./llm');
+
+const CFG = {
+  enabled: process.env.AGENT_INCIDENT_ENABLED !== '0',
+  intervalMin: Math.max(1, Number(process.env.AGENT_INCIDENT_INTERVAL_MIN) || 3),
+  maxPerTick: Math.max(1, Number(process.env.AGENT_INCIDENT_MAX_PER_TICK) || 8),
+  lookbackHours: 48, dupWindowMin: 60,
+};
+const log = (...a) => console.log(`[AGENT-INC] ${new Date().toISOString()}`, ...a);
+const C = () => db.console;
+
+async function ensureSchema() {
+  await C().query(`CREATE TABLE IF NOT EXISTS agent_triage (
+      id bigserial PRIMARY KEY, alert_id bigint UNIQUE NOT NULL, segment text NOT NULL DEFAULT 'mvno', rule_key text, severity text,
+      kind text NOT NULL DEFAULT 'triage',            -- triage | duplicate | flapping
+      duplicate_of bigint, probable_cause text, impact text, suggested_team text, suggested_action text, priority_hint text, confidence real,
+      similar_30d integer, median_life_min integer, usual_close text, correlated jsonb NOT NULL DEFAULT '[]', top_signatures jsonb NOT NULL DEFAULT '[]',
+      model text, ms integer, applied jsonb NOT NULL DEFAULT '{}', helpful boolean, feedback_by text, feedback_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now())`);
+  await C().query(`CREATE INDEX IF NOT EXISTS idx_agent_triage_at ON agent_triage (created_at DESC)`);
+  await C().query(`CREATE TABLE IF NOT EXISTS agent_runs (id bigserial PRIMARY KEY, agent text NOT NULL, started_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz, ok boolean, stats jsonb NOT NULL DEFAULT '{}', error text)`);
+}
+async function getPolicy() {
+  try { const s = (await require('./settings').getSetting('agent_incident')) || {}; return { mode: s.mode === 'assist' ? 'assist' : 'advise', autoTeam: Array.isArray(s.autoTeam) ? s.autoTeam : [], autoResolveDup: Array.isArray(s.autoResolveDup) ? s.autoResolveDup : [] }; }
+  catch (_) { return { mode: 'advise', autoTeam: [], autoResolveDup: [] }; }
+}
+async function setPolicy(patch) { const settings = require('./settings'); const cur = (await settings.getSetting('agent_incident')) || {}; await settings.setSetting('agent_incident', { ...cur, ...(patch || {}) }); return getPolicy(); }
+const comment = (alertId, body) => C().query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'agent',$2)`, [alertId, body]).catch(() => {});
+const segOf = a => (a.segment === 'fixed' || /^fixed_/.test(a.rule_key || '')) ? 'fixed' : 'mvno';
+
+/* ---- evidence (deterministic) ---- */
+async function evidence(a) {
+  const q = C();
+  const seg = segOf(a);
+  const dup = (await q.query(`SELECT t.alert_id, a.fired_at FROM agent_triage t JOIN alerts a ON a.id=t.alert_id WHERE a.rule_key=$1 AND a.status='open' AND a.id<>$2 AND t.kind='triage' AND a.fired_at >= $3::timestamptz - ($4||' minutes')::interval ORDER BY a.fired_at DESC LIMIT 1`, [a.rule_key, a.id, a.fired_at, String(CFG.dupWindowMin)])).rows[0] || null;
+  const hist = (await q.query(`SELECT count(*)::int AS n, percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM (resolved_at - fired_at))/60)::int AS med_min,
+      count(*) FILTER (WHERE ack_at IS NOT NULL)::int AS acked, mode() WITHIN GROUP (ORDER BY coalesce(assignee, ack_by)) AS usual_person
+      FROM alerts WHERE rule_key=$1 AND id<>$2 AND status='resolved' AND fired_at >= now() - interval '30 days'`, [a.rule_key, a.id])).rows[0] || {};
+  const lastClose = (await q.query(`SELECT c.body FROM incident_comments c JOIN alerts x ON x.id=c.alert_id WHERE x.rule_key=$1 AND x.status='resolved' AND c.author<>'system' AND c.author<>'agent' ORDER BY c.created_at DESC LIMIT 1`, [a.rule_key])).rows[0];
+  const corr = (await q.query(`SELECT id, rule_key, name, severity, status FROM alerts WHERE id<>$1 AND fired_at BETWEEN $2::timestamptz - interval '10 minutes' AND $2::timestamptz + interval '10 minutes' ORDER BY severity, fired_at LIMIT 8`, [a.id, a.fired_at])).rows;
+  const sigs = (await q.query(`SELECT source, endpoint, code, last_24h, class, category, probable_cause FROM agent_signatures WHERE segment=$1 AND last_seen >= now() - interval '2 hours' ORDER BY last_24h DESC LIMIT 5`, [seg]).catch(() => ({ rows: [] }))).rows;
+  const rule = (await q.query(`SELECT description, team, alert_class, params FROM alert_rules WHERE key=$1`, [a.rule_key]).catch(() => ({ rows: [] }))).rows[0] || {};
+  const comments = (await q.query(`SELECT author, body FROM incident_comments WHERE alert_id=$1 ORDER BY created_at DESC LIMIT 3`, [a.id])).rows;
+  return { seg, dup, hist, lastClose: lastClose ? lastClose.body : null, corr, sigs, rule, comments };
+}
+
+const SYSTEM = `You are the incident-triage agent of the Salam Operations Console (telecom digital channels: Mobile MVNO on Rails/17-18 and Fixed FTTH/5G on Node nexus/146, payments via Tap/UPG/HyperPay, OTP via Unifonic, KYC via Nafath/Absher/Semati, BSS Oracle).
+You receive ONE open alert with deterministic evidence: what the rule measures, how the same rule behaved in the last 30 days and how it was closed, what fired around the same minute, and the busiest backend error signatures right now.
+Output ONLY a JSON object: {"probable_cause":"<= 30 words, concrete","impact":"<= 20 words, who/what is affected","suggested_team":"one of: TCS Mobile L2 | Sigma Fixed L2 | Salam Ops | Payments/Tap | BSS | Network | Vendor-OTP | Unknown","suggested_action":"<= 30 words, the first concrete check or fix","priority_hint":"P1|P2|P3|P4","confidence":0.0-1.0,"is_noise":true|false}
+Rules: do not invent numbers; if the evidence says the rule usually self-resolves in minutes and nothing else fired, say so and set is_noise=true; prefer the team that closed it last time; be specific about the endpoint/code when a signature matches the alert.`;
+
+async function triageOne(a, policy) {
+  const q = C(); const ev = await evidence(a); const t0 = Date.now();
+  // 1) exact duplicate → no model
+  if (ev.dup) {
+    await q.query(`INSERT INTO agent_triage (alert_id, segment, rule_key, severity, kind, duplicate_of, similar_30d, median_life_min, ms) VALUES ($1,$2,$3,$4,'duplicate',$5,$6,$7,$8) ON CONFLICT (alert_id) DO NOTHING`, [a.id, ev.seg, a.rule_key, a.severity, ev.dup.alert_id, ev.hist.n || 0, ev.hist.med_min || null, Date.now() - t0]);
+    let applied = {};
+    if (policy.mode === 'assist' && policy.autoResolveDup.includes(a.rule_key)) {
+      await q.query(`UPDATE alerts SET status='resolved', resolved_at=now() WHERE id=$1 AND status='open'`, [a.id]); applied = { resolved: true };
+      await q.query(`UPDATE agent_triage SET applied=$2 WHERE alert_id=$1`, [a.id, JSON.stringify(applied)]);
+    }
+    await comment(a.id, `🤖 Agent triage — duplicate of open incident #${ev.dup.alert_id} (same rule, fired within ${CFG.dupWindowMin} min).${applied.resolved ? ' Auto-resolved per policy (rule allow-listed).' : ' Work the original; this one carries no new information.'}`);
+    return { kind: 'duplicate', applied };
+  }
+  // 2) flapping → short note, model still asked (cause matters)
+  const flapping = Number(a.reopen_count || 0) >= 3;
+  const user = `ALERT #${a.id} · ${a.severity} · ${a.name} (rule ${a.rule_key}, ${ev.seg === 'fixed' ? 'Fixed' : 'Mobile'}) · fired ${a.fired_at} · breaches ${a.breach_count} · re-opens ${a.reopen_count || 0}
+Measure: ${a.metric_key} ${a.operator} ${a.threshold} · observed ${a.observed_value} (sample ${a.sample || '?'}, window ${a.window_hours || '?'} h)
+Message: ${String(a.message || '').slice(0, 300)}
+Rule doc: ${String(ev.rule.description || '-').slice(0, 300)} · class ${ev.rule.alert_class || '?'} · owner team on rule: ${ev.rule.team || a.team || '-'}
+Last 30 days, same rule: ${ev.hist.n || 0} incidents, median lifetime ${ev.hist.med_min == null ? '?' : ev.hist.med_min + ' min'}, acknowledged ${ev.hist.acked || 0}, usually handled by ${ev.hist.usual_person || 'nobody recorded'}
+Last human note on this rule: ${ev.lastClose ? String(ev.lastClose).slice(0, 200) : 'none'}
+Fired within ±10 min: ${ev.corr.length ? ev.corr.map(c => `#${c.id} ${c.severity} ${c.name} (${c.status})`).join('; ') : 'nothing else'}
+Busiest backend signatures last 2 h (${ev.seg}): ${ev.sigs.length ? ev.sigs.map(s => `${s.endpoint || s.source} code ${s.code || '-'} ×${s.last_24h} ${s.class || ''}${s.probable_cause ? ' — ' + s.probable_cause : ''}`).join('; ') : 'none recorded'}
+Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${String(c.body).slice(0, 120)}`).join(' | ') : 'none'}${flapping ? '\nNOTE: this incident is FLAPPING (re-opened ' + a.reopen_count + ' times).' : ''}`;
+  let out = null, j = null;
+  try { out = await llm.chat({ system: SYSTEM, user, purpose: 'agent-incident.triage', caller: 'salam-agent-incident', json: true, maxTokens: 320, numCtx: 4096, temperature: 0.1 }); j = out.json || null; }
+  catch (e) { if (e.llm) throw e; log('triage LLM failed', a.id, e.message); }
+  const team = j && j.suggested_team ? String(j.suggested_team).slice(0, 40) : (ev.rule.team || a.team || null);
+  await q.query(`INSERT INTO agent_triage (alert_id, segment, rule_key, severity, kind, probable_cause, impact, suggested_team, suggested_action, priority_hint, confidence, similar_30d, median_life_min, usual_close, correlated, top_signatures, model, ms)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT (alert_id) DO NOTHING`,
+    [a.id, ev.seg, a.rule_key, a.severity, flapping ? 'flapping' : 'triage', j ? String(j.probable_cause || '').slice(0, 400) : null, j ? String(j.impact || '').slice(0, 300) : null, team, j ? String(j.suggested_action || '').slice(0, 400) : null,
+      j ? String(j.priority_hint || '').slice(0, 3) : null, j ? (Number(j.confidence) || null) : null, ev.hist.n || 0, ev.hist.med_min || null, ev.lastClose ? String(ev.lastClose).slice(0, 200) : null,
+      JSON.stringify(ev.corr.map(c => ({ id: c.id, name: c.name, severity: c.severity, status: c.status }))), JSON.stringify(ev.sigs), out ? `${out.provider}:${out.model}` : null, Date.now() - t0]);
+  let applied = {};
+  if (policy.mode === 'assist' && policy.autoTeam.includes(a.rule_key) && team && !a.team) {
+    await q.query(`UPDATE alerts SET team=$2 WHERE id=$1 AND team IS NULL`, [a.id, team]); applied = { team };
+    await q.query(`UPDATE agent_triage SET applied=$2 WHERE alert_id=$1`, [a.id, JSON.stringify(applied)]);
+  }
+  const hist = `${ev.hist.n || 0}× in 30 d${ev.hist.med_min != null ? `, median ${ev.hist.med_min} min` : ''}`;
+  const body = j
+    ? `🤖 Agent triage (${(Number(j.confidence) * 100 || 0).toFixed(0)} % · ${j.priority_hint || a.severity}${j.is_noise ? ' · likely noise' : ''}${flapping ? ' · flapping' : ''})\nCause: ${j.probable_cause || '-'}\nImpact: ${j.impact || '-'}\nTeam: ${team || '-'}${applied.team ? ' (assigned by policy)' : ''}\nFirst action: ${j.suggested_action || '-'}\nHistory: ${hist}${ev.corr.length ? ` · fired with ${ev.corr.map(c => '#' + c.id).join(' ')}` : ''}`
+    : `🤖 Agent triage (evidence only — model unavailable)\nHistory: ${hist}${ev.lastClose ? `\nLast human note: ${String(ev.lastClose).slice(0, 160)}` : ''}${ev.corr.length ? `\nFired with ${ev.corr.map(c => '#' + c.id).join(' ')}` : ''}`;
+  await comment(a.id, body);
+  return { kind: flapping ? 'flapping' : 'triage', model: !!j, applied };
+}
+
+/* ---- the loop ---- */
+let busy = false;
+async function tick(limit) {
+  if (busy) return { skipped: true }; busy = true; const q = C();
+  const run = (await q.query(`INSERT INTO agent_runs (agent) VALUES ('incident') RETURNING id`)).rows[0].id;
+  const stats = { checked: 0, triaged: 0, duplicates: 0, flapping: 0, modelled: 0, errors: 0, applied: 0 };
+  try {
+    const policy = await getPolicy();
+    const rows = (await q.query(`SELECT a.* FROM alerts a LEFT JOIN agent_triage t ON t.alert_id=a.id WHERE a.status='open' AND t.id IS NULL AND a.fired_at >= now() - ($1||' hours')::interval ORDER BY a.severity ASC, a.fired_at DESC LIMIT $2`, [String(CFG.lookbackHours), limit || CFG.maxPerTick])).rows;
+    for (const a of rows) {
+      stats.checked++;
+      try { const r = await triageOne(a, policy); stats[r.kind === 'duplicate' ? 'duplicates' : r.kind === 'flapping' ? 'flapping' : 'triaged']++; if (r.model) stats.modelled++; if (r.applied && Object.keys(r.applied).length) stats.applied++; }
+      catch (e) { stats.errors++; log('triage failed', a.id, e.message); if (e.llm) break; }
+    }
+    await q.query(`UPDATE agent_runs SET finished_at=now(), ok=true, stats=$2 WHERE id=$1`, [run, JSON.stringify(stats)]);
+    if (stats.checked) log(`tick: ${stats.checked} open incident(s) → ${stats.triaged} triaged · ${stats.duplicates} duplicate(s) · ${stats.flapping} flapping · ${stats.modelled} with model · ${stats.applied} policy action(s)`);
+  } catch (e) { log('tick failed:', e.message); await q.query(`UPDATE agent_runs SET finished_at=now(), ok=false, error=$2, stats=$3 WHERE id=$1`, [run, e.message, JSON.stringify(stats)]).catch(() => {}); }
+  finally { busy = false; }
+  return stats;
+}
+
+async function main() {
+  await ensureSchema(); await llm.ensureSchema(); llm.start();
+  if (!CFG.enabled) { log('disabled (AGENT_INCIDENT_ENABLED=0) — idle'); setInterval(() => {}, 3600e3); return; }
+  log(`armed: every ${CFG.intervalMin} min · up to ${CFG.maxPerTick} incidents per tick · lookback ${CFG.lookbackHours} h`);
+  setTimeout(() => tick(), 15000); setInterval(() => tick(), CFG.intervalMin * 60000);
+}
+if (require.main === module) main().catch(e => { console.error('[AGENT-INC] fatal', e); process.exit(1); });
+module.exports = { tick, triageOne, evidence, ensureSchema, getPolicy, setPolicy };

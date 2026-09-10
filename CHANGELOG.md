@@ -3,6 +3,33 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.20] — 2026-09-10 — AI agents (on-prem, separate PM2 services) + LLM layer with failover
+### Added
+- **`server/src/llm.js`** — the one LLM layer for Yusr and the agents. PRIMARY (Ollama on 152 today) + optional FALLBACK
+  (any OpenAI-compatible on-prem engine: vLLM on a GPU VM, llama.cpp server, a second Ollama). Automatic failover on
+  timeout / 5xx / connection error, JSON mode, health probe every 60 s, every call audited in `llm_calls`. Config from
+  `.env` (`LLM_PRIMARY_*`, `LLM_FALLBACK_*`, defaults to `OLLAMA_URL/OLLAMA_MODEL` and Yusr's settings) or Settings › Agents.
+- **Agent 1 — log intelligence** (`server/src/agentLog.js`, PM2 `salam-agent-log`): every 15 min folds new
+  `api_error_events` + technical `api_traffic_events` into signatures (`agent_signatures`: masked pattern, counts,
+  hosts, sample), asks the model only about NEW signatures (category, business/technical, severity hint, probable
+  cause, owner team, runbook, confidence), daily report at 06:00 KSA (`agent_reports` + mail with XLSX to the
+  Mail-report audience). Review workflow (new → reviewed / known / ignored / ticketed) in Settings › Agents.
+- **Agent 2 — incident operations** (`server/src/agentIncident.js`, PM2 `salam-agent-incident`): every 3 min every
+  open incident without a triage note gets one — deterministic evidence first (duplicate of an open incident of the
+  same rule, flapping, 30-day history and median lifetime, what fired ±10 min, busiest signatures now), then one model
+  call → probable cause, impact, suggested team, first action, priority hint, confidence. Stored in `agent_triage`
+  and posted as an `agent` comment on the incident (visible in the drawer, the history XLSX and reminder mails).
+  Policy (`agent_incident` setting): **advise** (default, notes only) or **assist** with per-rule allow-lists
+  (auto-set owner team when empty · auto-resolve exact duplicates). Acknowledge / close / escalate stay human + SLA ladder.
+- **Settings › Agents** (`agents.js`, `#agents`, super-admin root tier): LLM primary/fallback cards with health,
+  configure + probe + test call, agent liveness KPIs, tabs Signatures (filters, review drawer), Triage notes (👍/👎
+  feedback), Daily reports, Policy, LLM calls; "run now" buttons for both agents and the daily report.
+- REST `agentsApi.js`: `/api/llm/{status,probe,config,test,calls}`, `/api/agents/{overview,signatures,reports,triage,policy,run/:agent}`.
+- PM2 ecosystem gains `salam-agent-log` and `salam-agent-incident` (same `.env`); `deploy.sh` restarts them with the console.
+### Changed
+- Yusr (`assist.js`) now calls `llm.chat` (same prompt layout and CPU-tuned options) — it inherits failover and audit;
+  `ping()` reports the fallback state too.
+
 ## [2.0.0-alpha.19] — 2026-09-10 — Acknowledgement SLA: reminders 1 / 2 / 3 + management escalation
 ### Added
 - **Acknowledgement SLA** (`server/src/ackSla.js`, `acksla.js`). L1 already receives every alert by mail with the SOP the

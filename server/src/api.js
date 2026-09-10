@@ -127,7 +127,7 @@ app.use(async (req, _res, next) => {
 // (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
 // through the stripped views (every Fixed route is requireView-gated). Kept as an allow-list so a new
 // Mobile endpoint is closed for the Fixed team by default.
-const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap)/;   // alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
+const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents)/;   // alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
 app.use('/api/', (req, res, next) => {
   if (req.business === 'fixed' && !FIXED_TEAM_ALLOW.test(req.originalUrl.split('?')[0]))
     return res.status(403).json({ error: 'Not available for the Fixed team — this endpoint belongs to the Mobile side.', business: 'fixed' });
@@ -1756,7 +1756,7 @@ app.get('/api/monitoring/health', async (req, res) => {
     }),
     // 4) Console DB
     timed(4000, async () => ({ ms: await ping(C) })),
-    // 5) Ollama / Yusr LLM
+    // 5) LLM layer (primary + fallback) / Yusr
     timed(6000, async () => { const cfg = await assist.getConfig(); const p = await assist.ping(); return { enabled: !!cfg.enabled, ...p }; }),
     // 6) OSB MySQL (uil_logs read-path feed)
     timed(5000, async () => { const o = require('./osbLog'); const st = o.status();
@@ -3894,6 +3894,8 @@ app.get('/api/escalation/oncall', requireCap('manageSync'), async (req, res) => 
   try { res.json({ tier: req.query.tier, people: await escalation.onCall(req.query.tier) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* ── Agents & LLM layer (agentsApi.js): /api/llm/*, /api/agents/* — root tier ── */
+require('./agentsApi').mount(app, { audit, requireCap, requireRoot });
 /* ── Acknowledgement SLA (ackSla.js): reminders 1/2/3 + management escalation for unacknowledged alerts ── */
 const ackSla = require('./ackSla');
 app.get('/api/ack-sla', requireCap('manageSync'), async (req, res) => {

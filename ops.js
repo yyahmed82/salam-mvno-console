@@ -233,6 +233,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     // SLA (SLO) page now lives in the Settings gear menu — root-tier only once ROOT_ADMINS is set
     // (root stays true for all when unset — matches the server failsafe).
     const slaMi = document.getElementById("slaMenuItem"); if(slaMi) slaMi.style.display = (SES.me && SES.me.root!==false)?"":"none";
+    const agMi = document.getElementById("agentsMenuItem"); if(agMi) agMi.style.display = (SES.me && SES.me.root!==false && SES.me.realRole==="super_admin")?"":"none";
     // if current active tab is hidden, jump to first visible
     const active = document.querySelector(".navtab.active");
     if(active && active.classList.contains("hidden")){

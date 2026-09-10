@@ -137,6 +137,10 @@ if [ "$RESTART" = "1" ]; then
   cd "$APP"
   OLDPID="$($PM2 pid "$PM2NAME" 2>/dev/null | tr -d '[:space:]' || true)"
   $PM2 delete "$PM2NAME" >/dev/null 2>&1 || true
+  # AI agents (10 Sep 2026): separate PM2 apps in the same ecosystem file — delete them too so they pick up new code
+  AGENT_BASE="${PM2NAME%-unified}"
+  $PM2 delete "$AGENT_BASE-agent-log" >/dev/null 2>&1 || true
+  $PM2 delete "$AGENT_BASE-agent-incident" >/dev/null 2>&1 || true
   $PM2 start ecosystem.prod.config.js >/dev/null && $PM2 save >/dev/null
   NEWPID="$($PM2 pid "$PM2NAME" 2>/dev/null | tr -d '[:space:]' || true)"
   echo "▸ pid ${OLDPID:-none} → ${NEWPID:-?}"

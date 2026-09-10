@@ -757,6 +757,8 @@
     let d; try{ d=await api("/api/alerts/"+id); }catch(e){ cell.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
     const comments=(d.comments||[]).map(c=>c.author==='system'
       ? `<div style="margin:4px 0;padding:4px 8px;border-left:3px solid #0891b2;background:rgba(8,145,178,.08);border-radius:6px"><span class="rl" style="color:#0891b2;font-weight:700">ownership</span> <span class="rl">${timeAgo(c.created_at)}</span><br>${esc(c.body)}</div>`
+      : c.author==='agent'
+      ? `<div style="margin:4px 0;padding:5px 8px;border-left:3px solid var(--green);background:var(--green-bg);border-radius:6px;white-space:pre-wrap"><span class="rl" style="color:var(--green);font-weight:700">agent triage</span> <span class="rl">${timeAgo(c.created_at)}</span><br>${esc(c.body)}</div>`
       : `<div style="margin:4px 0"><b>${esc((c.author||'').split("@")[0]||'—')}</b> <span class="rl">${timeAgo(c.created_at)}</span><br>${esc(c.body)}</div>`).join("")||`<div class="rl">No comments yet.</div>`;
     cell.innerHTML=`<div style="padding:10px 6px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div><h5 style="margin:0 0 6px">RUNBOOK</h5>${d.runbook?`<div style="font-size:12.5px;white-space:pre-wrap">${esc(d.runbook)}</div>`:`<div class="rl">No runbook set for this rule. Add one in the rule editor.</div>`}

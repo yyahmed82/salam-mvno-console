@@ -68,5 +68,6 @@ function run(script, args = []) {
   try { const tk = require('./tickets'); tk.ensureDir(); console.log(`Ticket uploads dir: ${tk.TICKETS_DIR}`); } catch (e) { console.log('Ticket uploads dir skipped:', e.message); }
 
   // hand off to the API server — reuses the same shared pools from ./db
+  try { require('./llm').start(); console.log('LLM layer armed (primary/fallback probe).'); } catch (e) { console.log('LLM layer skipped:', e.message); }
   require('./api.js');
 })().catch(e => { console.error('boot failed:', e.message); process.exit(1); });

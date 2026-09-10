@@ -523,53 +523,28 @@ async function ruleContext(q) {
   } catch (e) { return null; }
 }
 
-/* ------------------------------ Ollama ------------------------------ */
+/* ------------------------------ LLM (llm.js) ------------------------------ */
+/* 10 Sep 2026: Yusr no longer talks to Ollama directly — llm.js owns the providers (primary + on-prem fallback,
+ * automatic failover, llm_calls audit). The prompt layout and the CPU-tuned options are unchanged:
+ * 3 history turns × 500 chars, num_predict 220, num_ctx 4096, keep_alive 30m (set inside llm.js). */
+const llm = require('./llm');
 async function ollamaChat({ cfg, system, history, user }) {
-  const url = cfg.ollamaUrl.replace(/\/+$/, '') + '/api/chat';
   const messages = [{ role: 'system', content: system }];
-  /* History is the quietest way to blow the prompt budget: 8 turns × 2000 chars ≈ 4k tokens,
-   * and on CPU inference prompt-eval dominates the response time. Four short turns keep the
-   * conversation coherent for a fraction of the cost. */
   for (const h of (history || []).slice(-3)) {
     if (h && h.role && h.content) messages.push({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content).slice(0, 500) });
   }
   messages.push({ role: 'user', content: user });
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), cfg.timeoutMs);
-  try {
-    const r = await fetch(url, {
-      method: 'POST', signal: ctl.signal,
-      headers: { 'Content-Type': 'application/json' },
-      /* Tuned 17 Aug 2026 against measured behaviour on 152 (CPU-only, 8 cores, no GPU):
-       *   • keep_alive '30m' — /api/ps showed NO resident model, so every idle gap cost a
-       *     ~4s reload from disk. Sporadic L2 use = almost every question paid it.
-       *   • num_predict 220 — generation measured at ~18 tok/s, so 600 tokens = up to 33s on
-       *     its own and blew the 45s timeout. L2 answers are short; 220 is ample.
-       *   • num_ctx 4096 — bounds prompt-eval cost for the context block we send. */
-      body: JSON.stringify({ model: cfg.model, messages, stream: false, keep_alive: '30m',
-        options: { temperature: 0.2, num_predict: 220, num_ctx: 4096 } })
-    });
-    if (!r.ok) throw new Error('Ollama HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
-    const j = await r.json();
-    return (j.message && j.message.content || '').trim();
-  } finally { clearTimeout(timer); }
+  const out = await llm.chat({ messages, purpose: 'yusr.chat', caller: 'console', maxTokens: 220, numCtx: 4096, temperature: 0.2 });
+  return out.text;
 }
 
 async function ping() {
   const cfg = await getConfig();
-  const url = cfg.ollamaUrl.replace(/\/+$/, '') + '/api/tags';
   try {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 5000);
-    const r = await fetch(url, { signal: ctl.signal });
-    clearTimeout(t);
-    if (!r.ok) return { ok: false, error: 'HTTP ' + r.status, url: cfg.ollamaUrl };
-    const j = await r.json();
-    const models = (j.models || []).map(m => m.name);
-    return { ok: true, url: cfg.ollamaUrl, model: cfg.model, modelAvailable: models.some(m => m.startsWith(cfg.model)), models };
-  } catch (e) {
-    return { ok: false, error: e.name === 'AbortError' ? 'timeout' : e.message, url: cfg.ollamaUrl };
-  }
+    const h = await llm.probe(); const p = h.primary || {}; const lc = await llm.getConfig(); const pr = lc.primary || {};
+    if (p.ok) return { ok: true, url: pr.url || cfg.ollamaUrl, model: pr.model || cfg.model, modelAvailable: !!p.modelAvailable, models: p.models || [], fallback: h.fallback && h.fallback.configured ? { ok: !!h.fallback.ok, model: lc.fallback && lc.fallback.model } : null };
+    return { ok: false, error: p.error || 'unreachable', url: pr.url || cfg.ollamaUrl, fallback: h.fallback && h.fallback.configured ? { ok: !!h.fallback.ok, model: lc.fallback && lc.fallback.model } : null };
+  } catch (e) { return { ok: false, error: e.message, url: cfg.ollamaUrl }; }
 }
 
 /* ------------------------------ answer composition ------------------------------ */
@@ -1217,15 +1192,9 @@ async function warm() {
   try {
     const cfg = await getConfig();
     if (!cfg.enabled) return;
-    await fetch(String(cfg.ollamaUrl).replace(/\/$/, '') + '/api/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      /* Send the REAL system prompt: the point of warming is not just keeping the model in RAM
-       * but keeping the evaluated SYSTEM_BASE prefix in the slot cache. The old bare-'ok' warm
-       * EVICTED that cache every 20 minutes, forcing full re-evaluation on the next question. */
-      body: JSON.stringify({ model: cfg.model, keep_alive: '30m', stream: false,
-        messages: [{ role: 'system', content: SYSTEM_BASE }, { role: 'user', content: 'ok' }],
-        options: { num_predict: 1, num_ctx: 4096, temperature: 0.2 } })
-    });
+    /* Send the REAL system prompt: the point of warming is not just keeping the model in RAM but keeping the
+     * evaluated SYSTEM_BASE prefix in the slot cache (a bare 'ok' warm evicted it every 20 minutes). */
+    await llm.chat({ messages: [{ role: 'system', content: SYSTEM_BASE }, { role: 'user', content: 'ok' }], purpose: 'yusr.warm', caller: 'console', maxTokens: 1, numCtx: 4096, temperature: 0.2 });
   } catch (e) { /* best effort */ }
 }
 function startWarm() {

@@ -16,6 +16,7 @@
     "settings-notify":{notifyClone:true}, "settings-notify-clone":{notifyClone:true},
     "settings-assist":{assistClone:true}, "settings-assist-clone":{assistClone:true},
     "settings-demo":{demoCfg:true},
+    agents:{agents:true}, "settings-agents":{agents:true},
     audit:{audit:true}, tickets:{tickets:true}
   };
   const VIEW_HASH={landing:"home",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
@@ -97,7 +98,7 @@
     // hidden root tier: #audit + #settings-assist deep links bounce home for excluded sessions
     // (me.root===false only when ROOT_ADMINS is configured server-side; the API 403s regardless)
     const notRoot=()=>{ const s=(window.opsSession&&window.opsSession())||{}; return s.me && s.me.root===false; };
-    if((r.audit||r.assistClone||r.sla) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash("dashboard"); return; }
+    if((r.audit||r.assistClone||r.sla||r.agents) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash("dashboard"); return; }
     // role guard — before any renderer runs (the API 403s regardless; this makes it CLEAR)
     hideDenied();
     const need=neededFor(r);
@@ -111,6 +112,7 @@
     else if(r.sla){ window.openSla && window.openSla(); }
     else if(r.notifyClone){ window.openNotifyClone && window.openNotifyClone(); }
     else if(r.assistClone){ window.openAssistClone && window.openAssistClone(); }
+    else if(r.agents){ window.openAgents && window.openAgents(); }
     else if(r.demoCfg){ window.openDemoSettings && window.openDemoSettings(); }
     else if(r.oncall){ window.openOncall && window.openOncall(r.seg==="fixed"?"fixed":"mvno"); if(r.seg==="fixed"){ const fb=document.querySelector('.navtab[data-fxtab="alerts"]'); if(fb) fb.classList.add("active"); } }
     else if(r.settings){ window.openSettings && window.openSettings(r.settings);
