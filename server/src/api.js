@@ -3095,6 +3095,7 @@ app.get('/api/alerts', async (req, res) => {
   res.json({ alerts: rows, segment: seg });
 });
 
+require('./alertHistory').mount(app, { audit });   // must precede /api/alerts/:id — XLSX history export for the SLA reviews
 app.get('/api/alerts/summary', async (req, res) => {
   const seg = segment.forRequest(req, req.query.segment); const W = segment.sqlWhere('a', 'rule_key', seg);
   const bySev = (await C.query(
@@ -3253,7 +3254,6 @@ app.post('/api/alerts/:id/comms/preview', async (req, res) => {   // rendered HT
 });
 // The cases behind an alert — the exact rows the metric counted when it fired (json preview · xlsx · pdf)
 require('./alertCases').mount(app, { audit });
-require('./alertHistory').mount(app, { audit });   // XLSX history export for the SLA reviews
 // READ-ONLY ServiceNow correlation: incidents this console alert likely caused
 app.get('/api/alerts/:id/tickets', async (req, res) => {
   try {
