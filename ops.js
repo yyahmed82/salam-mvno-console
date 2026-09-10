@@ -1385,6 +1385,9 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   const fmtLogin = d => { if(!d) return "—"; const x=new Date(d); return x.toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"numeric",month:"short"})+", "+x.toLocaleTimeString("en-GB",{timeZone:"Asia/Riyadh",hour:"2-digit",minute:"2-digit"}); };
 
   async function renderUserMgmt(){
+    // 10 Sep 2026 — the redesigned page lives in usersmgmt.js (KPIs, multi-criteria filters, bulk, activity); this
+    // legacy renderer stays only as a fallback when that module is not loaded
+    if(window.renderUsersMgmt){ return window.renderUsersMgmt($("#usersBody")); }
     let users=[];
     await refreshRoleList();
     try { users=(await api("/api/users")).users||[]; }
@@ -1580,6 +1583,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     ov.classList.add("open"); document.addEventListener("keydown",escUserPanel);
     setTimeout(()=>{ const n=body.querySelector("#udName"); if(n) n.focus(); },120);
   }
+  window.openUserPanel=openUserPanel;   // used by usersmgmt.js
   function escUserPanel(e){ if(e.key==="Escape") closeUserPanel(); }
   function closeUserPanel(){ const ov=document.getElementById("userPanel"); if(ov) ov.classList.remove("open"); document.removeEventListener("keydown",escUserPanel); }
 
@@ -1605,7 +1609,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   if(burger) burger.addEventListener("click", ()=> navEl.classList.toggle("open"));
 
   // settings now opens from the header gear (see app.js) — expose its loaders
-  window.opsLoadSettings = ()=>{ loadSyncSettings(); loadUsersAndRoles(); loadConfigChanges(); if(navEl) navEl.classList.remove("open"); };
+  window.opsLoadSettings = ()=>{ loadSyncSettings(); loadUsersAndRoles(); loadConfigChanges(); if(window.renderWorkbenchInline) window.renderWorkbenchInline(); if(navEl) navEl.classList.remove("open"); };
 
   // ---- wire nav + lazy loads ----
   document.querySelectorAll(".navtab").forEach(b=>{

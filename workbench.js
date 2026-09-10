@@ -279,13 +279,15 @@
   const rf=$("#wbRefresh"); if(rf) rf.addEventListener("click",()=>{ state.actors=null; state.rules=null; setTab(tab); });
   // L2 Workbench lives in the Settings gear menu (no nav tab) — activate its view directly,
   // mirroring window.openTicketsBoard: deactivate all tabs + views, clear the gear/opsBar, then render.
+  /* 10 Sep 2026 — the Workbench now lives at the bottom of Settings › Users (#workbenchHost): #workbench opens that
+   * page and scrolls to it; the page itself renders the workbench when the account may see it. */
+  window.renderWorkbenchInline=()=>{
+    const host=$("#workbenchHost"); if(!host) return;
+    const me=(window.opsSession&&window.opsSession().me)||{}; const allowed=((me.views)||[]).includes("workbench");
+    host.hidden=!allowed; if(allowed) render();
+  };
   window.openWorkbench=()=>{
-    const v=$("#view-workbench"); if(!v) return;
-    document.querySelectorAll(".navtab").forEach(x=>x.classList.remove("active"));
-    document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
-    const gear=document.getElementById("settingsBtn"); if(gear) gear.classList.remove("on");
-    const ob=document.getElementById("opsBar"); if(ob) ob.classList.remove("show");
-    v.classList.add("active");
-    render();
+    if(window.openSettings) window.openSettings("users");
+    setTimeout(()=>{ window.renderWorkbenchInline(); const host=$("#workbenchHost"); if(host&&!host.hidden) host.scrollIntoView({behavior:"smooth",block:"start"}); },150);
   };
 })();

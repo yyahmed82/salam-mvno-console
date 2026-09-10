@@ -386,7 +386,19 @@ app.delete('/api/roles/:name', requireSuper, async (req, res) => {
 
 app.get('/api/users', requireCap('manageUsers'), async (req, res) => {
   const r = await C.query(`SELECT * FROM console_users ORDER BY role, email`);
-  res.json({ users: r.rows });
+  // per-user activity for the users page (10 Sep 2026): actions 30 d, acknowledgements 30 d, last action
+  const activity = {};
+  try {
+    const a = (await C.query(`SELECT lower(actor) AS email, count(*)::int AS actions30, max(at) AS last_action,
+        count(*) FILTER (WHERE action IN ('incident.ack','incident.handover','incident.resolve','incident.snooze'))::int AS incident_actions30,
+        count(*) FILTER (WHERE action='LOGIN')::int AS logins30
+      FROM audit_log WHERE at >= now() - interval '30 days' AND actor IS NOT NULL GROUP BY 1`)).rows;
+    for (const x of a) activity[x.email] = { actions30: x.actions30, incident_actions30: x.incident_actions30, logins30: x.logins30, last_action: x.last_action };
+    const k = (await C.query(`SELECT lower(ack_by) AS email, count(*)::int AS acks30, round(avg(EXTRACT(EPOCH FROM (ack_at - fired_at))/60))::int AS mtta_min
+      FROM alerts WHERE ack_at >= now() - interval '30 days' AND ack_by IS NOT NULL GROUP BY 1`)).rows;
+    for (const x of k) activity[x.email] = { ...(activity[x.email] || {}), acks30: x.acks30, mtta_min: x.mtta_min };
+  } catch (_) {}
+  res.json({ users: r.rows, activity });
 });
 // safety invariant: never let the LAST enabled Super Admin be demoted/disabled (self-lockout guard)
 const IS_SUPER = (role, arr) => role === 'super_admin' || (Array.isArray(arr) && arr.includes('super_admin'));

@@ -41,6 +41,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
 - **⬇ History XLSX** on both Alerts pages (`alertHistory.js`, cap export, audited): every incident of the business over N days
   with Summary per rule (incidents, breaches, re-opens, ack %, median minutes to ack, reminders), Incidents, Updates
   (incident timeline), Audit and Reminders sheets — the evidence pack for the SLA reviews. `GET /api/alerts/history`.
+- **User management, redesigned** (`usersmgmt.js`): a KPI strip (users, seen 7 d, never signed in, blocked, Mobile /
+  Fixed, ACK holders per side, mail alert / report, acks 30 d, super admins — click a KPI to filter), a multi-criteria
+  filter bar (free search on name / e-mail / team / mobile / role / tag, business, status, ACK holder, mail, roles,
+  tags, sort), a compact people table (avatar, roles as chips, inline switches for mail alert / report and ACK
+  Mobile / Fixed, 30-day activity: actions, acks, MTTA, last action), selection + **bulk actions** (ACK holder,
+  mail flags, business, block / unblock), "New user" as a drawer, CSV export. `GET /api/users` now returns
+  `activity` per user. **The L2 Workbench moved to the bottom of this page** (`#workbench` opens Settings › Users and
+  scrolls to it), so every console-user topic — accounts, roles, permissions, PII, activity, replay, tests, docs — is
+  one page.
 - API: `GET/PUT /api/ack-sla` (manageSync), `GET/PUT /api/alert-flap`, `GET /api/ack-sla/status`, `POST /api/ack-sla/preview`, `POST /api/ack-sla/tick`.
   Schema: `alerts.ack_reminder_level`, `alerts.ack_reminder_at`, table `alert_reminders` (self-seeded at boot).
 
