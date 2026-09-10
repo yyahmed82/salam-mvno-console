@@ -75,13 +75,29 @@ async function callProvider(p, { messages, maxTokens, temperature, numCtx, json 
       const j = await r.json(); return ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '').trim();
     }
     const body = { model: p.model, messages, stream: false, keep_alive: '30m', options: { temperature: temperature ?? 0.2, num_predict: maxTokens || 220, num_ctx: numCtx || 4096 } };
-    if (json) body.format = 'json';
-    const r = await fetch(`${p.url}/api/chat`, { method: 'POST', headers, body: JSON.stringify(body), signal: ctl.signal });
-    if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
-    const j = await r.json(); return ((j.message && j.message.content) || '').trim();
+    /* Ollama's format:'json' grammar makes llama3.1 emit end-of-text immediately on some prompts (200 OK, 0 chars,
+     * ~250 ms — seen on 152, 10 Sep 2026). So: try with the grammar, and when the answer is empty retry ONCE without it —
+     * the prompt already asks for a JSON object and chat() extracts the first {…} block. */
+    const once = async withFormat => {
+      const b = withFormat ? { ...body, format: 'json' } : body;
+      const r = await fetch(`${p.url}/api/chat`, { method: 'POST', headers, body: JSON.stringify(b), signal: ctl.signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
+      const j = await r.json(); return ((j.message && j.message.content) || '').trim();
+    };
+    let text = await once(!!json);
+    if (json && !text) { console.warn(`[LLM] ${p.model}: empty answer with format=json — retrying without the grammar`); text = await once(false); }
+    return text;
   } finally { clearTimeout(timer); }
 }
 
+/* first {...} block of a model answer → object (tolerates ```json fences, prose before/after, trailing commas) */
+function extractJson(text) {
+  const t = String(text || '').replace(/```json|```/gi, '').trim(); if (!t) return null;
+  const tryParse = s => { try { return JSON.parse(s); } catch (_) { try { return JSON.parse(s.replace(/,\s*([}\]])/g, '$1')); } catch (__) { return null; } } };
+  const direct = tryParse(t); if (direct && typeof direct === 'object') return direct;
+  const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b <= a) return null;
+  return tryParse(t.slice(a, b + 1));
+}
 /* chat({ system, messages|user, purpose, caller, maxTokens, temperature, numCtx, json }) → { text, json?, provider, model, ms, fallback } */
 async function chat(opts = {}) {
   const cfg = await getConfig(); await ensureSchema();
@@ -97,7 +113,7 @@ async function chat(opts = {}) {
     try {
       const text = await callProvider(p, opts);
       const out = { text, provider: name, kind: p.kind, model: p.model, ms: Date.now() - t0, fallback: i > 0 };
-      if (opts.json) { try { out.json = JSON.parse(text.replace(/^```json\s*|```$/g, '').trim()); } catch (e) { out.json = null; out.jsonError = e.message; } }
+      if (opts.json) { out.json = extractJson(text); if (!out.json) out.jsonError = text ? 'no JSON object in answer' : 'empty answer'; }
       db.console.query(`INSERT INTO llm_calls (purpose, caller, provider, model, ms, ok, fallback, prompt_chars, answer_chars) VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8)`,
         [opts.purpose || 'chat', opts.caller || null, `${name}:${p.kind}`, p.model, out.ms, out.fallback, promptChars, text.length]).catch(() => {});
       return out;

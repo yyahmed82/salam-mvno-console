@@ -67,11 +67,11 @@ async function ingest(since, now) {
   let upserts = 0; const fresh = [];
   for (const e of seen.values()) {
     const r = await C.query(`INSERT INTO agent_signatures (sig_hash, source, segment, endpoint, code, message_pattern, sample, hosts, first_seen, last_seen, total, last_24h)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::bigint,$12::integer)
         ON CONFLICT (sig_hash) DO UPDATE SET last_seen=GREATEST(agent_signatures.last_seen, EXCLUDED.last_seen), total=agent_signatures.total+EXCLUDED.total,
           last_24h=CASE WHEN agent_signatures.last_seen >= now() - interval '24 hours' THEN agent_signatures.last_24h + EXCLUDED.last_24h ELSE EXCLUDED.last_24h END,
           hosts=(SELECT array_agg(DISTINCT x) FROM unnest(agent_signatures.hosts || EXCLUDED.hosts) x), sample=COALESCE(agent_signatures.sample, EXCLUDED.sample)
-        RETURNING id, (xmax = 0) AS inserted`, [e.h, e.src, e.seg, e.endpoint, e.code, e.pattern, e.sample, [...e.hosts], e.first, e.last, e.n]);
+        RETURNING id, (xmax = 0) AS inserted`, [e.h, e.src, e.seg, e.endpoint, e.code, e.pattern, e.sample, [...e.hosts], e.first, e.last, e.n, e.n]);
     upserts++; if (r.rows[0].inserted) fresh.push(r.rows[0].id);
   }
   await C.query(`UPDATE agent_signatures s SET last_24h = 0 WHERE last_seen < now() - interval '24 hours' AND last_24h <> 0`).catch(() => {});
