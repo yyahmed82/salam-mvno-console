@@ -251,13 +251,17 @@ async function buildMail(a, { level, repeat, elapsedMin, business, seg, cfg, sib
  *               the holders remain the ones addressed). Management is a separate list, mailed separately at R3. */
 async function audience(seg, level) {
   const col = seg === 'fixed' ? 'ack_fixed' : 'ack_mobile', biz = SEG.BUSINESS_OF[seg];
-  const wide = level >= 2 ? ` OR (mail_alert = true AND (business = $1 OR business = 'both' OR business IS NULL))` : '';
+  /* 11 Sep 2026 fix: R1 passed [biz] to a query with no $1 (the mail_alert clause is R2/R3 only) → Postgres "bind message
+   * supplies 1 parameters" → catch → [] → "not sent · 0 (0)" on EVERY reminder 1 since 9 Sep 09:52. The business filter
+   * is now always in the query (holders are per side anyway), so the parameter is always bound. */
+  const bizWhere = `(business = $1 OR business = 'both' OR business IS NULL)`;
+  const wide = level >= 2 ? ` OR (mail_alert = true AND ${bizWhere})` : '';
   try {
-    const rows = (await db.console.query(`SELECT email, name, business, ${col} AS holder FROM console_users WHERE enabled = true AND (${col} = true${wide}) ORDER BY ${col} DESC NULLS LAST, email`, [biz])).rows;
+    const rows = (await db.console.query(`SELECT email, name, business, ${col} AS holder FROM console_users WHERE enabled = true AND ((${col} = true AND ${bizWhere})${wide}) ORDER BY ${col} DESC NULLS LAST, email`, [biz])).rows;
     if (rows.length) return rows;
     // nobody flagged as ACK holder on this side yet (users list → ACK HOLDER) — never let a reminder go nowhere: fall back to the alert-mail audience
-    return (await db.console.query(`SELECT email, name, business, false AS holder FROM console_users WHERE enabled = true AND mail_alert = true AND (business = $1 OR business = 'both' OR business IS NULL) ORDER BY email`, [biz])).rows;
-  } catch (e) { return []; }
+    return (await db.console.query(`SELECT email, name, business, false AS holder FROM console_users WHERE enabled = true AND mail_alert = true AND ${bizWhere} ORDER BY email`, [biz])).rows;
+  } catch (e) { console.error('[ack-sla] audience query failed:', e.message); return []; }
 }
 async function sendReminder(a, ctx) {
   const notify = require('./notify');

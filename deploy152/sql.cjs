@@ -10,6 +10,7 @@
  *   node sql.cjs "SELECT count(*) FROM onboarding_orders WHERE created_at >= now() - interval '1 day'"
  *   node sql.cjs -f query.sql           # run SQL from a file
  *   node sql.cjs --console "SELECT ..." # run against the CONSOLE db instead of the replica
+ *   node sql.cjs --csv /tmp/out.csv "SELECT ..."   # write the result as CSV (UTF-8, header row) instead of a table
  *
  * Safety: refuses anything that isn't a single read (no INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE/…);
  * wraps the query READ ONLY; 60s statement timeout. Source = replica (onboarding_orders, payments,
@@ -19,13 +20,14 @@
 process.env.TZ = 'UTC'; // half 1 of the TZ fix: node-pg parses `timestamp WITHOUT time zone` in process TZ
 
 const args = process.argv.slice(2);
-let useConsole = false, useProd = false, useNexus = false, fromFile = null, sqlParts = [];
+let useConsole = false, useProd = false, useNexus = false, fromFile = null, csvOut = null, sqlParts = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
   if (a === '--console') useConsole = true;
   else if (a === '--prod') useProd = true;   // read-only peek at PRODUCTION (the sync source)
   else if (a === '--nexus') useNexus = true; // Fixed backend (nexus: workflow_states / api_logs) — read-only
   else if (a === '-f' || a === '--file') fromFile = args[++i];
+  else if (a === '--csv') csvOut = args[++i];   // export: CSV file path (10 Sep 2026, RA extracts)
   // psql muscle memory: accept -c / --command so `csql -c "SELECT …"` works. Without this the
   // flag was joined INTO the query, which then failed the read-only guard with a misleading
   // "only read queries are allowed" — the query was fine, the wrapper had eaten the flag.
@@ -75,7 +77,13 @@ const pool = new Pool({ connectionString: url, max: 1, statement_timeout: 60000,
     const r = await c.query(sql);
     const ms = Date.now() - t0;
     const rows = r.rows || [];
-    if (!rows.length) { console.log('(0 rows)'); }
+    if (csvOut) {
+      const cols = rows.length ? Object.keys(rows[0]) : (r.fields || []).map(f => f.name);
+      const q = v => { const s = (v === null || v === undefined) ? '' : (v instanceof Date ? v.toISOString() : typeof v === 'object' ? JSON.stringify(v) : String(v)); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      require('fs').writeFileSync(csvOut, '\ufeff' + [cols.join(',')].concat(rows.map(row => cols.map(k => q(row[k])).join(','))).join('\n') + '\n');
+      console.error(`→ ${csvOut} (${rows.length} rows, ${cols.length} columns)`);
+    }
+    else if (!rows.length) { console.log('(0 rows)'); }
     else {
       const cols = Object.keys(rows[0]);
       const w = {}; cols.forEach(k => { w[k] = k.length; });

@@ -65,8 +65,20 @@ async function dbChecks(checks, label, cs, { shared, srcOnly, local } = {}) {
         const r = (await pool.query(`SELECT (SELECT count(*) FROM pg_stat_activity) AS used, current_setting('max_connections') AS max`)).rows[0];
         const u = Number(r.used), m = Number(r.max) || 100, pct = Math.round(u / m * 100);
         const l = lvl(pct, T.usedWarn, T.usedCrit);
+        /* WHO is holding the slots (10 Sep 2026): console_app has pg_read_all_stats on 121, so the probe can name the
+         * consumers — otherwise a CRIT only says "94/100" and everyone assumes it is the console. Top 8 by
+         * (user · app · client), with idle share and the oldest idle age, so the recipient can act on it. */
+        let who = '';
+        try {
+          const top = (await pool.query(`SELECT usename, coalesce(nullif(application_name,''),'-') AS app, coalesce(client_addr::text,'local') AS addr,
+                count(*)::int AS n, count(*) FILTER (WHERE state='idle')::int AS idle, count(*) FILTER (WHERE state='idle in transaction')::int AS idle_tx,
+                to_char(max(now()-state_change) FILTER (WHERE state='idle'), 'HH24:MI') AS oldest_idle
+              FROM pg_stat_activity WHERE backend_type='client backend' AND pid <> pg_backend_pid() GROUP BY 1,2,3 ORDER BY n DESC LIMIT 8`)).rows;
+          const pgadmin = (await pool.query(`SELECT count(*)::int AS n FROM pg_stat_activity WHERE application_name LIKE 'pgAdmin%'`)).rows[0].n;
+          if (top.length) who = ` Top holders: ` + top.map(t => `${t.usename}@${t.addr} ${t.app.replace(/^pgAdmin 4 - .*/, 'pgAdmin')} ×${t.n}${t.idle ? ` (${t.idle} idle${t.oldest_idle ? ', oldest ' + t.oldest_idle : ''})` : ''}${t.idle_tx ? ` ⚠${t.idle_tx} idle-in-tx` : ''}`).join(' · ') + `. pgAdmin sessions in total: ${pgadmin}. Console role: ${mine}.`;
+        } catch (_) { who = ' (session breakdown unavailable — grant pg_read_all_stats to the console role to see who holds the slots)'; }
         checks.push({ name: `${label} — shared server saturation`, level: l, prodImpact: l === 'CRIT',
-          detail: `${u}/${m} connections used (${pct}%) on the SHARED server ${hostOf(cs)} (${shared}). warn ≥${T.usedWarn}%, crit ≥${T.usedCrit}%.` });
+          detail: `${u}/${m} connections used (${pct}%) on the SHARED server ${hostOf(cs)} (${shared}). warn ≥${T.usedWarn}%, crit ≥${T.usedCrit}%.${who}` });
       }
     });
   } catch (e) { checks.push({ name: `${label} — probe`, level: 'WARN', prodImpact: false, detail: `probe failed: ${e.message}` }); }
@@ -124,7 +136,10 @@ async function run({ always = false, printOnly = false } = {}) {
   const changed = prev.level !== overall;
   const throttleOk = !prev.lastEmailAt || Date.now() - prev.lastEmailAt > throttleMs;
   let should = always || process.env.HEALTHCHECK_ALWAYS === '1';
-  if (!should) should = overall === 'CRIT' || (overall === 'WARN' && (changed || throttleOk)) || (overall === 'OK' && (prev.level === 'WARN' || prev.level === 'CRIT'));
+  /* CRIT: on change, then every HC_CRIT_THROTTLE_MIN (default 30) while it persists — not every 5-minute run (10 Sep 2026: 8 identical
+   * "94/100" mails in 40 min taught nobody anything). A flap OK→CRIT→OK still mails both edges. */
+  const critThrottleOk = !prev.lastEmailAt || Date.now() - prev.lastEmailAt > num('HC_CRIT_THROTTLE_MIN', 30) * 60000;
+  if (!should) should = (overall === 'CRIT' && (changed || critThrottleOk)) || (overall === 'WARN' && (changed || throttleOk)) || (overall === 'OK' && (prev.level === 'WARN' || prev.level === 'CRIT'));
   const to = String(process.env.HEALTHCHECK_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
   out.recipients = to; out.reason = should ? (always ? 'forced' : overall) : 'suppressed (no state change, within throttle window)';
   if (should && to.length) {
@@ -168,7 +183,7 @@ function buildHtml({ checks, overall, prodRisk, now }) {
         <tr><th style="${th}">Status</th><th style="${th}">Check</th><th style="${th}">Detail · thresholds</th></tr>
         ${rows}
       </table>
-      <div style="color:#94a3b8;font-size:12px;margin-top:14px">Read-only probes (pg_stat_activity + OS reads), each on its own single connection which is excluded from the count. The console never writes to prod tables. Mail policy: CRIT every run · WARN on change, then every ${num('HC_WARN_THROTTLE_MIN', 120)} min · OK once as the recovery notice.</div>
+      <div style="color:#94a3b8;font-size:12px;margin-top:14px">Read-only probes (pg_stat_activity + OS reads), each on its own single connection which is excluded from the count. The console never writes to prod tables. Mail policy: CRIT on change, then every ${num('HC_CRIT_THROTTLE_MIN', 30)} min while it persists · WARN on change, then every ${num('HC_WARN_THROTTLE_MIN', 120)} min · OK once as the recovery notice.</div>
       <div style="color:#94a3b8;font-size:12px;margin-top:8px">— Salam Operations Console · prod-safety healthcheck</div>`;
   return notify.shell({ title: 'Prod-safety healthcheck — Operations Console', pill: overall + (prodRisk ? ' · PROD IMPACT' : ''), pillColor: color(overall), bodyHtml });
 }
