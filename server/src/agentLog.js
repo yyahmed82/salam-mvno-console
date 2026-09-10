@@ -128,7 +128,10 @@ async function dailyReport(now) {
   let mailed = 0;
   try {
     const notify = require('./notify'); const xlsx = require('./xlsx'); const ksa = iso => new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Riyadh', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).replace(',', '');
-    const to = await notify.recipients('mail_report');
+    /* Audience = SUPER ADMINS ONLY (raw endpoints, unassessed causes — not a vendor/management report).
+     * AGENT_REPORT_TO=a@salam.sa,b@salam.sa in .env replaces that list explicitly. */
+    let to = String(process.env.AGENT_REPORT_TO || '').split(/[,\s;]+/).filter(x => /@/.test(x)).map(email => ({ email }));
+    if (!to.length) to = (await C.query(`SELECT email, name FROM console_users WHERE enabled = true AND (role = 'super_admin' OR 'super_admin' = ANY(coalesce(roles, '{}'))) ORDER BY email`)).rows;
     const rowsTop = [['Source', 'Endpoint', 'Code', 'Class', 'Category', 'Severity', 'Events 24h', 'Total', 'First seen', 'Last seen', 'Probable cause', 'Owner', 'Pattern']].concat(top.map(t => [t.source, t.endpoint, t.code, t.class, t.category, t.severity_hint, t.last_24h, Number(t.total), ksa(t.first_seen), ksa(t.last_seen), t.probable_cause, t.owner_team, t.message_pattern]));
     const rowsNew = [['Source', 'Endpoint', 'Code', 'Class', 'Category', 'Severity', 'Total', 'Confidence', 'Probable cause', 'Owner', 'Runbook', 'Pattern']].concat(fresh.map(t => [t.source, t.endpoint, t.code, t.class, t.category, t.severity_hint, Number(t.total), t.confidence, t.probable_cause, t.owner_team, t.runbook, t.message_pattern]));
     const buf = xlsx.build([{ name: 'Top signatures 24h', rows: rowsTop, numericCols: [6, 7], widths: [12, 36, 8, 10, 12, 8, 10, 10, 16, 16, 40, 14, 60] }, { name: 'New signatures', rows: rowsNew, numericCols: [6, 7], widths: [12, 36, 8, 10, 12, 8, 8, 9, 40, 14, 40, 60] }, { name: 'Hourly', rows: [['Hour (KSA)', 'App errors']].concat(hourly.map(h => [String(h.h).slice(0, 16), h.n])), numericCols: [1] }]);

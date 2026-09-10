@@ -12,8 +12,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
 - **Agent 1 — log intelligence** (`server/src/agentLog.js`, PM2 `salam-agent-log`): every 15 min folds new
   `api_error_events` + technical `api_traffic_events` into signatures (`agent_signatures`: masked pattern, counts,
   hosts, sample), asks the model only about NEW signatures (category, business/technical, severity hint, probable
-  cause, owner team, runbook, confidence), daily report at 06:00 KSA (`agent_reports` + mail with XLSX to the
-  Mail-report audience). Review workflow (new → reviewed / known / ignored / ticketed) in Settings › Agents.
+  cause, owner team, runbook, confidence), daily report at 06:00 KSA (`agent_reports` + mail with XLSX to **super admins only**,
+  or `AGENT_REPORT_TO`). Review workflow (new → reviewed / known / ignored / ticketed) in Settings › Agents.
 - **Agent 2 — incident operations** (`server/src/agentIncident.js`, PM2 `salam-agent-incident`): every 3 min every
   open incident without a triage note gets one — deterministic evidence first (duplicate of an open incident of the
   same rule, flapping, 30-day history and median lifetime, what fired ±10 min, busiest signatures now), then one model
