@@ -23,7 +23,9 @@ const short = (s, n) => { s = String(s == null ? '' : s); return s.length > n ? 
 
 /* action → human label + one line saying exactly what was done */
 function humanise(action, detail, extra) {
-  const d = detail && typeof detail === 'object' ? detail : {};
+  let d = detail;
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch (_) { d = {}; } }
+  if (!d || typeof d !== 'object') d = {};
   const M = {
     'incident.ack': ['Acknowledged', () => `Took ownership${d.to && d.to !== d.by ? ` (${who(d.to)})` : ''}${d.note ? ` — "${short(d.note, 120)}"` : ''}`],
     'incident.reack': ['Ack taken over', () => `${who(d.from)} → ${who(d.to)}${d.note ? ` — "${short(d.note, 120)}"` : ''}`],
@@ -73,16 +75,24 @@ async function data({ seg, days = 30, user = '', action = '', q = '', limit = 50
   p.push(lim);
 
   /* audit rows + the incident / rule they touched (target is the alert id for incident.*, the rule id or key for rule.*) */
+  /* The numeric id is computed in a CTE with a CASE guard: audit targets are free text (an alert id for
+   * incident.*, a rule id OR key for rule.*, null for config actions), so casting inside a JOIN condition
+   * would make Postgres try 'sla_ladder'::bigint on unrelated rows and fail the whole query (HTTP 500). */
   const rows = (await C.query(`
-    SELECT a.id, a.at, a.actor, a.role, a.action, a.target, a.detail, a.ip, a.ua,
+    WITH src AS (
+      SELECT a.id, a.at, a.actor, a.role, a.action, a.target, a.detail, a.ip, a.ua,
+             CASE WHEN a.target ~ '^[0-9]+$' THEN a.target::bigint END AS tid
+        FROM audit_log a
+       WHERE ${where}
+       ORDER BY a.at DESC
+       LIMIT $${p.length})
+    SELECT s.*,
            al.name AS alert_name, al.severity AS alert_severity, al.rule_key AS alert_rule, al.status AS alert_status,
            r.name AS rule_name, r.key AS rule_key_j, r.severity AS rule_severity
-      FROM audit_log a
-      LEFT JOIN alerts al       ON a.action LIKE 'incident.%' AND a.target ~ '^[0-9]+$' AND al.id = a.target::bigint
-      LEFT JOIN alert_rules r   ON a.action LIKE 'rule.%'     AND (( a.target ~ '^[0-9]+$' AND r.id = a.target::bigint) OR r.key = a.target)
-     WHERE ${where}
-     ORDER BY a.at DESC
-     LIMIT $${p.length}`, p)).rows;
+      FROM src s
+      LEFT JOIN alerts al      ON s.action LIKE 'incident.%' AND al.id = s.tid
+      LEFT JOIN alert_rules r  ON s.action LIKE 'rule.%' AND (r.id = s.tid OR r.key = s.target)
+     ORDER BY s.at DESC`, p)).rows;
 
   /* field-level rule diffs, keyed by the audit row they belong to (same actor, same rule, within 2 s) */
   const edits = (await C.query(`SELECT rule_id, rule_key, action, actor, changes, at FROM alert_rule_changes WHERE at >= now() - ($1 || ' days')::interval ORDER BY at DESC LIMIT 2000`, [String(days)]).catch(() => ({ rows: [] }))).rows;
@@ -148,7 +158,7 @@ function mount(app, { audit }) {
       }
       const users = [...new Set(rows.map(r => r.actor))].sort();
       res.json({ segment: seg, days, count: rows.length, users, activity: rows.slice(0, 800) });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error('[activity]', e.message); res.status(500).json({ error: 'activity log: ' + e.message }); }
   });
 }
 module.exports = { mount, data, xlsx, humanise };
