@@ -17,9 +17,30 @@
   const view = { k: 1, tx: 0, ty: 0 };
   const W = 168, H = 50, VGAP = 18, COLW = 250, MX = 34, MY = 46;
 
+  /* the page now has two tabs — the source map draws into #t2Host, the HLD atlas sits in #t2Hld */
+  function hostEl() { return document.getElementById("t2Host") || document.getElementById("view-topology2"); }
+  function selectTab(t) {
+    const map = t !== "hld";
+    const mh = document.getElementById("t2Host"), hl = document.getElementById("t2Hld");
+    if (!mh || !hl) return;
+    mh.hidden = !map; hl.hidden = map;
+    document.querySelectorAll("#t2Tabs .t2tab").forEach(b => b.classList.toggle("active", (b.dataset.t2 === "hld") === !map));
+    /* the atlas is only fetched the first time it is asked for */
+    const f = document.getElementById("mvnoHldFrame");
+    if (!map && f && !f.getAttribute("src")) f.setAttribute("src", f.dataset.src || "mvno-rodod-hld.html");
+    try { history.replaceState(null, "", "#" + (map ? "topology2" : "mvnohld")); } catch (e) {}
+  }
+  function wireTabs() {
+    document.querySelectorAll("#t2Tabs .t2tab").forEach(b => {
+      if (b.__wired) return; b.__wired = true;
+      b.addEventListener("click", () => selectTab(b.dataset.t2));
+    });
+  }
+
   function boot() {
     T = window.TOPO2;
-    const host = document.getElementById("view-topology2");
+    wireTabs();
+    const host = hostEl();
     if (!host || !T) return;
     host.innerHTML = shell();
     layout();
@@ -386,9 +407,10 @@
   function applyTransform() { $("#t2Pan").setAttribute("transform", `translate(${view.tx},${view.ty}) scale(${view.k})`); }
 
   // public entry — called by the router / nav
-  window.openTopology2 = function () {
-    const host = document.getElementById("view-topology2");
-    if (host && (!T || !host.querySelector("#t2Svg"))) boot();
+  window.openTopology2 = function (tab) {
+    const host = hostEl();
+    if (host && (!T || !host.querySelector("#t2Svg"))) boot(); else wireTabs();
+    selectTab(tab === "hld" ? "hld" : "map");
   };
   // build eagerly once DOM + data are present (so the tab is instant)
   if (document.readyState !== "loading") setTimeout(boot, 0);

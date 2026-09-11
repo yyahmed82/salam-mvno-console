@@ -64,6 +64,8 @@ svg#topo{display:block;width:100%;height:100%;cursor:grab}svg#topo:active{cursor
 .node{cursor:pointer;transition:filter .18s,opacity .18s}.node.dim{opacity:.16}.node.hot .card{stroke:var(--hub);stroke-width:2.2;filter:drop-shadow(0 0 22px rgba(0,245,212,.5))}.node:hover .card{stroke:currentColor;stroke-width:2;filter:drop-shadow(0 0 18px currentColor)}
 .card{fill:var(--cardFill);stroke:var(--line2);stroke-width:1.1;rx:14}.cardHead{fill:currentColor;font-size:12px;font-weight:900;pointer-events:none}.cardSub{fill:var(--muted);font-size:10px;font-weight:650;pointer-events:none}.cardMeta{fill:var(--dim);font-size:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;pointer-events:none}.mini{fill:var(--miniFill);stroke:var(--miniLine);rx:6}.miniText{fill:var(--ink);font-size:8.5px;font-weight:800;pointer-events:none}.badge{fill:color-mix(in srgb,var(--hub) 14%,transparent);stroke:color-mix(in srgb,var(--hub) 50%,transparent);rx:99}.badgeText{fill:var(--hub);font-size:8px;font-weight:950;letter-spacing:1px;pointer-events:none}
 .hubRing{fill:none;stroke:var(--hub);opacity:.35}.hubRing.a{stroke-dasharray:2 5;animation:spin 46s linear infinite;transform-origin:center;transform-box:fill-box}.hubRing.b{stroke-dasharray:8 4;animation:spin 30s linear infinite reverse;transform-origin:center;transform-box:fill-box}@keyframes spin{to{transform:rotate(360deg)}}
+.canvas:fullscreen,.canvas:-webkit-full-screen{background:var(--bg);padding:0}
+.canvas:fullscreen svg#topo,.canvas:-webkit-full-screen svg#topo{width:100vw;height:100vh}
 @media(max-width:1100px){.workspace{grid-template-columns:1fr}.side,.panel{display:none}}
 @media print{.side,.panel,.canvasHud,.legend{display:none}.workspace{grid-template-columns:1fr}.app{grid-template-rows:auto 1fr}body{overflow:visible}}
 </style>
@@ -205,7 +207,7 @@ $('zoomIn').onclick=()=>zoom(1.18);$('zoomOut').onclick=()=>zoom(.85);$('fit').o
 const fsOn=()=>!!(document.fullscreenElement||document.webkitFullscreenElement);
 function paintFs(){const b=$('fsBtn');if(!b)return;b.textContent=fsOn()?'⤢ Exit full screen':'⛶ Full screen';b.title=fsOn()?'Leave full screen (Esc)':'Full screen — Esc to leave';}
 function fsToggle(){
-  const el=document.querySelector('.app')||document.documentElement;
+  const el=document.querySelector('.canvas')||document.documentElement;   // canvas only: the map, its toolbar and legend
   try{
     if(fsOn()){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); return; }
     const p=(el.requestFullscreen||el.webkitRequestFullscreen).call(el);

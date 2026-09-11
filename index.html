@@ -943,6 +943,11 @@
   .difmore[open] summary{margin-bottom:3px}
   @media (max-width:700px){ .detcell{max-width:none} .difk{min-width:0} }
   .owner{display:flex;gap:8px;align-items:flex-start}
+  /* Topology sub-tabs (merged page) */
+  .t2tabs{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 12px}
+  .t2tab{font:inherit;font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:10px;cursor:pointer;background:transparent;color:var(--ink);border:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .t2tab:hover{border-color:var(--green,#0e9f5a)}
+  .t2tab.active{font-weight:800;background:var(--card,#fff);border-color:var(--green,#0e9f5a);border-bottom:3px solid var(--green,#0e9f5a)}
   .oav{flex:none;width:30px;height:30px;border-radius:50%;color:#fff;font-weight:800;font-size:11.5px;display:inline-flex;align-items:center;justify-content:center;letter-spacing:.3px;margin-top:1px}
   /* shared person chip (person.js) — a service caller is a square badge, never a human avatar */
   .oav.oavsvc{border-radius:8px;background:var(--line);color:var(--muted);font-size:14px}
@@ -1412,7 +1417,6 @@
         <div class="navgroup">EXPLORE</div>
         <button class="navtab hm-nav" data-view="topology2"><span class="num">◈</span><span>Topology <small>Source-linked map · API docs · code refs</small></span></button>
         <button class="navtab hm-nav" data-view="apigw"><span class="num">⬡</span><span>API Gateway<small>Full HLD — DMS integration &amp; infra topology (IPs) · live</small></span></button>
-        <button class="navtab hm-nav" data-view="mvnohld"><span class="num">◉</span><span>BSS Topology<small>DMS + RODOD HLD — channels → APIGW → OSB → Oracle BSS · journeys</small></span></button>
         <button class="navtab hm-nav" data-view="otodocs"><span class="num">⌘</span><span>OTO Courier API<small>Full imported reference · linked from journeys</small></span></button>
         <button class="navtab hm-nav" data-view="tapdocs"><span class="num">₮</span><span>Tap / UPG API<small>Payment-gateway reference · response codes · webhooks</small></span></button>
         <button class="navtab hm-nav" data-view="salamdocs"><span class="num">◫</span><span>Salam API docs<small>Selfcare/Apollo API reference (from the app repo)</small></span></button>
@@ -1606,7 +1610,26 @@
     </div>
   </section>
 
-  <section id="view-topology2" class="view"></section>
+  <!-- TOPOLOGY (11 Sep 2026) — one Explore page, two views of the same estate: the source-linked
+       payments map (topology2.js renders into #t2Host) and the DMS + RODOD BSS HLD atlas. Merged from
+       two separate nav items so there is one "Topology" to look for. -->
+  <section id="view-topology2" class="view">
+    <div class="t2tabs" id="t2Tabs">
+      <button type="button" class="t2tab active" data-t2="map" title="Source-linked component map: controllers, managers, models, gateways, workers — click through to the code">◈ Payments · source map</button>
+      <button type="button" class="t2tab" data-t2="hld" title="DMS + RODOD HLD: channels → LB → API GW → OSB → Oracle BSS, with the network/NP and partner loops">◉ DMS + RODOD BSS · HLD</button>
+    </div>
+    <div id="t2Host"></div>
+    <div id="t2Hld" hidden>
+      <div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px;flex-wrap:wrap">
+        <div><div style="font-size:18px;font-weight:800">MVNO · DMS + RODOD Oracle BSS Topology</div>
+          <div class="rl">Channels → LB → API GW → OSB → RODOD Oracle BSS, with the network/NP and partner loops. Pick a <b>Journey</b> to trace a request and its return path. Source: DMS + RODOD HLD.</div></div>
+        <a href="mvno-rodod-hld.html" target="_blank" rel="noopener" class="pill" style="margin-left:auto;text-decoration:none">Open full ↗</a>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card,#fff)">
+        <iframe id="mvnoHldFrame" data-src="mvno-rodod-hld.html" title="MVNO DMS + RODOD topology" allow="fullscreen" allowfullscreen style="width:100%;height:calc(100vh - 260px);min-height:720px;border:0;display:block"></iframe>
+      </div>
+    </div>
+  </section>
 
   <section id="view-explorer" class="view">
     <div class="panel">
@@ -1779,18 +1802,6 @@
   </section>
 
 
-  <!-- MVNO BSS Topology (11 Sep 2026) — same iframe pattern as #view-apigw. The atlas carries its
-       own light/dark palette; theme.js posts the console theme in, so flipping the console reskins it. -->
-  <section id="view-mvnohld" class="view">
-    <div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px;flex-wrap:wrap">
-      <div><div style="font-size:18px;font-weight:800">MVNO · DMS + RODOD Oracle BSS Topology</div>
-        <div class="rl">Channels → LB → API GW → OSB → RODOD Oracle BSS, with the network/NP and partner loops. Pick a <b>Journey</b> in the atlas to trace a request and its return path. Source: DMS + RODOD HLD.</div></div>
-      <a href="mvno-rodod-hld.html" target="_blank" rel="noopener" class="pill" style="margin-left:auto;text-decoration:none">Open full ↗</a>
-    </div>
-    <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card,#fff)">
-      <iframe id="mvnoHldFrame" src="mvno-rodod-hld.html" title="MVNO DMS + RODOD topology" allow="fullscreen" allowfullscreen loading="lazy" style="width:100%;height:calc(100vh - 220px);min-height:760px;border:0;display:block"></iframe>
-    </div>
-  </section>
 
   <section id="view-audit" class="view"></section>
 
@@ -1846,7 +1857,7 @@
 <script src="opsbar.js?v=20260910c"></script>
 <script src="analytics.js?v=20260910c"></script>
 <script src="topo2data.js?v=20260910c"></script>
-<script src="topology2.js?v=20260910c"></script>
+<script src="topology2.js?v=20260911w"></script>
 <script src="tapdocs.js?v=20260910c"></script>
 <script src="screensflow.js?v=20260910c"></script>
 <script src="home.js?v=20260910c"></script>
@@ -1890,7 +1901,7 @@
 <script src="navcfg.js?v=20260910c"></script>
 <script src="tickets.js?v=20260911p"></script>
 <script src="theme.js?v=20260911v"></script>
-<script src="router.js?v=20260911t"></script>
+<script src="router.js?v=20260911w"></script>
 <script src="live.js?v=20260910c"></script>
 <script src="oncall.js?v=20260910c"></script>
 </body>
