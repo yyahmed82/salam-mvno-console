@@ -47,6 +47,18 @@
   .ag-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:8px} .ag-form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
   .ag-form input,.ag-form select{width:100%;box-sizing:border-box}
   .ag-note{font-size:12px;color:var(--muted);line-height:1.5}
+  .ag-demo-ov{position:fixed;inset:0;background:rgba(2,6,23,.72);z-index:1400;display:none;padding:22px;overflow:auto}
+  .ag-demo-ov.open{display:block}
+  .ag-demo{max-width:1280px;margin:0 auto;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(2,6,23,.5)}
+  .ag-demo-hd{display:flex;gap:14px;align-items:flex-start;padding:14px 18px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .ag-demo-t{font-weight:800;font-size:15px;color:var(--ink)}
+  .ag-demo-s{font-size:12px;color:var(--muted);max-width:640px;line-height:1.5;margin-top:2px}
+  .ag-demo-act{margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .ag-demo-banner{background:repeating-linear-gradient(45deg,rgba(217,119,6,.12),rgba(217,119,6,.12) 10px,rgba(217,119,6,.18) 10px,rgba(217,119,6,.18) 20px);color:#b45309;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:7px 18px;border-bottom:1px solid var(--line)}
+  [data-theme="dark"] .ag-demo-banner{color:#fbbf24}
+  .ag-demo-body{padding:16px 18px 22px;background:var(--bg)}
+  @media print{ body>*:not(.ag-demo-ov){display:none!important} .ag-demo-ov{position:static;padding:0;background:#fff;overflow:visible} .ag-demo{box-shadow:none;border:0;max-width:none} .ag-demo-act{display:none} }
+  @media (max-width:700px){ .ag-demo-ov{padding:8px} .ag-demo-hd{padding:12px} .ag-demo-body{padding:10px} }
   .ag-bar{height:7px;border-radius:6px;background:var(--card2,#e2e8f0);overflow:hidden}
   .ag-bar i{display:block;height:100%;border-radius:6px}
   .ag-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
@@ -167,6 +179,11 @@
   async function tabBudget(b){
     b.innerHTML=`<div class="sub" style="padding:12px 0">Loading usage…</div>`;
     let U; try{ U=await api(`/api/llm/usage?days=${BU.days}`); }catch(e){ b.innerHTML=`<div class="sub">${esc(e.message)}</div>`; return; }
+    renderBudget(b, U, {});
+  }
+  /* renders the usage screen from ANY dataset — the live one, or the sample used by the demo view */
+  function renderBudget(b, U, opts){
+    opts=opts||{}; const ro=!!opts.readonly;
     const B=U.budget||{}, cur=(B.price&&B.price.currency)||"SAR";
     const cost=U.byProvider.reduce((a,r)=>a+Number(r.cost||0),0);
     const row=(r,kind)=>`<tr data-subj="${esc(r.subject)}">
@@ -176,9 +193,10 @@
       <td>${n(r.calls)}${r.blocked?`<div class="ag-sub" style="color:#dc2626">${r.blocked} refused</div>`:""}${r.failed?`<div class="ag-sub">${r.failed} failed</div>`:""}</td>
       <td>${Number(r.cost)>0?`${Number(r.cost).toFixed(2)} ${esc(cur)}`:'<span class="ag-sub">on-prem</span>'}</td>
       <td class="ag-sub">${md(r.last_at)}</td>
-      <td><input class="ag-in sm" data-cap="${esc(r.subject)}" data-kind="${kind}" type="number" min="0" step="1000" value="${r.cap||0}" style="width:110px" title="0 = no ceiling for this ${kind==="user"?"person":"agent"}"></td></tr>`;
+      <td><input class="ag-in sm" data-cap="${esc(r.subject)}" data-kind="${kind}" type="number" min="0" step="1000" value="${r.cap||0}" style="width:110px" ${ro?"disabled":""} title="0 = no ceiling for this ${kind==="user"?"person":"agent"}"></td></tr>`;
     b.innerHTML=`
-      <div class="ag-filters"><select data-f="days">${[7,14,30,90].map(x=>`<option value="${x}" ${x==BU.days?"selected":""}>last ${x} days</option>`).join("")}</select>
+      <div class="ag-filters"><select data-f="days" ${ro?"disabled":""}>${[7,14,30,90].map(x=>`<option value="${x}" ${x==BU.days?"selected":""}>last ${x} days</option>`).join("")}</select>
+        ${ro?"":`<button class="ag-btn sm o" id="bDemo" title="The same screen with a full month of sample data — for a walkthrough or a demo. Nothing is read from or written to the console.">▤ Demo view</button>`}
         <span class="ag-sub">Budgets reset at 00:00 KSA. Tokens are what the model actually processes — measured when the provider reports them, otherwise estimated from characters.</span></div>
       <div class="ag-grid" style="margin-bottom:12px">
         <div class="ag-card"><h3>Console today</h3><div class="ag-big">${tk(U.today.tokens)}</div>${bar(U.today.pct,U.today.cap)}<div class="ag-sub">of ${U.today.cap?tk(U.today.cap):"∞"} tokens · ${n(U.today.calls)} calls</div></div>
@@ -208,7 +226,13 @@
         </div>
         <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="ag-btn sm" id="bSave">Save budget</button><span class="ag-sub" id="bMsg">0 = no ceiling. A refused call is never an error for the user: Yusr answers from the rule engine and the agents write their measured-evidence note.</span></div></div>
       ${(U.events||[]).length?`<div class="ag-detail" style="margin-top:12px"><b>Budget notifications</b><div class="ag-tablew"><table class="ag-table"><thead><tr><th>When</th><th>Subject</th><th>Threshold</th><th>Used</th><th>Ceiling</th><th>Mailed</th></tr></thead><tbody>${U.events.map(e=>`<tr><td class="ag-sub">${md(e.at)}</td><td>${esc(e.subject)} <span class="ag-chip">${esc(e.kind)}</span></td><td><span class="ag-chip ${e.threshold==="over"?"a":""}">${e.threshold==="over"?"ceiling reached":"warning"}</span></td><td>${tk(Number(e.used))}</td><td>${tk(Number(e.cap))}</td><td class="ag-sub">${esc(e.mailed_to||"—")}</td></tr>`).join("")}</tbody></table></div></div>`:""}`;
+    if(ro){                                            // demo view: read-only, no handlers, no saves
+      b.querySelectorAll("input,select,button,textarea").forEach(el=>{ el.disabled=true; el.style.opacity=".7"; el.style.cursor="not-allowed"; });
+      const m=b.querySelector("#bMsg"); if(m) m.textContent="Sample data — the budget form is shown as it looks live, but nothing can be saved from the demo view.";
+      return;
+    }
     b.querySelector("[data-f=days]").addEventListener("change",e=>{ BU.days=Number(e.target.value); tabBudget(b); });
+    const dm=b.querySelector("#bDemo"); if(dm) dm.addEventListener("click",openBudgetDemo);
     const save=async(patch,msg)=>{ const m=b.querySelector("#bMsg"); if(m) m.textContent="Saving…";
       try{ await api("/api/llm/budget",{method:"PUT",body:JSON.stringify(patch)}); toast(msg||"Budget saved"); tabBudget(b); }
       catch(e){ toast(e.message); if(m) m.textContent=e.message; } };
@@ -226,6 +250,77 @@
       price:{primary:Number(b.querySelector("#bP1").value)||0, fallback:Number(b.querySelector("#bP2").value)||0, currency:b.querySelector("#bCur").value.trim()||"SAR"},
     }));
   }
+
+  /* ---------------------- DEMO VIEW (11 Sep 2026) ----------------------
+   * The live screen is honest but thin until a few weeks of metering exist — one day of data and one service
+   * account is not a picture you can walk a CIO through. This opens the SAME component over a generated month
+   * of plausible usage, clearly stamped as sample data, with its own light / dark switch so it can be shown or
+   * screenshotted in either theme. It reads nothing and writes nothing. */
+  function demoUsage(days){
+    days=days||14;
+    const d=i=>new Date(Date.now()-(days-1-i)*864e5).toISOString().slice(0,10);
+    const wk=i=>{ const dt=new Date(Date.now()-(days-1-i)*864e5).getUTCDay(); return (dt===5||dt===6)?0.45:1; };  // Fri/Sat quieter
+    const byDay=Array.from({length:days},(_,i)=>{ const f=wk(i), base=Math.round((380000+220000*Math.abs(Math.sin(i/2.3)))*f);
+      const ag=Math.round(base*(0.56+0.08*Math.abs(Math.cos(i/3))));
+      return { day:d(i), tokens:base, agent_tokens:ag, calls:Math.round((90+60*Math.abs(Math.sin(i/1.7)))*f), cost:i>=days-3?Number((0.6+i%3*0.4).toFixed(2)):0, blocked:i===days-4?3:0 }; });
+    const sum=byDay.reduce((a,x)=>a+x.tokens,0), today=byDay[byDay.length-1];
+    const person=(mail,name,today_,cap,calls,extra)=>({ subject:mail, name, tokens:Math.round(today_*days*0.8), today:today_, cap, pct:cap?today_/cap:0,
+      calls, failed:extra&&extra.failed||0, blocked:extra&&extra.blocked||0, cost:extra&&extra.cost||0, last_at:new Date(Date.now()-(extra&&extra.agoMin||8)*60000).toISOString() });
+    return {
+      days, budget:{ enabled:true, dailyUser:150000, dailyCaller:600000, dailyGlobal:4000000, monthlyGlobal:80000000,
+        perUser:{ "a.pandey.tcs@salammobile.sa":40000 }, perCaller:{}, warnAt:0.8, block:true, notifyUser:true, notifyAdmins:true,
+        price:{ primary:0, fallback:0.012, currency:"SAR" } },
+      byDay,
+      users:[ person("y.yahmed.sns@salam.sa",null,96000,150000,143,{failed:2,agoMin:6}),
+              person("s.gamannavar.tcs@salammobile.sa",null,124000,150000,61,{failed:1,cost:1.81,agoMin:22}),
+              person("a.pandey.tcs@salammobile.sa",null,41200,40000,88,{blocked:4,agoMin:35}),
+              person("m.kudire.tcs@salammobile.sa",null,38400,150000,37,{agoMin:64}),
+              person("r.kummari.tcs@salammobile.sa",null,12900,150000,14,{agoMin:210}) ],
+      agents:[ { subject:"salam-agent-incident", tokens:Math.round(sum*0.42), today:312000, cap:600000, pct:0.52, calls:940, failed:6, blocked:0, cost:0, last_at:new Date(Date.now()-3*60000).toISOString() },
+               { subject:"salam-agent-log", tokens:Math.round(sum*0.26), today:176000, cap:600000, pct:0.29, calls:410, failed:0, blocked:0, cost:0, last_at:new Date(Date.now()-11*60000).toISOString() } ],
+      byPurpose:[ {purpose:"agent-incident.triage",tokens:Math.round(sum*0.42),calls:940,avg_ms:4200},
+                  {purpose:"agent-log.assess",tokens:Math.round(sum*0.22),calls:310,avg_ms:5100},
+                  {purpose:"yusr.chat",tokens:Math.round(sum*0.28),calls:343,avg_ms:6400},
+                  {purpose:"agent-log.report",tokens:Math.round(sum*0.04),calls:14,avg_ms:9200} ],
+      byProvider:[ {provider:"primary:ollama",tokens:Math.round(sum*0.96),calls:1560,cost:0},
+                   {provider:"fallback:openai",tokens:Math.round(sum*0.04),calls:47,cost:2.4} ],
+      today:{ calls:today.calls, tokens:today.tokens, cap:4000000, pct:today.tokens/4000000 },
+      month:{ tokens:Math.round(sum*1.6), cap:80000000, pct:Math.round(sum*1.6)/80000000 },
+      events:[ { at:new Date(Date.now()-35*60000).toISOString(), subject:"a.pandey.tcs@salammobile.sa", kind:"user", threshold:"over", used:41200, cap:40000, mailed_to:"a.pandey.tcs@salammobile.sa, yosri@salam.sa" },
+               { at:new Date(Date.now()-95*60000).toISOString(), subject:"s.gamannavar.tcs@salammobile.sa", kind:"user", threshold:"warn", used:124000, cap:150000, mailed_to:"s.gamannavar.tcs@salammobile.sa" },
+               { at:new Date(Date.now()-2*864e5).toISOString(), subject:"console", kind:"global", threshold:"warn", used:3260000, cap:4000000, mailed_to:"super admins (3)" } ],
+    };
+  }
+  function openBudgetDemo(){
+    let ov=document.getElementById("agDemoOv");
+    if(!ov){ ov=document.createElement("div"); ov.id="agDemoOv"; ov.className="ag-demo-ov"; document.body.appendChild(ov);
+      ov.addEventListener("click",e=>{ if(e.target===ov) closeBudgetDemo(); });
+      document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeBudgetDemo(); }); }
+    const theme=document.documentElement.getAttribute("data-theme")==="dark"?"dark":"light";
+    ov.innerHTML=`<div class="ag-demo" data-theme="${theme}" id="agDemoCard">
+        <div class="ag-demo-hd">
+          <div><div class="ag-demo-t">AI usage &amp; budget — demo view</div>
+            <div class="ag-demo-s">The live screen over <b>a generated month of sample usage</b>, so the shape of the report is visible before real history accumulates. No data is read from or written to the console.</div></div>
+          <div class="ag-demo-act">
+            <button class="ag-btn sm o" data-dtheme="light">☀ Light</button>
+            <button class="ag-btn sm o" data-dtheme="dark">☾ Dark</button>
+            <select class="ag-in sm" id="agDemoDays">${[14,30].map(x=>`<option value="${x}">${x} days</option>`).join("")}</select>
+            <button class="ag-btn sm o" id="agDemoPrint" title="Print or save as PDF — the sample banner is kept">⎙ Print</button>
+            <button class="ag-btn sm" id="agDemoX">Close</button>
+          </div>
+        </div>
+        <div class="ag-demo-banner">SAMPLE DATA · for demonstration and reference only — not Salam production usage</div>
+        <div class="ag-demo-body" id="agDemoBody"></div>
+      </div>`;
+    ov.classList.add("open"); document.body.style.overflow="hidden";
+    const paint=days=>renderBudget(ov.querySelector("#agDemoBody"), demoUsage(Number(days)||14), { readonly:true });
+    paint(14);
+    ov.querySelector("#agDemoX").onclick=closeBudgetDemo;
+    ov.querySelector("#agDemoPrint").onclick=()=>window.print();
+    ov.querySelector("#agDemoDays").onchange=e=>paint(e.target.value);
+    ov.querySelectorAll("[data-dtheme]").forEach(btn=>btn.addEventListener("click",()=>{ ov.querySelector("#agDemoCard").setAttribute("data-theme",btn.dataset.dtheme); }));
+  }
+  function closeBudgetDemo(){ const ov=document.getElementById("agDemoOv"); if(ov) ov.classList.remove("open"); document.body.style.overflow=""; }
 
   function renderTab(){ const b=$a("#agTabBody"); if(!b) return; b.innerHTML=`<div class="sub" style="padding:12px 0">Loading…</div>`; ({signatures:tabSig,triage:tabTri,reports:tabRep,policy:tabPol,budget:tabBudget,calls:tabCalls}[TAB]||tabSig)(b); }
   const filt=(b,defs,onchange)=>{ const d=document.createElement("div"); d.className="ag-filters"; d.innerHTML=defs; b.appendChild(d); d.querySelectorAll("select,input").forEach(el=>el.addEventListener(el.type==="search"?"input":"change",()=>onchange(d))); return d; };

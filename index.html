@@ -41,6 +41,37 @@
     --panel:var(--card); --panel2:var(--card2); --fg:var(--ink);   /* aliases some modules use */
     --hdr:55px; --safe-b:env(safe-area-inset-bottom,0px); --safe-t:env(safe-area-inset-top,0px);
   }
+  /* light palette re-declared so a CONTAINER can be forced light inside a dark page (demo popups, print) */
+  [data-theme="light"]{
+    --green:#0e9f5a; --green-dark:#0a7a45; --green-bg:#e8f7f0;
+    --ink:#1a2b3c; --ink-soft:#334155; --muted:#64748b; --line:#e2e8f0; --line-soft:#eef2f6;
+    --bg:#f6f8fa; --card:#ffffff; --card2:#f8fafc;
+    --blue:#2563eb; --orange:#ea580c; --purple:#7c3aed; --red:#dc2626; --teal:#0d9488; --amber:#d97706;
+    /* error-class standard (errclass.js — matches the Grafana dealer dashboards): success/business/technical */
+    --ok:#10b981; --ok-bg:#e7f8ef; --err-biz:#3b82f6; --err-biz-bg:#e9f1fe; --err-tec:#ef4444; --err-tec-bg:#fdeceb;
+    --shadow:0 8px 24px rgba(15,23,42,.09); --shadow-lg:0 20px 60px rgba(15,23,42,.30);
+    /* tint surfaces (auto-derived so they adapt to theme) */
+    --tint-blue:#eef2ff; --tint-blue-fg:#3730a3;
+    --tint-green:#ecfdf5; --tint-green-fg:#065f46;
+    --tint-amber:#fff7ed; --tint-amber-fg:#9a3412;
+    --tint-red:#fef2f2; --tint-red-fg:#991b1b;
+    --tint-warn-bg:#fffbeb; --tint-warn-line:#fde68a; --tint-warn-fg:#92400e;
+    --ok-bg:#e8f7f0; --ok-line:#b5e3cc; --ok-fg:#166534;
+    --code-bg:#f4f7fb; --code-fg:#0f172a; --code-line:#e2e8f0;
+    --code-k:#0369a1; --code-s:#047857; --code-n:#b91c1c; --code-b:#a16207;
+    --panel-dark:#0f172a; --panel-dark-fg:#ffffff;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    /* ---- tokens v2 (6 Sep 2026 · dark-mode completeness) ---- */
+    --violet:#7c3aed; --tint-violet:#ede9fe; --tint-violet-fg:#5b21b6;
+    --indigo:#4338ca; --indigo-line:#c7d2fe; --indigo-fg:#3730a3;
+    --good:#16a34a; --warn-fg:#b45309; --bad-fg:#b91c1c;
+    --green-line:#bbf7d0; --amber-line:#fde68a; --red-line:#fecaca; --blue-line:#bfdbfe;
+    --solid:#1a2b3c; --solid-fg:#ffffff;            /* "inverted" chips: dark pill, light text (never var(--ink) as a background) */
+    --tip-bg:#0f172a; --tip-fg:#ffffff;
+    --switch-off:#cbd5e1; --overlay:rgba(15,23,42,.55); --scrim:rgba(15,23,42,.45);
+    --panel:var(--card); --panel2:var(--card2); --fg:var(--ink);   /* aliases some modules use */
+    --hdr:55px; --safe-b:env(safe-area-inset-bottom,0px); --safe-t:env(safe-area-inset-top,0px);
+  }
   [data-theme="dark"]{
     --green:#10b981; --green-dark:#34d399; --green-bg:rgba(16,185,129,.16);
     --ink:#e6edf6; --ink-soft:#cbd5e1; --muted:#93a4bb; --line:#2b3a52; --line-soft:#22304a;
@@ -1833,7 +1864,7 @@
 <script src="assist.js?v=20260911a"></script>
 <script src="assistcfg.js?v=20260910c"></script>
 <script src="assistclone.js?v=20260910c"></script>
-<script src="agents.js?v=20260911b"></script>
+<script src="agents.js?v=20260911c"></script>
 <script src="navcfg.js?v=20260910c"></script>
 <script src="tickets.js?v=20260910c"></script>
 <script src="theme.js?v=20260910c"></script>
