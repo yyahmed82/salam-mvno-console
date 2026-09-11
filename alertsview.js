@@ -496,11 +496,42 @@
     b.querySelectorAll("[data-afsev]").forEach(x=>x.addEventListener("click",()=>{ AF.sev=x.dataset.afsev; renderAlerts(); }));
     const q=$("#afQ"); if(q){ let t=null; q.addEventListener("input",e=>{ AF.q=e.target.value; clearTimeout(t); t=setTimeout(renderAlerts,250); }); }
   }
+  /* OWNER CARD (11 Sep 2026): the person, not the login — name · role · team, how fast they took it, how long they
+   * have held it, and their live load (open incidents held · acked in 24 h · avg time-to-ack 7 d). */
+  let OWNERS={}, NOW_SRV=new Date();
+  const minsBetween=(a,b)=>Math.max(0,Math.round((new Date(b)-new Date(a))/60000));
+  const durMin=m=>m==null?"—":m<60?`${m} min`:m<1440?`${Math.floor(m/60)} h ${m%60?String(m%60).padStart(2,"0")+" min":""}`.trim():`${(m/1440).toFixed(1)} d`;
+  const initials=(name,email)=>{ const n=(name||"").trim(); if(n) return n.split(/\s+/).slice(0,2).map(x=>x[0]).join("").toUpperCase(); const l=(email||"").split("@")[0]; return l.split(/[._-]/).slice(0,2).map(x=>x[0]||"").join("").toUpperCase()||"?"; };
+  const prettyName=(o,email)=>{ if(o&&o.name) return o.name; const l=(email||"").split("@")[0]; return l.split(/[._-]/).filter(Boolean).map(x=>x[0].toUpperCase()+x.slice(1)).join(" "); };
+  const hue=str=>{ let h=0; for(const c of String(str)) h=(h*31+c.charCodeAt(0))%360; return h; };
+  function personChip(email, o, sub){
+    const e=String(email||"").toLowerCase(); o=o||OWNERS[e]||{};
+    const dom=e.split("@")[1]||""; const roleLine=[o.role_label, o.team].filter(Boolean).join(" · ")||(dom?dom.split(".")[0]:"");
+    return `<div class="owner"><span class="oav" style="background:hsl(${hue(e)} 55% 42%)" title="${esc(e)}">${esc(initials(o.name,e))}</span>
+      <div class="oinfo"><div class="oname" title="${esc(e)}">${esc(prettyName(o,e))}${o.enabled===false?' <span class="rl" style="color:#dc2626">(disabled)</span>':''}</div>
+      <div class="rl omail">${esc(e)}</div>${roleLine?`<div class="rl">${esc(roleLine)}</div>`:''}${sub||''}</div></div>`;
+  }
+  function ownerCell(a){
+    if(a.status!=='open' && !a.ack_by) return `<span class="rl">— never acknowledged</span>`;
+    if(!a.ack_by){
+      const wait=minsBetween(a.opened_wall||a.fired_at, NOW_SRV);
+      return `<div class="owner"><span class="oav" style="background:#dc2626">?</span><div class="oinfo"><div class="oname" style="color:#dc2626">Nobody yet</div><div class="rl">unacknowledged for <b>${durMin(wait)}</b></div>${a.assignee?`<div class="rl">assigned to ${esc(prettyName(OWNERS[String(a.assignee).toLowerCase()],a.assignee))}</div>`:''}</div></div>`;
+    }
+    const o=OWNERS[String(a.ack_by).toLowerCase()]||{};
+    const ackIn=a.ack_at?minsBetween(a.opened_wall||a.fired_at, a.ack_at):null;
+    const holding=a.ack_at?minsBetween(a.ack_at, a.status==='open'?NOW_SRV:(a.resolved_at||NOW_SRV)):null;
+    const slaMin={P1:15,P2:60,P3:240,P4:1440}[a.severity]||1440;
+    const timing=`<div class="rl">acked in <b style="color:${ackIn!=null&&ackIn>slaMin?'#dc2626':'var(--good)'}">${durMin(ackIn)}</b>${a.status==='open'?` · holding <b>${durMin(holding)}</b>`:` · held ${durMin(holding)}`}</div>`;
+    const load=(o.acked_24h!=null)?`<div class="oload"><span class="olb" title="open incidents this person currently holds">${o.open_held} open</span><span class="olb" title="incidents acknowledged in the last 24 h">${o.acked_24h} acked · 24h</span>${o.avg_ack_min_7d!=null?`<span class="olb" title="average time-to-acknowledge over the last 7 days (${o.acked_7d} incidents)">avg ${durMin(o.avg_ack_min_7d)}</span>`:''}</div>`:'';
+    const assg=a.assignee&&String(a.assignee).toLowerCase()!==String(a.ack_by).toLowerCase()?`<div class="rl">→ assigned to <b>${esc(prettyName(OWNERS[String(a.assignee).toLowerCase()],a.assignee))}</b></div>`:'';
+    return personChip(a.ack_by, o, timing+assg+load);
+  }
   async function renderAlerts(){
     let stats={}; try{ stats=await api("/api/incidents/stats"); }catch(e){}
     loadRunbooks();                                     // prefetch rule runbooks (cached; never blocks render)
     const data = await api("/api/alerts?status="+(atab==="all"?"all":"open"));
     const allRows = data.alerts||[];
+    OWNERS = data.owners||{}; NOW_SRV = data.now ? new Date(data.now) : new Date();
     // client-side class filter (chips) — server always returns everything
     const me=meEmail(), team=myTeam(), q=AF.q.trim().toLowerCase();
     let rows = CLSFILTER.alerts==="all" ? allRows : allRows.filter(a=>a.alert_class===CLSFILTER.alerts);
@@ -576,7 +607,7 @@
         <td>${impact}</td>
         <td><b>${esc(a.message? (a.message.split("observed ")[1]||"").split(" · ")[0] : "")}</b><br><span class="rl">${esc(a.window_hours)}h window</span></td>
         <td>${stateTag}</td>
-        <td class="mono" style="font-size:11px">${a.assignee?esc(a.assignee.split("@")[0]):'—'}${a.ack_by?`<br><span style="color:var(--muted)">ack ${esc(a.ack_by.split("@")[0])}</span>`:''}</td>
+        <td class="ownercell">${ownerCell(a)}</td>
         <td class="mono when" style="color:var(--muted)"><span class="rl">fired</span> ${ksaShort(a.fired_at)}<br><span class="rl">last</span> ${ksaShort(a.last_seen_at)}${a.status!=='open'&&a.resolved_at?`<br><span class="rl">closed</span> ${ksaShort(a.resolved_at)}`:''}</td>
         <td class="actcell">${acts}</td>
       </tr>

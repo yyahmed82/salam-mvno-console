@@ -3116,7 +3116,31 @@ app.get('/api/alerts', async (req, res) => {
     a.correlation = role ? { role, parent, parentName: parent ? (nameByKey[parent] || parent) : null,
       impacts: role === 'root' ? correlation.impactOf(a.rule_key) : null } : null;
   }
-  res.json({ alerts: rows, segment: seg });
+  /* OWNER CARDS (11 Sep 2026): who is behind ack_by / assignee — name, role, team — and their live workload so the
+   * column says "A. Pandey · TCS L1 · acked in 12 min · holding 3 h · holds 2 open · 5 acked / 24 h", not a bare login */
+  let owners = {};
+  try {
+    const emails = [...new Set(rows.flatMap(a => [a.ack_by, a.assignee]).filter(Boolean).map(e => String(e).toLowerCase()))];
+    if (emails.length) {
+      const us = (await C.query(`SELECT lower(email) AS email, name, role, roles, team, enabled FROM console_users WHERE lower(email) = ANY($1)`, [emails])).rows;
+      const st = (await C.query(
+        `SELECT lower(ack_by) AS email,
+                count(*) FILTER (WHERE status='open')::int AS open_held,
+                count(*) FILTER (WHERE ack_at >= now() - interval '24 hours')::int AS acked_24h,
+                count(*) FILTER (WHERE ack_at >= now() - interval '7 days')::int AS acked_7d,
+                round(avg(EXTRACT(EPOCH FROM (ack_at - opened_wall))/60) FILTER (WHERE ack_at >= now() - interval '7 days'))::int AS avg_ack_min_7d,
+                count(*) FILTER (WHERE status='resolved' AND resolved_at >= now() - interval '24 hours')::int AS resolved_24h
+         FROM alerts WHERE lower(ack_by) = ANY($1) GROUP BY 1`, [emails])).rows;
+      const byS = Object.fromEntries(st.map(x => [x.email, x]));
+      for (const e of emails) {
+        const u = us.find(x => x.email === e) || {}; const s0 = byS[e] || {};
+        const rname = u.role ? (roles.role(u.role) || {}) : {};
+        owners[e] = { email: e, name: u.name || null, role: u.role || null, role_label: rname.label || null, team: u.team || rname.team || null, enabled: u.enabled !== false,
+          open_held: s0.open_held || 0, acked_24h: s0.acked_24h || 0, acked_7d: s0.acked_7d || 0, avg_ack_min_7d: s0.avg_ack_min_7d ?? null, resolved_24h: s0.resolved_24h || 0 };
+      }
+    }
+  } catch (e) { owners = {}; }
+  res.json({ alerts: rows, segment: seg, owners, now: new Date().toISOString() });
 });
 
 require('./alertHistory').mount(app, { audit });    // must precede /api/alerts/:id — XLSX history export for the SLA reviews
