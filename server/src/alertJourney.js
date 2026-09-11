@@ -23,10 +23,8 @@ const C = () => db.console;
 const OPS = { gt: (a, b) => a > b, gte: (a, b) => a >= b, lt: (a, b) => a < b, lte: (a, b) => a <= b, eq: (a, b) => a === b };
 const REASONS = { fixed: 'Fixed / mitigated', duplicate: 'Duplicate of another incident', false_positive: 'False positive — threshold or rule to review', single_customer: 'Single customer / retry storm — no platform issue', maintenance: 'Planned maintenance / expected', cleared: 'Condition cleared by itself' };
 
-/* split a runbook into steps — same rule as the Guided Response box in alertsview.js */
-function steps(rb) {
-  return String(rb || '').trim().split(/\r?\n/).map(s => s.replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').trim()).filter(Boolean);
-}
+/* split a runbook into steps — shared with the mails / ServiceNow / Guided Response (runbook.js) */
+const { steps } = require('./runbook');
 
 /* score one series of snapshots with a rule → { fires, ticks, points, first, last } */
 function score(points, rule) {

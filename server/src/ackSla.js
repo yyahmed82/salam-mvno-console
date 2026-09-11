@@ -193,7 +193,7 @@ async function buildMail(a, { level, repeat, elapsedMin, business, seg, cfg, sib
   const LV = LEVEL[level]; const L = cfg[a.severity] || cfg.P3;
   const link = `${notify.CONSOLE_URL || 'https://salam.sa/unified-console/'}#${seg === 'fixed' ? 'fixed-alerts' : 'alerts'}?id=${a.id}&ack=1`;   // &ack=1: one-click acknowledge once signed in (11 Sep 2026)
   const unit = (await db.console.query(`SELECT unit FROM metric_catalog WHERE key=$1`, [a.metric_key]).catch(() => ({ rows: [] }))).rows[0]?.unit || 'count';
-  const steps = String(a.runbook || '').split(/\n+|(?=\d\)\s)/).map(x => x.trim()).filter(Boolean);
+  const steps = require('./runbook').steps(a.runbook);
   const bizLabel = SEG.LABEL[seg], bizShort = SEG.SHORT[seg];
   const headline = forManagement
     ? `For information: a ${a.severity} ${bizShort} alert has been open for ${mins(elapsedMin)} without acknowledgement`

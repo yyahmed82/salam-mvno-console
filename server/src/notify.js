@@ -287,7 +287,7 @@ async function sendHandoverMail(alert, { from, to, by, note, kind } = {}) {
   try { reports = await require('./alertReport').buildFiredReports(now, [ev], { max: 1 }); } catch (e) { reports = { attachments: [], notes: [e.message] }; }
   const link = `${CONSOLE_URL}#${seg === 'fixed' ? 'fixed-alerts' : 'alerts'}?id=${alert.id}`;
   const who = e => esc(String(e || '—').split('@')[0]);
-  const steps = String(rule.runbook || '').split(/\n+|(?=\d\)\s)/).map(x => x.trim()).filter(Boolean);
+  const steps = require('./runbook').steps(rule.runbook);
   const detail = [
     ['Incident', `<b>${esc(alert.severity)} · ${esc(alert.name)}</b> ${segChip(ev)}`],
     ['Observed', `<b>${fmtVal(alert.observed_value, ev.unit)}</b> vs threshold ${opLabel[alert.operator] || alert.operator} ${fmtVal(alert.threshold, ev.unit)} (sample ${alert.sample ?? '—'}, ${alert.window_hours}h window)`],

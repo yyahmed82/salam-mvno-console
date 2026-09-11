@@ -406,10 +406,13 @@
     }).catch(()=>{ _rbPromise=null; return {}; });      // degrade gracefully; retry on next open
     return _rbPromise;
   }
+  /* A runbook is written one step per line OR as one paragraph with inline numbering ("1) … 2) …" — how every
+   * builtin rule is seeded). Split on both, never on a decimal (0.5h / v1.2): server twin = server/src/runbook.js */
+  const RB_SPLIT = /\r?\n+|(?=(?:^|\s)\d{1,2}[.)]\s)/;
+  const rbSteps = rb => String(rb==null?"":rb).split(RB_SPLIT).map(s=>s.replace(/^\s*(?:\d{1,2}[.)]|[-*•–])\s*/,"").trim()).filter(Boolean);
   function rbStepsHtml(rb){
-    const txt = String(rb||"").trim();
-    if(!txt) return `<div class="grstep"><span class="grn">i</span><span>${esc(GENERIC_RUNBOOK)}</span></div>`;
-    const lines = txt.split(/\r?\n/).map(s=>s.replace(/^\s*(?:\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean);
+    const lines = rbSteps(rb);
+    if(!lines.length) return `<div class="grstep"><span class="grn">i</span><span>${esc(GENERIC_RUNBOOK)}</span></div>`;
     return lines.map((s,i)=>`<div class="grstep"><span class="grn">${i+1}</span><span>${esc(s)}</span></div>`).join("");
   }
   function guideHtml(a, rb){
@@ -898,7 +901,7 @@
     let d; try{ d=await api(`/api/alerts/${id}/checklist`); }catch(e){ host.innerHTML=`<div class="rl">${esc(e.message)}</div>`; return; }
     const st=d.steps||[];
     if(n) n.textContent=st.length?`· ${d.done} of ${d.total} done`:"";
-    if(!st.length){ host.innerHTML=`<div class="rl">No runbook set for this rule — add the steps in the rule editor (one per line) and they appear here as a checklist.</div>`; return; }
+    if(!st.length){ host.innerHTML=`<div class="rl">No runbook set for this rule — add the steps in the rule editor (one per line, or numbered in one paragraph) and they appear here as a checklist.</div>`; return; }
     const can=canAck()&&open;
     host.innerHTML=st.map(s=>`<label class="ckstep${s.done?' done':''}"><input type="checkbox" data-ck="${s.step}" ${s.done?'checked':''} ${can?'':'disabled'}><span class="ckn">${s.step}</span><span class="ckt">${esc(s.text)}${s.done?`<div class="rl">✓ ${esc((s.done_by||'').split('@')[0])} · ${timeAgo(s.done_at)}</div>`:''}</span></label>`).join("");
     host.querySelectorAll("[data-ck]").forEach(cb=>cb.addEventListener("change",async()=>{ try{ await api(`/api/alerts/${id}/checklist`,{method:"POST",body:JSON.stringify({step:Number(cb.dataset.ck),done:cb.checked})}); loadChecklist(id,open); loadTimeline(id); }catch(e){ banner(esc(e.message)); cb.checked=!cb.checked; } }));
@@ -1461,7 +1464,7 @@
           <div class="ffull"><label>TRIGGER CODES <span class="lbl-soft">— which error codes / conditions fire this alert (shown to L2 on the incident)</span></label><input id="ru_codes" placeholder="e.g. 715, 5002 (Semati provider) · excludes 727/726 business declines" value="${esc(g('trigger_codes',''))}"></div>
         </section>
         <section class="rd-sec" id="rd_runbook"><h4>5 · Runbook — what L1 does when it fires</h4>
-          <div class="rl" style="margin-bottom:6px">One step per line. On the incident every step becomes a checkbox the responder ticks (who / when is kept).</div>
+          <div class="rl" style="margin-bottom:6px">One step per line — inline numbering in a single paragraph ("1) … 2) …") is split the same way. On the incident every step becomes a checkbox the responder ticks (who / when is kept).</div>
           <textarea id="ru_runbook" rows="6" placeholder="1) Open Troubleshoot → Payments and confirm the gateway&#10;2) Check the affected cases — one customer or many?&#10;3) If the gateway is down, raise ServiceNow and page BSS on-call">${esc(g('runbook',''))}</textarea>
           <div class="rl" id="ru_rb_count" style="margin-top:4px"></div>
         </section>
@@ -1495,7 +1498,7 @@
     body.querySelectorAll(".cbopt").forEach(b=>b.addEventListener("click",()=>{ if(b.disabled) return; body.querySelectorAll(".cbopt").forEach(x=>x.classList.toggle("active",x===b)); $("#ru_cb_help").innerHTML=CB_HELP[b.dataset.cb]; }));
     $("#ru_metric").addEventListener("change",()=>{ paintMetric(); loadSpark(); });
     paintMetric();
-    const rbCount=()=>{ const n=String($("#ru_runbook").value||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean).length; $("#ru_rb_count").textContent=n?`${n} step${n>1?'s':''} → ${n} checkbox${n>1?'es':''} on the incident`:"No runbook yet — L1 will see the generic guidance."; };
+    const rbCount=()=>{ const st=rbSteps($("#ru_runbook").value); $("#ru_rb_count").innerHTML=st.length?`${st.length} step${st.length>1?'s':''} → ${st.length} checkbox${st.length>1?'es':''} on the incident: <span class="rl">${st.map((x,i)=>`<b>${i+1}.</b> ${esc(x.length>46?x.slice(0,45)+"…":x)}`).join(" · ")}</span>`:"No runbook yet — L1 will see the generic guidance."; };
     $("#ru_runbook").addEventListener("input",rbCount); rbCount();
     const dimVal=()=>{ const t=$("#ru_dim").value.trim(); if(!t) return {}; try{ const o=JSON.parse(t); return (o&&typeof o==="object")?o:{}; }catch(e){ return null; } };
     const gather=()=>({name:$("#ru_name").value.trim(), metric_key:$("#ru_metric").value, operator:$("#ru_op").value,

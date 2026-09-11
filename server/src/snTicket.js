@@ -92,7 +92,7 @@ async function buildDraft(alert, actor) {
   const seg = segOf(alert);
   const rule = (await C.query(`SELECT r.*, mc.unit FROM alert_rules r LEFT JOIN metric_catalog mc ON mc.key = r.metric_key WHERE r.key=$1`, [alert.rule_key]).catch(() => ({ rows: [] }))).rows[0] || {};
   const unit = rule.unit || alert.unit || 'count';
-  const steps = String(rule.runbook || '').split(/\n+|(?=\d\)\s)/).map(x => x.trim()).filter(Boolean).slice(0, 6);
+  const steps = require('./runbook').steps(rule.runbook).slice(0, 6);
   const dim = alert.dim || {};
   const lines = [
     `Salam Operations Console — ${LABEL[seg]} alert ${alert.severity} · ${alert.name}`,
