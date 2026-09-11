@@ -120,9 +120,17 @@ async function callProvider(p, { messages, maxTokens, temperature, numCtx, json 
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
       const j = await r.json(); return { text: ((j.message && j.message.content) || '').trim(), eval_count: j.eval_count, prompt_eval_count: j.prompt_eval_count, done_reason: j.done_reason };
     };
+    /* Rung order matters on a CPU box: the cheap fixes first. Folding the system prompt into the user turn costs
+     * nothing; RAISING num_ctx makes Ollama RELOAD the model (152 has ~6 GB free and llama3.1 needs 5.6 GB at 4k),
+     * so the context rung is last and capped by LLM_MAX_CTX (8192) — never 16k on this host. */
+    const MAXCTX = Math.max(2048, Number(E.LLM_MAX_CTX) || 8192);
+    const bigCtx = Math.min(MAXCTX, Math.max(8192, numCtx || 0));
     const ladder = json
-      ? [{ format: true, label: 'json grammar' }, { format: false, label: 'no grammar' }, { format: false, merge: true, ctx: 16384, predict: Math.max(512, maxTokens || 0), label: 'no grammar · ctx 16k · system merged' }]
-      : [{ label: 'plain' }, { merge: true, ctx: 16384, predict: Math.max(512, maxTokens || 0), label: 'ctx 16k · system merged' }];
+      ? [{ format: true, label: 'json grammar' },
+         { format: false, label: 'no grammar' },
+         { format: false, merge: true, label: 'no grammar · system merged' },
+         { format: false, merge: true, ctx: bigCtx, predict: Math.max(512, maxTokens || 0), label: `no grammar · system merged · ctx ${bigCtx}` }]
+      : [{ label: 'plain' }, { merge: true, label: 'system merged' }, { merge: true, ctx: bigCtx, predict: Math.max(512, maxTokens || 0), label: `system merged · ctx ${bigCtx}` }];
     let last = null, tried = [];
     for (const step of ladder) {
       last = await attempt(step); tried.push(`${step.label}${last.text ? ' ✓' : ' ∅'}`);
