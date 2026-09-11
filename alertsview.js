@@ -49,6 +49,11 @@
     $("#alBody").querySelectorAll("[data-clsf]").forEach(b=>b.addEventListener("click",()=>{ CLSFILTER[b.dataset.clsscope]=b.dataset.clsf; rerender(); }));
   }
   const fmtVal = (v,unit)=> v==null?"—" : (unit==="rate"||unit==="ratio") ? (v*100).toFixed(1)+"%" : (Number.isInteger(+v)?v:(+v).toFixed(2));
+  /* the cell an inline panel (hand-over / resolve) belongs to — the trigger may live in the floating ⋯ menu */
+  const actCell = (btn, a)=>{ const inRow=btn&&btn.closest("#alBody td"); if(inRow) return inRow; const t=a&&document.querySelector(`#alBody [data-more="${a.id}"],#alBody [data-det="${a.id}"]`); return t?t.closest("td"):null; };
+  const closeActMenus = ()=>document.querySelectorAll(".actmenu").forEach(x=>{ x.hidden=true; });
+  window.addEventListener("scroll", closeActMenus, true);
+  const ksaShort = iso => { if(!iso) return "—"; const d=new Date(iso); if(isNaN(d)) return "—"; return d.toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:false}).replace(",",""); };
   const timeAgo = iso => { if(!iso) return "—"; const d=new Date(iso); if(isNaN(d)) return "—"; return KT.dt(iso)+" KSA"; };
 
   async function load(){
@@ -546,12 +551,25 @@
       const impact = a.customers!=null
         ? `<span class="impchip ${a.customers===1?'one':''}" title="distinct customers behind the counted rows at the last evaluation">${a.customers===1?'👤 1 customer':'👥 '+a.customers+' customers'}</span>${a.services!=null?`<br><span class="rl">${a.services} service${a.services===1?'':'s'}</span>`:''}${a.rule_severity&&a.rule_severity!==a.severity?`<br><span class="rl" style="color:#7c3aed;font-weight:700">rule ${esc(a.rule_severity)} → ${esc(a.severity)}</span>`:''}`
         : `<span class="rl">—</span>`;
-      const acts = (a.status==='open' && canAck()) ? `
-        ${a.ack_at?(a.ack_by&&a.ack_by!==me?`<button class="pill" data-reack="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Take the acknowledgement over from ${esc(a.ack_by)} — logged in the incident discussion and the audit trail">Re-ack</button> `:'')+`<button class="pill" data-handover="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Hand the acknowledgement to a colleague on this side — logged">Hand over</button>`:`<button class="pill" data-ack="${a.id}" style="padding:3px 8px">Ack</button>`}
-        ${a.ack_at&&!a.sn_number?`<button class="pill" data-sn="${a.id}" style="padding:3px 8px;border-left-color:#2563eb" title="Raise this confirmed incident in ServiceNow (ServiceHub)">🎫 ServiceNow</button> `:''}${a.ack_at?`<button class="pill" data-comms="${a.id}" style="padding:3px 8px;border-left-color:#2563eb" title="Send the incident notification mail (L1 template)">✉ Comms</button> `:''}
-        ${(a.assignee||"").toLowerCase()!==me?`<button class="pill" data-assignme="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Put your name on it (assignee) — the ack stays where it is">Assign to me</button> `:''}
-        <button class="pill" data-snooze="${a.id}" style="padding:3px 8px">${snoozed?'Snoozed':'Snooze'}</button>
-        <button class="pill" data-resolve="${a.id}" style="padding:3px 8px;border-left-color:var(--good)">Resolve</button>` : '';
+      /* ACTION BAR (11 Sep 2026): one primary action for the state the incident is in, Details, and a "More"
+       * menu grouped by intent (Own · Escalate · Timing · Close) — instead of nine pills in a row. */
+      const P="padding:4px 10px";
+      let acts='';
+      if(a.status==='open' && canAck()){
+        const primary = !a.ack_at ? `<button class="pill actp" data-ack="${a.id}" style="${P};--pc:var(--green)" title="Take ownership — stops the reminders, tells the team who has it">✓ Ack</button>`
+                                  : `<button class="pill actp" data-resolve="${a.id}" style="${P};--pc:var(--good)" title="Close with a reason">Resolve</button>`;
+        const more=[];
+        if(a.ack_at){ if(a.ack_by&&a.ack_by!==me) more.push(["reack","Take over the ack",`from ${esc((a.ack_by||'').split('@')[0])}`,"own"]); more.push(["handover","Hand over","to a colleague on this side","own"]); }
+        if((a.assignee||"").toLowerCase()!==me) more.push(["assignme","Assign to me","your name as assignee; the ack stays","own"]);
+        if(a.ack_at&&!a.sn_number) more.push(["sn","🎫 Raise in ServiceNow","one INC per incident","esc"]);
+        if(a.sn_number) more.push(["snopen",`🎫 ${esc(a.sn_number)}`,esc(a.sn_state||'New'),"esc"]);
+        if(a.ack_at) more.push(["comms","✉ Send incident comms","L1 notification mail","esc"]);
+        more.push(["snooze",snoozed?"Snoozed · change":"Snooze","mute for N hours","time"]);
+        if(!a.ack_at) more.push(["resolve","Resolve","close with a reason","close"]);
+        acts=`<div class="actbar">${a.status==='open'?`<button class="pill" data-guide="${a.id}" style="${P};--pc:#2563eb">▶ Guide</button>`:''}<button class="pill" data-det="${a.id}" style="${P}">Details</button>${primary}<button class="pill actmore" data-more="${a.id}" style="${P}" title="More actions">⋯</button><div class="actmenu" id="actmenu_${a.id}" hidden>${["own","esc","time","close"].map(g=>{ const it=more.filter(m=>m[3]===g); if(!it.length) return ""; return `<div class="actg">${{own:"OWNERSHIP",esc:"ESCALATE",time:"TIMING",close:"CLOSE"}[g]}</div>`+it.map(([k,l,sub])=>`<button class="acti" data-${k}="${a.id}"><span>${l}</span><span class="rl">${sub}</span></button>`).join(""); }).join("")}</div></div>`;
+      } else {
+        acts=`<div class="actbar">${a.status==='open'?`<button class="pill" data-guide="${a.id}" style="${P};--pc:#2563eb">▶ Guide</button>`:''}<button class="pill" data-det="${a.id}" style="${P}">Details</button>${a.sn_number?`<button class="pill" data-snopen="${a.id}" style="${P};--pc:#2563eb">🎫 ${esc(a.sn_number)}</button>`:''}</div>`;
+      }
       h += `<tr${isChild?' style="opacity:.62"':''} class="${a.status==='open'&&!a.ack_at?'unacked':''}">
         <td style="border-left:4px solid ${sevColor(a.severity)}"><span class="sevpill" style="background:${sevColor(a.severity)}">${esc(a.severity)}</span></td>
         <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span> <span class="rl">· ${esc(a.team||"no team")}</span>${corrLine}</td>
@@ -559,8 +577,8 @@
         <td><b>${esc(a.message? (a.message.split("observed ")[1]||"").split(" · ")[0] : "")}</b><br><span class="rl">${esc(a.window_hours)}h window</span></td>
         <td>${stateTag}</td>
         <td class="mono" style="font-size:11px">${a.assignee?esc(a.assignee.split("@")[0]):'—'}${a.ack_by?`<br><span style="color:var(--muted)">ack ${esc(a.ack_by.split("@")[0])}</span>`:''}</td>
-        <td class="mono" style="color:var(--muted)">${timeAgo(a.fired_at)}<br>${timeAgo(a.last_seen_at)}</td>
-        <td style="white-space:nowrap">${a.status==='open'?`<button class="pill" data-guide="${a.id}" style="padding:3px 8px;border-left-color:#2563eb">▶ Guide</button> `:''}<button class="pill" data-det="${a.id}" style="padding:3px 8px">Details</button> ${acts}</td>
+        <td class="mono when" style="color:var(--muted)"><span class="rl">fired</span> ${ksaShort(a.fired_at)}<br><span class="rl">last</span> ${ksaShort(a.last_seen_at)}${a.status!=='open'&&a.resolved_at?`<br><span class="rl">closed</span> ${ksaShort(a.resolved_at)}`:''}</td>
+        <td class="actcell">${acts}</td>
       </tr>
       ${a.status==='open'?`<tr class="grrow" id="grrow_${a.id}" hidden><td colspan="8"></td></tr>`:''}
       <tr class="incdetail" id="incdet_${a.id}" hidden><td colspan="8"></td></tr>`;
@@ -570,6 +588,12 @@
     const body=$("#alBody");
     if(window.ackSlaNotice) window.ackSlaNotice(SEG, $("#alAckSla"));   // "N unacknowledged beyond SLA" notice for this side
     wireQuickBar();
+    /* the ⋯ menu floats over the page (position:fixed, moved to <body>) so the table's overflow wrapper cannot clip it */
+    document.querySelectorAll("body > .actmenu").forEach(x=>x.remove());
+    body.querySelectorAll("[data-more]").forEach(b=>b.addEventListener("click",e=>{ e.stopPropagation(); const m=document.getElementById("actmenu_"+b.dataset.more); if(!m) return; const open=!m.hidden; closeActMenus(); if(open) return;
+      const r=b.getBoundingClientRect(); document.body.appendChild(m); m.style.position="fixed"; m.style.top=(r.bottom+6)+"px"; m.style.left=Math.max(8, Math.min(window.innerWidth-268, r.right-260))+"px"; m.style.right="auto"; m.hidden=false;
+      const mh=m.getBoundingClientRect().height; if(r.bottom+6+mh>window.innerHeight-8) m.style.top=Math.max(8, r.top-6-mh)+"px"; }));
+    body.querySelectorAll(".actmenu .acti").forEach(b=>b.addEventListener("click",()=>{ b.closest(".actmenu").hidden=true; }));
     body.querySelectorAll("[data-ack]").forEach(b=>b.addEventListener("click",()=>incAction(b.dataset.ack,"ack")));
     body.querySelectorAll("[data-assignme]").forEach(b=>b.addEventListener("click",()=>incAction(b.dataset.assignme,"assign",{assignee:me})));
     body.querySelectorAll("[data-reack]").forEach(b=>b.addEventListener("click",()=>{ const a=byId[b.dataset.reack]||{}; if(confirm(`Take over the acknowledgement from ${a.ack_by||"the current holder"}? This is logged on the incident.`)) incAction(b.dataset.reack,"ack"); }));
@@ -628,7 +652,7 @@
   let _holders=null, _holdersSeg=null;
   async function holders(){ if(_holders && _holdersSeg===SEG) return _holders; const d=await api("/api/alerts/holders?segment="+SEG); _holders=d.holders||[]; _holdersSeg=SEG; return _holders; }
   async function handoverPanel(btn, a){
-    const cell=btn.parentElement; if(!cell||cell.querySelector(".hoPanel")) return;
+    const cell=actCell(btn, a); if(!cell||cell.querySelector(".hoPanel")) return;
     let list=[]; try{ list=await holders(); }catch(e){ banner(`Could not load colleagues: ${esc(e.message)}`); return; }
     const me=((window.opsSession&&window.opsSession().me)||{}).email||"";
     const opts=list.filter(u=>u.email!==(a.ack_by||"")).map(u=>`<option value="${esc(u.email)}"${u.email===me?" selected":""}>${esc(u.name)} · ${esc(u.email)}</option>`).join("");
@@ -647,7 +671,7 @@
   /* CLOSE with a reason (11 Sep 2026): the reason feeds the Noise scorecard — inline in the row, no prompt() */
   const RESOLVE_REASONS=[["fixed","Fixed / mitigated"],["single_customer","Single customer / retry storm — no platform issue"],["false_positive","False positive — rule to review"],["duplicate","Duplicate of another incident"],["maintenance","Planned maintenance / expected"]];
   function resolvePanel(btn, a){
-    const cell=btn.parentElement; if(!cell||cell.querySelector(".rsPanel")) return;
+    const cell=actCell(btn, a); if(!cell||cell.querySelector(".rsPanel")) return;
     const p=el("div","rsPanel"); p.style.cssText="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px";
     const pre=a&&a.customers===1?"single_customer":"fixed";
     p.innerHTML=`<span class="rl" style="color:var(--muted)">resolve as</span>
@@ -1476,6 +1500,7 @@
 
   // controls
   document.addEventListener("click", async (e)=>{
+    if(!e.target.closest(".actmenu,[data-more]")) closeActMenus();
     const t = e.target.closest("[data-atab]");
     if(t){ atab=t.dataset.atab; if(window.pf) window.pf.set('alerts_tab',atab); $("#alTabs").querySelectorAll(".pill").forEach(p=>p.classList.toggle("active",p===t)); load(); return; }
   });
