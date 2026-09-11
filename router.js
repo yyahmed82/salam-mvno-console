@@ -10,7 +10,7 @@
     // Growth was absorbed into Monitoring → Resellers. Old links keep working.
     analytics:{view:"analytics"}, growth:{view:"monitoring",monTab:"resellers"}, resellers:{view:"monitoring",monTab:"resellers"},
     dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, sla:{sla:true}, slo:{sla:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
-    alerts:{view:"alerts"}, "fixed-alerts":{view:"alerts",seg:"fixed"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"},journeys:{view:"explorer"}, integrations:{view:"integrations"},
+    alerts:{view:"alerts"}, "fixed-alerts":{view:"alerts",seg:"fixed"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"}, mvnohld:{view:"mvnohld"}, "bss-atlas":{view:"mvnohld"}, journeys:{view:"explorer"}, integrations:{view:"integrations"},
     subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true}, "fixed-oncall":{oncall:true,seg:"fixed"},
     settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
     "settings-notify":{notifyClone:true}, "settings-notify-clone":{notifyClone:true},
@@ -19,7 +19,7 @@
     agents:{agents:true}, "settings-agents":{agents:true},
     audit:{audit:true}, tickets:{tickets:true}
   };
-  const VIEW_HASH={landing:"home",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
+  const VIEW_HASH={landing:"home",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",mvnohld:"mvnohld",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
   let _cur=null;
 
   /* ---- ROLE GUARD (2 Sep 2026) ---------------------------------------------------------------
@@ -28,7 +28,7 @@
    * ACCESS DENIED panel — same message the API would 403 with — instead of a half-broken page.
    * The server gates the data regardless; this makes the denial clear instead of confusing. */
   const VIEW_REQ={ landing:"dashboard", monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts",
-    home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", otodocs:"explore",
+    home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", mvnohld:"explore", otodocs:"explore",
     tapdocs:"explore", salamdocs:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
   const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed", errors:"Troubleshoot", alerts:"Alerts", fixed_alerts:"Fixed › Alerts",
     analytics:"Analytics / SLA", explore:"Explore", workbench:"L2 Workbench", settings:"Settings" };
@@ -104,7 +104,7 @@
     const need=neededFor(r);
     if(need && lacks(need)){ showDenied(need); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (denied)"); return; }
     // business guard (6 Sep 2026): a Mobile-only user never lands on a Fixed page and vice-versa, deep link or not
-    const bizOf=r=>{ if(r.view==="fixed"||r.seg==="fixed") return "fixed"; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","otodocs","tapdocs","salamdocs","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
+    const bizOf=r=>{ if(r.view==="fixed"||r.seg==="fixed") return "fixed"; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","mvnohld","otodocs","tapdocs","salamdocs","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
     const biz=(sess().me||{}).business||"both", rb=bizOf(r);
     if(rb && biz!=="both" && rb!==biz){ showDeniedBiz(rb,biz); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (outside business)"); return; }
     if(r.home){ window.opsGoHome && window.opsGoHome(); }

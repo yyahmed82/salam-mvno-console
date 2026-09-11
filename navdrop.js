@@ -68,7 +68,10 @@
       if(k==="alerts"){ e.preventDefault(); e.stopImmediatePropagation();
         document.querySelectorAll(".navtab").forEach(x=>x.classList.toggle("active", x===b));
         if(location.hash!=="#fixed-alerts") location.hash="#fixed-alerts"; else if(window.openAlerts) window.openAlerts("fixed"); return; }
-      const h="fixed"+(k==="overview"?"":"?tab="+k);
+      /* data-fxq carries extra query for a deep sub-page, so Fixed › Journeys and Fixed › BSS Topology
+       * Atlas open their page directly instead of the Diagrams gallery (11 Sep 2026) */
+      const q=b.dataset.fxq||"";
+      const h="fixed"+(k==="overview"&&!q?"":"?tab="+k+(q?"&"+q:""));
       document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active", v.id==="view-fixed"));
       document.querySelectorAll(".navtab").forEach(x=>x.classList.toggle("active", x===b));
       if(location.hash!=="#"+h) location.hash="#"+h; else if(window.openFixed) window.openFixed(k);

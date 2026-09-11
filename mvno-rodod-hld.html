@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Salam MVNO · DMS + RODOD Oracle BSS Topology</title>
+<style>
+/* DARK is the default. A light palette follows — the page picks one from ?theme=, from the
+   ☀/☾ button, or from the OS when neither says otherwise. Every colour below is a token: nothing
+   in the SVG or the chrome hard-codes a dark value any more (11 Sep 2026). */
+:root{
+  --bg:#04060c;--bg2:#08101d;--panel:rgba(13,20,36,.72);--panel2:rgba(10,15,28,.9);--line:rgba(148,178,255,.16);--line2:rgba(148,178,255,.34);
+  --ink:#eef4ff;--muted:#93a3c4;--dim:#5c6b8c;--hub:#00f5d4;--api:#22d3ee;--osb:#34f5c5;--db:#4ade80;--sync:#c084fc;--prov:#38bdf8;--ext:#60a5fa;--cicd:#f472b6;--mon:#facc15;--oracle:#fb7185;--net:#8aa0c7;--chan:#c084fc;--app:#ff5d8f;--warn:#ffb020;
+  --shadow:0 24px 80px rgba(0,0,0,.55);--radius:18px;
+  /* surfaces the chrome and the SVG paint with */
+  --bodyGrad:radial-gradient(1000px 600px at 12% -10%,rgba(0,245,212,.14),transparent 60%),radial-gradient(900px 700px at 95% 110%,rgba(192,132,252,.12),transparent 58%),linear-gradient(180deg,#04060c,#07101d 55%,#04060c);
+  --grid:rgba(148,178,255,.045);
+  --bar:linear-gradient(180deg,rgba(8,16,29,.92),rgba(6,10,18,.72));
+  --aside:rgba(6,10,18,.55);--asideR:rgba(6,10,18,.58);--float:rgba(5,8,14,.8);
+  --soft:rgba(255,255,255,.03);--soft2:rgba(255,255,255,.045);--soft3:rgba(255,255,255,.025);
+  --logoInk:#06101d;--logoText:#eafffa;--canvasGlow:rgba(0,245,212,.055);
+  --cardFill:rgba(12,19,35,.92);--miniFill:rgba(255,255,255,.05);--miniLine:rgba(255,255,255,.12);
+  --labelHalo:#05070d;--layerOp:.055;--edgeOp:.82;--glow:1;
+}
+:root[data-theme="light"]{
+  --bg:#f6f8fc;--bg2:#eef2f9;--panel:rgba(255,255,255,.86);--panel2:rgba(255,255,255,.95);
+  --line:rgba(15,38,84,.14);--line2:rgba(15,38,84,.26);
+  --ink:#0d1b2f;--muted:#4a5d7e;--dim:#7488a8;
+  /* accents darkened so they hold contrast on white */
+  --hub:#00897b;--api:#0284c7;--osb:#0f9d7a;--db:#16a34a;--sync:#7c3aed;--prov:#0369a1;--ext:#2563eb;--cicd:#db2777;--mon:#b45309;--oracle:#e11d48;--net:#475569;--chan:#7c3aed;--app:#e11d48;--warn:#b45309;
+  --shadow:0 18px 50px rgba(15,38,84,.14);
+  --bodyGrad:radial-gradient(1000px 600px at 12% -10%,rgba(0,137,123,.10),transparent 60%),radial-gradient(900px 700px at 95% 110%,rgba(124,58,237,.08),transparent 58%),linear-gradient(180deg,#f8fafd,#eef3fa 55%,#f6f8fc);
+  --grid:rgba(15,38,84,.055);
+  --bar:linear-gradient(180deg,rgba(255,255,255,.94),rgba(248,250,253,.82));
+  --aside:rgba(255,255,255,.72);--asideR:rgba(255,255,255,.74);--float:rgba(255,255,255,.92);
+  --soft:rgba(15,38,84,.035);--soft2:rgba(15,38,84,.05);--soft3:rgba(15,38,84,.028);
+  --logoInk:#ffffff;--logoText:#0d1b2f;--canvasGlow:rgba(0,137,123,.07);
+  --cardFill:rgba(255,255,255,.97);--miniFill:rgba(15,38,84,.05);--miniLine:rgba(15,38,84,.14);
+  --labelHalo:#f6f8fc;--layerOp:.085;--edgeOp:.92;--glow:0;
+}
+*{box-sizing:border-box}html,body{height:100%}body{margin:0;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bodyGrad);overflow:hidden}
+body:before{content:"";position:fixed;inset:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:44px 44px;mask-image:radial-gradient(circle at 50% 45%,#000 0 42%,transparent 78%);pointer-events:none}
+.app{position:relative;z-index:1;height:100vh;display:grid;grid-template-rows:auto 1fr}
+.topbar{display:flex;align-items:center;gap:18px;padding:16px 22px;border-bottom:1px solid var(--line);background:var(--bar);backdrop-filter:blur(18px)}
+.logo{width:46px;height:46px;border-radius:14px;background:conic-gradient(from 180deg,#00f5d4,#22d3ee,#c084fc,#ff5d8f,#00f5d4);padding:2px;box-shadow:0 0 30px rgba(0,245,212,.35)}
+.logo span{display:grid;place-items:center;width:100%;height:100%;border-radius:12px;background:var(--logoInk);font-weight:950;letter-spacing:-1px;color:var(--logoText)}
+.title h1{margin:0;font-size:18px;letter-spacing:-.4px}.title p{margin:2px 0 0;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:2px}
+.pills{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}.pill{border:1px solid var(--line);background:var(--soft);color:var(--muted);border-radius:999px;padding:6px 10px;font-size:11px;font-weight:700}.pill b{color:var(--ink)}
+.workspace{min-height:0;display:grid;grid-template-columns:300px 1fr 340px}
+.side{border-right:1px solid var(--line);background:var(--aside);backdrop-filter:blur(14px);padding:16px;overflow:auto}.side h3,.panel h3{margin:0 0 10px;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--dim)}
+.search{width:100%;border:1px solid var(--line);background:var(--soft2);color:var(--ink);border-radius:12px;padding:10px 12px;outline:none;font-size:13px}.search:focus{border-color:rgba(0,245,212,.55);box-shadow:0 0 0 3px rgba(0,245,212,.12)}
+.filters{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 18px}.fbtn{border:1px solid var(--line);background:var(--soft);color:var(--muted);border-radius:999px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:6px}.fbtn i{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}.fbtn:hover{color:var(--ink);transform:translateY(-1px)}.fbtn.active{color:#ffffff;background:linear-gradient(135deg,var(--hub),var(--api));border-color:transparent;box-shadow:0 8px 24px rgba(0,245,212,.25)}
+.nodeList{display:grid;gap:8px}.nodeItem{border:1px solid var(--line);background:var(--soft3);border-radius:12px;padding:9px 10px;cursor:pointer;transition:.18s}.nodeItem:hover{border-color:var(--line2);transform:translateX(2px)}.nodeItem.active{border-color:rgba(0,245,212,.6);background:rgba(0,245,212,.08)}.nodeItem .n{font-size:12px;font-weight:800}.nodeItem .m{font-size:10px;color:var(--dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.canvas{position:relative;min-width:0;min-height:0;background:radial-gradient(700px 420px at 50% 42%,var(--canvasGlow),transparent 65%)}
+svg#topo{display:block;width:100%;height:100%;cursor:grab}svg#topo:active{cursor:grabbing}.canvasHud{position:absolute;left:16px;top:16px;display:flex;gap:8px;z-index:5}.hudBtn{border:1px solid var(--line);background:var(--float);color:var(--ink);border-radius:10px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;backdrop-filter:blur(10px)}.hudBtn:hover{border-color:rgba(0,245,212,.55);color:var(--hub)}
+.legend{position:absolute;left:16px;bottom:16px;z-index:5;background:var(--float);border:1px solid var(--line);border-radius:14px;padding:12px 14px;backdrop-filter:blur(12px);display:grid;gap:6px}.legend div{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px}.legend i{width:24px;height:3px;border-radius:99px;background:currentColor;box-shadow:0 0 10px currentColor}.legend i.dash{background:repeating-linear-gradient(90deg,currentColor 0 7px,transparent 7px 12px)}
+.panel{border-left:1px solid var(--line);background:var(--asideR);backdrop-filter:blur(14px);padding:18px;overflow:auto}.detailCard{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,var(--soft2),var(--soft3));padding:16px;box-shadow:var(--shadow)}.detailCard .kicker{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:900}.detailCard h2{margin:8px 0 6px;font-size:20px;letter-spacing:-.4px}.meta{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);font-size:11px;line-height:1.7}.desc{color:var(--muted);font-size:13px;line-height:1.65;margin-top:12px}.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.chip{font-size:10px;font-weight:800;color:var(--ink);border:1px solid var(--line2);border-radius:999px;padding:5px 8px;background:var(--soft2)}
+.statGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.stat{border:1px solid var(--line);border-radius:14px;padding:12px;background:var(--soft)}.stat b{display:block;font-size:18px}.stat span{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:1.4px}
+/* SVG */
+.layer{fill:none;stroke:var(--line);stroke-dasharray:3 7}.layerBg{opacity:var(--layerOp)}.layerLabel{fill:currentColor;font-size:11px;font-weight:950;letter-spacing:3px;text-transform:uppercase;pointer-events:none}
+.edge{fill:none;stroke-width:2;opacity:var(--edgeOp);filter:drop-shadow(0 0 5px currentColor);transition:.18s;cursor:pointer}.edge.thick{stroke-width:3.2}.edge.dashed{stroke-dasharray:8 7;animation:dash 18s linear infinite}.edge.dotted{stroke-dasharray:2 7;animation:dash 12s linear infinite}.edge.dim{opacity:.07;filter:none}.edge.hot{stroke-width:4;opacity:1;filter:drop-shadow(0 0 12px currentColor)}@keyframes dash{to{stroke-dashoffset:-220}}@keyframes dashRev{to{stroke-dashoffset:220}}.pulse.return{opacity:.9}
+.edgeLabel{fill:var(--muted);font-size:9px;font-weight:850;letter-spacing:1.2px;text-transform:uppercase;paint-order:stroke;stroke:var(--labelHalo);stroke-width:4;pointer-events:none}
+.pulse{filter:drop-shadow(0 0 8px currentColor)}
+.node{cursor:pointer;transition:filter .18s,opacity .18s}.node.dim{opacity:.16}.node.hot .card{stroke:var(--hub);stroke-width:2.2;filter:drop-shadow(0 0 22px rgba(0,245,212,.5))}.node:hover .card{stroke:currentColor;stroke-width:2;filter:drop-shadow(0 0 18px currentColor)}
+.card{fill:var(--cardFill);stroke:var(--line2);stroke-width:1.1;rx:14}.cardHead{fill:currentColor;font-size:12px;font-weight:900;pointer-events:none}.cardSub{fill:var(--muted);font-size:10px;font-weight:650;pointer-events:none}.cardMeta{fill:var(--dim);font-size:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;pointer-events:none}.mini{fill:var(--miniFill);stroke:var(--miniLine);rx:6}.miniText{fill:var(--ink);font-size:8.5px;font-weight:800;pointer-events:none}.badge{fill:color-mix(in srgb,var(--hub) 14%,transparent);stroke:color-mix(in srgb,var(--hub) 50%,transparent);rx:99}.badgeText{fill:var(--hub);font-size:8px;font-weight:950;letter-spacing:1px;pointer-events:none}
+.hubRing{fill:none;stroke:var(--hub);opacity:.35}.hubRing.a{stroke-dasharray:2 5;animation:spin 46s linear infinite;transform-origin:center;transform-box:fill-box}.hubRing.b{stroke-dasharray:8 4;animation:spin 30s linear infinite reverse;transform-origin:center;transform-box:fill-box}@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:1100px){.workspace{grid-template-columns:1fr}.side,.panel{display:none}}
+@media print{.side,.panel,.canvasHud,.legend{display:none}.workspace{grid-template-columns:1fr}.app{grid-template-rows:auto 1fr}body{overflow:visible}}
+</style>
+<script>
+/* THEME (11 Sep 2026) — order of authority: ?theme= from the embedding console, then this page's own
+ * toggle (remembered per browser), then the OS. Embedded in the console the parent always wins, so the
+ * atlas matches the console it is shown inside. */
+(function(){
+  var root=document.documentElement, KEY='salamAtlasTheme';
+  function osTheme(){ try{ return matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'; }catch(e){ return 'dark'; } }
+  function stored(){ try{ return localStorage.getItem(KEY); }catch(e){ return null; } }
+  var q=new URLSearchParams(location.search).get('theme');
+  var initial=(q==='light'||q==='dark')?q:(stored()||osTheme());
+  function apply(t){ root.setAttribute('data-theme',t); var b=document.getElementById('themeBtn'); if(b){ b.textContent=t==='light'?'☾':'☀'; b.title=t==='light'?'Switch to dark':'Switch to light'; } }
+  apply(initial);
+  window.__setAtlasTheme=function(t){ apply(t); try{ localStorage.setItem(KEY,t); }catch(e){} };
+  document.addEventListener('DOMContentLoaded',function(){
+    apply(root.getAttribute('data-theme')||initial);
+    var b=document.getElementById('themeBtn');
+    if(b) b.addEventListener('click',function(){ window.__setAtlasTheme(root.getAttribute('data-theme')==='light'?'dark':'light'); });
+  });
+  /* the console can retheme a live iframe without reloading it */
+  window.addEventListener('message',function(e){ var t=e&&e.data&&e.data.theme; if(t==='light'||t==='dark') apply(t); });
+  if(!q){ try{ matchMedia('(prefers-color-scheme: light)').addEventListener('change',function(ev){ if(!stored()) apply(ev.matches?'light':'dark'); }); }catch(e){} }
+})();
+</script>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="logo"><span>sa</span></div>
+    <div class="title"><h1>Salam MVNO · DMS + RODOD Oracle BSS</h1><p>Mobile MVNO · DMS integration · Optiva replaced by RODOD Oracle BSS</p></div>
+    <div class="pills"><span class="pill">Layers <b>5</b></span><span class="pill">Nodes <b id="nodeCount">0</b></span><span class="pill">Flows <b id="edgeCount">0</b></span><span class="pill">Status <b style="color:var(--hub)">Transition</b></span></div>
+  </header>
+  <section class="workspace">
+    <aside class="side">
+      <h3>Explorer</h3>
+      <input id="search" class="search" placeholder="Search node, IP, partner, system…" />
+      <div class="filters" id="filters"></div><h3 style="margin-top:18px">Journey</h3><div class="filters" id="journeys"></div>
+      <h3>Nodes</h3>
+      <div class="nodeList" id="nodeList"></div>
+    </aside>
+    <section class="canvas">
+      <div class="canvasHud"><button class="hudBtn" id="zoomOut">−</button><button class="hudBtn" id="zoomIn">+</button><button class="hudBtn" id="fit">Fit</button><button class="hudBtn" id="themeBtn" title="Switch light / dark">☀</button><button class="hudBtn" id="exportSvg">Export SVG</button><button class="hudBtn" onclick="window.print()">Print</button></div>
+      <div class="legend" id="legend"></div>
+      <svg id="topo" viewBox="0 0 1600 980" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="soft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <radialGradient id="hubGrad"><stop offset="0" stop-color="#00f5d4"/><stop offset=".62" stop-color="#22d3ee"/><stop offset="1" stop-color="#0ea5b7"/></radialGradient>
+        </defs>
+        <g id="world">
+          <g id="layers"></g><g id="edges"></g><g id="particles"></g><g id="nodes"></g>
+        </g>
+      </svg>
+    </section>
+    <aside class="panel">
+      <h3>Inspector</h3>
+      <div class="detailCard" id="detail"><div class="kicker">Select a node</div><h2>MVNO DMS + RODOD topology</h2><div class="desc">Click any card to inspect its role, server context, and connected flows. Use filters to isolate API, OSB, Oracle BSS, database, provisioning, external partner, network, or monitoring traffic.</div><div class="statGrid"><div class="stat"><b>APIGW + OSB</b><span>integration hub</span></div><div class="stat"><b>RODOD</b><span>Oracle BSS core</span></div><div class="stat"><b>MVNO / DMS</b><span>mobile scope</span></div><div class="stat"><b>Optiva</b><span>replaced</span></div></div></div>
+    </aside>
+  </section>
+</div>
+<script>
+const NS='http://www.w3.org/2000/svg';
+const kinds={api:{c:'#22d3ee',label:'API · HTTPS'},osb:{c:'#34f5c5',label:'OSB · ESB'},oracle:{c:'#fb7185',label:'Oracle BSS'},db:{c:'#4ade80',label:'Database'},sync:{c:'#c084fc',label:'Sync'},prov:{c:'#38bdf8',label:'Provisioning'},ext:{c:'#60a5fa',label:'External'},cicd:{c:'#f472b6',label:'CI/CD'},mon:{c:'#facc15',label:'Monitoring'},net:{c:'#8aa0c7',label:'Network'}};
+const layers=[
+ {id:'channels',name:'Access Channels',x:30,y:70,w:270,h:820,c:'#c084fc'},
+ {id:'edge',name:'DMS Edge + Apps',x:330,y:70,w:270,h:820,c:'#22d3ee'},
+ {id:'integration',name:'API GW + OSB + RODOD',x:630,y:70,w:290,h:820,c:'#34f5c5'},
+ {id:'network',name:'Network / NP',x:950,y:70,w:280,h:820,c:'#38bdf8'},
+ {id:'partners',name:'External + Data Services',x:1260,y:70,w:310,h:820,c:'#60a5fa'}
+];
+const nodes=[
+ {id:'admin',layer:'channels',name:'Admin Portal',sub:'Dealers · commissions · plans',meta:'dmsadmin.salammobile.sa:3000',desc:'Operations console for dealers, commissions, plans and offers; hits the App Front tier.',x:60,y:120,w:210,h:66,accent:'#00f5d4'},
+ {id:'magento',layer:'channels',name:'Magento Portal',sub:'Catalog · prices · offers',meta:'172.31.43.61:3000/tec_trms',desc:'Catalog and merchandising portal managing prices, plans and offers.',x:60,y:206,w:210,h:66,accent:'#c084fc'},
+ {id:'apich',layer:'channels',name:'API Channels',sub:'Web · Mobile · Self · Hybrid',meta:'my/self/mobile.salammobile.sa',desc:'Public API consumers for MVNO self-care and dealer journeys.',x:60,y:292,w:210,h:120,accent:'#22d3ee',chips:['Web Self-Care','Mobile Apps','Self Dealers','Hybrid Dealers']},
+ {id:'stores',layer:'channels',name:'Digital Storefronts',sub:'store · ssk · related records',meta:'217.170.57.18 · 172.31.45.13',desc:'Store and SSK digital properties resolved through internal DNS to VIPs.',x:60,y:442,w:210,h:78,accent:'#c084fc'},
+
+ {id:'lb',layer:'edge',name:'Load Balancer',sub:'Front-door HTTPS ingress',meta:'apigw.salammobile.sa · VIP 172.31.45.1',desc:'Resolves apigw.salammobile.sa and distributes traffic to the MVNO API gateway cluster.',x:360,y:112,w:210,h:70,accent:'#00f5d4'},
+ {id:'apigw',layer:'edge',name:'MVNO API Gateway',sub:'DIGAPI-GWP01 / GWP02',meta:'172.31.43.9-10 · 172.31.42.23-24',desc:'Central API router: authentication, throttling and dispatch. No 3Scale layer; APIGW speaks directly to OSB.',x:360,y:212,w:210,h:92,accent:'#22d3ee',hub:true},
+ {id:'dmsentry',layer:'edge',name:'APIGW · DMS Entry',sub:'Internal DMS router',meta:'172.31.43.61:3000',desc:'Internal DMS API gateway routing admin traffic to App Front and channel traffic to App Backend.',x:360,y:334,w:210,h:68,accent:'#22d3ee'},
+ {id:'appfront',layer:'edge',name:'App Front',sub:'Admin UI tier',meta:'172.31.43.11-14 · DIGPORTALP01-04',desc:'Admin Portal UI tier for dealer and commission operations.',x:360,y:432,w:210,h:66,accent:'#00f5d4'},
+ {id:'appback',layer:'edge',name:'App Backend',sub:'Business logic tier',meta:'172.31.43.136-139 · APPDIGP01-04',desc:'DMS business-logic tier used by channels; talks to Clara DB and integrated services.',x:360,y:528,w:210,h:72,accent:'#ff5d8f'},
+ {id:'maxscale',layer:'edge',name:'MaxScale Proxy',sub:'Read/write split + failover',meta:'VIP 172.31.43.75 · nodes .75/.84',desc:'DB query routing proxy in front of the Clara MySQL cluster.',x:360,y:630,w:210,h:62,accent:'#4ade80'},
+ {id:'clara',layer:'edge',name:'Clara MySQL Cluster',sub:'Primary DMS data store',meta:'DB VIP 172.16.1.115 · nodes 43.72/.73/.74',desc:'Primary DMS data store fronted by MaxScale; backup planned via Commvault.',x:360,y:722,w:210,h:104,accent:'#4ade80',chips:['43.72','43.73','43.74','Commvault planned']},
+
+ {id:'osb',layer:'integration',name:'OSB',sub:'Oracle Service Bus',meta:'MVNO ESB · behind APIGW',desc:'MVNO service bus. APIGW routes orchestration traffic to OSB; OSB fans out to RODOD Oracle BSS, network/NP and partner services.',x:665,y:150,w:220,h:86,accent:'#34f5c5',hub:true},
+ {id:'rodod',layer:'integration',name:'RODOD Oracle BSS',sub:'Optiva replacement',meta:'Siebel · BRM · ECE · OCOMC/OC3C · UIM · OSM · ASAP · BIP · Mirror DB',desc:'RODOD Oracle BSS stack replaces Optiva APPBSS as the charging/BSS engine target for MVNO journeys.',x:665,y:286,w:220,h:430,accent:'#fb7185',chips:['Siebel CRM','BRM Billing','ECE Charging','OCOMC · OC3C','UIM Inventory','OSM Orders','ASAP Activation','BIP Publishing','Mirror DB','Replaces Optiva APPBSS']},
+ {id:'billingnote',layer:'integration',name:'BSS Cutover Note',sub:'Optiva APPBSS retired from flow',meta:'Old: 172.31.42.50-52:9340',desc:'Legacy Optiva path is shown as removed; new orchestration terminates on RODOD Oracle BSS through OSB.',x:665,y:746,w:220,h:82,accent:'#ffb020'},
+
+ {id:'citc',layer:'network',name:'CITC NCP',sub:'National NP gateway',meta:'HTTPS / VPN egress',desc:'National Number Portability gateway reached over VPN.',x:980,y:120,w:220,h:62,accent:'#8aa0c7'},
+ {id:'vpn',layer:'network',name:'VPN / Firewall Edge',sub:'Tunnel termination',meta:'RUH 217.170.62.65 · JED 217.170.62.50',desc:'VPN tunnel termination and stateful filtering between CITC and NetAxis.',x:980,y:202,w:220,h:70,accent:'#8aa0c7'},
+ {id:'netaxis',layer:'network',name:'NPACT / NetAxis HA',sub:'Active-active pair',meta:'RUH 10.224.11.24 · JED 10.224.11.241 · OAM 10.224.3.29',desc:'High-availability NPACT pair owning number portability state.',x:980,y:302,w:220,h:86,accent:'#38bdf8',chips:['RUH HA','JED HA','OAM']},
+ {id:'localdb',layer:'network',name:'Local NP Database',sub:'PostgreSQL active pair',meta:'Riyadh + Jeddah',desc:'Local number-portability records synced from operators and NetAxis.',x:980,y:418,w:220,h:66,accent:'#4ade80'},
+ {id:'npops',layer:'network',name:'NP Operators',sub:'STC · Mobily · others',meta:'External operator NP systems',desc:'External operator NP systems pushing portability state.',x:980,y:514,w:220,h:62,accent:'#38bdf8'},
+ {id:'fnr',layer:'network',name:'Huawei FNR',sub:'Fixed Number Register',meta:'Number lifecycle',desc:'Fixed number register add/update/delete driven by NetAxis.',x:980,y:606,w:220,h:62,accent:'#38bdf8'},
+ {id:'hlr',layer:'network',name:'Huawei HLR',sub:'Subscriber provisioning',meta:'HLR updates',desc:'Subscriber-level provisioning store updated during onboarding and plan changes.',x:980,y:698,w:220,h:62,accent:'#38bdf8'},
+
+ {id:'cst',layer:'partners',name:'CST · Identity',sub:'Nafath · Absher · SEMATI',meta:'SIMAH · Mafafith',desc:'Government identity, KYC and credit-check services used in onboarding.',x:1290,y:120,w:250,h:80,accent:'#ff5d8f'},
+ {id:'payment',layer:'partners',name:'Payment Gateways',sub:'HyperPay · UPG',meta:'Cards · wallets · callbacks',desc:'Payment gateways for tokenization, charges and asynchronous callbacks.',x:1290,y:230,w:250,h:66,accent:'#ffb020'},
+ {id:'zatca',layer:'partners',name:'ZATCA',sub:'VAT reporting',meta:'Invoice signing',desc:'Saudi tax authority invoice submission and signed responses.',x:1290,y:326,w:250,h:62,accent:'#a3e635'},
+ {id:'messaging',layer:'partners',name:'Messaging',sub:'SMTP · Zain SMSC',meta:'SMTP 172.16.1.115 · SMSC 10.158.5.155',desc:'Outbound email and SMS for transactional notifications and OTPs.',x:1290,y:418,w:250,h:66,accent:'#facc15'},
+ {id:'sadad',layer:'partners',name:'SADAD Driver',sub:'Payment driver app + DB',meta:'App 172.31.43.148 · DB .81/.82',desc:'SADAD payment driver application and database partners.',x:1290,y:514,w:250,h:70,accent:'#ffb020'},
+ {id:'dns',layer:'partners',name:'DNS Records',sub:'Service name resolution',meta:'apigw/my/self/store/ssk/grafana',desc:'Internal DNS resolving salammobile.sa service names to VIPs.',x:1290,y:614,w:250,h:92,accent:'#4ade80',chips:['apigw → 172.31.45.1','my → 172.31.45.6','self/store → 217.170.57.18','ssk → 172.31.45.13','grafana → 172.31.43.175:3000']},
+ {id:'grafana',layer:'partners',name:'Grafana',sub:'Monitoring dashboards',meta:'grafana.salammobile.sa:3000',desc:'Monitoring and dashboards for all DMS application tiers.',x:1290,y:736,w:250,h:62,accent:'#facc15'}
+];
+const edges=[
+ {f:'admin',t:'lb',k:'api',label:'admin',j:'digital'},{f:'magento',t:'lb',k:'api',label:'portal',j:'digital'},{f:'apich',t:'lb',k:'api',label:'public API',thick:1,j:'digital'},{f:'stores',t:'lb',k:'api',label:'storefront',j:'digital'},
+ {f:'lb',t:'apigw',k:'api',label:'VIP',thick:1,j:'digital'},
+ {f:'apigw',t:'dmsentry',k:'api',label:'DMS route',thick:1,j:'dms'},
+ {f:'dmsentry',t:'appfront',k:'api',label:'admin UI',j:'dms'},{f:'dmsentry',t:'appback',k:'api',label:'business API',thick:1,j:'dms'},
+ {f:'appfront',t:'appback',k:'api',label:'server-side',j:'dms'},
+ {f:'appback',t:'maxscale',k:'db',label:'SQL',thick:1,j:'dms'},{f:'appfront',t:'maxscale',k:'db',label:'SQL',j:'dms'},
+ {f:'maxscale',t:'clara',k:'db',label:'cluster',thick:1,j:'dms'},
+ {f:'apigw',t:'osb',k:'osb',label:'orchestration',thick:1,j:'digital'},
+ {f:'osb',t:'rodod',k:'oracle',label:'RODOD BSS',thick:1,j:'digital'},
+ {f:'osb',t:'billingnote',k:'oracle',label:'cutover',dashed:1,j:'digital'},
+ {f:'citc',t:'vpn',k:'net',label:'NP VPN',j:'network'},{f:'vpn',t:'netaxis',k:'net',label:'tunnel',j:'network'},
+ {f:'npops',t:'localdb',k:'sync',label:'NP state',dashed:1,j:'network'},{f:'netaxis',t:'localdb',k:'sync',label:'replication',dashed:1,j:'network'},{f:'netaxis',t:'fnr',k:'prov',label:'FNR update',j:'network'},{f:'osb',t:'hlr',k:'prov',label:'provision',thick:1,j:'network'},{f:'osb',t:'netaxis',k:'prov',label:'NPACT',j:'network'},
+ {f:'osb',t:'cst',k:'ext',label:'KYC',dashed:1,j:'partner'},{f:'osb',t:'payment',k:'ext',label:'payments',dashed:1,j:'partner'},{f:'osb',t:'zatca',k:'ext',label:'VAT',dashed:1,j:'partner'},{f:'osb',t:'messaging',k:'ext',label:'OTP/notify',dashed:1,j:'partner'},{f:'osb',t:'sadad',k:'ext',label:'SADAD',dashed:1,j:'partner'},
+ {f:'appback',t:'cst',k:'ext',label:'callback',dashed:1,j:'partner'},{f:'appback',t:'payment',k:'ext',label:'callback',dashed:1,j:'partner'},{f:'appback',t:'zatca',k:'ext',label:'invoice',dashed:1,j:'partner'},{f:'appback',t:'messaging',k:'ext',label:'notify',dashed:1,j:'partner'},{f:'appback',t:'sadad',k:'ext',label:'driver',dashed:1,j:'partner'},
+ {f:'dns',t:'lb',k:'net',label:'resolve',dotted:1,j:'ops'},{f:'grafana',t:'appback',k:'mon',label:'observe',dotted:1,j:'ops'},{f:'grafana',t:'osb',k:'mon',label:'observe',dotted:1,j:'ops'}
+];
+const journeys={direct:{label:'Direct'},digital:{label:'Digital ↔ RODOD',path:'Channels → LB → APIGW → OSB → RODOD → back'},dms:{label:'DMS Data Loop',path:'APIGW → DMS Entry → App Front/Back → MaxScale → Clara → back'},network:{label:'Network / NP',path:'OSB → HLR / NetAxis → FNR / Local NP DB → back'},partner:{label:'Partner Loop',path:'OSB/AppBack → CST · Payments · ZATCA · Messaging · SADAD → callback back'},ops:{label:'DNS / Observability',path:'DNS → LB · Grafana → AppBack/OSB'}};
+const $=id=>document.getElementById(id), world=$('world'), gL=$('layers'), gE=$('edges'), gP=$('particles'), gN=$('nodes'), svg=$('topo');
+const byId=Object.fromEntries(nodes.map(n=>[n.id,n])); let selected=null, active='all', journey='digital';
+function el(name,attrs={},parent){const e=document.createElementNS(NS,name);for(const k in attrs)e.setAttribute(k,attrs[k]);parent&&parent.appendChild(e);return e}
+function txt(parent,attrs,content){const e=el('text',attrs,parent);e.textContent=content;return e}
+function port(n,side){if(side==='r')return{x:n.x+n.w,y:n.y+n.h/2};if(side==='l')return{x:n.x,y:n.y+n.h/2};if(side==='b')return{x:n.x+n.w/2,y:n.y+n.h};return{x:n.x+n.w/2,y:n.y}}
+function edgePath(a,b){const A=byId[a],B=byId[b];if(A.x< B.x){const p=port(A,'r'),q=port(B,'l'),d=Math.max(70,(q.x-p.x)*.45);return{d:`M ${p.x} ${p.y} C ${p.x+d} ${p.y}, ${q.x-d} ${q.y}, ${q.x} ${q.y}`,p,q}} if(A.x>B.x){const p=port(A,'l'),q=port(B,'r'),d=Math.max(70,(p.x-q.x)*.45);return{d:`M ${p.x} ${p.y} C ${p.x-d} ${p.y}, ${q.x+d} ${q.y}, ${q.x} ${q.y}`,p,q}} const p=port(A,'b'),q=port(B,'t'),d=Math.max(46,(q.y-p.y)*.4);return{d:`M ${p.x} ${p.y} C ${p.x} ${p.y+d}, ${q.x} ${q.y-d}, ${q.x} ${q.y}`,p,q}}
+function renderLayers(){layers.forEach(l=>{el('rect',{class:'layerBg',x:l.x,y:l.y,width:l.w,height:l.h,rx:20,fill:l.c},gL);el('rect',{class:'layer',x:l.x,y:l.y,width:l.w,height:l.h,rx:20},gL);txt(gL,{class:'layerLabel',x:l.x+l.w/2,y:l.y+26,'text-anchor':'middle',style:`color:${l.c}`},l.name)})}
+function renderEdges(){edges.forEach((e,i)=>{const {d,p,q}=edgePath(e.f,e.t),k=kinds[e.k];const path=el('path',{class:`edge ${e.thick?'thick':''} ${e.dashed?'dashed':''} ${e.dotted?'dotted':''}`,id:`edge-${i}`,d,style:`color:${k.c};stroke:${k.c}`},gE);path.dataset.f=e.f;path.dataset.t=e.t;path.dataset.k=e.k;path.dataset.j=e.j||'';const lx=(p.x+q.x)/2,ly=(p.y+q.y)/2;txt(gE,{class:'edgeLabel',x:lx,y:ly-8,'text-anchor':'middle'},e.label||k.label);const c=el('circle',{class:'pulse',r:e.thick?4:3,fill:k.c,style:`color:${k.c}`},gP);c.dataset.k=e.k;c.dataset.j=e.j||'';el('animateMotion',{dur:`${2.2+(i%5)*.55}s`,begin:`${(i%7)*.22}s`,repeatCount:'indefinite',path:d},c);const r=el('circle',{class:'pulse return',r:e.thick?3:2.4,fill:'#ffffff',style:`color:${k.c};display:none`},gP);r.dataset.k=e.k;r.dataset.j=e.j||'';el('animateMotion',{dur:`${2.8+(i%5)*.5}s`,begin:`${(i%7)*.3}s`,repeatCount:'indefinite',path:d,keyPoints:'1;0',keyTimes:'0;1',calcMode:'linear'},r);path.addEventListener('mouseenter',()=>path.classList.add('hot'));path.addEventListener('mouseleave',()=>path.classList.remove('hot'));})}
+function nodeContent(g,n){const a=n.accent;el('rect',{class:'card',x:n.x,y:n.y,width:n.w,height:n.h,style:`color:${a}`},g);txt(g,{class:'cardHead',x:n.x+16,y:n.y+24},n.name);txt(g,{class:'cardSub',x:n.x+16,y:n.y+42},n.sub||'');txt(g,{class:'cardMeta',x:n.x+16,y:n.y+n.h-12},n.meta||'');if(n.chips){const cols=n.w>240?2:1,chipW=(n.w-28-(cols-1)*8)/cols;n.chips.slice(0,12).forEach((c,i)=>{const cx=n.x+14+(i%cols)*(chipW+8),cy=n.y+58+Math.floor(i/cols)*22;if(cy+18<n.y+n.h-20){el('rect',{class:'mini',x:cx,y:cy,width:chipW,height:17},g);txt(g,{class:'miniText',x:cx+7,y:cy+12},c)}})}if(n.hub){el('circle',{class:'hubRing a',cx:n.x+n.w/2,cy:n.y+n.h/2,r:Math.max(n.w,n.h)*.72},g);el('circle',{class:'hubRing b',cx:n.x+n.w/2,cy:n.y+n.h/2,r:Math.max(n.w,n.h)*.56},g)}el('rect',{class:'badge',x:n.x+n.w-74,y:n.y+10,width:58,height:16},g);txt(g,{class:'badgeText',x:n.x+n.w-45,y:n.y+21,'text-anchor':'middle'},n.layer.toUpperCase())}
+function renderNodes(){nodes.forEach(n=>{const g=el('g',{class:'node',tabindex:0},gN);g.dataset.id=n.id;nodeContent(g,n);g.addEventListener('click',ev=>{ev.stopPropagation();select(n.id)});g.addEventListener('keydown',ev=>{if(ev.key==='Enter')select(n.id)})})}
+function renderSide(){const fs=$('filters');fs.innerHTML='';[['all','All'],...Object.entries(kinds).map(([k,v])=>[k,v.label.split(' ')[0]])].forEach(([k,label])=>{const b=document.createElement('button');b.className='fbtn'+(k===active?' active':'');b.innerHTML=`<i style="color:${k==='all'?'#00f5d4':kinds[k].c}"></i>${label}`;b.onclick=()=>{active=k;applyFilter();renderSide()};fs.appendChild(b)});const list=$('nodeList');list.innerHTML='';nodes.forEach(n=>{const d=document.createElement('div');d.className='nodeItem'+(selected===n.id?' active':'');d.innerHTML=`<div class="n">${n.name}</div><div class="m">${n.meta||n.sub||''}</div>`;d.onclick=()=>select(n.id);list.appendChild(d)});const js=$('journeys');if(js){js.innerHTML='';Object.entries(journeys).forEach(([id,j])=>{const b=document.createElement('button');b.className='fbtn'+(journey===id?' active':'');b.innerHTML=`<i style="color:${id==='direct'?'#93a3c4':id==='digital'?'#00f5d4':id==='dms'?'#22d3ee':id==='network'?'#38bdf8':id==='partner'?'#60a5fa':'#facc15'}"></i>${j.label}`;b.onclick=()=>{journey=id;active='all';applyFilter();select(selected);renderSide()};js.appendChild(b)})}const lg=$('legend');lg.innerHTML='';Object.values(kinds).forEach(v=>{const r=document.createElement('div');r.innerHTML=`<i class="${v.label.includes('External')||v.label.includes('CI')?'dash':''}" style="color:${v.c}"></i>${v.label}`;lg.appendChild(r)});$('nodeCount').textContent=nodes.length;$('edgeCount').textContent=edges.length}
+function applyFilter(){document.querySelectorAll('.edge').forEach(p=>{const show=active==='all'||p.dataset.k===active;p.classList.toggle('dim',!show)});document.querySelectorAll('#particles circle').forEach(c=>{c.style.display=active==='all'||c.dataset.k===active?'':'none'});if(active!=='all'){const used=new Set();edges.forEach((e,i)=>{if(e.k===active){used.add(e.f);used.add(e.t)}});document.querySelectorAll('.node').forEach(g=>g.classList.toggle('dim',!used.has(g.dataset.id)))}else document.querySelectorAll('.node').forEach(g=>g.classList.remove('dim'))}
+function select(id){selected=selected===id?null:id;let nodeSet=new Set(selected?[selected]:[]),edgeSet=new Set();if(selected&&journey!=='direct'){const idx=edges.map((e,i)=>e.j===journey?i:-1).filter(i=>i>=0);if(idx.some(i=>edges[i].f===selected||edges[i].t===selected)){const adjF={},adjB={};idx.forEach(i=>{const e=edges[i];(adjF[e.f]||(adjF[e.f]=[])).push(i);(adjB[e.t]||(adjB[e.t]=[])).push(i)});const walk=(start,adj,forward)=>{const q=[start];while(q.length){const n=q.shift();for(const ei of adj[n]||[]){if(edgeSet.has(ei))continue;edgeSet.add(ei);const e=edges[ei],nxt=forward?e.t:e.f;if(!nodeSet.has(nxt)){nodeSet.add(nxt);q.push(nxt)}}}};walk(selected,adjF,true);walk(selected,adjB,false)}}else if(selected){edges.forEach((e,i)=>{if(e.f===selected||e.t===selected){edgeSet.add(i);nodeSet.add(e.f);nodeSet.add(e.t)}})}document.querySelectorAll('.node').forEach(g=>{g.classList.toggle('hot',g.dataset.id===selected);g.classList.toggle('dim',selected&&!nodeSet.has(g.dataset.id))});document.querySelectorAll('.edge').forEach((p,i)=>{const rel=selected&&edgeSet.has(i);p.classList.toggle('hot',rel);p.classList.toggle('dim',selected&&!rel)});document.querySelectorAll('#particles circle.return').forEach(c=>{c.style.display=selected&&journey!=='direct'&&c.dataset.j===journey?'':'none'});showDetail();renderSideListOnly()}
+function renderSideListOnly(){document.querySelectorAll('.nodeItem').forEach((d,i)=>d.classList.toggle('active',nodes[i].id===selected))}
+function showDetail(){const box=$('detail');if(!selected){box.innerHTML=`<div class="kicker">Select a node</div><h2>MVNO DMS + RODOD topology</h2><div class="desc">Pick a journey, then click a channel or system to trace the full request and the return path.</div>`;return}const n=byId[selected],flow=edges.filter(e=>e.f===selected||e.t===selected),j=journeys[journey];box.innerHTML=`<div class="kicker">${n.layer} · ${flow.length} direct flows</div><h2>${n.name}</h2><div class="meta">${n.meta||''}</div><div class="desc">${n.desc||''}</div>${journey!=='direct'?`<div class="chips"><span class="chip">Journey: ${j.label}</span><span class="chip">${j.path}</span><span class="chip">white pulses = return traffic</span></div>`:''}<div class="chips">${(n.chips||[]).map(c=>`<span class="chip">${c}</span>`).join('')}</div><div class="statGrid"><div class="stat"><b>${flow.filter(e=>e.f===selected).length}</b><span>outbound</span></div><div class="stat"><b>${flow.filter(e=>e.t===selected).length}</b><span>inbound</span></div></div>`}
+let view={x:0,y:0,k:1};function applyView(){world.setAttribute('transform',`translate(${view.x} ${view.y}) scale(${view.k})`)}
+function fit(){const r=svg.getBoundingClientRect();const k=Math.min((r.width-60)/1600,(r.height-60)/980);view={k,x:(r.width-1600*k)/2,y:(r.height-980*k)/2};applyView()}
+function zoom(f,cx,cy){const r=svg.getBoundingClientRect();cx=cx??r.width/2;cy=cy??r.height/2;const wx=(cx-view.x)/view.k,wy=(cy-view.y)/view.k;view.k=Math.min(2.4,Math.max(.35,view.k*f));view.x=cx-wx*view.k;view.y=cy-wy*view.k;applyView()}
+svg.addEventListener('wheel',e=>{e.preventDefault();const r=svg.getBoundingClientRect();zoom(e.deltaY<0?1.12:.89,e.clientX-r.left,e.clientY-r.top)},{passive:false});
+let drag=null;svg.addEventListener('pointerdown',e=>{if(e.target.closest('.node'))return;drag={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y};svg.setPointerCapture(e.pointerId)});svg.addEventListener('pointermove',e=>{if(!drag)return;view.x=drag.vx+(e.clientX-drag.x);view.y=drag.vy+(e.clientY-drag.y);applyView()});svg.addEventListener('pointerup',()=>drag=null);
+$('zoomIn').onclick=()=>zoom(1.18);$('zoomOut').onclick=()=>zoom(.85);$('fit').onclick=fit;
+$('search').addEventListener('input',e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('.node').forEach((g,i)=>{const n=nodes[i];const hit=!q||(n.name+' '+n.sub+' '+n.meta+' '+n.desc+' '+(n.chips||[]).join(' ')).toLowerCase().includes(q);g.classList.toggle('dim',!hit)});document.querySelectorAll('.nodeItem').forEach((d,i)=>{const n=nodes[i];d.style.display=!q||(n.name+' '+n.meta+' '+(n.chips||[]).join(' ')).toLowerCase().includes(q)?'':'none'})});
+$('exportSvg').onclick=()=>{const clone=svg.cloneNode(true);clone.setAttribute('xmlns',NS);const blob=new Blob([`<!doctype svg>\n`+clone.outerHTML],{type:'image/svg+xml'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='salam-mvno-rodod-topology.svg';a.click();URL.revokeObjectURL(a.href)};
+svg.addEventListener('click',e=>{if(e.target===svg||e.target.classList.contains('layer')||e.target.classList.contains('layerBg')){selected=null;document.querySelectorAll('.node,.edge').forEach(x=>x.classList.remove('hot','dim'));showDetail();renderSideListOnly();applyFilter()}});
+renderLayers();renderEdges();renderNodes();renderSide();applyFilter();showDetail();requestAnimationFrame(fit);
+</script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Salam Fixed · Digital/BSS Topology Atlas</title>
+<style>
+/* DARK is the default. A light palette follows — the page picks one from ?theme=, from the
+   ☀/☾ button, or from the OS when neither says otherwise. Every colour below is a token: nothing
+   in the SVG or the chrome hard-codes a dark value any more (11 Sep 2026). */
+:root{
+  --bg:#04060c;--bg2:#08101d;--panel:rgba(13,20,36,.72);--panel2:rgba(10,15,28,.9);--line:rgba(148,178,255,.16);--line2:rgba(148,178,255,.34);
+  --ink:#eef4ff;--muted:#93a3c4;--dim:#5c6b8c;--hub:#00f5d4;--api:#22d3ee;--osb:#34f5c5;--db:#4ade80;--sync:#c084fc;--prov:#38bdf8;--ext:#60a5fa;--cicd:#f472b6;--mon:#facc15;--oracle:#fb7185;--net:#8aa0c7;--chan:#c084fc;--app:#ff5d8f;--warn:#ffb020;
+  --shadow:0 24px 80px rgba(0,0,0,.55);--radius:18px;
+  /* surfaces the chrome and the SVG paint with */
+  --bodyGrad:radial-gradient(1000px 600px at 12% -10%,rgba(0,245,212,.14),transparent 60%),radial-gradient(900px 700px at 95% 110%,rgba(192,132,252,.12),transparent 58%),linear-gradient(180deg,#04060c,#07101d 55%,#04060c);
+  --grid:rgba(148,178,255,.045);
+  --bar:linear-gradient(180deg,rgba(8,16,29,.92),rgba(6,10,18,.72));
+  --aside:rgba(6,10,18,.55);--asideR:rgba(6,10,18,.58);--float:rgba(5,8,14,.8);
+  --soft:rgba(255,255,255,.03);--soft2:rgba(255,255,255,.045);--soft3:rgba(255,255,255,.025);
+  --logoInk:#06101d;--logoText:#eafffa;--canvasGlow:rgba(0,245,212,.055);
+  --cardFill:rgba(12,19,35,.92);--miniFill:rgba(255,255,255,.05);--miniLine:rgba(255,255,255,.12);
+  --labelHalo:#05070d;--layerOp:.055;--edgeOp:.82;--glow:1;
+}
+:root[data-theme="light"]{
+  --bg:#f6f8fc;--bg2:#eef2f9;--panel:rgba(255,255,255,.86);--panel2:rgba(255,255,255,.95);
+  --line:rgba(15,38,84,.14);--line2:rgba(15,38,84,.26);
+  --ink:#0d1b2f;--muted:#4a5d7e;--dim:#7488a8;
+  /* accents darkened so they hold contrast on white */
+  --hub:#00897b;--api:#0284c7;--osb:#0f9d7a;--db:#16a34a;--sync:#7c3aed;--prov:#0369a1;--ext:#2563eb;--cicd:#db2777;--mon:#b45309;--oracle:#e11d48;--net:#475569;--chan:#7c3aed;--app:#e11d48;--warn:#b45309;
+  --shadow:0 18px 50px rgba(15,38,84,.14);
+  --bodyGrad:radial-gradient(1000px 600px at 12% -10%,rgba(0,137,123,.10),transparent 60%),radial-gradient(900px 700px at 95% 110%,rgba(124,58,237,.08),transparent 58%),linear-gradient(180deg,#f8fafd,#eef3fa 55%,#f6f8fc);
+  --grid:rgba(15,38,84,.055);
+  --bar:linear-gradient(180deg,rgba(255,255,255,.94),rgba(248,250,253,.82));
+  --aside:rgba(255,255,255,.72);--asideR:rgba(255,255,255,.74);--float:rgba(255,255,255,.92);
+  --soft:rgba(15,38,84,.035);--soft2:rgba(15,38,84,.05);--soft3:rgba(15,38,84,.028);
+  --logoInk:#ffffff;--logoText:#0d1b2f;--canvasGlow:rgba(0,137,123,.07);
+  --cardFill:rgba(255,255,255,.97);--miniFill:rgba(15,38,84,.05);--miniLine:rgba(15,38,84,.14);
+  --labelHalo:#f6f8fc;--layerOp:.085;--edgeOp:.92;--glow:0;
+}
+*{box-sizing:border-box}html,body{height:100%}body{margin:0;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bodyGrad);overflow:hidden}
+body:before{content:"";position:fixed;inset:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:44px 44px;mask-image:radial-gradient(circle at 50% 45%,#000 0 42%,transparent 78%);pointer-events:none}
+.app{position:relative;z-index:1;height:100vh;display:grid;grid-template-rows:auto 1fr}
+.topbar{display:flex;align-items:center;gap:18px;padding:16px 22px;border-bottom:1px solid var(--line);background:var(--bar);backdrop-filter:blur(18px)}
+.logo{width:46px;height:46px;border-radius:14px;background:conic-gradient(from 180deg,#00f5d4,#22d3ee,#c084fc,#ff5d8f,#00f5d4);padding:2px;box-shadow:0 0 30px rgba(0,245,212,.35)}
+.logo span{display:grid;place-items:center;width:100%;height:100%;border-radius:12px;background:var(--logoInk);font-weight:950;letter-spacing:-1px;color:var(--logoText)}
+.title h1{margin:0;font-size:18px;letter-spacing:-.4px}.title p{margin:2px 0 0;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:2px}
+.pills{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}.pill{border:1px solid var(--line);background:var(--soft);color:var(--muted);border-radius:999px;padding:6px 10px;font-size:11px;font-weight:700}.pill b{color:var(--ink)}
+.workspace{min-height:0;display:grid;grid-template-columns:300px 1fr 340px}
+.side{border-right:1px solid var(--line);background:var(--aside);backdrop-filter:blur(14px);padding:16px;overflow:auto}.side h3,.panel h3{margin:0 0 10px;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--dim)}
+.search{width:100%;border:1px solid var(--line);background:var(--soft2);color:var(--ink);border-radius:12px;padding:10px 12px;outline:none;font-size:13px}.search:focus{border-color:rgba(0,245,212,.55);box-shadow:0 0 0 3px rgba(0,245,212,.12)}
+.filters{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 18px}.fbtn{border:1px solid var(--line);background:var(--soft);color:var(--muted);border-radius:999px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:6px}.fbtn i{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}.fbtn:hover{color:var(--ink);transform:translateY(-1px)}.fbtn.active{color:#ffffff;background:linear-gradient(135deg,var(--hub),var(--api));border-color:transparent;box-shadow:0 8px 24px rgba(0,245,212,.25)}
+.nodeList{display:grid;gap:8px}.nodeItem{border:1px solid var(--line);background:var(--soft3);border-radius:12px;padding:9px 10px;cursor:pointer;transition:.18s}.nodeItem:hover{border-color:var(--line2);transform:translateX(2px)}.nodeItem.active{border-color:rgba(0,245,212,.6);background:rgba(0,245,212,.08)}.nodeItem .n{font-size:12px;font-weight:800}.nodeItem .m{font-size:10px;color:var(--dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.canvas{position:relative;min-width:0;min-height:0;background:radial-gradient(700px 420px at 50% 42%,var(--canvasGlow),transparent 65%)}
+svg#topo{display:block;width:100%;height:100%;cursor:grab}svg#topo:active{cursor:grabbing}.canvasHud{position:absolute;left:16px;top:16px;display:flex;gap:8px;z-index:5}.hudBtn{border:1px solid var(--line);background:var(--float);color:var(--ink);border-radius:10px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;backdrop-filter:blur(10px)}.hudBtn:hover{border-color:rgba(0,245,212,.55);color:var(--hub)}
+.legend{position:absolute;left:16px;bottom:16px;z-index:5;background:var(--float);border:1px solid var(--line);border-radius:14px;padding:12px 14px;backdrop-filter:blur(12px);display:grid;gap:6px}.legend div{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px}.legend i{width:24px;height:3px;border-radius:99px;background:currentColor;box-shadow:0 0 10px currentColor}.legend i.dash{background:repeating-linear-gradient(90deg,currentColor 0 7px,transparent 7px 12px)}
+.panel{border-left:1px solid var(--line);background:var(--asideR);backdrop-filter:blur(14px);padding:18px;overflow:auto}.detailCard{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,var(--soft2),var(--soft3));padding:16px;box-shadow:var(--shadow)}.detailCard .kicker{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);font-weight:900}.detailCard h2{margin:8px 0 6px;font-size:20px;letter-spacing:-.4px}.meta{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);font-size:11px;line-height:1.7}.desc{color:var(--muted);font-size:13px;line-height:1.65;margin-top:12px}.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.chip{font-size:10px;font-weight:800;color:var(--ink);border:1px solid var(--line2);border-radius:999px;padding:5px 8px;background:var(--soft2)}
+.statGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.stat{border:1px solid var(--line);border-radius:14px;padding:12px;background:var(--soft)}.stat b{display:block;font-size:18px}.stat span{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:1.4px}
+/* SVG */
+.layer{fill:none;stroke:var(--line);stroke-dasharray:3 7}.layerBg{opacity:var(--layerOp)}.layerLabel{fill:currentColor;font-size:11px;font-weight:950;letter-spacing:3px;text-transform:uppercase;pointer-events:none}
+.edge{fill:none;stroke-width:2;opacity:var(--edgeOp);filter:drop-shadow(0 0 5px currentColor);transition:.18s;cursor:pointer}.edge.thick{stroke-width:3.2}.edge.dashed{stroke-dasharray:8 7;animation:dash 18s linear infinite}.edge.dotted{stroke-dasharray:2 7;animation:dash 12s linear infinite}.edge.dim{opacity:.07;filter:none}.edge.hot{stroke-width:4;opacity:1;filter:drop-shadow(0 0 12px currentColor)}@keyframes dash{to{stroke-dashoffset:-220}}
+.edgeLabel{fill:var(--muted);font-size:9px;font-weight:850;letter-spacing:1.2px;text-transform:uppercase;paint-order:stroke;stroke:var(--labelHalo);stroke-width:4;pointer-events:none}
+.pulse{filter:drop-shadow(0 0 8px currentColor)}
+.node{cursor:pointer;transition:filter .18s,opacity .18s}.node.dim{opacity:.16}.node.hot .card{stroke:var(--hub);stroke-width:2.2;filter:drop-shadow(0 0 22px rgba(0,245,212,.5))}.node:hover .card{stroke:currentColor;stroke-width:2;filter:drop-shadow(0 0 18px currentColor)}
+.card{fill:var(--cardFill);stroke:var(--line2);stroke-width:1.1;rx:14}.cardHead{fill:currentColor;font-size:12px;font-weight:900;pointer-events:none}.cardSub{fill:var(--muted);font-size:10px;font-weight:650;pointer-events:none}.cardMeta{fill:var(--dim);font-size:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;pointer-events:none}.mini{fill:var(--miniFill);stroke:var(--miniLine);rx:6}.miniText{fill:var(--ink);font-size:8.5px;font-weight:800;pointer-events:none}.badge{fill:color-mix(in srgb,var(--hub) 14%,transparent);stroke:color-mix(in srgb,var(--hub) 50%,transparent);rx:99}.badgeText{fill:var(--hub);font-size:8px;font-weight:950;letter-spacing:1px;pointer-events:none}
+.hubRing{fill:none;stroke:var(--hub);opacity:.35}.hubRing.a{stroke-dasharray:2 5;animation:spin 46s linear infinite;transform-origin:center;transform-box:fill-box}.hubRing.b{stroke-dasharray:8 4;animation:spin 30s linear infinite reverse;transform-origin:center;transform-box:fill-box}@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:1100px){.workspace{grid-template-columns:1fr}.side,.panel{display:none}}
+@media print{.side,.panel,.canvasHud,.legend{display:none}.workspace{grid-template-columns:1fr}.app{grid-template-rows:auto 1fr}body{overflow:visible}}
+</style>
+<script>
+/* THEME (11 Sep 2026) — order of authority: ?theme= from the embedding console, then this page's own
+ * toggle (remembered per browser), then the OS. Embedded in the console the parent always wins, so the
+ * atlas matches the console it is shown inside. */
+(function(){
+  var root=document.documentElement, KEY='salamAtlasTheme';
+  function osTheme(){ try{ return matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'; }catch(e){ return 'dark'; } }
+  function stored(){ try{ return localStorage.getItem(KEY); }catch(e){ return null; } }
+  var q=new URLSearchParams(location.search).get('theme');
+  var initial=(q==='light'||q==='dark')?q:(stored()||osTheme());
+  function apply(t){ root.setAttribute('data-theme',t); var b=document.getElementById('themeBtn'); if(b){ b.textContent=t==='light'?'☾':'☀'; b.title=t==='light'?'Switch to dark':'Switch to light'; } }
+  apply(initial);
+  window.__setAtlasTheme=function(t){ apply(t); try{ localStorage.setItem(KEY,t); }catch(e){} };
+  document.addEventListener('DOMContentLoaded',function(){
+    apply(root.getAttribute('data-theme')||initial);
+    var b=document.getElementById('themeBtn');
+    if(b) b.addEventListener('click',function(){ window.__setAtlasTheme(root.getAttribute('data-theme')==='light'?'dark':'light'); });
+  });
+  /* the console can retheme a live iframe without reloading it */
+  window.addEventListener('message',function(e){ var t=e&&e.data&&e.data.theme; if(t==='light'||t==='dark') apply(t); });
+  if(!q){ try{ matchMedia('(prefers-color-scheme: light)').addEventListener('change',function(ev){ if(!stored()) apply(ev.matches?'light':'dark'); }); }catch(e){} }
+})();
+</script>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="logo"><span>sa</span></div>
+    <div class="title"><h1>Salam Fixed · Digital/BSS Topology Atlas</h1><p>IMPACT B2C Release 5 &amp; 6 · 5G FWA / FTTx transition view</p></div>
+    <div class="pills"><span class="pill">Layers <b>5</b></span><span class="pill">Nodes <b id="nodeCount">0</b></span><span class="pill">Flows <b id="edgeCount">0</b></span><span class="pill">Status <b style="color:var(--hub)">Transition</b></span></div>
+  </header>
+  <section class="workspace">
+    <aside class="side">
+      <h3>Explorer</h3>
+      <input id="search" class="search" placeholder="Search node, IP, partner, system…" />
+      <div class="filters" id="filters"></div>
+      <h3>Nodes</h3>
+      <div class="nodeList" id="nodeList"></div>
+    </aside>
+    <section class="canvas">
+      <div class="canvasHud"><button class="hudBtn" id="zoomOut">−</button><button class="hudBtn" id="zoomIn">+</button><button class="hudBtn" id="fit">Fit</button><button class="hudBtn" id="themeBtn" title="Switch light / dark">☀</button><button class="hudBtn" id="exportSvg">Export SVG</button><button class="hudBtn" onclick="window.print()">Print</button></div>
+      <div class="legend" id="legend"></div>
+      <svg id="topo" viewBox="0 0 1600 980" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="soft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <radialGradient id="hubGrad"><stop offset="0" stop-color="#00f5d4"/><stop offset=".62" stop-color="#22d3ee"/><stop offset="1" stop-color="#0ea5b7"/></radialGradient>
+        </defs>
+        <g id="world">
+          <g id="layers"></g><g id="edges"></g><g id="particles"></g><g id="nodes"></g>
+        </g>
+      </svg>
+    </section>
+    <aside class="panel">
+      <h3>Inspector</h3>
+      <div class="detailCard" id="detail"><div class="kicker">Select a node</div><h2>Fixed digital/BSS topology</h2><div class="desc">Click any card to inspect its role, server context, and connected flows. Use filters to isolate API, OSB, database, provisioning, external partner, CI/CD, or monitoring traffic.</div><div class="statGrid"><div class="stat"><b>3Scale + OSB</b><span>integration hub</span></div><div class="stat"><b>Oracle</b><span>BSS core</span></div><div class="stat"><b>FWA / FTTx</b><span>fixed scope</span></div><div class="stat"><b>15+</b><span>external partners</span></div></div></div>
+    </aside>
+  </section>
+</div>
+<script>
+const NS='http://www.w3.org/2000/svg';
+const kinds={api:{c:'#22d3ee',label:'API · HTTPS'},osb:{c:'#34f5c5',label:'OSB · ESB'},oracle:{c:'#fb7185',label:'Oracle BSS'},db:{c:'#4ade80',label:'Database'},sync:{c:'#c084fc',label:'Sync'},prov:{c:'#38bdf8',label:'Provisioning'},ext:{c:'#60a5fa',label:'External'},cicd:{c:'#f472b6',label:'CI/CD'},mon:{c:'#facc15',label:'Monitoring'},net:{c:'#8aa0c7',label:'Network'}};
+const layers=[
+ {id:'channels',name:'Channel Layer',x:30,y:70,w:270,h:820,c:'#c084fc'},
+ {id:'edge',name:'Digital Edge + Data',x:330,y:70,w:270,h:820,c:'#8aa0c7'},
+ {id:'integration',name:'Integration Hub',x:630,y:70,w:270,h:820,c:'#34f5c5'},
+ {id:'bss',name:'Oracle BSS Core',x:930,y:70,w:290,h:820,c:'#fb7185'},
+ {id:'ops',name:'OSS · Network · Partners',x:1250,y:70,w:320,h:820,c:'#60a5fa'}
+];
+const nodes=[
+ {id:'sda',layer:'channels',name:'SDA',sub:'Assisted fixed sales',meta:'Channel · dealer/sales desk',desc:'Sales/dealer assisted channel for fixed offers, eligibility and order capture.',x:60,y:120,w:210,h:64,accent:'#c084fc'},
+ {id:'homeweb',layer:'channels',name:'Salam Home Web',sub:'ePurchase journey',meta:'Channel · web self-care',desc:'Fixed web ePurchase and self-care entry for FTTH/FWA customers.',x:60,y:204,w:210,h:64,accent:'#c084fc'},
+ {id:'homeapp',layer:'channels',name:'Salam Home App',sub:'Mobile fixed self-care',meta:'Channel · iOS/Android',desc:'Mobile app journeys: availability, onboarding, orders, usage and care.',x:60,y:288,w:210,h:64,accent:'#c084fc'},
+ {id:'foa',layer:'channels',name:'IWC FOA',sub:'Fixed order acquisition',meta:'Channel · field ops',desc:'Order acquisition and field operations channel into the integration layer.',x:60,y:372,w:210,h:64,accent:'#c084fc'},
+ {id:'sprinklr',layer:'channels',name:'Sprinklr',sub:'Care / social engagement',meta:'Channel · customer care',desc:'Social and care engagement channel connected to fixed customer journeys.',x:60,y:456,w:210,h:64,accent:'#c084fc'},
+
+ {id:'internet',layer:'edge',name:'ISP / Internet',sub:'Customer traffic',meta:'Public ingress',desc:'All fixed digital customer traffic enters through the protected internet edge.',x:360,y:110,w:210,h:58,accent:'#8aa0c7'},
+ {id:'edgegw',layer:'edge',name:'RUH-GETAPIGWP01',sub:'WAF · CDN · HTTPS LB · Nginx/API GW',meta:'172.31.38.115',desc:'Internet edge for fixed digital traffic: WAF, CDN, TLS termination and load balancing.',x:360,y:188,w:210,h:78,accent:'#00f5d4',hub:true},
+ {id:'appportal',layer:'edge',name:'RUH-App-P01',sub:'Digital App Portal',meta:'172.31.38.146',desc:'Digital app portal server in the data environment.',x:360,y:296,w:210,h:64,accent:'#ff5d8f'},
+ {id:'salamportal',layer:'edge',name:'RUH-SALAM-SITE02',sub:'Salam Portal / CMS',meta:'172.31.38.147',desc:'Salam portal and CMS for fixed web experience.',x:360,y:380,w:210,h:64,accent:'#ff5d8f'},
+ {id:'mariadb',layer:'edge',name:'ftth-epurchase02',sub:'MariaDB',meta:'172.31.38.145',desc:'MariaDB persistence for FTTH ePurchase / digital portal data.',x:360,y:474,w:210,h:62,accent:'#4ade80'},
+ {id:'cache',layer:'edge',name:'DB / Cache',sub:'Portal state',meta:'Data environment',desc:'Database/cache tier supporting read-heavy fixed portal journeys.',x:360,y:556,w:210,h:58,accent:'#4ade80'},
+ {id:'cicd',layer:'edge',name:'CI/CD',sub:'Build · GitLab · Nexus · Runner',meta:'142.31 / .10 / .14 / .11',desc:'GitLab-CE pipelines, Nexus artifacts and GitLab Runner deployments.',x:360,y:664,w:210,h:86,accent:'#f472b6',chips:['Build .31','GitLab .10','Nexus .14','Runner .11']},
+ {id:'monitoring',layer:'edge',name:'Monitoring / Ops',sub:'Instana · Node Exporter · VPN',meta:'platform-01 · 172.31.142.30',desc:'Monitoring agents, VPN admin access and backup storage for operations.',x:360,y:770,w:210,h:76,accent:'#facc15'},
+
+ {id:'apigw',layer:'integration',name:'3Scale API GW',sub:'API management',meta:'Integration layer',desc:'API management and throttling for all fixed digital channels.',x:660,y:150,w:210,h:70,accent:'#22d3ee'},
+ {id:'osb',layer:'integration',name:'OSB',sub:'Oracle Service Bus',meta:'Central ESB',desc:'Central fixed integration bus fanning out to BSS, OSS, network, enterprise and partners.',x:660,y:300,w:210,h:92,accent:'#34f5c5',hub:true},
+ {id:'fda',layer:'integration',name:'Fast Data Access',sub:'Read-optimized data',meta:'Integration layer',desc:'Fast data access layer for customer/product reads into channels and OSB.',x:660,y:442,w:210,h:62,accent:'#c084fc'},
+ {id:'inhouse',layer:'integration',name:'In-House Apps',sub:'ARQAMI Server · SADAD Driver',meta:'Integration layer',desc:'In-house adapters around ARQAMI server and SADAD payment driver.',x:660,y:524,w:210,h:70,accent:'#ffb020'},
+ {id:'appapi',layer:'integration',name:'App / API Env',sub:'prod-integ-01 · prod-app-01',meta:'172.31.142.37 / .35',desc:'Integration services and containerized apps deployed from CI/CD.',x:660,y:640,w:210,h:92,accent:'#22d3ee',chips:['PostgreSQL 172.31.15.121','prod-db-01 172.31.142.36']},
+
+ {id:'oracle',layer:'bss',name:'Oracle BSS Core',sub:'Transition scope',meta:'Siebel · BRM · ECE · OCOMC/OC3C · UIM · OSM · ASAP · BIP · Mirror DB',desc:'Oracle fixed BSS core: CRM, billing, charging, inventory, order management, activation, publishing and reporting copy.',x:965,y:130,w:220,h:560,accent:'#fb7185',chips:['Siebel CRM','BRM Billing','ECE Charging','OCOMC · OC3C','UIM Inventory','OSM Orders','ASAP Activation','BIP Publishing','Mirror DB']},
+ {id:'bsssys',layer:'bss',name:'Existing BSS',sub:'IWC DRM · E&S DMS · IWC BSS',meta:'Subex RA/FM · 6D CVM',desc:'Existing fixed BSS estate and revenue/customer value tooling.',x:965,y:730,w:220,h:100,accent:'#4ade80',chips:['IWC DRM','E&S DMS','IWC BSS','Subex RA/FM','6D CVM']},
+
+ {id:'oss',layer:'ops',name:'OSS Systems',sub:'LogiSense · Inspur ACS · IWC OSS',meta:'IWC WFM · IWC API GW · Access Providers',desc:'Fixed OSS stack for assurance, ACS, workforce, open access and access providers.',x:1280,y:120,w:260,h:92,accent:'#4ade80'},
+ {id:'network',layer:'ops',name:'Network',sub:'NetAxis NPACT / Provisioning',meta:'Cisco BroadWorks · Huawei SMSC · Huawei AAA',desc:'Network systems for portability, provisioning, voice, messaging and AAA.',x:1280,y:242,w:260,h:92,accent:'#38bdf8'},
+ {id:'enterprise',layer:'ops',name:'Enterprise Services',sub:'ERP · Big Data · UPG',meta:'Email GW · ESRI GIS · AD/LDAP',desc:'Enterprise services used by fixed journeys: ERP, analytics, payment gateway, email, GIS and identity.',x:1280,y:364,w:260,h:92,accent:'#ffb020'},
+ {id:'external',layer:'ops',name:'External Integrations',sub:'Government · payments · delivery · credit',meta:'YAKEEN · NAFITH · SEMATI · SADAD · NAFATH · ZATCA · ELM · SIMAH · ARQAMI · WATHIQ · NPC',desc:'External partner integrations for verification, payments, tax, delivery, credit and national platforms.',x:1280,y:496,w:260,h:270,accent:'#60a5fa',chips:['YAKEEN','NAFITH','SEMATI','SADAD','NAFATH','ClearTax / ZATCA','ELM validation','Delivery Partner','BALIGHNY','SIMAH','ARQAMI','WATHIQ','NPC']}
+];
+const edges=[
+ {f:'internet',t:'edgegw',k:'net',label:'HTTPS ingress',thick:1},
+ {f:'edgegw',t:'appportal',k:'api',label:'portal'},{f:'edgegw',t:'salamportal',k:'api',label:'cms'},
+ {f:'appportal',t:'mariadb',k:'db',label:'SQL'},{f:'salamportal',t:'cache',k:'db',label:'cache'},
+ {f:'sda',t:'apigw',k:'api',label:'channel API'},{f:'homeweb',t:'apigw',k:'api',label:'web API'},{f:'homeapp',t:'apigw',k:'api',label:'mobile API'},{f:'foa',t:'apigw',k:'api',label:'order API'},{f:'sprinklr',t:'apigw',k:'api',label:'care API'},
+ {f:'edgegw',t:'apigw',k:'api',label:'digital ingress',thick:1},
+ {f:'apigw',t:'osb',k:'osb',label:'managed APIs',thick:1},
+ {f:'fda',t:'osb',k:'sync',label:'fast data',dashed:1},{f:'inhouse',t:'osb',k:'api',label:'adapters',dashed:1},{f:'appapi',t:'osb',k:'api',label:'services',dotted:1},
+ {f:'osb',t:'oracle',k:'oracle',label:'BSS orchestration',thick:1},
+ {f:'osb',t:'bsssys',k:'osb',label:'existing BSS'},
+ {f:'osb',t:'oss',k:'osb',label:'OSS'},
+ {f:'osb',t:'network',k:'prov',label:'provision'},
+ {f:'osb',t:'enterprise',k:'osb',label:'enterprise'},
+ {f:'osb',t:'external',k:'ext',label:'partner calls',dashed:1,thick:1},
+ {f:'cicd',t:'appapi',k:'cicd',label:'deploy',dashed:1},{f:'cicd',t:'edgegw',k:'cicd',label:'release',dotted:1},
+ {f:'monitoring',t:'appapi',k:'mon',label:'metrics',dotted:1},{f:'monitoring',t:'osb',k:'mon',label:'observe',dotted:1}
+];
+const $=id=>document.getElementById(id), world=$('world'), gL=$('layers'), gE=$('edges'), gP=$('particles'), gN=$('nodes'), svg=$('topo');
+const byId=Object.fromEntries(nodes.map(n=>[n.id,n])); let selected=null, active='all';
+function el(name,attrs={},parent){const e=document.createElementNS(NS,name);for(const k in attrs)e.setAttribute(k,attrs[k]);parent&&parent.appendChild(e);return e}
+function txt(parent,attrs,content){const e=el('text',attrs,parent);e.textContent=content;return e}
+function port(n,side){if(side==='r')return{x:n.x+n.w,y:n.y+n.h/2};if(side==='l')return{x:n.x,y:n.y+n.h/2};if(side==='b')return{x:n.x+n.w/2,y:n.y+n.h};return{x:n.x+n.w/2,y:n.y}}
+function edgePath(a,b){const A=byId[a],B=byId[b];if(A.x< B.x){const p=port(A,'r'),q=port(B,'l'),d=Math.max(70,(q.x-p.x)*.45);return{d:`M ${p.x} ${p.y} C ${p.x+d} ${p.y}, ${q.x-d} ${q.y}, ${q.x} ${q.y}`,p,q}} if(A.x>B.x){const p=port(A,'l'),q=port(B,'r'),d=Math.max(70,(p.x-q.x)*.45);return{d:`M ${p.x} ${p.y} C ${p.x-d} ${p.y}, ${q.x+d} ${q.y}, ${q.x} ${q.y}`,p,q}} const p=port(A,'b'),q=port(B,'t'),d=Math.max(46,(q.y-p.y)*.4);return{d:`M ${p.x} ${p.y} C ${p.x} ${p.y+d}, ${q.x} ${q.y-d}, ${q.x} ${q.y}`,p,q}}
+function renderLayers(){layers.forEach(l=>{el('rect',{class:'layerBg',x:l.x,y:l.y,width:l.w,height:l.h,rx:20,fill:l.c},gL);el('rect',{class:'layer',x:l.x,y:l.y,width:l.w,height:l.h,rx:20},gL);txt(gL,{class:'layerLabel',x:l.x+l.w/2,y:l.y+26,'text-anchor':'middle',style:`color:${l.c}`},l.name)})}
+function renderEdges(){edges.forEach((e,i)=>{const {d,p,q}=edgePath(e.f,e.t),k=kinds[e.k];const path=el('path',{class:`edge ${e.thick?'thick':''} ${e.dashed?'dashed':''} ${e.dotted?'dotted':''}`,id:`edge-${i}`,d,style:`color:${k.c};stroke:${k.c}`},gE);path.dataset.f=e.f;path.dataset.t=e.t;path.dataset.k=e.k;const lx=(p.x+q.x)/2,ly=(p.y+q.y)/2;txt(gE,{class:'edgeLabel',x:lx,y:ly-8,'text-anchor':'middle'},e.label||k.label);const c=el('circle',{class:'pulse',r:e.thick?4:3,fill:k.c,style:`color:${k.c}`},gP);c.dataset.k=e.k;el('animateMotion',{dur:`${2.2+(i%5)*.55}s`,begin:`${(i%7)*.22}s`,repeatCount:'indefinite',path:d},c);path.addEventListener('mouseenter',()=>path.classList.add('hot'));path.addEventListener('mouseleave',()=>path.classList.remove('hot'));})}
+function nodeContent(g,n){const a=n.accent;el('rect',{class:'card',x:n.x,y:n.y,width:n.w,height:n.h,style:`color:${a}`},g);txt(g,{class:'cardHead',x:n.x+16,y:n.y+24},n.name);txt(g,{class:'cardSub',x:n.x+16,y:n.y+42},n.sub||'');txt(g,{class:'cardMeta',x:n.x+16,y:n.y+n.h-12},n.meta||'');if(n.chips){const cols=n.w>240?2:1,chipW=(n.w-28-(cols-1)*8)/cols;n.chips.slice(0,12).forEach((c,i)=>{const cx=n.x+14+(i%cols)*(chipW+8),cy=n.y+58+Math.floor(i/cols)*22;if(cy+18<n.y+n.h-20){el('rect',{class:'mini',x:cx,y:cy,width:chipW,height:17},g);txt(g,{class:'miniText',x:cx+7,y:cy+12},c)}})}if(n.hub){el('circle',{class:'hubRing a',cx:n.x+n.w/2,cy:n.y+n.h/2,r:Math.max(n.w,n.h)*.72},g);el('circle',{class:'hubRing b',cx:n.x+n.w/2,cy:n.y+n.h/2,r:Math.max(n.w,n.h)*.56},g)}el('rect',{class:'badge',x:n.x+n.w-74,y:n.y+10,width:58,height:16},g);txt(g,{class:'badgeText',x:n.x+n.w-45,y:n.y+21,'text-anchor':'middle'},n.layer.toUpperCase())}
+function renderNodes(){nodes.forEach(n=>{const g=el('g',{class:'node',tabindex:0},gN);g.dataset.id=n.id;nodeContent(g,n);g.addEventListener('click',ev=>{ev.stopPropagation();select(n.id)});g.addEventListener('keydown',ev=>{if(ev.key==='Enter')select(n.id)})})}
+function renderSide(){const fs=$('filters');fs.innerHTML='';[['all','All'],...Object.entries(kinds).map(([k,v])=>[k,v.label.split(' ')[0]])].forEach(([k,label])=>{const b=document.createElement('button');b.className='fbtn'+(k===active?' active':'');b.innerHTML=`<i style="color:${k==='all'?'#00f5d4':kinds[k].c}"></i>${label}`;b.onclick=()=>{active=k;applyFilter();renderSide()};fs.appendChild(b)});const list=$('nodeList');list.innerHTML='';nodes.forEach(n=>{const d=document.createElement('div');d.className='nodeItem'+(selected===n.id?' active':'');d.innerHTML=`<div class="n">${n.name}</div><div class="m">${n.meta||n.sub||''}</div>`;d.onclick=()=>select(n.id);list.appendChild(d)});const lg=$('legend');lg.innerHTML='';Object.values(kinds).forEach(v=>{const r=document.createElement('div');r.innerHTML=`<i class="${v.label.includes('External')||v.label.includes('CI')?'dash':''}" style="color:${v.c}"></i>${v.label}`;lg.appendChild(r)});$('nodeCount').textContent=nodes.length;$('edgeCount').textContent=edges.length}
+function applyFilter(){document.querySelectorAll('.edge').forEach(p=>{const show=active==='all'||p.dataset.k===active;p.classList.toggle('dim',!show)});document.querySelectorAll('#particles circle').forEach(c=>{c.style.display=active==='all'||c.dataset.k===active?'':'none'});if(active!=='all'){const used=new Set();edges.forEach((e,i)=>{if(e.k===active){used.add(e.f);used.add(e.t)}});document.querySelectorAll('.node').forEach(g=>g.classList.toggle('dim',!used.has(g.dataset.id)))}else document.querySelectorAll('.node').forEach(g=>g.classList.remove('dim'))}
+function select(id){selected=selected===id?null:id;const connected=new Set(selected?[selected]:[]);if(selected)edges.forEach(e=>{if(e.f===selected)connected.add(e.t);if(e.t===selected)connected.add(e.f)});document.querySelectorAll('.node').forEach(g=>{g.classList.toggle('hot',g.dataset.id===selected);g.classList.toggle('dim',selected&&!connected.has(g.dataset.id))});document.querySelectorAll('.edge').forEach(p=>{const rel=selected&&(p.dataset.f===selected||p.dataset.t===selected);p.classList.toggle('hot',rel);p.classList.toggle('dim',selected&&!rel)});showDetail();renderSideListOnly()}
+function renderSideListOnly(){document.querySelectorAll('.nodeItem').forEach((d,i)=>d.classList.toggle('active',nodes[i].id===selected))}
+function showDetail(){const box=$('detail');if(!selected){box.innerHTML=`<div class="kicker">Select a node</div><h2>Fixed digital/BSS topology</h2><div class="desc">Click any card to inspect its role, server context, and connected flows.</div>`;return}const n=byId[selected],flow=edges.filter(e=>e.f===selected||e.t===selected);box.innerHTML=`<div class="kicker">${n.layer} · ${flow.length} flows</div><h2>${n.name}</h2><div class="meta">${n.meta||''}</div><div class="desc">${n.desc||''}</div><div class="chips">${(n.chips||[]).map(c=>`<span class="chip">${c}</span>`).join('')}</div><div class="statGrid"><div class="stat"><b>${flow.filter(e=>e.f===selected).length}</b><span>outbound</span></div><div class="stat"><b>${flow.filter(e=>e.t===selected).length}</b><span>inbound</span></div></div>`}
+let view={x:0,y:0,k:1};function applyView(){world.setAttribute('transform',`translate(${view.x} ${view.y}) scale(${view.k})`)}
+function fit(){const r=svg.getBoundingClientRect();const k=Math.min((r.width-60)/1600,(r.height-60)/980);view={k,x:(r.width-1600*k)/2,y:(r.height-980*k)/2};applyView()}
+function zoom(f,cx,cy){const r=svg.getBoundingClientRect();cx=cx??r.width/2;cy=cy??r.height/2;const wx=(cx-view.x)/view.k,wy=(cy-view.y)/view.k;view.k=Math.min(2.4,Math.max(.35,view.k*f));view.x=cx-wx*view.k;view.y=cy-wy*view.k;applyView()}
+svg.addEventListener('wheel',e=>{e.preventDefault();const r=svg.getBoundingClientRect();zoom(e.deltaY<0?1.12:.89,e.clientX-r.left,e.clientY-r.top)},{passive:false});
+let drag=null;svg.addEventListener('pointerdown',e=>{if(e.target.closest('.node'))return;drag={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y};svg.setPointerCapture(e.pointerId)});svg.addEventListener('pointermove',e=>{if(!drag)return;view.x=drag.vx+(e.clientX-drag.x);view.y=drag.vy+(e.clientY-drag.y);applyView()});svg.addEventListener('pointerup',()=>drag=null);
+$('zoomIn').onclick=()=>zoom(1.18);$('zoomOut').onclick=()=>zoom(.85);$('fit').onclick=fit;
+$('search').addEventListener('input',e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('.node').forEach((g,i)=>{const n=nodes[i];const hit=!q||(n.name+' '+n.sub+' '+n.meta+' '+n.desc+' '+(n.chips||[]).join(' ')).toLowerCase().includes(q);g.classList.toggle('dim',!hit)});document.querySelectorAll('.nodeItem').forEach((d,i)=>{const n=nodes[i];d.style.display=!q||(n.name+' '+n.meta+' '+(n.chips||[]).join(' ')).toLowerCase().includes(q)?'':'none'})});
+$('exportSvg').onclick=()=>{const clone=svg.cloneNode(true);clone.setAttribute('xmlns',NS);const blob=new Blob([`<!doctype svg>\n`+clone.outerHTML],{type:'image/svg+xml'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='salam-fixed-digital-bss-topology.svg';a.click();URL.revokeObjectURL(a.href)};
+svg.addEventListener('click',e=>{if(e.target===svg||e.target.classList.contains('layer')||e.target.classList.contains('layerBg')){selected=null;document.querySelectorAll('.node,.edge').forEach(x=>x.classList.remove('hot','dim'));showDetail();renderSideListOnly();applyFilter()}});
+renderLayers();renderEdges();renderNodes();renderSide();applyFilter();showDetail();requestAnimationFrame(fit);
+</script>
+</body>
+</html>

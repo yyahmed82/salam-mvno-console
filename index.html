@@ -1412,6 +1412,7 @@
         <div class="navgroup">EXPLORE</div>
         <button class="navtab hm-nav" data-view="topology2"><span class="num">◈</span><span>Topology <small>Source-linked map · API docs · code refs</small></span></button>
         <button class="navtab hm-nav" data-view="apigw"><span class="num">⬡</span><span>API Gateway<small>Full HLD — DMS integration &amp; infra topology (IPs) · live</small></span></button>
+        <button class="navtab hm-nav" data-view="mvnohld"><span class="num">◉</span><span>BSS Topology Atlas<small>DMS + RODOD HLD — channels → APIGW → OSB → Oracle BSS · journeys</small></span></button>
         <button class="navtab hm-nav" data-view="otodocs"><span class="num">⌘</span><span>OTO Courier API<small>Full imported reference · linked from journeys</small></span></button>
         <button class="navtab hm-nav" data-view="tapdocs"><span class="num">₮</span><span>Tap / UPG API<small>Payment-gateway reference · response codes · webhooks</small></span></button>
         <button class="navtab hm-nav" data-view="salamdocs"><span class="num">◫</span><span>Salam API docs<small>Selfcare/Apollo API reference (from the app repo)</small></span></button>
@@ -1434,6 +1435,8 @@
         <div class="navgroup">EXPLORE</div>
       <button class="navtab" data-view="fixed" data-fxtab="playbook"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4z"/><path d="M8 8h8M8 12h8"/></svg></span><span>Playbook<small>SLA / OLA / action plans</small></span></button>
       <button class="navtab" data-view="fixed" data-fxtab="diagrams"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 14h6v6h-6z"/><path d="M10 7h4v10"/></svg></span><span>Diagrams<small>payments · journeys</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="diagrams" data-fxq="d=diagram-journeys-explorer"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h6l3-7 3 14 2-7h3"/></svg></span><span>Journeys<small>every dealer &amp; QR journey, step by step</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="diagrams" data-fxq="d=diagram-fixed-bss-hld"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/></svg></span><span>BSS Topology Atlas<small>Digital/BSS HLD — channels → 3Scale/OSB → Oracle BSS</small></span></button>
       <button class="navtab" data-view="fixed" data-fxtab="report"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></span><span>KPI digest<small>branded e-mail report</small></span></button>
 </div>
     </div>
@@ -1776,6 +1779,19 @@
   </section>
 
 
+  <!-- MVNO BSS Topology Atlas (11 Sep 2026) — same iframe pattern as #view-apigw. The atlas carries its
+       own light/dark palette; theme.js posts the console theme in, so flipping the console reskins it. -->
+  <section id="view-mvnohld" class="view">
+    <div style="display:flex;align-items:center;gap:10px;margin:2px 0 10px;flex-wrap:wrap">
+      <div><div style="font-size:18px;font-weight:800">MVNO · DMS + RODOD Oracle BSS Topology</div>
+        <div class="rl">Channels → LB → API GW → OSB → RODOD Oracle BSS, with the network/NP and partner loops. Pick a <b>Journey</b> in the atlas to trace a request and its return path. Source: DMS + RODOD HLD.</div></div>
+      <a href="mvno-rodod-hld.html" target="_blank" rel="noopener" class="pill" style="margin-left:auto;text-decoration:none">Open full ↗</a>
+    </div>
+    <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card,#fff)">
+      <iframe id="mvnoHldFrame" src="mvno-rodod-hld.html" title="MVNO DMS + RODOD topology atlas" loading="lazy" style="width:100%;height:calc(100vh - 220px);min-height:760px;border:0;display:block"></iframe>
+    </div>
+  </section>
+
   <section id="view-audit" class="view"></section>
 
   <section id="view-alerts" class="view">
@@ -1812,7 +1828,7 @@
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
 <script src="base.js?v=20260910c"></script>
 <script src="person.js?v=20260911b"></script>   <!-- ONE person card for every screen -->
-<script src="navdrop.js?v=20260910c" defer></script>
+<script src="navdrop.js?v=20260911t" defer></script>
 <script src="adaptive.js?v=20260910c" defer></script>
 <script src="ksatime.js?v=20260910c"></script>
 <script src="data.js?v=20260910c"></script>
@@ -1873,8 +1889,8 @@
 <script src="agents.js?v=20260911f"></script>
 <script src="navcfg.js?v=20260910c"></script>
 <script src="tickets.js?v=20260911p"></script>
-<script src="theme.js?v=20260910c"></script>
-<script src="router.js?v=20260910c"></script>
+<script src="theme.js?v=20260911t"></script>
+<script src="router.js?v=20260911t"></script>
 <script src="live.js?v=20260910c"></script>
 <script src="oncall.js?v=20260910c"></script>
 </body>

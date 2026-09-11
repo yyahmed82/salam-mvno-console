@@ -24,6 +24,11 @@ const DIAGRAMS = [
   { slug: 'diagram-journeys-explorer', order: 4, title: 'Journeys Explorer (all dealer & QR journeys)', tagline: 'Every journey, end to end',
     blurb: 'All dealer (FTTH/FTTB/5G/Lead) and QR (e-Purchase) journeys — step through each one, success or failure, with the exact API calls and what stops the order at every step.',
     url: 'fixed-diagrams/salam-journeys-explorer.html' },
+  /* The Digital/BSS HLD atlas (11 Sep 2026) — the same interactive atlas the MVNO side has, for Fixed:
+   * channels -> digital edge -> 3Scale/OSB -> Oracle BSS -> OSS, network and partners. Light and dark. */
+  { slug: 'diagram-fixed-bss-hld', order: 5, title: 'Digital / BSS Topology Atlas (HLD)', tagline: 'The whole estate, one map',
+    blurb: 'IMPACT B2C Release 5 and 6 view: every channel, the digital edge, the 3Scale/OSB integration hub, the Oracle BSS core and every OSS, network and external partner - click a node to see its role, servers and flows.',
+    url: 'fixed-diagrams/salam-fixed-digital-bss-hld.html' },
 ];
 
 function notConfigured() { const e = new Error('Fixed data source not configured (OPS_DATABASE_URL)'); e.status = 503; return e; }
