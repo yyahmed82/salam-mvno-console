@@ -15,6 +15,9 @@
     settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
     "settings-notify":{notifyClone:true}, "settings-notify-clone":{notifyClone:true},
     "settings-assist":{assistClone:true}, "settings-assist-clone":{assistClone:true},
+    /* Agents & LLM — the standalone view (agents.js). Without these two entries the hash fell
+     * through to ROUTES[""] and the page bounced to Home (Yosri, 11 Sep 2026). */
+    agents:{agentsView:true}, "settings-agents":{agentsView:true}, "agents-llm":{agentsView:true},
     audit:{audit:true}, tickets:{tickets:true}
   };
   const VIEW_HASH={landing:"home",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
@@ -95,7 +98,7 @@
     // hidden root tier: #audit + #settings-assist deep links bounce home for excluded sessions
     // (me.root===false only when ROOT_ADMINS is configured server-side; the API 403s regardless)
     const notRoot=()=>{ const s=(window.opsSession&&window.opsSession())||{}; return s.me && s.me.root===false; };
-    if((r.audit||r.assistClone||r.sla) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash("dashboard"); return; }
+    if((r.audit||r.assistClone||r.sla||r.agentsView) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash("dashboard"); return; }
     // role guard — before any renderer runs (the API 403s regardless; this makes it CLEAR)
     hideDenied();
     const need=neededFor(r);
@@ -112,6 +115,7 @@
     else if(r.oncall){ window.openOncall && window.openOncall(); }
     else if(r.settings){ window.openSettings && window.openSettings(r.settings);
       const fn=SEG_RENDER[r.settings]; if(fn && window[fn]) window[fn](); }
+    else if(r.agentsView){ if(window.openAgents) window.openAgents(); else window.opsGoHome && window.opsGoHome(); }
     else if(r.audit){ if(window.openAudit) window.openAudit(); else window.opsGoHome && window.opsGoHome(); }
     else if(r.tickets){ if(window.openTicketsBoard) window.openTicketsBoard(); else window.opsGoHome && window.opsGoHome(); }
     else if(r.view){
