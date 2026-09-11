@@ -233,6 +233,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     // SLA (SLO) page now lives in the Settings gear menu — root-tier only once ROOT_ADMINS is set
     // (root stays true for all when unset — matches the server failsafe).
     const slaMi = document.getElementById("slaMenuItem"); if(slaMi) slaMi.style.display = (SES.me && SES.me.root!==false)?"":"none";
+    const agMi = document.getElementById("agentsMenuItem"); if(agMi) agMi.style.display = (SES.me && SES.me.root!==false && SES.me.realRole==="super_admin")?"":"none";
     // if current active tab is hidden, jump to first visible
     const active = document.querySelector(".navtab.active");
     if(active && active.classList.contains("hidden")){
@@ -255,9 +256,6 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const wm = document.getElementById("workbenchMenuItem"); if(wm) wm.style.display = ((SES.me&&SES.me.views)||[]).includes("workbench")?"":"none";
     // Yusr config page — root tier only once ROOT_ADMINS is set (root stays true for all when unset)
     const yi = document.querySelector('#settingsMenu [data-seg="assist"]'); if(yi) yi.style.display = (SES.me && SES.me.root===false)?"none":"";
-    // Agents & LLM — same root-tier gate as Yusr. This line is the fix for the item that was in the
-    // markup with style="display:none" and never shown by anything (Yosri, 11 Sep 2026).
-    const agi = document.getElementById("agentsMenuItem"); if(agi) agi.style.display = (SES.me && SES.me.root===false)?"none":"";
   }
   function displayName(){ return (SES.me&&SES.me.name) || (SES.email? SES.email.split("@")[0] : "Sign in"); }
   function renderChip(){
@@ -475,6 +473,13 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
    * count charge ATTEMPTS; here we show FINAL outcomes) — funnel per gateway, retry-success %,
    * decline reasons and a 14-day abandonment/decline trend. Payment tile only. */
   let _upgVendor = "";
+  /* PAYMENT GATEWAY REGISTRY (9 Sep 2026): ⇄ UPG is the UPG (SalamPay) gateway's own DB — it only knows UPG (vendor
+   * 'salam') charges, so the button appears only on UPG rows and only while UPG is enabled in Settings → Payment
+   * gateways. Disabled gateways are labelled as such in the deep-dive chips. */
+  let _gwReg=null; async function gwRegistry(){ if(_gwReg && Date.now()-_gwReg.at<60000) return _gwReg; try{ const d=await api("/api/gateways"); _gwReg={at:Date.now(),map:Object.fromEntries((d.gateways||[]).map(g=>[g.key,g]))}; }catch(_){ _gwReg={at:Date.now(),map:{}}; } return _gwReg; }
+  const isUpgRow = v => /salam|upg|merchalink/i.test(String(v||""));
+  const upgOn = () => !_gwReg || !_gwReg.map.salam || _gwReg.map.salam.enabled!==false;
+  const gwOff = v => { const k=/salam|upg|merchalink/i.test(String(v||""))?"salam":/hyper/i.test(String(v||""))?"hyperpay":/tap/i.test(String(v||""))?"tap":/apollo/i.test(String(v||""))?"apollo":null; const g=k&&_gwReg&&_gwReg.map[k]; return g&&g.enabled===false?g:null; };
   async function renderUpgDeep(){
     const feed=$("#errFeed"); if(!feed||!feed.parentNode) return;
     let host=document.getElementById("upgDeep");
@@ -482,17 +487,18 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     if(!host){ host=document.createElement("div"); host.id="upgDeep"; const cb=document.getElementById("codeBreak"); (cb&&cb.parentNode?cb.parentNode:feed.parentNode).insertBefore(host, cb?cb.nextSibling:feed); }
     host.innerHTML=`<div class="sub" style="margin:10px 0 6px">Loading UPG deep-dive…</div>`;
     const simQ=errState.sim?`&sim=${encodeURIComponent(errState.sim)}`:"";
-    let d; try{ d=await api(`/api/payments/deep-dive?window=${errState.window}${simQ}${_upgVendor?`&vendor=${encodeURIComponent(_upgVendor)}`:""}`); }
+    let d; try{ [d]=await Promise.all([api(`/api/payments/deep-dive?window=${errState.window}${simQ}${_upgVendor?`&vendor=${encodeURIComponent(_upgVendor)}`:""}`), gwRegistry()]); }
     catch(e){ host.innerHTML=""; return; }
+    const liveGw=_gwReg?Object.values(_gwReg.map).filter(g=>g.enabled).map(g=>g.label):[];
     const wrap=x=>`<div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;background:var(--card)">
-      <div style="font-weight:800;font-size:12.5px;margin-bottom:2px">UPG / PAYMENTS DEEP-DIVE <span class="rl" style="font-weight:600">· final outcomes, not attempts · ${d.sim?`${d.hours}h window ending ${esc(KT.dt(d.sim))}Z`:`last ${d.hours}h`} · click any number for the cases</span></div>${x}</div>`;
+      <div style="font-weight:800;font-size:12.5px;margin-bottom:2px">PAYMENTS DEEP-DIVE <span class="rl" style="font-weight:600">· ${liveGw.length?`live gateway${liveGw.length>1?"s":""}: <b style="color:var(--green)">${esc(liveGw.join(" · "))}</b> · `:""}final outcomes, not attempts · ${d.sim?`${d.hours}h window ending ${esc(KT.dt(d.sim))}Z`:`last ${d.hours}h`} · click any number for the cases</span></div>${x}</div>`;
     const F=d.funnel||[];
     if(!F.length){ host.innerHTML=wrap(`<div class="rl">No payments in this window.</div>`); return; }
     // vendor chips
     const vends=[...new Set(F.map(f=>f.vendor))];
     const chips=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px;align-items:center">
       <button class="teamchip ${_upgVendor===""?"active":""}" data-uv="">All gateways</button>
-      ${vends.map(v=>`<button class="teamchip ${_upgVendor===v?"active":""}" data-uv="${esc(v)}">${esc(v==='salam'?'UPG (salam)':v)}</button>`).join("")}
+      ${vends.map(v=>{ const off=gwOff(v); return `<button class="teamchip ${_upgVendor===v?"active":""}" data-uv="${esc(v)}" ${off?`title="disabled in Settings → Payment gateways${off.since?" since "+new Date(off.since).toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})+" KSA":""} — rows here predate the switch-off" style="opacity:.6"`:""}>${esc(v==='salam'?'UPG (salam)':v)}${off?' <span style="font-size:9.5px;font-weight:800;letter-spacing:.04em">· OFF</span>':''}</button>`; }).join("")}
       <span style="flex:1"></span>
       <input id="udSearch" class="mono" placeholder="MSISDN / customer ID / service no…" style="padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--card2);color:var(--ink);font-size:11px;width:210px">
       <button class="pill" id="udSearchGo" style="padding:3px 9px;font-size:11px;border-left-color:#0e9f5a" title="All transactions for this customer, end to end (incl. ⇄ UPG)">💳 Customer 360</button></div>`;
@@ -560,7 +566,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const body=card.querySelector(".modal-body");
     const R=d.rows||[];
     if(!R.length){ body.innerHTML=`<div class="rl">No cases in this slice.</div>`; return; }
-    body.innerHTML=`<div class="rl" style="margin-bottom:6px">${d.total.toLocaleString()} case(s)${d.total>R.length?` — showing latest ${R.length}`:""}${day?` on ${esc(day)}`:""}. Timeline = the customer's journey (app side); ⇄ UPG = the gateway's view of the same payment.</div>
+    body.innerHTML=`<div class="rl" style="margin-bottom:6px">${d.total.toLocaleString()} case(s)${d.total>R.length?` — showing latest ${R.length}`:""}${day?` on ${esc(day)}`:""}. Timeline = the customer's journey (app side)${R.some(r=>isUpgRow(r.vendor))&&upgOn()?"; ⇄ UPG = the UPG gateway's view of the same payment (UPG rows only — HyperPay has no gateway-side feed yet)":""}.</div>
       <table class="alerts"><tr><th>WHEN (KSA)</th><th>MOBILE</th><th>AMOUNT</th><th>GW</th><th>CONTEXT</th><th>REASON</th><th></th></tr>${
       R.map(r=>`<tr>
         <td class="mono" style="font-size:10.5px">${esc(KT.md(r.created_at))}</td>
@@ -570,7 +576,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <td style="font-size:11px">${esc(clipTxt(r.reason&&r.reason!=="—"?r.reason:"",42))}</td>
         <td style="white-space:nowrap">
           ${r.payment_on_id?`<button class="pill" style="padding:3px 8px" data-udt="${esc(r.payment_on_type==='OnboardingOrder'?r.payment_on_id:'')}" data-udr="pay:${esc(r.id)}">Timeline</button>`:""}
-          ${r.ref?`<button class="pill" style="padding:3px 7px;border-left-color:#ea580c" data-udu="${esc(r.ref)}">⇄ UPG</button>`:""}
+          ${r.ref&&isUpgRow(r.vendor)&&upgOn()?`<button class="pill" style="padding:3px 7px;border-left-color:#ea580c" data-udu="${esc(r.ref)}">⇄ UPG</button>`:""}
         </td></tr>`).join("")}</table>`;
     body.querySelectorAll("[data-udt]").forEach(b=>b.addEventListener("click",()=>{ $("#panelModal").classList.remove("open"); openTimeline(b.dataset.udt||null,false,b.dataset.udr); }));
     body.querySelectorAll("[data-udu]").forEach(b=>b.addEventListener("click",()=>window.opsUpgTrace(b.dataset.udu)));
@@ -701,6 +707,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   async function loadErrors(){
     syncErrRange();
     renderErrRange();
+    gwRegistry().catch(()=>{});                        // registry (which gateways are live) — gates the ⇄ UPG actions
     const simQ = errState.sim?`&sim=${encodeURIComponent(errState.sim)}`:'';
     let sum;
     try { sum = await api(`/api/errors/summary?window=${errState.window}${simQ}${errState.team?`&team=${encodeURIComponent(errState.team)}`:''}`); }
@@ -792,7 +799,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       <td class="mono">${esc(r.mobile||'—')}</td>
       <td style="font-size:12px">${r.gw?gwBadge(r.gw):''}${esc(r.detail||'')}</td>
       <td style="white-space:nowrap"><button class="pill" data-row="${esc(r.id||'')}" data-oid="${esc(r.order_id||'')}" style="padding:4px 10px">Timeline →</button>${
-        ((r.category==='payment'||r.category==='payment_stuck')&&r.ref)?` <button class="pill" data-upg="${esc(r.ref)}" style="padding:4px 8px;border-left-color:#ea580c" title="Gateway side: every charge attempt on this invoice + state transitions">⇄ UPG</button>`:''}</td>
+        ((r.category==='payment'||r.category==='payment_stuck')&&r.ref&&isUpgRow(r.gw)&&upgOn())?` <button class="pill" data-upg="${esc(r.ref)}" style="padding:4px 8px;border-left-color:#ea580c" title="UPG gateway side: every charge attempt on this invoice + state transitions (UPG rows only)">⇄ UPG</button>`:''}</td>
     </tr>`; });
     h+=`</table>`;
     $("#errFeed").innerHTML=h;
@@ -1379,6 +1386,9 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   const fmtLogin = d => { if(!d) return "—"; const x=new Date(d); return x.toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"numeric",month:"short"})+", "+x.toLocaleTimeString("en-GB",{timeZone:"Asia/Riyadh",hour:"2-digit",minute:"2-digit"}); };
 
   async function renderUserMgmt(){
+    // 10 Sep 2026 — the redesigned page lives in usersmgmt.js (KPIs, multi-criteria filters, bulk, activity); this
+    // legacy renderer stays only as a fallback when that module is not loaded
+    if(window.renderUsersMgmt){ return window.renderUsersMgmt($("#usersBody")); }
     let users=[];
     await refreshRoleList();
     try { users=(await api("/api/users")).users||[]; }
@@ -1427,12 +1437,16 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <td><span class="status-pill ${u.enabled?'active':'blocked'}">${u.enabled?'Active':'Blocked'}</span><div class="u-last">${u.last_login?'seen '+fmtLogin(u.last_login):'never signed in'}</div></td>
         <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="mail_report" ${u.mail_report?'checked':''}></td>
         <td style="text-align:center"><input type="checkbox" class="um-cellchk" data-field="mail_alert" ${u.mail_alert?'checked':''}></td>
-        <td class="u-act u-sticky-r"><button type="button" class="ubtn edit" data-edit title="Edit name, mobile, team, roles…">✎ Edit</button><button type="button" class="ubtn ${u.enabled?'block':'unblock'}" data-block>${u.enabled?'Block':'Unblock'}</button></td>
+        <td><div class="um-ack">
+          <button type="button" class="tagchip mini um-ackchip ${u.ack_mobile?'on':''}" data-ack="ack_mobile" ${u.business==='fixed'?'disabled title="Fixed-only account — cannot hold Mobile incidents"':'title="May take / receive a Mobile incident hand-over"'}>📱 Mobile</button>
+          <button type="button" class="tagchip mini um-ackchip ${u.ack_fixed?'on':''}" data-ack="ack_fixed" ${u.business==='mobile'?'disabled title="Mobile-only account — cannot hold Fixed incidents"':'title="May take / receive a Fixed incident hand-over"'}>🏠 Fixed</button>
+        </div></td>
+        <td class="u-act u-sticky-r"><div class="u-actin"><button type="button" class="ubtn edit" data-edit title="Edit name, mobile, team, roles…">✎ Edit</button><button type="button" class="ubtn ${u.enabled?'block':'unblock'}" data-block>${u.enabled?'Block':'Unblock'}</button></div></td>
       </tr>`;
     }).join("");
     const table = `<div class="um-wrap"><table class="umtable">
-      <tr><th class="u-sticky">USER</th><th>BUSINESS</th><th>ROLES</th><th>TAGS</th><th>STATUS</th><th>MAIL REPORT</th><th>MAIL ALERT</th><th class="u-sticky-r">ACTIONS</th></tr>
-      ${rows||`<tr><td colspan="8" style="color:var(--muted);padding:18px">No users yet.</td></tr>`}
+      <tr><th class="u-sticky">USER</th><th>BUSINESS</th><th>ROLES</th><th>TAGS</th><th>STATUS</th><th>MAIL REPORT</th><th>MAIL ALERT</th><th title="Who may take or receive an incident hand-over on each side">ACK HOLDER</th><th class="u-sticky-r">ACTIONS</th></tr>
+      ${rows||`<tr><td colspan="9" style="color:var(--muted);padding:18px">No users yet.</td></tr>`}
     </table></div>`;
     window.__umUsers = users;   // the edit panel reads the full row from here
 
@@ -1485,6 +1499,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       }));
       // notification checkboxes
       tr.querySelectorAll(".um-cellchk[data-field]").forEach(cb=>cb.addEventListener("change",()=>patch({[cb.dataset.field]:cb.checked})));
+      tr.querySelectorAll(".um-ackchip[data-ack]").forEach(b=>b.addEventListener("click",()=>{ if(b.disabled) return; const on=!b.classList.contains("on"); b.classList.toggle("on",on); patch({[b.dataset.ack]:on}); }));
       // edit → side panel with every field
       const ed=tr.querySelector("[data-edit]");
       if(ed) ed.addEventListener("click",()=>{ const u=(window.__umUsers||[]).find(x=>String(x.id)===String(id)); if(u) openUserPanel(u); });
@@ -1533,6 +1548,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <div class="um-checks">
           <label class="um-check"><input type="checkbox" id="udMailReport" ${u.mail_report?'checked':''}><span>Mail report</span></label>
           <label class="um-check"><input type="checkbox" id="udMailAlert" ${u.mail_alert?'checked':''}><span>Mail alert</span></label>
+          <label class="um-check" title="May take / receive a Mobile incident hand-over"><input type="checkbox" id="udAckMobile" ${u.ack_mobile?'checked':''} ${u.business==='fixed'?'disabled':''}><span>Ack holder · 📱 Mobile</span></label>
+          <label class="um-check" title="May take / receive a Fixed incident hand-over"><input type="checkbox" id="udAckFixed" ${u.ack_fixed?'checked':''} ${u.business==='mobile'?'disabled':''}><span>Ack holder · 🏠 Fixed</span></label>
           <label class="um-check"><input type="checkbox" id="udTour" ${u.tour_seen?'checked':''}><span>Quick tour seen</span> <span class="ud-hint">(untick to replay it at next sign-in)</span></label>
         </div>
         ${(lr.ops_roles&&lr.ops_roles.length)||lr.digital_id?`<div class="um-lbl">PROVENANCE</div><div class="ud-prov">Imported from ${esc(src)}${u.imported_at?' on '+fmtLogin(u.imported_at):''}${(lr.ops_roles&&lr.ops_roles.length)?` · legacy Fixed roles: <span class="mono">${esc(lr.ops_roles.join(', '))}</span>`:''}</div>`:''}
@@ -1556,7 +1573,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       const payload={ name:body.querySelector("#udName").value.trim(), mobile:body.querySelector("#udMobile").value.trim(), team:body.querySelector("#udTeam").value.trim(),
         business:(body.querySelector("#udBiz .bizchip.on")||{}).dataset.biz||"both", roles,
         tags:[...body.querySelectorAll("#udTags .tagchip.on")].map(x=>x.dataset.tag),
-        mail_report:body.querySelector("#udMailReport").checked, mail_alert:body.querySelector("#udMailAlert").checked, tour_seen:body.querySelector("#udTour").checked };
+        mail_report:body.querySelector("#udMailReport").checked, mail_alert:body.querySelector("#udMailAlert").checked, tour_seen:body.querySelector("#udTour").checked,
+        ack_mobile:body.querySelector("#udAckMobile").checked, ack_fixed:body.querySelector("#udAckFixed").checked };
       const btn=body.querySelector("#udSave"); btn.disabled=true; msg("Saving…");
       try{ await api("/api/users/"+u.id,{method:"PATCH",body:JSON.stringify(payload)}); msg("Saved."); setTimeout(closeUserPanel,350); renderUserMgmt(); }
       catch(e){ msg(e.message,true); btn.disabled=false; }
@@ -1571,6 +1589,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     ov.classList.add("open"); document.addEventListener("keydown",escUserPanel);
     setTimeout(()=>{ const n=body.querySelector("#udName"); if(n) n.focus(); },120);
   }
+  window.openUserPanel=openUserPanel;   // used by usersmgmt.js
   function escUserPanel(e){ if(e.key==="Escape") closeUserPanel(); }
   function closeUserPanel(){ const ov=document.getElementById("userPanel"); if(ov) ov.classList.remove("open"); document.removeEventListener("keydown",escUserPanel); }
 
@@ -1596,7 +1615,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   if(burger) burger.addEventListener("click", ()=> navEl.classList.toggle("open"));
 
   // settings now opens from the header gear (see app.js) — expose its loaders
-  window.opsLoadSettings = ()=>{ loadSyncSettings(); loadUsersAndRoles(); loadConfigChanges(); if(navEl) navEl.classList.remove("open"); };
+  window.opsLoadSettings = ()=>{ loadSyncSettings(); loadUsersAndRoles(); loadConfigChanges(); if(window.renderWorkbenchInline) window.renderWorkbenchInline(); if(navEl) navEl.classList.remove("open"); };
 
   // ---- wire nav + lazy loads ----
   document.querySelectorAll(".navtab").forEach(b=>{
@@ -1814,7 +1833,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <td style="font-size:11px"><span style="color:${col};font-weight:700">${esc(r.status)}</span>${r.decline&&r.decline!=="—"?`<br><span class="rl" style="font-size:10px">${esc(String(r.decline).slice(0,48))}</span>`:(r.fail_reason?`<br><span class="rl" style="font-size:10px">${esc(String(r.fail_reason).slice(0,48))}</span>`:"")}</td>
         <td style="white-space:nowrap">
           ${r.on_id&&r.payment_on_type==="OnboardingOrder"?`<button class="pill" style="padding:3px 8px" data-c3t="${esc(r.on_id)}" data-c3r="pay:${esc(r.id)}">Timeline</button>`:""}
-          ${r.ref&&d.upg_available?`<button class="pill" style="padding:3px 7px;border-left-color:#ea580c" data-c3u="${esc(r.ref)}">⇄ UPG</button>`:""}
+          ${r.ref&&d.upg_available&&isUpgRow(r.vendor)&&upgOn()?`<button class="pill" style="padding:3px 7px;border-left-color:#ea580c" data-c3u="${esc(r.ref)}">⇄ UPG</button>`:""}
         </td></tr>`; }).join("")}</table>
       <div class="rl" style="margin-top:8px">⇄ UPG opens the gateway's record of that exact payment — charge attempts, bank state log and webhook delivery. Lookups are audited.</div>`;
     body.querySelectorAll("[data-c3t]").forEach(b=>b.addEventListener("click",()=>{ $("#panelModal").classList.remove("open"); openTimeline(b.dataset.c3t||null,false,b.dataset.c3r); }));
@@ -1934,7 +1953,24 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
    * panels every few seconds mid-analysis. The page now loads on entry and on user-driven
    * range/filter changes only; a browser refresh (or re-entering the view) fetches fresh data. */
   document.addEventListener("uinavchange", ()=>{ if($("#view-errors").classList.contains("active")) loadErrors(); });
-  const errExp=$("#errExport"); if(errExp) errExp.addEventListener("click", ()=> window.opsExport(errState.lastFeed, `errors_${errState.window}h`, errExp));
+  /* Troubleshoot export — server-side, exactly as filtered (window / pinned range end, team, category, class, code, gateway, search) */
+  async function errExport(format){
+    const btn=$(format==="pdf"?"#errPdf":"#errXlsx"); if(!btn||btn.disabled) return;
+    const old=btn.textContent; btn.disabled=true; btn.textContent="… building";
+    try{
+      const p=new URLSearchParams({format, window:String(errState.window)});
+      if(errState.sim) p.set("sim",errState.sim); if(errState.team) p.set("team",errState.team); if(errState.category) p.set("category",errState.category);
+      if(errState.q) p.set("q",errState.q); if(errState.codeFilter) p.set("code",errState.codeFilter); if(errState.gwFilter) p.set("gw",errState.gwFilter); if(errState.clsFilter) p.set("cls",errState.clsFilter);
+      const r=await window.fetch(API+"/api/errors/export?"+p.toString());
+      if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||("HTTP "+r.status)); }
+      const cd=r.headers.get("Content-Disposition")||""; const m=/filename="([^"]+)"/.exec(cd);
+      const blob=await r.blob(); const href=URL.createObjectURL(blob); const a=document.createElement("a");
+      a.href=href; a.download=m?m[1]:`troubleshoot.${format}`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(href),2000);
+    }catch(e){ alert("Export failed — "+e.message); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
+  const errX=$("#errXlsx"); if(errX) errX.addEventListener("click",()=>errExport("xlsx"));
+  const errP=$("#errPdf"); if(errP) errP.addEventListener("click",()=>errExport("pdf"));
   $("#userChip").addEventListener("click", openRoleModal);
 
   // ================= LOGIN GATE =================

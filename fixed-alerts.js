@@ -34,7 +34,7 @@
     const tabs = [["rules","Alert rules","unified engine · segment fixed"],["history","History","fired alerts · last 7d"],["prod","Prod engine (transition)","/operations-console rules & firings"]];
     host.innerHTML = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         ${tabs.map(([k,l,s])=>`<button class="pill ${sub===k?"active":""}" data-fxsub="${k}" title="${esc(s)}">${esc(l)}</button>`).join("")}
-        <span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:6px">Fixed rules run in the SAME alert engine as MVNO (alertRunner) — metrics fixed_* read sda_ops. Edits use the shared /api/rules endpoints.</span>
+        <span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:6px"><a href="#fixed-alerts" style="color:var(--green,#0e9f5a);font-weight:700">Open the live incident view →</a> (ack · snooze · guide · discussion · metric charts) · Fixed rules run in the SAME alert engine as MVNO (alertRunner) — metrics fixed_* read sda_ops. Edits use the shared /api/rules endpoints.</span>
       </div><div id="fxAlBanner"></div><div id="fxAlBody"><div style="padding:24px;text-align:center;color:var(--muted)">${window.salamLoader?window.salamLoader("Loading Fixed alerts…"):"Loading…"}</div></div>`;
     host.querySelectorAll("[data-fxsub]").forEach(b=>b.addEventListener("click",()=>{ sub=b.dataset.fxsub; render(host); }));
     try {

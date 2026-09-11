@@ -10,14 +10,13 @@
     // Growth was absorbed into Monitoring → Resellers. Old links keep working.
     analytics:{view:"analytics"}, growth:{view:"monitoring",monTab:"resellers"}, resellers:{view:"monitoring",monTab:"resellers"},
     dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, sla:{sla:true}, slo:{sla:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
-    alerts:{view:"alerts"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"},journeys:{view:"explorer"}, integrations:{view:"integrations"},
-    subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true},
+    alerts:{view:"alerts"}, "fixed-alerts":{view:"alerts",seg:"fixed"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"},journeys:{view:"explorer"}, integrations:{view:"integrations"},
+    subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true}, "fixed-oncall":{oncall:true,seg:"fixed"},
     settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
     "settings-notify":{notifyClone:true}, "settings-notify-clone":{notifyClone:true},
     "settings-assist":{assistClone:true}, "settings-assist-clone":{assistClone:true},
-    /* Agents & LLM — the standalone view (agents.js). Without these two entries the hash fell
-     * through to ROUTES[""] and the page bounced to Home (Yosri, 11 Sep 2026). */
-    agents:{agentsView:true}, "settings-agents":{agentsView:true}, "agents-llm":{agentsView:true},
+    "settings-demo":{demoCfg:true},
+    agents:{agents:true}, "settings-agents":{agents:true},
     audit:{audit:true}, tickets:{tickets:true}
   };
   const VIEW_HASH={landing:"home",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
@@ -31,12 +30,13 @@
   const VIEW_REQ={ landing:"dashboard", monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts",
     home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", otodocs:"explore",
     tapdocs:"explore", salamdocs:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
-  const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed", errors:"Troubleshoot", alerts:"Alerts",
+  const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed", errors:"Troubleshoot", alerts:"Alerts", fixed_alerts:"Fixed › Alerts",
     analytics:"Analytics / SLA", explore:"Explore", workbench:"L2 Workbench", settings:"Settings" };
   function sess(){ try{ return (window.opsSession&&window.opsSession())||{}; }catch(e){ return {}; } }
   function lacks(need){ const me=sess().me; if(!me||!Array.isArray(me.views)) return false;  // session not ready → don't block boot
     return !me.views.includes(need); }
   function neededFor(r){
+    if(r.seg==="fixed") return "fixed_alerts";                 // Fixed incident view = the Fixed › Alerts permission
     if(r.view) return VIEW_REQ[r.view]||null;
     if(r.home) return "dashboard";
     if(r.workbench) return "workbench";
@@ -98,13 +98,13 @@
     // hidden root tier: #audit + #settings-assist deep links bounce home for excluded sessions
     // (me.root===false only when ROOT_ADMINS is configured server-side; the API 403s regardless)
     const notRoot=()=>{ const s=(window.opsSession&&window.opsSession())||{}; return s.me && s.me.root===false; };
-    if((r.audit||r.assistClone||r.sla||r.agentsView) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash("dashboard"); return; }
+    if((r.audit||r.assistClone||r.sla||r.agents) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash("dashboard"); return; }
     // role guard — before any renderer runs (the API 403s regardless; this makes it CLEAR)
     hideDenied();
     const need=neededFor(r);
     if(need && lacks(need)){ showDenied(need); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (denied)"); return; }
     // business guard (6 Sep 2026): a Mobile-only user never lands on a Fixed page and vice-versa, deep link or not
-    const bizOf=r=>{ if(r.view==="fixed") return "fixed"; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","otodocs","tapdocs","salamdocs","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
+    const bizOf=r=>{ if(r.view==="fixed"||r.seg==="fixed") return "fixed"; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","otodocs","tapdocs","salamdocs","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
     const biz=(sess().me||{}).business||"both", rb=bizOf(r);
     if(rb && biz!=="both" && rb!==biz){ showDeniedBiz(rb,biz); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (outside business)"); return; }
     if(r.home){ window.opsGoHome && window.opsGoHome(); }
@@ -112,10 +112,11 @@
     else if(r.sla){ window.openSla && window.openSla(); }
     else if(r.notifyClone){ window.openNotifyClone && window.openNotifyClone(); }
     else if(r.assistClone){ window.openAssistClone && window.openAssistClone(); }
-    else if(r.oncall){ window.openOncall && window.openOncall(); }
+    else if(r.agents){ window.openAgents && window.openAgents(); }
+    else if(r.demoCfg){ window.openDemoSettings && window.openDemoSettings(); }
+    else if(r.oncall){ window.openOncall && window.openOncall(r.seg==="fixed"?"fixed":"mvno"); if(r.seg==="fixed"){ const fb=document.querySelector('.navtab[data-fxtab="alerts"]'); if(fb) fb.classList.add("active"); } }
     else if(r.settings){ window.openSettings && window.openSettings(r.settings);
       const fn=SEG_RENDER[r.settings]; if(fn && window[fn]) window[fn](); }
-    else if(r.agentsView){ if(window.openAgents) window.openAgents(); else window.opsGoHome && window.opsGoHome(); }
     else if(r.audit){ if(window.openAudit) window.openAudit(); else window.opsGoHome && window.opsGoHome(); }
     else if(r.tickets){ if(window.openTicketsBoard) window.openTicketsBoard(); else window.opsGoHome && window.opsGoHome(); }
     else if(r.view){
@@ -127,13 +128,24 @@
         const tab=r.monTab||(m?m[1]:null);
         if(tab && window.openMonitoring){ window.openMonitoring(tab); window.audit && window.audit("VIEW_PAGE","#monitoring?tab="+tab); return; }
       }
+      /* Fixed incident view (#fixed-alerts): the SAME #view-alerts section, but activated by hand — clickNav('alerts')
+       * would click the Mobile Alerts tab, whose click listener rewrites the hash to #alerts (the bug seen 8 Sep). */
+      if(r.seg==="fixed"){
+        document.querySelectorAll(".navtab").forEach(x=>x.classList.remove("active"));
+        document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active", x.id==="view-"+r.view));
+        const gear=document.getElementById("settingsBtn"); if(gear) gear.classList.remove("on");
+        const fb=document.querySelector('.navtab[data-fxtab="alerts"]'); if(fb) fb.classList.add("active");
+        if(typeof window.openAlerts==="function") { try{ window.openAlerts("fixed"); }catch(e){} }
+        window.audit && window.audit("VIEW_PAGE", "#fixed-alerts"); return;
+      }
       clickNav(r.view);
       /* clickNav is a no-op when the tab is already active, so any view that only renders on a
        * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
       const OPENER={ landing:"openLanding", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics" };
       const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{
-        if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); window[fn](m?m[1]:"overview"); } else window[fn](); }catch(e){} }
+        if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); window[fn](m?m[1]:"overview"); }
+        else if(r.view==="alerts"){ window[fn](r.seg||"mvno"); } else window[fn](); }catch(e){} }
       // Subscriber 360 deep link: #subscriber?key=966...
       if(r.view==="sub360" && window.openSub360){ const m=/key=([^&]+)/.exec(qs||""); const t=/(?:^|&)tab=([a-z]+)/.exec(qs||""); window.openSub360(m?decodeURIComponent(m[1]):undefined, t?t[1]:undefined); }
       // Troubleshoot deep link: #troubleshoot?from=..&to=..&cls=technical&cat=semati
@@ -159,7 +171,6 @@
   const ticketsItem=document.querySelector("#settingsMenu [data-tickets]"); if(ticketsItem) ticketsItem.addEventListener("click",()=>setHash("tickets"));
   const wbItem=document.querySelector("#settingsMenu [data-workbench]"); if(wbItem) wbItem.addEventListener("click",()=>setHash("workbench"));
   const slaItem=document.querySelector("#settingsMenu [data-sla]"); if(slaItem) slaItem.addEventListener("click",()=>setHash("sla"));
-  const agItem=document.querySelector("#settingsMenu [data-agents]"); if(agItem) agItem.addEventListener("click",()=>setHash("agents"));
 
   window.addEventListener("hashchange",apply);
   // Apply the initial URL once the session is ready (so a shared/deep link opens the right page).
