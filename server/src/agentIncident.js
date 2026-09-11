@@ -21,6 +21,8 @@ const db = require('./db');
 const llm = require('./llm');
 
 const CFG = {
+  retryMin: Number(process.env.AGENT_INCIDENT_RETRY_MIN) || 10,     // wait this long before retrying a model-less triage
+  maxRetries: Number(process.env.AGENT_INCIDENT_MAX_RETRIES) || 6,  // …and give up after this many attempts
   enabled: process.env.AGENT_INCIDENT_ENABLED !== '0',
   intervalMin: Math.max(1, Number(process.env.AGENT_INCIDENT_INTERVAL_MIN) || 3),
   maxPerTick: Math.max(1, Number(process.env.AGENT_INCIDENT_MAX_PER_TICK) || 8),
@@ -38,6 +40,9 @@ async function ensureSchema() {
       model text, ms integer, applied jsonb NOT NULL DEFAULT '{}', helpful boolean, feedback_by text, feedback_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now())`);
   await C().query(`CREATE INDEX IF NOT EXISTS idx_agent_triage_at ON agent_triage (created_at DESC)`);
+  /* retry bookkeeping for a triage the model never answered (11 Sep 2026) */
+  await C().query(`ALTER TABLE agent_triage ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 1`).catch(() => {});
+  await C().query(`ALTER TABLE agent_triage ADD COLUMN IF NOT EXISTS retried_at timestamptz`).catch(() => {});
   await C().query(`CREATE TABLE IF NOT EXISTS agent_runs (id bigserial PRIMARY KEY, agent text NOT NULL, started_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz, ok boolean, stats jsonb NOT NULL DEFAULT '{}', error text)`);
 }
 async function getPolicy() {
@@ -102,7 +107,16 @@ Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${Str
   catch (e) { if (e.llm) throw e; log('triage LLM failed', a.id, e.message); }
   const team = j && j.suggested_team ? String(j.suggested_team).slice(0, 40) : (ev.rule.team || a.team || null);
   await q.query(`INSERT INTO agent_triage (alert_id, segment, rule_key, severity, kind, probable_cause, impact, suggested_team, suggested_action, priority_hint, confidence, similar_30d, median_life_min, usual_close, correlated, top_signatures, model, ms)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) ON CONFLICT (alert_id) DO NOTHING`,
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+      ON CONFLICT (alert_id) DO UPDATE SET
+        probable_cause = COALESCE(EXCLUDED.probable_cause, agent_triage.probable_cause),
+        impact         = COALESCE(EXCLUDED.impact, agent_triage.impact),
+        suggested_team = COALESCE(EXCLUDED.suggested_team, agent_triage.suggested_team),
+        suggested_action = COALESCE(EXCLUDED.suggested_action, agent_triage.suggested_action),
+        priority_hint  = COALESCE(EXCLUDED.priority_hint, agent_triage.priority_hint),
+        confidence     = COALESCE(EXCLUDED.confidence, agent_triage.confidence),
+        model = EXCLUDED.model, ms = EXCLUDED.ms,
+        attempts = coalesce(agent_triage.attempts,1) + 1, retried_at = now()`,
     [a.id, ev.seg, a.rule_key, a.severity, flapping ? 'flapping' : 'triage', j ? String(j.probable_cause || '').slice(0, 400) : null, j ? String(j.impact || '').slice(0, 300) : null, team, j ? String(j.suggested_action || '').slice(0, 400) : null,
       j ? String(j.priority_hint || '').slice(0, 3) : null, j ? (Number(j.confidence) || null) : null, ev.hist.n || 0, ev.hist.med_min || null, ev.lastClose ? String(ev.lastClose).slice(0, 200) : null,
       JSON.stringify(ev.corr.map(c => ({ id: c.id, name: c.name, severity: c.severity, status: c.status }))), JSON.stringify(ev.sigs), out ? `${out.provider}:${out.model}` : null, Date.now() - t0]);
@@ -115,8 +129,10 @@ Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${Str
   const body = j
     ? `🤖 Agent triage (${(Number(j.confidence) * 100 || 0).toFixed(0)} % · ${j.priority_hint || a.severity}${j.is_noise ? ' · likely noise' : ''}${flapping ? ' · flapping' : ''})\nCause: ${j.probable_cause || '-'}\nImpact: ${j.impact || '-'}\nTeam: ${team || '-'}${applied.team ? ' (assigned by policy)' : ''}\nFirst action: ${j.suggested_action || '-'}\nHistory: ${hist}${ev.corr.length ? ` · fired with ${ev.corr.map(c => '#' + c.id).join(' ')}` : ''}`
     : `🤖 Agent triage · measured evidence (the on-prem model gave no answer — Settings › Agents › Self-test says why)\nHistory of this rule: ${hist}${ev.hist.usual_person ? ` · usually handled by ${ev.hist.usual_person}` : ''}${ev.hist.acked != null ? ` · ${ev.hist.acked} acknowledged` : ''}\nOwner team on the rule: ${ev.rule.team || a.team || '-'}${ev.lastClose ? `\nLast human note on this rule: ${String(ev.lastClose).slice(0, 160)}` : ''}${ev.corr.length ? `\nFired within ±10 min of: ${ev.corr.map(c => `#${c.id} ${c.severity} ${c.name}`).join(' · ')}` : ''}${ev.sigs.length ? `\nBusiest backend signatures (2 h): ${ev.sigs.slice(0, 3).map(sg => `${sg.endpoint || sg.source} ${sg.code || ''} ×${sg.last_24h}`).join(' · ')}` : ''}`;
-  await comment(a.id, body);
-  return { kind: flapping ? 'flapping' : 'triage', model: !!j, applied };
+  /* a retry that still has no model answer must not post the same evidence note again */
+  const already = (await q.query(`SELECT count(*)::int n FROM incident_comments WHERE alert_id=$1 AND author='agent'`, [a.id])).rows[0].n;
+  if (j || !already) await comment(a.id, body);
+  return { kind: flapping ? 'flapping' : 'triage', model: !!j, applied, retry: already > 0 };
 }
 
 /* ---- the loop ---- */
@@ -127,7 +143,18 @@ async function tick(limit) {
   const stats = { checked: 0, triaged: 0, duplicates: 0, flapping: 0, modelled: 0, errors: 0, applied: 0 };
   try {
     const policy = await getPolicy();
-    const rows = (await q.query(`SELECT a.* FROM alerts a LEFT JOIN agent_triage t ON t.alert_id=a.id WHERE a.status='open' AND t.id IS NULL AND a.fired_at >= now() - ($1||' hours')::interval ORDER BY a.severity ASC, a.fired_at DESC LIMIT $2`, [String(CFG.lookbackHours), limit || CFG.maxPerTick])).rows;
+    /* RETRY A FAILED TRIAGE (11 Sep 2026). Until today a triage row was written even when the model answered
+     * nothing, and the agent skips anything already triaged — so one bad minute left an incident with an
+     * "evidence only" note for its whole life, even after the model was fixed. Candidates are now: never triaged,
+     * OR triaged WITHOUT a model answer (probable_cause IS NULL) and not retried in the last `retryMin` minutes,
+     * capped at `maxRetries` attempts so a genuinely offline model cannot spin. */
+    const rows = (await q.query(`SELECT a.* FROM alerts a LEFT JOIN agent_triage t ON t.alert_id=a.id
+       WHERE a.status='open' AND a.fired_at >= now() - ($1||' hours')::interval
+         AND (t.id IS NULL
+              OR (t.probable_cause IS NULL AND coalesce(t.attempts,1) < $3
+                  AND coalesce(t.retried_at, t.created_at) < now() - ($4||' minutes')::interval))
+       ORDER BY a.severity ASC, a.fired_at DESC LIMIT $2`,
+      [String(CFG.lookbackHours), limit || CFG.maxPerTick, CFG.maxRetries, String(CFG.retryMin)])).rows;
     for (const a of rows) {
       stats.checked++;
       try { const r = await triageOne(a, policy); stats[r.kind === 'duplicate' ? 'duplicates' : r.kind === 'flapping' ? 'flapping' : 'triaged']++; if (r.model) stats.modelled++; if (r.applied && Object.keys(r.applied).length) stats.applied++; }
