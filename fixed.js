@@ -13,7 +13,7 @@
     ["dash","Reports","KPIs · trends · dealers & QR"],["errors","Errors","error control board"],["alerts","Alerts","rules · history"],
     ["playbook","Playbook","SLA / OLA / action plans"],["diagrams","Diagrams","payments · journeys"],
     /* own pages since 11 Sep 2026 — they used to be cards inside Diagrams */
-    ["journeys","Journeys","every dealer & QR journey, step by step"],["bsstopo","BSS Topology","digital / BSS HLD — channels → 3Scale/OSB → Oracle BSS"],
+    ["bsstopo","Topology","digital / BSS HLD — channels → 3Scale/OSB → Oracle BSS"],["journeys","Journeys","every dealer & QR journey, step by step"],
     ["report","KPI digest","branded e-mail report"]];
   window.FIXED_PAGES = window.FIXED_PAGES || {};
   const $=s=>document.querySelector(s);

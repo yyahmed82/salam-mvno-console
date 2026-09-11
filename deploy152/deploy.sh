@@ -101,7 +101,11 @@ mkdir -p "$APP/server/src" "$APP/server/db" "$APP/server/scripts" "$APP/web"   #
 
 if [ "$MODE" = "--web-only" ]; then
   cp -f /tmp/csync/web/* "$APP/web/" 2>/dev/null || true
-  echo "▸ web files updated (hard-refresh the browser; no restart needed)"
+  # the sub-folders are NOT covered by web/* — without these two lines a --web-only deploy silently
+  # shipped a stale fixed-diagrams/ (the Fixed atlas kept its old build for a whole day, 11 Sep 2026)
+  [ -d /tmp/csync/web/assets ] && cp -R /tmp/csync/web/assets "$APP/web/"
+  [ -d /tmp/csync/web/fixed-diagrams ] && cp -R /tmp/csync/web/fixed-diagrams "$APP/web/"
+  echo "▸ web files updated incl. assets/ + fixed-diagrams/ (hard-refresh the browser; no restart needed)"
 else
   cp -f /tmp/csync/server/src/*.js  "$APP/server/src/"
   cp -f /tmp/csync/server/db/*.sql  "$APP/server/db/"

@@ -62,6 +62,6 @@
   window.FIXED_PAGES.diagrams={ label:"Diagrams", sub:"payments · journeys", render:(host,fx)=>render(host,fx||FX()) };
   window.FIXED_PAGES.journeys={ label:"Journeys", sub:"dealer & QR journeys", render:(host,fx)=>solo(host, fx||FX(), "diagram-journeys-explorer",
     "Every journey, end to end", "All dealer (FTTH / FTTB / 5G / Lead) and QR (e-purchase) journeys — step through each one, success or failure, with the exact API calls and what stops the order at every step.") };
-  window.FIXED_PAGES.bsstopo={ label:"BSS Topology", sub:"digital / BSS HLD", render:(host,fx)=>solo(host, fx||FX(), "diagram-fixed-bss-hld",
+  window.FIXED_PAGES.bsstopo={ label:"Topology", sub:"digital / BSS HLD", render:(host,fx)=>solo(host, fx||FX(), "diagram-fixed-bss-hld",
     "The whole Fixed estate, one map", "IMPACT B2C Release 5 and 6 view: every channel, the digital edge, the 3Scale/OSB integration hub, the Oracle BSS core and every OSS, network and external partner. Click a node for its role, servers and flows.") };
 })();
