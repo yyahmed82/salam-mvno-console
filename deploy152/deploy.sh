@@ -51,6 +51,7 @@ cp deploy152/dealer-check.cjs  "$STAGE/server/dealer-check.cjs" 2>/dev/null || t
 cp deploy152/test-smtp.cjs "$STAGE/server/test-smtp.cjs" 2>/dev/null || true                  # needs nodemailer
 cp deploy152/sync-watchdog.cjs "$STAGE/server/sync-watchdog.cjs" 2>/dev/null || true # needs pg → beside node_modules
 cp deploy152/check-fixed-sources.cjs "$STAGE/server/check-fixed-sources.cjs" 2>/dev/null || true  # Fixed › Errors read-model census (read-only, needs pg + src/)
+cp deploy152/test-budget-mails.cjs "$STAGE/server/test-budget-mails.cjs" 2>/dev/null || true   # send the real AI-budget mails to one address for review (writes nothing)
 cp deploy152/install-watchdog.sh "$STAGE/install-watchdog.sh" 2>/dev/null || true
 cp server/package.json        "$STAGE/server/"
 # build stamp → /api/version reports the milestone actually shipped (VERSION file + git commit/tag)
@@ -119,6 +120,7 @@ else
   cp -f /tmp/csync/server/sync-watchdog.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/sql.cjs "$APP/server/" 2>/dev/null || true          # csql (read-only query tool)
   cp -f /tmp/csync/server/check-fixed-sources.cjs "$APP/server/" 2>/dev/null || true   # Fixed › Errors read-model census
+  cp -f /tmp/csync/server/test-budget-mails.cjs "$APP/server/" 2>/dev/null || true   # AI-budget mail preview
   cp -f /tmp/csync/server/purge-user-secrets.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/dms-discover.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/dms-business-discover.cjs "$APP/server/" 2>/dev/null || true

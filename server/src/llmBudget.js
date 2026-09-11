@@ -135,31 +135,83 @@ async function afterCall(opts = {}) {
   } catch (e) { console.warn('[llm-budget] afterCall:', e.message); }
 }
 
-async function mail({ subject, kind, threshold, used, cap, cfg }) {
-  const notify = require('./notify');
+/* WHO the mail goes to for a given event — a person gets their own warning, super admins get the
+ * global ones and every ceiling actually reached. */
+async function recipients({ subject, kind, threshold, cfg }) {
   const to = [];
   if (kind === 'user' && cfg.notifyUser) to.push({ email: subject });
   if ((kind !== 'user' || threshold === 'over') && cfg.notifyAdmins) {
     const r = await db.console.query(`SELECT email, name FROM console_users WHERE enabled AND (role='super_admin' OR 'super_admin'=ANY(coalesce(roles,'{}')))`).catch(() => ({ rows: [] }));
     r.rows.forEach(u => { if (!to.some(x => x.email === u.email)) to.push(u); });
   }
-  if (!to.length) return;
+  return to;
+}
+
+/* BUILD the mail — subject line + full HTML. Kept separate from sending so the exact production
+ * message can be previewed (deploy152/test-budget-mails.cjs) without a real ceiling being reached. */
+function buildMail({ subject, kind, threshold, used, cap, cfg, note }) {
+  const notify = require('./notify');
   const pct = cap > 0 ? Math.round(100 * used / cap) : 0;
   const who = kind === 'user' ? 'You have' : `${subject} has`;
   const head = threshold === 'over' ? `${kind === 'global' ? 'The console' : who.replace(' have', ' has').replace('You has', 'You have')} reached the daily AI budget`
     : `${kind === 'global' ? 'The console is' : `${who.replace(' have', ' has').replace('You has', 'You have')}`} at ${pct} % of the daily AI budget`;
+  const url = notify.CONSOLE_URL + '#settings-agents';
+  /* WHAT NOW — every one of these mails names the next step, because the person reading it is usually
+   * mid-incident and should not have to work out whether they are blocked and who can unblock them. */
+  const next = threshold === 'over'
+    ? (cfg.block
+      ? (kind === 'user'
+        ? 'Nothing you do breaks: Yusr keeps answering from the rule engine. If you need the model back today, ask a super admin to raise your ceiling on the same screen — it takes effect on your next question.'
+        : 'The console keeps working from the rule engine and the measured-evidence notes. Raise the ceiling on the screen below if this is a real workload rather than a runaway caller.')
+      : 'Nothing is blocked — the budget is set to warn only, so this is for information.')
+    : (kind === 'user'
+      ? 'Nothing is blocked. Your live percentage is in the Yusr panel header, and at 100 % ' + (cfg.block ? 'AI answers pause until midnight — the console keeps working from the rule engine.' : 'you get one more mail; nothing is blocked.')
+      : 'Nothing is blocked. At 100 % ' + (cfg.block ? 'AI answers pause until midnight — the console keeps working from the rule engine.' : 'one more mail is sent; nothing is blocked.'));
+  const bar = (() => { const p = Math.max(0, Math.min(1.08, cap > 0 ? used / cap : 0));
+    const col = p >= 1 ? '#dc2626' : p >= 0.8 ? '#d97706' : '#0e9f5a';
+    return `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:4px 0 14px"><tr>
+      <td style="background:#e8edf2;border-radius:7px;height:12px;padding:0">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="${Math.round(Math.min(1, p) * 100)}%" style="height:12px"><tr><td style="background:${col};border-radius:7px;height:12px;font-size:0">&nbsp;</td></tr></table>
+      </td></tr></table>`; })();
   const body = `<div style="font-size:13.5px;color:#20302a;line-height:1.6">
       <b>${notify.esc(head)}.</b><br><br>
-      Used <b>${used.toLocaleString()}</b> of <b>${cap.toLocaleString()}</b> tokens today (KSA day, resets at 00:00).<br>
-      ${threshold === 'over'
-      ? (cfg.block ? 'Further AI answers are paused until midnight — the console keeps working: Yusr answers from the rule engine and the agents write their measured-evidence notes.' : 'Nothing is blocked (the budget is set to warn only) — this mail is for information.')
-      : 'Nothing is blocked yet. At 100 % ' + (cfg.block ? 'AI answers pause until midnight.' : 'you get one more mail; nothing is blocked.')}<br><br>
-      <span style="color:#64748b;font-size:12px">Budgets live in Settings › Agents › AI usage &amp; budget. On-prem inference: no external cost, the ceiling protects the shared CPU.</span>
+      Used <b>${used.toLocaleString()}</b> of <b>${cap.toLocaleString()}</b> tokens today — <b>${pct} %</b>. The day is the KSA day and resets at 00:00.
+      ${bar}
+      ${notify.esc(next)}<br><br>
+      <a href="${url}" style="display:inline-block;background:#0e9f5a;color:#fff;text-decoration:none;font-weight:700;font-size:13px;padding:9px 16px;border-radius:9px">Open AI usage &amp; budget</a><br><br>
+      <span style="color:#64748b;font-size:12px">Settings › Agents › AI usage &amp; budget — who used what, the ceilings, and every notification sent. The model runs on our own server: the ceiling protects the shared machine, not a bill.</span>
     </div>`;
-  const html = notify.shell({ title: 'AI budget — Operations Console', badge: 'OPERATIONS CONSOLE · AI', pill: threshold === 'over' ? 'BUDGET REACHED' : `${pct} %`, pillColor: threshold === 'over' ? '#dc2626' : '#d97706', bodyHtml: body });
-  const r = await notify.sendHtml(to, `[Salam Ops] AI budget ${threshold === 'over' ? 'reached' : pct + ' %'} — ${subject}`, html, []);
+  const html = notify.shell({ title: 'AI budget — Operations Console', badge: 'OPERATIONS CONSOLE · AI', pill: threshold === 'over' ? 'BUDGET REACHED' : `${pct} %`, pillColor: threshold === 'over' ? '#dc2626' : '#d97706',
+    bodyHtml: body + (note ? `<div style="margin-top:14px;padding:9px 11px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px">${notify.esc(note)}</div>` : '') });
+  return { subject: `[Salam Ops] AI budget ${threshold === 'over' ? 'reached' : pct + ' %'} — ${subject}`, html, pct };
+}
+
+async function mail({ subject, kind, threshold, used, cap, cfg }) {
+  const notify = require('./notify');
+  const to = await recipients({ subject, kind, threshold, cfg });
+  if (!to.length) return;
+  const m = buildMail({ subject, kind, threshold, used, cap, cfg });
+  const r = await notify.sendHtml(to, m.subject, m.html, []);
   await db.console.query(`UPDATE llm_budget_events SET mailed_to=$2, ok=$3 WHERE subject=$1 AND day=(now() AT TIME ZONE 'Asia/Riyadh')::date AND threshold=$4`,
     [subject, to.map(x => x.email).join(', '), !!r.sent, threshold]).catch(() => {});
+}
+
+/* PREVIEW — send the real budget mails to one address so they can be reviewed before anyone hits a
+ * ceiling. Nothing is written to llm_budget_events, no budget is changed, no ceiling is touched. */
+async function previewMails({ to, cases, note, dryRun } = {}) {
+  const notify = require('./notify');
+  const cfg = await config();
+  const list = (Array.isArray(to) ? to : String(to || '').split(/[,;\s]+/)).filter(Boolean).map(e => ({ email: e }));
+  if (!list.length) throw new Error('previewMails: no recipient');
+  const out = [];
+  for (const c of (cases || [])) {
+    const useCfg = { ...cfg, ...(c.cfg || {}) };
+    const m = buildMail({ subject: c.subject, kind: c.kind, threshold: c.threshold, used: c.used, cap: c.cap, cfg: useCfg, note });
+    let sent = false, error = null;
+    if (!dryRun) { try { const r = await notify.sendHtml(list, m.subject, m.html, []); sent = !!r.sent; error = r.error || null; } catch (e) { error = e.message; } }
+    out.push({ name: c.name, to: list.map(x => x.email).join(', '), subject: m.subject, pct: m.pct, sent, error, bytes: m.html.length });
+  }
+  return out;
 }
 
 /* the usage screen: per day, per subject, per purpose, per provider (+ cost) */
@@ -217,4 +269,4 @@ const price = (cfg, provider, tokens) => {
   return per1k > 0 ? Number(((tokens / 1000) * per1k).toFixed(4)) : 0;
 };
 
-module.exports = { DEFAULTS, config, setConfig, ensureSchema, check, afterCall, usage, mine, subjectOf, usedToday, usedGlobal, price, isService };
+module.exports = { DEFAULTS, config, setConfig, ensureSchema, check, afterCall, usage, mine, subjectOf, usedToday, usedGlobal, price, isService , buildMail, recipients, previewMails };
