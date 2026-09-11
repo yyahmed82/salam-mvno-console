@@ -255,6 +255,9 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const wm = document.getElementById("workbenchMenuItem"); if(wm) wm.style.display = ((SES.me&&SES.me.views)||[]).includes("workbench")?"":"none";
     // Yusr config page — root tier only once ROOT_ADMINS is set (root stays true for all when unset)
     const yi = document.querySelector('#settingsMenu [data-seg="assist"]'); if(yi) yi.style.display = (SES.me && SES.me.root===false)?"none":"";
+    // Agents & LLM — same root-tier gate as Yusr. This line is the fix for the item that was in the
+    // markup with style="display:none" and never shown by anything (Yosri, 11 Sep 2026).
+    const agi = document.getElementById("agentsMenuItem"); if(agi) agi.style.display = (SES.me && SES.me.root===false)?"none":"";
   }
   function displayName(){ return (SES.me&&SES.me.name) || (SES.email? SES.email.split("@")[0] : "Sign in"); }
   function renderChip(){

@@ -161,9 +161,13 @@ async function tick() {
     let rep = null;
     const ksaHour = Number(new Date(now.getTime() + 3 * 3600e3).toISOString().slice(11, 13)); const today = new Date(now.getTime() + 3 * 3600e3).toISOString().slice(0, 10);
     if (ksaHour >= CFG.reportHour && st.lastReportDay !== today) { rep = await dailyReport(now); await setState('log', { ...(await getState('log')), lastReportDay: today }); }
+    /* AI usage & budget recap for the KSA day that just closed — once a day, at/after 00:00 KSA.
+     * Rides this tick so there is no second scheduler to keep alive (11 Sep 2026). */
+    let dig = null;
+    try { dig = await require('./budgetDigest').maybeSend(now); } catch (e) { log('budget digest failed:', e.message); }
     await C.query(`DELETE FROM agent_signatures WHERE last_seen < now() - ($1||' days')::interval`, [String(CFG.retentionDays)]).catch(() => {});
     await C.query(`UPDATE agent_runs SET finished_at=now(), ok=true, stats=$2 WHERE id=$1`, [run, JSON.stringify({ ...ing, fresh: ing.fresh.length, ...as, report: rep })]);
-    log(`tick: ${ing.events} events → ${ing.signatures} signatures (${ing.fresh.length} new) · assessed ${as.assessed} in ${as.batches} batch(es)${rep ? ` · daily report #${rep.report} mailed to ${rep.mailed}` : ''}`);
+    log(`tick: ${ing.events} events → ${ing.signatures} signatures (${ing.fresh.length} new) · assessed ${as.assessed} in ${as.batches} batch(es)${rep ? ` · daily report #${rep.report} mailed to ${rep.mailed}` : ''}${dig ? ` · AI budget recap ${dig.sent ? 'mailed to ' + dig.to : 'FAILED: ' + dig.error} (${dig.stats ? dig.stats.day : '?'})` : ''}`);
     result = { events: ing.events, signatures: ing.signatures, fresh: ing.fresh.length, ...as, report: rep };
   } catch (e) { log('tick failed:', e.message); result = { error: e.message }; await C.query(`UPDATE agent_runs SET finished_at=now(), ok=false, error=$2 WHERE id=$1`, [run, e.message]).catch(() => {}); }
   finally { busy = false; }

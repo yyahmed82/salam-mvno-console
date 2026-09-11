@@ -25,7 +25,16 @@ const DEFAULTS = {
   enabled: true,
   dailyUser: 150000, dailyCaller: 600000, dailyGlobal: 4000000, monthlyGlobal: 80000000,
   perUser: {}, perCaller: {},
-  warnAt: 0.8, block: true, notifyUser: true, notifyAdmins: true,
+  /* warnSteps — every line that raises a mail before the ceiling. One warning at 80 % was not enough:
+   * people act on 90 %, not on 80 %. Each step mails at most once per subject per KSA day
+   * (llm_budget_events is unique on subject+day+threshold). warnAt stays as the legacy single value
+   * and is folded into the list, so an older saved config keeps working. */
+  warnSteps: [0.8, 0.9], warnAt: 0.8,
+  block: true,
+  /* Budget mails go to the SUPER ADMINS only (Yosri, 11 Sep 2026). Set notifyUser true to also copy
+   * the person who hit their own ceiling — off by default: L1/L2 should not be mailed about a quota
+   * they cannot change. */
+  notifyUser: false, notifyAdmins: true,
   price: { primary: 0, fallback: 0, currency: 'SAR' },
 };
 const KSA_DAY = `(at AT TIME ZONE 'Asia/Riyadh')::date`;
@@ -42,6 +51,12 @@ async function config() {
     dailyUser: num(s.dailyUser, DEFAULTS.dailyUser), dailyCaller: num(s.dailyCaller, DEFAULTS.dailyCaller),
     dailyGlobal: num(s.dailyGlobal, DEFAULTS.dailyGlobal), monthlyGlobal: num(s.monthlyGlobal, DEFAULTS.monthlyGlobal),
     warnAt: Math.min(0.99, Math.max(0.1, num(s.warnAt, DEFAULTS.warnAt))),
+    warnSteps: (() => {
+      const raw = Array.isArray(s.warnSteps) && s.warnSteps.length ? s.warnSteps
+        : (s.warnAt != null ? [s.warnAt] : DEFAULTS.warnSteps);
+      const out = [...new Set(raw.map(Number).filter(x => Number.isFinite(x) && x > 0 && x < 1).map(x => Math.round(x * 100) / 100))].sort((a, b) => a - b);
+      return out.length ? out : DEFAULTS.warnSteps;
+    })(),
     perUser: s.perUser && typeof s.perUser === 'object' ? s.perUser : {},
     perCaller: s.perCaller && typeof s.perCaller === 'object' ? s.perCaller : {},
     price: { ...DEFAULTS.price, ...(s.price || {}) },
@@ -122,9 +137,19 @@ async function afterCall(opts = {}) {
     const cfg = await config(); if (!cfg.enabled) return;
     const s = await subjectOf(opts);
     const [mine, g] = await Promise.all([usedToday(s.subject), usedGlobal()]);
+    /* which line was crossed — 'over' at 100 %, otherwise the HIGHEST warn step passed. The step is
+     * part of the threshold key ('warn80', 'warn90'), so 80 % and 90 % are two separate mails and
+     * neither repeats within the same KSA day. */
+    const crossed = (used, cap) => {
+      if (!(cap > 0)) return null;
+      const p = used / cap;
+      if (p >= 1) return 'over';
+      const hit = [...cfg.warnSteps].reverse().find(x => p >= x);
+      return hit ? 'warn' + Math.round(hit * 100) : null;
+    };
     const marks = [];
-    if (s.cap > 0) { const p = mine.tokens / s.cap; if (p >= 1) marks.push([s.subject, s.kind, 'over', mine.tokens, s.cap]); else if (p >= cfg.warnAt) marks.push([s.subject, s.kind, 'warn', mine.tokens, s.cap]); }
-    if (cfg.dailyGlobal > 0) { const p = g.day / cfg.dailyGlobal; if (p >= 1) marks.push(['console', 'global', 'over', g.day, cfg.dailyGlobal]); else if (p >= cfg.warnAt) marks.push(['console', 'global', 'warn', g.day, cfg.dailyGlobal]); }
+    { const t = crossed(mine.tokens, s.cap); if (t) marks.push([s.subject, s.kind, t, mine.tokens, s.cap]); }
+    { const t = crossed(g.day, cfg.dailyGlobal); if (t) marks.push(['console', 'global', t, g.day, cfg.dailyGlobal]); }
     for (const [subject, kind, threshold, used, cap] of marks) {
       const ins = await db.console.query(
         `INSERT INTO llm_budget_events (day, subject, kind, threshold, used, cap)
@@ -139,11 +164,12 @@ async function afterCall(opts = {}) {
  * global ones and every ceiling actually reached. */
 async function recipients({ subject, kind, threshold, cfg }) {
   const to = [];
-  if (kind === 'user' && cfg.notifyUser) to.push({ email: subject });
-  if ((kind !== 'user' || threshold === 'over') && cfg.notifyAdmins) {
+  if (cfg.notifyAdmins !== false) {
     const r = await db.console.query(`SELECT email, name FROM console_users WHERE enabled AND (role='super_admin' OR 'super_admin'=ANY(coalesce(roles,'{}')))`).catch(() => ({ rows: [] }));
-    r.rows.forEach(u => { if (!to.some(x => x.email === u.email)) to.push(u); });
+    r.rows.forEach(u => { if (!to.some(x => String(x.email).toLowerCase() === String(u.email).toLowerCase())) to.push(u); });
   }
+  /* off by default — L1/L2 cannot change their own ceiling, so mailing them is noise, not action */
+  if (kind === 'user' && cfg.notifyUser === true && !to.some(x => String(x.email).toLowerCase() === String(subject).toLowerCase())) to.push({ email: subject });
   return to;
 }
 
@@ -181,7 +207,9 @@ function buildMail({ subject, kind, threshold, used, cap, cfg, note }) {
       <a href="${url}" style="display:inline-block;background:#0e9f5a;color:#fff;text-decoration:none;font-weight:700;font-size:13px;padding:9px 16px;border-radius:9px">Open AI usage &amp; budget</a><br><br>
       <span style="color:#64748b;font-size:12px">Settings › Agents › AI usage &amp; budget — who used what, the ceilings, and every notification sent. The model runs on our own server: the ceiling protects the shared machine, not a bill.</span>
     </div>`;
-  const html = notify.shell({ title: 'AI budget — Operations Console', badge: 'OPERATIONS CONSOLE · AI', pill: threshold === 'over' ? 'BUDGET REACHED' : `${pct} %`, pillColor: threshold === 'over' ? '#dc2626' : '#d97706',
+  /* the pill gets louder as the line gets closer: 80 % amber, 90 % deep orange, 100 % red */
+  const pillColor = threshold === 'over' ? '#dc2626' : pct >= 90 ? '#ea580c' : '#d97706';
+  const html = notify.shell({ title: 'AI budget — Operations Console', badge: 'OPERATIONS CONSOLE · AI', pill: threshold === 'over' ? 'BUDGET REACHED' : `${pct} %`, pillColor,
     bodyHtml: body + (note ? `<div style="margin-top:14px;padding:9px 11px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px">${notify.esc(note)}</div>` : '') });
   return { subject: `[Salam Ops] AI budget ${threshold === 'over' ? 'reached' : pct + ' %'} — ${subject}`, html, pct };
 }

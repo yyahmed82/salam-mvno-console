@@ -33,11 +33,12 @@
     if(b.dataset.seg==="notify" && window.openNotifyClone){ window.openNotifyClone(); closeMenu(); return; }
     if(b.dataset.seg==="assist" && window.openAssistClone){ window.openAssistClone(); closeMenu(); return; }
     window.openSettings(b.dataset.seg); closeMenu(); }));
-  const demoItem=menu.querySelector("[data-demo]"); if(demoItem) demoItem.addEventListener("click", ()=>{ if(window.openDemoSettings){ window.openDemoSettings(); if(location.hash!=="#settings-demo") location.hash="#settings-demo"; } closeMenu(); });
   const auditItem=menu.querySelector("[data-audit]"); if(auditItem) auditItem.addEventListener("click", ()=>{ if(window.openAudit) window.openAudit(); closeMenu(); });
   const wb=menu.querySelector("[data-workbench]"); if(wb) wb.addEventListener("click", ()=>{ if(window.openWorkbench) window.openWorkbench(); closeMenu(); });
-  const ag=menu.querySelector("[data-agents]"); if(ag) ag.addEventListener("click", ()=>{ if(window.openAgents){ window.openAgents(); if(location.hash!=="#agents") location.hash="#agents"; } closeMenu(); });
   const sla=menu.querySelector("[data-sla]"); if(sla) sla.addEventListener("click", ()=>{ if(window.openSla) window.openSla(); closeMenu(); });
+  /* Agents & LLM — the item existed in the markup but nothing ever unhid it or handled its click,
+   * so it was invisible from the day it was added (fixed 11 Sep 2026). Gate matches Yusr: root tier. */
+  const ag=menu.querySelector("[data-agents]"); if(ag) ag.addEventListener("click", ()=>{ if(window.openAgents) window.openAgents(); else if(window.setConsoleHash) window.setConsoleHash("agents"); closeMenu(); });
   document.addEventListener("click", e=>{ if(!e.target.closest(".setwrap")) closeMenu(); });
   document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeMenu(); });
   // leaving settings via a nav tab clears the gear highlight
