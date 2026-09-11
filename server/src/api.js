@@ -3651,7 +3651,7 @@ app.post('/api/assist/chat', requireCap('useYusr'), async (req, res) => {
     const { message, history } = req.body || {};
     const allowUnmask = !!(req.caps && req.caps.unmaskPII);
     const t0 = Date.now();
-    const out = await assist.chat({ message, history, allowUnmask, business: req.business || 'both' });
+    const out = await assist.chat({ message, history, allowUnmask, business: req.business || 'both', actor: req.actor });
     const ms = Date.now() - t0;
     if (out.error) return res.status(400).json(out);
     // ms + llmError feed the Settings→Yusr KPI panel (aggregated from audit_log; question text is

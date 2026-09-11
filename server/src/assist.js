@@ -528,13 +528,13 @@ async function ruleContext(q) {
  * automatic failover, llm_calls audit). The prompt layout and the CPU-tuned options are unchanged:
  * 3 history turns × 500 chars, num_predict 220, num_ctx 4096, keep_alive 30m (set inside llm.js). */
 const llm = require('./llm');
-async function ollamaChat({ cfg, system, history, user }) {
+async function ollamaChat({ cfg, system, history, user, actor }) {
   const messages = [{ role: 'system', content: system }];
   for (const h of (history || []).slice(-3)) {
     if (h && h.role && h.content) messages.push({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content).slice(0, 500) });
   }
   messages.push({ role: 'user', content: user });
-  const out = await llm.chat({ messages, purpose: 'yusr.chat', caller: 'console', maxTokens: 220, numCtx: 4096, temperature: 0.2 });
+  const out = await llm.chat({ messages, purpose: 'yusr.chat', caller: 'console', actor, maxTokens: 220, numCtx: 4096, temperature: 0.2 });
   return out.text;
 }
 
@@ -753,7 +753,7 @@ function actionsFor(intent, ctx) {
 }
 
 /* ------------------------------ main entry ------------------------------ */
-async function chat({ message, history, allowUnmask, business }) {
+async function chat({ message, history, allowUnmask, business, actor }) {
   const cfg = await getConfig();
   const q = String(message || '').slice(0, 1000).trim();
   if (!q) return { error: 'empty message' };
@@ -1156,7 +1156,7 @@ async function chat({ message, history, allowUnmask, business }) {
   const tLlm0 = Date.now();
   try {
     reply = await ollamaChat({
-      cfg,
+      cfg, actor,
       /* PROMPT-CACHE LAYOUT (measured p95 66s on CPU came from re-evaluating ~4k tokens/question):
        * system stays CONSTANT so Ollama's prefix cache keeps its ~2k tokens hot between requests;
        * the per-question context rides in the user turn instead. Same information, same model

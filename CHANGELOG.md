@@ -3,6 +3,42 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.23] — 2026-09-11 — AI budgets per user & per agent · the agents get answers again · runbook steps · activity diff
+### Fixed
+- **The agents never got an answer from the model** ("Agent triage (evidence only — model unavailable)" on every
+  incident since they went live). `llm.chat()` built its `messages` array from `system` + `user` but passed the
+  ORIGINAL options object to the provider — so every caller that used `{system, user}` (both agents) sent a request
+  with **no messages field at all**, which Ollama answers with HTTP 200 and an empty string in ~250 ms. Yusr chat and
+  the warm-up were never affected because they pass `messages` themselves, which is why the model looked healthy.
+- **Runbook steps**: builtin runbooks are seeded as one paragraph with inline numbering ("1) … 2) …") but the incident
+  checklist split on newlines only, so four steps became one checkbox — and the mails used a third, different split.
+  One shared splitter (`runbook.js`) now serves the checklist, Guided Response, hand-over and reminder mails and the
+  ServiceNow description; it splits on newlines and on inline numbering, never on a decimal (0.5h, v1.2).
+### Added
+- **AI usage & budget** (`llmBudget.js`, Settings › Agents › AI usage & budget): every model call is metered in
+  TOKENS (measured when the provider reports them, otherwise estimated from characters and flagged) and attributed
+  to the person who asked or to the agent service that asked. Ceilings per KSA day — per user, per agent, whole
+  console per day and per month, with per-person overrides — a warning mail at 80 % and, over 100 %, a refusal that
+  is never an error (Yusr answers from the rule engine, the agents write their measured-evidence note). Screen shows
+  today vs ceiling, a 14-day token chart (humans vs agents), per-person and per-agent tables with editable ceilings,
+  cost for a cloud/GPU fallback (on-prem reads "no external cost") and the notification log. Humans and machines are
+  budgeted separately so an agent storm can never eat a person's allowance.
+  API: `GET/PUT /api/llm/budget`, `GET /api/llm/usage?days&user`, `GET /api/llm/usage/mine` (any signed-in user).
+  Yusr's panel shows "AI budget N %" once you pass the warning line.
+- **LLM self-test** (`POST /api/llm/selftest`, button on the Agents page): five probes of growing size with the JSON
+  grammar on and off, and a verdict — healthy · the grammar breaks this model · prompts stop being answered from a
+  given size (context window) · the model answers nothing at all.
+- **Prompt budget + empty-answer ladder** in `llm.js`: prompts are capped (`LLM_PROMPT_CHARS`, default 9 000) and
+  trimmed in the middle; an empty answer escalates (grammar → no grammar → 16 k context + merged system) and, if
+  every attempt is empty, throws a diagnosis recorded in `llm_calls` instead of a silent "".
+- **Alerts › Activity log**: the Detail column is a git-style diff (field · old in red · new in green; long values as
+  −/+ blocks). Rule edits use their field history; configuration saves are diffed against the previous save of the
+  same action, since `audit_log` keeps only the value that was saved. Checklist / cases-preview / export / resolve
+  rows now read in plain language instead of raw JSON, and cases/notify rows link to their incident.
+- **Alerts › Open**: owner column is a person card — name, e-mail, role · team, time-to-ack against the severity SLA,
+  holding time, assignee, and the holder's live load (open held · acked 24 h · avg ack 7 d). Action column reduced to
+  one primary action per state plus a grouped ⋯ menu (ownership · escalate · timing · close).
+
 ## [2.0.0-alpha.22] — 2026-09-11 — Impact counting (unique customers / services) · rule editor drawer · L1/L2 journey
 ### Added
 - **Impact counting** (`identity.js`): every metric with a customer behind its rows (payments, activations, Semati,

@@ -35,6 +35,22 @@ function mount(app, { audit, requireCap, requireRoot }) {
     try { const out = await llm.chat({ system: 'Reply with one short sentence.', user: String((req.body || {}).prompt || 'Say hello to the Salam operations team.'), purpose: 'llm.test', caller: req.actor, maxTokens: 60 }); res.json(out); }
     catch (e) { res.status(502).json({ error: e.message }); }
   });
+  /* ---- AI budget & usage (11 Sep 2026, llmBudget.js) ---- */
+  const budget = require('./llmBudget');
+  budget.ensureSchema().catch(() => {});
+  app.get('/api/llm/budget', ...gate, async (req, res) => { try { res.json(await budget.config()); } catch (e) { res.status(500).json({ error: e.message }); } });
+  app.put('/api/llm/budget', ...gate, async (req, res) => {
+    try { const next = await budget.setConfig(req.body || {}); if (audit) await audit(req, 'llm.budget', null, req.body || {}); res.json(next); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.get('/api/llm/usage', ...gate, async (req, res) => {
+    try { res.json(await budget.usage({ days: req.query.days, actor: req.query.user || '' })); } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  /* every signed-in user may see THEIR OWN line (the Yusr panel shows it) — no admin gate here */
+  app.get('/api/llm/usage/mine', async (req, res) => {
+    try { res.json(await budget.mine(req.actor)); } catch (e) { res.json({ enabled: false, error: e.message }); }
+  });
+
   app.get('/api/llm/calls', ...gate, async (req, res) => {
     try { res.json({ calls: (await C.query(`SELECT id, at, purpose, caller, provider, model, ms, ok, fallback, prompt_chars, answer_chars, error FROM llm_calls ORDER BY at DESC LIMIT $1`, [Math.min(500, Number(req.query.limit) || 100)])).rows }); }
     catch (e) { res.status(500).json({ error: e.message }); }

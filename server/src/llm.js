@@ -60,6 +60,7 @@ async function ensureSchema() {
       id bigserial PRIMARY KEY, at timestamptz NOT NULL DEFAULT now(), purpose text NOT NULL, caller text, provider text NOT NULL, model text,
       ms integer, ok boolean NOT NULL, fallback boolean NOT NULL DEFAULT false, prompt_chars integer, answer_chars integer, error text)`).catch(() => { _schema = false; });
   await db.console.query(`CREATE INDEX IF NOT EXISTS idx_llm_calls_at ON llm_calls (at DESC)`).catch(() => {});
+  await require('./llmBudget').ensureSchema().catch(() => {});   // actor / tokens / cost columns + budget events
 }
 
 /* ---- prompt budget (11 Sep 2026) ------------------------------------------------------------------------------
@@ -95,7 +96,8 @@ async function callProvider(p, { messages, maxTokens, temperature, numCtx, json 
       if (json) body.response_format = { type: 'json_object' };
       const r = await fetch(`${p.url}/v1/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal: ctl.signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
-      const j = await r.json(); return ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '').trim();
+      const j = await r.json(); const u = j.usage || {};
+      return { text: ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '').trim(), ptok: u.prompt_tokens, ctok: u.completion_tokens };
     }
     /* EMPTY-ANSWER LADDER (11 Sep 2026). Two known llama3.1 behaviours both return HTTP 200 with 0 characters:
      *   a) format:'json' grammar → immediate end-of-text on some prompts (seen on 152, 10 Sep)
@@ -124,7 +126,7 @@ async function callProvider(p, { messages, maxTokens, temperature, numCtx, json 
     let last = null, tried = [];
     for (const step of ladder) {
       last = await attempt(step); tried.push(`${step.label}${last.text ? ' ✓' : ' ∅'}`);
-      if (last.text) { if (tried.length > 1) console.warn(`[LLM] ${p.model}: recovered on "${step.label}" (${tried.join(' → ')})`); return last.text; }
+      if (last.text) { if (tried.length > 1) console.warn(`[LLM] ${p.model}: recovered on "${step.label}" (${tried.join(' → ')})`); return { text: last.text, ptok: last.prompt_eval_count, ctok: last.eval_count }; }
       console.warn(`[LLM] ${p.model}: empty answer on "${step.label}" (prompt ${last.prompt_eval_count ?? '?'} tok, done_reason ${last.done_reason || '?'}) — escalating`);
     }
     const chars = base.reduce((s, m) => s + String(m.content || '').length, 0);
@@ -147,6 +149,16 @@ async function chat(opts = {}) {
   if (opts.system && !messages.some(m => m.role === 'system')) messages.unshift({ role: 'system', content: opts.system });
   if (opts.user) messages.push({ role: 'user', content: opts.user });
   const promptChars = messages.reduce((s, m) => s + String(m.content || '').length, 0);
+  /* BUDGET (11 Sep 2026, llmBudget.js): who is asking, how much they used today, and the ceiling. A refusal is a
+   * normal explained answer — the caller degrades (Yusr answers from rules, the agents write evidence-only notes). */
+  const budget = require('./llmBudget');
+  let gate = null;
+  try { gate = await budget.check({ actor: opts.actor, caller: opts.caller }); } catch (e) { gate = null; }
+  if (gate && !gate.allowed) {
+    db.console.query(`INSERT INTO llm_calls (purpose, caller, actor, provider, model, ms, ok, blocked, prompt_chars, tokens, error) VALUES ($1,$2,$3,'budget','-',0,false,true,$4,0,$5)`,
+      [opts.purpose || 'chat', opts.caller || null, gate.subject, promptChars, `budget: ${gate.reason}`]).catch(() => {});
+    const err = new Error(gate.reason); err.llm = true; err.budget = gate; throw err;
+  }
   const order = cfg.order === 'fallback-first' ? [['fallback', cfg.fallback], ['primary', cfg.primary]] : [['primary', cfg.primary], ['fallback', cfg.fallback]];
   let lastErr = null; let i = 0;
   for (const [name, p] of order) {
@@ -158,16 +170,28 @@ async function chat(opts = {}) {
        * sent NO messages field at all. Ollama answers that with HTTP 200 and an empty string in ~250 ms, exactly the
        * symptom seen on 152 since the agents went live. Callers that pass `messages` themselves (Yusr chat / warm)
        * were never affected, which is why the model looked healthy. Always send the built messages. */
-      const text = await callProvider(p, { ...opts, messages });
+      const a = await callProvider(p, { ...opts, messages });
+      const text = a && typeof a === 'object' ? a.text : String(a || '');
       const out = { text, provider: name, kind: p.kind, model: p.model, ms: Date.now() - t0, fallback: i > 0 };
       if (opts.json) { out.json = extractJson(text); if (!out.json) out.jsonError = text ? 'no JSON object in answer' : 'empty answer'; }
-      db.console.query(`INSERT INTO llm_calls (purpose, caller, provider, model, ms, ok, fallback, prompt_chars, answer_chars) VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8)`,
-        [opts.purpose || 'chat', opts.caller || null, `${name}:${p.kind}`, p.model, out.ms, out.fallback, promptChars, text.length]).catch(() => {});
+      /* tokens: what the provider measured (Ollama prompt_eval_count/eval_count, OpenAI usage) — otherwise chars ÷ 4,
+       * flagged `estimated` so an estimate is never read as a measurement. */
+      const measured = a && (a.ptok != null || a.ctok != null);
+      const ptok = measured && a.ptok != null ? Number(a.ptok) : Math.ceil(promptChars / 4);
+      const ctok = measured && a.ctok != null ? Number(a.ctok) : Math.ceil(text.length / 4);
+      out.tokens = ptok + ctok; out.estimated = !measured;
+      let cost = 0; try { cost = budget.price(await budget.config(), name, out.tokens); } catch (_) {}
+      out.cost = cost; out.subject = gate ? gate.subject : null;
+      /* awaited on purpose: the next call's budget check and the threshold mail both read this row back */
+      await db.console.query(`INSERT INTO llm_calls (purpose, caller, actor, provider, model, ms, ok, fallback, prompt_chars, answer_chars, prompt_tokens, answer_tokens, tokens, estimated, cost)
+                        VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [opts.purpose || 'chat', opts.caller || null, gate ? gate.subject : null, `${name}:${p.kind}`, p.model, out.ms, out.fallback, promptChars, text.length, ptok, ctok, out.tokens, out.estimated, cost]).catch(() => {});
+      budget.afterCall({ actor: opts.actor, caller: opts.caller }).catch(() => {});
       return out;
     } catch (e) {
       lastErr = e; const ms = Date.now() - t0;
-      db.console.query(`INSERT INTO llm_calls (purpose, caller, provider, model, ms, ok, fallback, prompt_chars, error) VALUES ($1,$2,$3,$4,$5,false,$6,$7,$8)`,
-        [opts.purpose || 'chat', opts.caller || null, `${name}:${p.kind}`, p.model, ms, i > 0, promptChars, String(e.message || e).slice(0, 300)]).catch(() => {});
+      db.console.query(`INSERT INTO llm_calls (purpose, caller, actor, provider, model, ms, ok, fallback, prompt_chars, tokens, error) VALUES ($1,$2,$3,$4,$5,$6,false,$7,$8,$9,$10)`,
+        [opts.purpose || 'chat', opts.caller || null, gate ? gate.subject : null, `${name}:${p.kind}`, p.model, ms, i > 0, promptChars, Math.ceil(promptChars / 4), String(e.message || e).slice(0, 300)]).catch(() => {});
       console.warn(`[LLM] ${name} (${p.kind} ${p.model}) failed after ${ms} ms: ${e.name === 'AbortError' ? 'timeout' : e.message} — ${order[i + 1] && order[i + 1][1] && order[i + 1][1].url ? 'trying ' + order[i + 1][0] : 'no other provider'}`);
     }
     i++;
@@ -194,8 +218,8 @@ async function selftest(which = 'primary') {
     const t0 = Date.now();
     const messages = [{ role: 'system', content: 'You are an operations assistant. Answer with a JSON object {"ok":true,"note":"<5 words>"}.' },
       { role: 'user', content: `${pr.chars > 100 ? filler(pr.chars) + '\n' : ''}Reply with the JSON object now.` }];
-    try { const text = await callProvider(p, { messages, json: pr.json, maxTokens: 60, numCtx: 8192 });
-      out.push({ ...pr, ok: !!text, ms: Date.now() - t0, answer: String(text).slice(0, 120) }); }
+    try { const a = await callProvider(p, { messages, json: pr.json, maxTokens: 60, numCtx: 8192 });
+      out.push({ ...pr, ok: !!(a && a.text), ms: Date.now() - t0, answer: String((a && a.text) || '').slice(0, 120), tokens: (a && ((a.ptok || 0) + (a.ctok || 0))) || null }); }
     catch (e) { out.push({ ...pr, ok: false, ms: Date.now() - t0, error: String(e.message || e).slice(0, 300) }); }
   }
   const firstBad = out.find(o => !o.ok);

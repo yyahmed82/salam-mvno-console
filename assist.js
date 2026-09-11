@@ -202,6 +202,15 @@ const AB=(window.API_BASE!==undefined)?window.API_BASE:window.CONSOLE_BASE;
       stEl.textContent = j && j.llm ? 'Online · troubleshoot faster' : 'Data-only mode · LLM offline';
       stEl.title = j && j.hint ? j.hint : '';
       const dot=panel.querySelector('.as-head .dot'); if(dot) dot.style.background = j && j.llm ? '' : '#f59e0b';
+      /* YOUR OWN AI USAGE TODAY (11 Sep 2026) — shown once you are over the warning line, so nobody is surprised
+       * by a refusal; below the line the header stays clean. Budgets live in Settings › Agents › AI usage. */
+      fetch(AB+'/api/llm/usage/mine').then(r=>r.json()).then(b=>{
+        if(!b || !b.enabled || !b.cap) return;
+        const pct=Math.round((b.pct||0)*100); if(pct < Math.round((b.warnAt||0.8)*100)) return;
+        const over=pct>=100;
+        stEl.innerHTML=`${stEl.textContent} · <span style="color:${over?'#fca5a5':'#fbbf24'};font-weight:700">AI budget ${pct} %</span>`;
+        stEl.title=`${(b.used||0).toLocaleString()} of ${(b.cap||0).toLocaleString()} tokens used today (resets 00:00 KSA)${over?(b.block?' — answers are rule-based until midnight':' — over budget, warning only'):''}`;
+      }).catch(()=>{});
     }).catch(()=>{ stEl.textContent='Data-only mode · LLM offline'; });
   }
   // public entry — used by the "Ask Yusr" hint chips across the console

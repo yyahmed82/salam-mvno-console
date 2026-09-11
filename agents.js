@@ -47,6 +47,13 @@
   .ag-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:8px} .ag-form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
   .ag-form input,.ag-form select{width:100%;box-sizing:border-box}
   .ag-note{font-size:12px;color:var(--muted);line-height:1.5}
+  .ag-bar{height:7px;border-radius:6px;background:var(--card2,#e2e8f0);overflow:hidden}
+  .ag-bar i{display:block;height:100%;border-radius:6px}
+  .ag-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+  .ag-form label{display:flex;flex-direction:column;gap:3px;font-size:10.5px;font-weight:800;letter-spacing:.04em;color:var(--muted);text-transform:uppercase}
+  .ag-form input,.ag-form select{font:inherit;font-size:12.5px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card2);color:var(--ink);text-transform:none;letter-spacing:0;font-weight:600}
+  .ag-in{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card2);color:var(--ink)}
+  .ag-in.sm{padding:3px 7px;font-size:11.5px}
   .ag-tbl{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px}
   .ag-tbl th{text-align:left;font-size:9.5px;letter-spacing:.08em;color:var(--muted);padding:4px 8px;border-bottom:1px solid var(--line)}
   .ag-tbl td{padding:4px 8px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink)}
@@ -95,7 +102,7 @@
         <div class="ag-card"><h3>Triage quality</h3><div class="ag-big">${T.helpful+T.unhelpful?Math.round(100*T.helpful/(T.helpful+T.unhelpful))+"%":"—"}</div><div class="ag-sub">rated helpful (${n(T.helpful)} 👍 · ${n(T.unhelpful)} 👎) · avg confidence ${pct(T.avg_conf)} · ${n(T.applied)} policy actions · ${n(T.avg_ms)} ms avg</div></div>
       </div>
       <div class="panel" style="padding-top:10px">
-        <div class="ag-tabs">${[["signatures","Signatures"],["triage","Triage notes"],["reports","Daily reports"],["policy","Policy"],["calls","LLM calls"]].map(t=>`<button class="ag-tab ${TAB===t[0]?"on":""}" data-t="${t[0]}">${t[1]}</button>`).join("")}
+        <div class="ag-tabs">${[["signatures","Signatures"],["triage","Triage notes"],["reports","Daily reports"],["policy","Policy"],["budget","AI usage & budget"],["calls","LLM calls"]].map(t=>`<button class="ag-tab ${TAB===t[0]?"on":""}" data-t="${t[0]}">${t[1]}</button>`).join("")}
           <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;padding:6px 0"><button class="ag-btn sm o" data-run="log">Run log agent now</button><button class="ag-btn sm o" data-run="incident">Triage open incidents now</button><button class="ag-btn sm o" data-run="report">Build &amp; mail daily report</button></span></div>
         <div id="agTabBody"></div></div></div>`;
     h.querySelectorAll(".ag-tab").forEach(b=>b.addEventListener("click",()=>{ TAB=b.dataset.t; h.querySelectorAll(".ag-tab").forEach(x=>x.classList.toggle("on",x===b)); renderTab(); }));
@@ -138,7 +145,89 @@
   }
 
   /* ------------------------------ tabs ------------------------------ */
-  function renderTab(){ const b=$a("#agTabBody"); if(!b) return; b.innerHTML=`<div class="sub" style="padding:12px 0">Loading…</div>`; ({signatures:tabSig,triage:tabTri,reports:tabRep,policy:tabPol,calls:tabCalls}[TAB]||tabSig)(b); }
+  /* ---------------------- AI usage & budget (11 Sep 2026) ----------------------
+   * Tokens per person and per agent, per KSA day, against a ceiling anyone can see. Humans and machines are
+   * budgeted separately so an agent storm can never eat a person's allowance. */
+  let BU={days:14};
+  const tk=v=>v==null?"—":v>=1e6?(v/1e6).toFixed(2)+"M":v>=1e3?(v/1e3).toFixed(1)+"k":String(v);
+  const bar=(pct,cap)=>{ const p=Math.max(0,Math.min(1,pct||0)); const col=!cap?"var(--muted)":p>=1?"#dc2626":p>=0.8?"#d97706":"var(--green,#0e9f5a)";
+    return `<div class="ag-bar"><i style="width:${(p*100).toFixed(1)}%;background:${col}"></i></div>`; };
+  function usageChart(rows){
+    const W=720,H=110,pad=18; if(!rows.length) return `<div class="ag-sub">No calls in this period.</div>`;
+    const max=Math.max(1,...rows.map(r=>r.tokens));
+    const bw=Math.max(4,(W-2*pad)/rows.length-3);
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:110px">
+      ${rows.map((r,i)=>{ const x=pad+i*((W-2*pad)/rows.length); const h=(r.tokens/max)*(H-28); const ha=(r.agent_tokens/max)*(H-28);
+        return `<g><title>${esc(String(r.day).slice(0,10))}: ${r.tokens.toLocaleString()} tokens (${r.agent_tokens.toLocaleString()} agents) · ${r.calls} calls</title>
+          <rect x="${x.toFixed(1)}" y="${(H-12-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" fill="#2563eb" opacity=".85" rx="2"/>
+          <rect x="${x.toFixed(1)}" y="${(H-12-ha).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0,ha).toFixed(1)}" fill="#7c3aed" opacity=".9" rx="2"/></g>`; }).join("")}
+      <line x1="${pad}" y1="${H-12}" x2="${W-pad}" y2="${H-12}" stroke="var(--line)" stroke-width="1"/></svg>
+      <div class="ag-sub" style="display:flex;gap:14px;flex-wrap:wrap"><span><i style="display:inline-block;width:9px;height:9px;background:#2563eb;border-radius:2px"></i> all calls</span><span><i style="display:inline-block;width:9px;height:9px;background:#7c3aed;border-radius:2px"></i> agents</span><span>peak ${tk(max)} tokens/day</span></div>`;
+  }
+  async function tabBudget(b){
+    b.innerHTML=`<div class="sub" style="padding:12px 0">Loading usage…</div>`;
+    let U; try{ U=await api(`/api/llm/usage?days=${BU.days}`); }catch(e){ b.innerHTML=`<div class="sub">${esc(e.message)}</div>`; return; }
+    const B=U.budget||{}, cur=(B.price&&B.price.currency)||"SAR";
+    const cost=U.byProvider.reduce((a,r)=>a+Number(r.cost||0),0);
+    const row=(r,kind)=>`<tr data-subj="${esc(r.subject)}">
+      <td><b>${esc(String(r.subject).split("@")[0])}</b><div class="ag-sub ag-mono">${esc(r.subject)}</div></td>
+      <td style="min-width:170px">${bar(r.pct,r.cap)}<div class="ag-sub">${tk(r.today)} of ${r.cap?tk(r.cap):"∞"} today${r.cap?` · ${Math.round(r.pct*100)} %`:""}</div></td>
+      <td><b>${tk(r.tokens)}</b><div class="ag-sub">${U.days} d</div></td>
+      <td>${n(r.calls)}${r.blocked?`<div class="ag-sub" style="color:#dc2626">${r.blocked} refused</div>`:""}${r.failed?`<div class="ag-sub">${r.failed} failed</div>`:""}</td>
+      <td>${Number(r.cost)>0?`${Number(r.cost).toFixed(2)} ${esc(cur)}`:'<span class="ag-sub">on-prem</span>'}</td>
+      <td class="ag-sub">${md(r.last_at)}</td>
+      <td><input class="ag-in sm" data-cap="${esc(r.subject)}" data-kind="${kind}" type="number" min="0" step="1000" value="${r.cap||0}" style="width:110px" title="0 = no ceiling for this ${kind==="user"?"person":"agent"}"></td></tr>`;
+    b.innerHTML=`
+      <div class="ag-filters"><select data-f="days">${[7,14,30,90].map(x=>`<option value="${x}" ${x==BU.days?"selected":""}>last ${x} days</option>`).join("")}</select>
+        <span class="ag-sub">Budgets reset at 00:00 KSA. Tokens are what the model actually processes — measured when the provider reports them, otherwise estimated from characters.</span></div>
+      <div class="ag-grid" style="margin-bottom:12px">
+        <div class="ag-card"><h3>Console today</h3><div class="ag-big">${tk(U.today.tokens)}</div>${bar(U.today.pct,U.today.cap)}<div class="ag-sub">of ${U.today.cap?tk(U.today.cap):"∞"} tokens · ${n(U.today.calls)} calls</div></div>
+        <div class="ag-card"><h3>This month</h3><div class="ag-big">${tk(U.month.tokens)}</div>${bar(U.month.pct,U.month.cap)}<div class="ag-sub">of ${U.month.cap?tk(U.month.cap):"∞"} tokens</div></div>
+        <div class="ag-card"><h3>People</h3><div class="ag-big">${U.users.length}</div><div class="ag-sub">used AI in ${U.days} days · top ${esc(U.users[0]?String(U.users[0].subject).split("@")[0]:"—")} ${U.users[0]?tk(U.users[0].tokens):""}</div></div>
+        <div class="ag-card"><h3>Cost</h3><div class="ag-big">${cost>0?cost.toFixed(2)+" "+esc(cur):"0"}</div><div class="ag-sub">${cost>0?"cloud / GPU fallback only":"everything ran on-prem — no external cost"}</div></div>
+      </div>
+      <div class="ag-detail"><b>Tokens per day</b>${usageChart(U.byDay)}</div>
+      <h3 style="margin:16px 0 4px;font-size:13px">People</h3>
+      ${U.users.length?`<div class="ag-tablew"><table class="ag-table"><thead><tr><th>User</th><th>Today vs ceiling</th><th>Tokens</th><th>Calls</th><th>Cost</th><th>Last</th><th>Daily ceiling</th></tr></thead><tbody>${U.users.map(r=>row(r,"user")).join("")}</tbody></table></div>`:`<div class="ag-sub">Nobody used Yusr in this period.</div>`}
+      <h3 style="margin:16px 0 4px;font-size:13px">Agents (services)</h3>
+      ${U.agents.length?`<div class="ag-tablew"><table class="ag-table"><thead><tr><th>Service</th><th>Today vs ceiling</th><th>Tokens</th><th>Calls</th><th>Cost</th><th>Last</th><th>Daily ceiling</th></tr></thead><tbody>${U.agents.map(r=>row(r,"caller")).join("")}</tbody></table></div>`:`<div class="ag-sub">No agent calls in this period.</div>`}
+      <div class="ag-detail" style="margin-top:16px"><b>Budget</b>
+        <div class="ag-form" style="margin-top:8px">
+          <label>Budgets on<select id="bEn"><option value="1" ${B.enabled!==false?"selected":""}>on — meter and enforce</option><option value="0" ${B.enabled===false?"selected":""}>off — meter only</option></select></label>
+          <label>Over the ceiling<select id="bBlk"><option value="1" ${B.block!==false?"selected":""}>refuse further AI calls until midnight</option><option value="0" ${B.block===false?"selected":""}>warn only, never refuse</option></select></label>
+          <label>First warning at<select id="bWarn">${[0.5,0.6,0.7,0.8,0.9].map(x=>`<option value="${x}" ${Number(B.warnAt)===x?"selected":""}>${x*100} %</option>`).join("")}</select></label>
+          <label>Per user · tokens/day<input id="bUser" class="ag-in" type="number" min="0" step="1000" value="${B.dailyUser||0}"></label>
+          <label>Per agent · tokens/day<input id="bCaller" class="ag-in" type="number" min="0" step="1000" value="${B.dailyCaller||0}"></label>
+          <label>Whole console · tokens/day<input id="bGlobal" class="ag-in" type="number" min="0" step="10000" value="${B.dailyGlobal||0}"></label>
+          <label>Whole console · tokens/month<input id="bMonth" class="ag-in" type="number" min="0" step="100000" value="${B.monthlyGlobal||0}"></label>
+          <label>Mail the person at the warning<select id="bNU"><option value="1" ${B.notifyUser!==false?"selected":""}>yes</option><option value="0" ${B.notifyUser===false?"selected":""}>no</option></select></label>
+          <label>Mail super admins<select id="bNA"><option value="1" ${B.notifyAdmins!==false?"selected":""}>yes</option><option value="0" ${B.notifyAdmins===false?"selected":""}>no</option></select></label>
+          <label>Cost per 1k tokens · primary<input id="bP1" class="ag-in" type="number" min="0" step="0.001" value="${(B.price&&B.price.primary)||0}"></label>
+          <label>Cost per 1k tokens · fallback<input id="bP2" class="ag-in" type="number" min="0" step="0.001" value="${(B.price&&B.price.fallback)||0}"></label>
+          <label>Currency<input id="bCur" class="ag-in" value="${esc(cur)}" style="width:90px"></label>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="ag-btn sm" id="bSave">Save budget</button><span class="ag-sub" id="bMsg">0 = no ceiling. A refused call is never an error for the user: Yusr answers from the rule engine and the agents write their measured-evidence note.</span></div></div>
+      ${(U.events||[]).length?`<div class="ag-detail" style="margin-top:12px"><b>Budget notifications</b><div class="ag-tablew"><table class="ag-table"><thead><tr><th>When</th><th>Subject</th><th>Threshold</th><th>Used</th><th>Ceiling</th><th>Mailed</th></tr></thead><tbody>${U.events.map(e=>`<tr><td class="ag-sub">${md(e.at)}</td><td>${esc(e.subject)} <span class="ag-chip">${esc(e.kind)}</span></td><td><span class="ag-chip ${e.threshold==="over"?"a":""}">${e.threshold==="over"?"ceiling reached":"warning"}</span></td><td>${tk(Number(e.used))}</td><td>${tk(Number(e.cap))}</td><td class="ag-sub">${esc(e.mailed_to||"—")}</td></tr>`).join("")}</tbody></table></div></div>`:""}`;
+    b.querySelector("[data-f=days]").addEventListener("change",e=>{ BU.days=Number(e.target.value); tabBudget(b); });
+    const save=async(patch,msg)=>{ const m=b.querySelector("#bMsg"); if(m) m.textContent="Saving…";
+      try{ await api("/api/llm/budget",{method:"PUT",body:JSON.stringify(patch)}); toast(msg||"Budget saved"); tabBudget(b); }
+      catch(e){ toast(e.message); if(m) m.textContent=e.message; } };
+    b.querySelectorAll("[data-cap]").forEach(inp=>inp.addEventListener("change",()=>{
+      const key=inp.dataset.kind==="user"?"perUser":"perCaller"; const cur2={...(B[key]||{})};
+      const v=Number(inp.value)||0; const subj=inp.dataset.cap;
+      if(v===Number(inp.dataset.kind==="user"?B.dailyUser:B.dailyCaller)) delete cur2[subj]; else cur2[subj]=v;
+      save({[key]:cur2}, `Ceiling for ${subj.split("@")[0]} set to ${v?tk(v)+" tokens/day":"the default"}`);
+    }));
+    b.querySelector("#bSave").addEventListener("click",()=>save({
+      enabled:b.querySelector("#bEn").value==="1", block:b.querySelector("#bBlk").value==="1", warnAt:Number(b.querySelector("#bWarn").value),
+      dailyUser:Number(b.querySelector("#bUser").value)||0, dailyCaller:Number(b.querySelector("#bCaller").value)||0,
+      dailyGlobal:Number(b.querySelector("#bGlobal").value)||0, monthlyGlobal:Number(b.querySelector("#bMonth").value)||0,
+      notifyUser:b.querySelector("#bNU").value==="1", notifyAdmins:b.querySelector("#bNA").value==="1",
+      price:{primary:Number(b.querySelector("#bP1").value)||0, fallback:Number(b.querySelector("#bP2").value)||0, currency:b.querySelector("#bCur").value.trim()||"SAR"},
+    }));
+  }
+
+  function renderTab(){ const b=$a("#agTabBody"); if(!b) return; b.innerHTML=`<div class="sub" style="padding:12px 0">Loading…</div>`; ({signatures:tabSig,triage:tabTri,reports:tabRep,policy:tabPol,budget:tabBudget,calls:tabCalls}[TAB]||tabSig)(b); }
   const filt=(b,defs,onchange)=>{ const d=document.createElement("div"); d.className="ag-filters"; d.innerHTML=defs; b.appendChild(d); d.querySelectorAll("select,input").forEach(el=>el.addEventListener(el.type==="search"?"input":"change",()=>onchange(d))); return d; };
   const daysSel=v=>`<select data-f="days">${[1,3,7,14,30,90].map(x=>`<option value="${x}" ${x==v?"selected":""}>${x} day${x>1?"s":""}</option>`).join("")}</select>`;
   const segSel=v=>`<select data-f="segment"><option value="all" ${v==="all"?"selected":""}>Both businesses</option><option value="mvno" ${v==="mvno"?"selected":""}>Mobile</option><option value="fixed" ${v==="fixed"?"selected":""}>Fixed</option></select>`;
