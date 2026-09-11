@@ -532,6 +532,30 @@ CREATE INDEX IF NOT EXISTS idx_api_error_events_dev ON api_error_events (device_
 -- Alert transparency (L2 request TKT-000002): which error codes / conditions trigger a rule.
 -- Free text, shown on the Rules table, the rule editor and the alert detail.
 ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS trigger_codes text;
+-- IMPACT COUNTING + L1/L2 journey (11 Sep 2026, identity.js / alertRunner.js / alertsview.js) ---------------------
+-- distinct customers / services behind a snapshot (only filled for the rows a customers/services rule needs)
+ALTER TABLE metric_snapshots ADD COLUMN IF NOT EXISTS customers       integer;   -- distinct customers among the counted rows
+ALTER TABLE metric_snapshots ADD COLUMN IF NOT EXISTS customers_total integer;   -- distinct customers in the population
+ALTER TABLE metric_snapshots ADD COLUMN IF NOT EXISTS services        integer;
+ALTER TABLE metric_snapshots ADD COLUMN IF NOT EXISTS services_total  integer;
+-- what a rule counts: events (classic) | customers | services; and the single-customer floor
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS count_by                 text    NOT NULL DEFAULT 'events';
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS min_customers            integer NOT NULL DEFAULT 0;     -- 0 = off
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS single_customer_severity text    NOT NULL DEFAULT 'P4';  -- severity when below the floor
+-- incident: effective vs declared severity, impact, how it was closed
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS rule_severity  text;      -- set when the customer floor downgraded the incident
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS customers      integer;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS services       integer;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS resolve_reason text;      -- fixed | duplicate | false_positive | single_customer | maintenance | cleared
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS resolved_by    text;      -- console user, or 'system' when the condition cleared
+-- runbook checklist ticks on an incident (persistent, who / when)
+CREATE TABLE IF NOT EXISTS incident_checklist (
+  alert_id bigint NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+  step     integer NOT NULL,
+  done_by  text,
+  done_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (alert_id, step)
+);
 
 -- ── APIGW distributed traces (Zipkin on MVNO-DIGAPI-GWP01/02) ─────────────────────────────
 -- The gateways run Spring Cloud Sleuth → Zipkin 2.23.2 with IN-MEMORY storage: ~4,100 spans/min

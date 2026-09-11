@@ -1,6 +1,7 @@
 /* Watcher: compute every metric at a given virtual `now` and write metric_snapshots. */
 const { METRICS } = require('./metrics');
 const db = require('./db');
+const identity = require('./identity');   // distinct customers / services behind the rows a rule needs (11 Sep 2026)
 
 // Only compute the (metric, window) pairs some enabled rule needs — not the full cross-product.
 let _pairCache = null, _pairCacheAt = 0;
@@ -33,11 +34,14 @@ async function syncOnce(simNow, { windows } = {}) {
         let rows;
         try { rows = await m.compute(db.source, now, w); }
         catch (e) { console.error(`metric ${key} w=${w} failed: ${e.message}`); continue; }
+        // identity counts only for the rows an enabled customers/services rule (or a min_customers floor) needs
+        try { await identity.enrich(key, w, now, rows); } catch (e) { console.error(`[identity] ${key} w=${w}: ${e.message}`); }
         for (const r of rows) {
           await client.query(
-            `INSERT INTO metric_snapshots (metric_key, dim, window_hours, value, sample, sim_now)
-             VALUES ($1,$2,$3,$4,$5,$6)`,
-            [key, JSON.stringify(r.dim || {}), w, r.value, r.sample || 0, now]);
+            `INSERT INTO metric_snapshots (metric_key, dim, window_hours, value, sample, sim_now, customers, customers_total, services, services_total)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+            [key, JSON.stringify(r.dim || {}), w, r.value, r.sample || 0, now,
+             r.customers ?? null, r.customers_total ?? null, r.services ?? null, r.services_total ?? null]);
           written++;
         }
       }

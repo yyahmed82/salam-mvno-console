@@ -3,6 +3,46 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.22] — 2026-09-11 — Impact counting (unique customers / services) · rule editor drawer · L1/L2 journey
+### Added
+- **Impact counting** (`identity.js`): every metric with a customer behind its rows (payments, activations, Semati,
+  Nafath, eligibility, plan changes, deliveries, onboarding, OTP — 35 of 60 metrics) now also reports **distinct
+  customers and services** at each sync (`metric_snapshots.customers/customers_total/services/services_total`),
+  computed on exactly the same rows the metric and the "Affected cases" export describe (reuses the alertCases twins).
+  Only the rows an enabled rule needs are counted — no extra replica load for rules that keep the classic behaviour.
+- **Rule options**: `count_by` = events | unique customers | unique services (the value becomes the distinct count,
+  or customers hit ÷ customers seen for a rate); **customer floor** `min_customers` with `single_customer_severity`
+  (default P4) — a rule whose condition is met by fewer distinct customers than the floor fires at the floor severity
+  ("1 customer, 13 attempts → P4"), and goes back to its declared severity on a later tick when more customers appear
+  (severity change written on the incident). Existing rules are untouched (`events`, floor off).
+- **Incidents carry impact**: `alerts.customers / services / rule_severity`; the message and the digest mail say
+  "N customers (M attempts)" and flag a downgrade; the Open list shows an Impact column with a purple **1 customer** chip.
+- **Rule editor drawer** (replaces the modal): five sections — What · Condition · Impact · Routing · Runbook — with a
+  live 7-day sparkline (threshold in the rule's severity colour, breaches as dots) and **Test now** on the replica:
+  current value, customers/services hit, "would fire at P4 (rule says P2)", and how many of the last 7 days'
+  evaluations would have fired / been downgraded. Metrics without a customer identity have the option greyed out
+  with the reason. API: `POST /api/rules/preview`, `GET /api/rules/identity`, `GET /api/metrics/series?dim&days`.
+- **Rules list**: search, severity / team / enabled / count-by filters, "Noisy" toggle, 7-day badges per rule
+  (fired · acked · single-customer · noise · open), severity edge colour.
+- **Open alerts (See → Own)**: quick filters All · Unacked · Mine · My team · 1 customer + severity chips + search;
+  unacknowledged incidents first within a severity; severity edge colour; **Assign to me**; **one-click acknowledge
+  from the mail** (`#alerts?id=N&ack=1` on digest and reminder links — acknowledges for the signed-in reader, once).
+- **Work**: incident details now show one merged **timeline** (fired, agent triage, ack / handover / reminders,
+  ServiceNow, comms, comments, rule edits during the incident, severity moves, resolved) and the runbook as a
+  **persistent checklist** (who ticked which step, when — `incident_checklist`, audited `incident.checklist`).
+  API: `GET /api/alerts/:id/timeline`, `GET/POST /api/alerts/:id/checklist`.
+- **Close**: Resolve asks for a reason — fixed · single customer / retry storm · false positive · duplicate ·
+  maintenance (+ note); recorded as `alerts.resolve_reason / resolved_by`, on the discussion and in the audit.
+  Auto-resolution by the runner records `cleared / system`.
+- **Learn — Alerts › Noise tab** (`GET /api/alerts/noise?segment&days`): per-rule scorecard — fired, acked %, MTTA,
+  single-customer share, downgraded by floor, closed-as breakdown, re-opens — with a verdict (noisy · retry storms ·
+  ignored · healthy · quiet) and a concrete hint (raise threshold, set a floor, count by customers, re-route).
+### Changed
+- `alertRunner.evaluate()` returns `customers`, `services`, `counted`, `count_by`, `rule_severity`, `downgraded`;
+  the digest intro line shows the customer count and downgrades.
+- `PATCH/POST /api/rules` validate `count_by / min_customers / single_customer_severity` and refuse them on metrics
+  without identity; rule change history records the new fields like any other.
+
 ## [2.0.0-alpha.21] — 2026-09-11 — Activity log (who did what) · rule change history · reminder-1 fix
 ### Added
 - **Alerts › Activity log** (`alertActivity.js`, new tab): every CONSOLE-USER action on alerting, in plain words —

@@ -44,29 +44,54 @@ async function evaluate(simNow) {
   const evals = [];
   for (const rule of rules) {
     const snaps = (await c.query(
-      `SELECT dim, value, sample FROM metric_snapshots
+      `SELECT dim, value, sample, customers, customers_total, services, services_total FROM metric_snapshots
        WHERE metric_key=$1 AND window_hours=$2 AND sim_now=$3`,
       [rule.metric_key, rule.window_hours, now])).rows;
     const snap = snaps.find(s => dimMatch(s.dim, rule.dim));
     const inWindow = activeNow(rule, now);
-    const value = snap ? snap.value : null;
-    const sample = snap ? snap.sample : null;
+    /* IMPACT COUNTING (11 Sep 2026, identity.js). count_by = events (classic) | customers | services:
+     * the rule's value becomes the DISTINCT count (or, for a rate, counted ÷ population on that key) and
+     * the sample becomes the distinct population. `customers` = distinct customers hit — always reported,
+     * whatever the rule counts, and used by the min_customers floor below. */
+    const cb = rule.count_by || 'events';
+    const isRate = ['rate', 'ratio'].includes(rule.unit);
+    let value = snap ? snap.value : null;
+    let sample = snap ? snap.sample : null;
+    let identityMissing = false;
+    if (snap && cb !== 'events') {
+      const n = cb === 'customers' ? snap.customers : snap.services;
+      const tot = cb === 'customers' ? snap.customers_total : snap.services_total;
+      if (n == null) { identityMissing = true; value = null; }
+      else { value = isRate ? (Number(tot) > 0 ? Number(n) / Number(tot) : null) : Number(n); sample = Number(tot); }
+    }
+    const eventsValue = snap ? snap.value : null, eventsSample = snap ? snap.sample : null;
+    const counted = snap && eventsValue != null ? (isRate ? Math.round(Number(eventsValue) * Number(eventsSample || 0)) : Number(eventsValue)) : null;
+    const customers = snap && snap.customers != null ? Number(snap.customers) : null;
+    const services = snap && snap.services != null ? Number(snap.services) : null;
     const enoughSample = value != null && Number(sample) >= rule.min_sample;
     // a per-gateway rule (dim.gateway / dim.vendor) whose gateway is switched off in Settings → Payment gateways never
     // fires: a silent gateway is the expected state, not an outage. Its open alert resolves on this tick.
     let paused = null; try { paused = await gateways.pausedReason(rule); } catch (e) { paused = null; }
     const fired = !paused && !!(snap && inWindow && value != null && enoughSample && OPS[rule.operator](Number(value), Number(rule.threshold)));
+    /* single-customer floor: the condition is met but fewer than min_customers distinct customers are behind it →
+     * it fires at single_customer_severity (P4 by default): a retry storm is not an outage. Severity goes back up
+     * on a later tick when more customers appear (runAlerts updates the open incident). */
+    const minC = Number(rule.min_customers || 0);
+    let severity = rule.severity, downgraded = false;
+    if (fired && minC > 0 && customers != null && customers < minC) { severity = rule.single_customer_severity || 'P4'; downgraded = true; }
+    const who = customers != null ? ` · ${customers} customer${customers === 1 ? '' : 's'}${counted != null && cb === 'events' && customers > 0 && counted > customers ? ` (${counted} attempts)` : ''}` : '';
     let counts;
     if (paused) counts = paused;
     else if (!inWindow) counts = `outside active window (${activeLabel(rule)})`;
+    else if (identityMissing) counts = `no identity counts yet for this window (first sync after the rule change computes them)`;
     else if (!snap || value == null) counts = 'no data in window';
-    else if (!enoughSample) counts = `observed ${fmt(value, rule)} (sample ${sample} < min ${rule.min_sample})`;
-    else counts = `observed ${fmt(value, rule)} (sample ${sample}, ${rule.window_hours}h)`;
+    else if (!enoughSample) counts = `observed ${fmt(value, rule)} (sample ${sample} < min ${rule.min_sample})${who}`;
+    else counts = `observed ${fmt(value, rule)} (${cb === 'events' ? 'sample' : cb === 'customers' ? 'customers' : 'services'} ${sample}, ${rule.window_hours}h)${who}${downgraded ? ` → ${severity} (below ${minC} customers)` : ''}`;
     evals.push({
-      id: rule.id, key: rule.key, name: rule.name, severity: rule.severity, team: rule.team,
+      id: rule.id, key: rule.key, name: rule.name, severity, rule_severity: rule.severity, downgraded, team: rule.team,
       metric_key: rule.metric_key, operator: rule.operator, threshold: Number(rule.threshold),
-      min_sample: rule.min_sample, unit: rule.unit, window_hours: Number(rule.window_hours),
-      active: activeLabel(rule), value, sample, fired, counts, segment: rule.segment || 'mvno', paused: !!paused
+      min_sample: rule.min_sample, unit: rule.unit, window_hours: Number(rule.window_hours), count_by: cb, min_customers: minC,
+      active: activeLabel(rule), value, sample, customers, services, counted, fired, counts, segment: rule.segment || 'mvno', paused: !!paused
     });
   }
   return { now, evals };
@@ -89,13 +114,18 @@ async function runAlerts(simNow) {
       [rule.key])).rows[0];
 
     if (ev.fired) {
-      const msg = `${rule.metric_key} ${opLabel[rule.operator]} ${rule.threshold} — observed ${fmt(ev.value, rule)} (n=${ev.sample}, ${rule.window_hours}h)`;
+      const who = ev.customers != null ? ` · ${ev.customers} customer${ev.customers === 1 ? '' : 's'}${ev.counted != null && ev.count_by === 'events' && ev.counted > ev.customers ? `, ${ev.counted} attempts` : ''}` : '';
+      const msg = `${rule.metric_key} ${opLabel[rule.operator]} ${rule.threshold} — observed ${fmt(ev.value, rule)} (n=${ev.sample}, ${rule.window_hours}h)${who}`;
       if (openRow) {
         await c.query(
           `UPDATE alerts SET last_seen_at=$2, observed_value=$3, sample=$4,
-             peak_value=GREATEST(peak_value,$3), breach_count=breach_count+1, message=$5
+             peak_value=GREATEST(peak_value,$3), breach_count=breach_count+1, message=$5,
+             severity=$6, rule_severity=$7, customers=COALESCE($8, customers), services=COALESCE($9, services)
            WHERE id=$1`,
-          [openRow.id, now, ev.value, ev.sample, msg]);
+          [openRow.id, now, ev.value, ev.sample, msg, ev.severity, ev.downgraded ? ev.rule_severity : null, ev.customers, ev.services]);
+        if (openRow.severity !== ev.severity)   // the customer floor moved the severity (1 customer → P4, then 5 customers → P2)
+          await c.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`,
+            [openRow.id, `Severity ${openRow.severity} → ${ev.severity}: ${ev.customers != null ? `${ev.customers} customer(s) affected` : 'customer floor'}${ev.downgraded ? ` (below the rule's ${ev.min_customers}-customer floor)` : ` (rule severity restored)`}`]).catch(() => {});
         updated++;
       } else if (await reopenRecent(c, rule, ev, now, msg)) {
         updated++;                                   // flap: same incident re-opened, no new page / mail
@@ -103,11 +133,11 @@ async function runAlerts(simNow) {
         await c.query(
           `INSERT INTO alerts (rule_id, rule_key, name, severity, team, status, metric_key,
              operator, threshold, observed_value, sample, window_hours, dim, message,
-             fired_at, last_seen_at, peak_value, breach_count, segment)
-           VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,$10,$11,$12,$13,$14,$14,$9,1,$15)`,
-          [rule.id, rule.key, rule.name, rule.severity, rule.team, rule.metric_key,
+             fired_at, last_seen_at, peak_value, breach_count, segment, rule_severity, customers, services)
+           VALUES ($1,$2,$3,$4,$5,'open',$6,$7,$8,$9,$10,$11,$12,$13,$14,$14,$9,1,$15,$16,$17,$18)`,
+          [rule.id, rule.key, rule.name, ev.severity, rule.team, rule.metric_key,
            rule.operator, rule.threshold, ev.value, ev.sample, rule.window_hours,
-           JSON.stringify(rule.dim || {}), msg, now, rule.segment || 'mvno']);
+           JSON.stringify(rule.dim || {}), msg, now, rule.segment || 'mvno', ev.downgraded ? rule.severity : null, ev.customers, ev.services]);
         opened++;
         ev.justOpened = true;
       }
@@ -115,7 +145,7 @@ async function runAlerts(simNow) {
       // clear-hold: the condition must stay clear for `clearHoldMin` before the incident resolves
       const held = (new Date(now) - new Date(openRow.last_seen_at)) / 60000;
       if (held < flapCfg().clearHoldMin) continue;
-      await c.query(`UPDATE alerts SET status='resolved', resolved_at=$2 WHERE id=$1`, [openRow.id, now]);
+      await c.query(`UPDATE alerts SET status='resolved', resolved_at=$2, resolve_reason=COALESCE(resolve_reason,'cleared'), resolved_by=COALESCE(resolved_by,'system') WHERE id=$1`, [openRow.id, now]);
       resolved++;
     }
   }
@@ -145,8 +175,9 @@ async function reopenRecent(c, rule, ev, now, msg) {
   if (!prev) return false;
   await c.query(
     `UPDATE alerts SET status='open', resolved_at=NULL, last_seen_at=$2, observed_value=$3, sample=$4,
-       peak_value=GREATEST(coalesce(peak_value,0),$3), breach_count=breach_count+1, reopen_count=coalesce(reopen_count,0)+1, message=$5
-     WHERE id=$1`, [prev.id, now, ev.value, ev.sample, msg]);
+       peak_value=GREATEST(coalesce(peak_value,0),$3), breach_count=breach_count+1, reopen_count=coalesce(reopen_count,0)+1, message=$5,
+       severity=$6, rule_severity=$7, customers=COALESCE($8, customers), services=COALESCE($9, services), resolve_reason=NULL, resolved_by=NULL
+     WHERE id=$1`, [prev.id, now, ev.value, ev.sample, msg, ev.severity, ev.downgraded ? ev.rule_severity : null, ev.customers, ev.services]);
   await c.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`,
     [prev.id, `Re-opened: condition returned within ${cfg.reopenMin} min of resolving (flap) — same incident${prev.ack_by ? `, still owned by ${prev.ack_by}` : ''}`]).catch(() => {});
   return true;

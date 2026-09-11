@@ -164,7 +164,8 @@ function segChip(e) {
 function openUrl(e, idByKey) {
   // Fixed rows open the Fixed incident view (#fixed-alerts — ack / snooze / guide, 8 Sep 2026), Mobile rows the Mobile one
   const board = FL.isFixed(e) ? 'fixed-alerts' : 'alerts';
-  return `${CONSOLE_URL}#${board}${e.fired && idByKey[e.key] ? `?id=${idByKey[e.key]}` : `?rule=${encodeURIComponent(e.key)}`}`;
+  // fired rows carry &ack=1: the console acknowledges the incident for the signed-in reader in one click (11 Sep 2026)
+  return `${CONSOLE_URL}#${board}${e.fired && idByKey[e.key] ? `?id=${idByKey[e.key]}&ack=1` : `?rule=${encodeURIComponent(e.key)}`}`;
 }
 function inspectHtml(e, style) {
   const i = e.fired && FL.isFixed(e) ? FL.inspect(e.key) : null;
@@ -202,7 +203,7 @@ function buildDigest(simNow, evals, reportNames = [], idByKey = {}, seg) {
     <div style="background:#fdf6ec;border:1px solid #f3d9a4;border-left:4px solid #d97706;border-radius:8px;padding:12px 16px;margin-bottom:16px">
       <div style="font-weight:800;color:#7c2d12;font-size:13px;margin-bottom:6px">In short — ${firing.length} alert(s) need attention (${sevLine}), out of ${evals.length} rules evaluated.</div>
       ${firing.map((e, i) => `<div style="font-size:12.5px;color:#334155;margin:3px 0">
-        ${segChip(e)}<b>${esc(e.severity)}</b> · <a href="${openUrl(e, idByKey)}" style="color:#0f172a;font-weight:700">${esc(e.name)}</a>${e.simulated ? ' <span style="color:#7c3aed;font-weight:800">(SIMULATED — test mail)</span>' : ''} — observed <b>${fmtVal(e.value, e.unit)}</b> vs threshold ${opLabel[e.operator] || e.operator} ${fmtVal(e.threshold, e.unit)} (sample ${e.sample ?? '—'}, ${e.window_hours}h)${reportNames[i] ? ` · full report attached: <span style="font-family:monospace;font-size:11px">${esc(reportNames[i])}</span>` : ''}${FL.isFixed(e) && FL.inspect(e.key) ? ` · inspect: ${inspectHtml(e, 'color:#0e9f5a;font-weight:700')}` : ''}
+        ${segChip(e)}<b>${esc(e.severity)}</b> · <a href="${openUrl(e, idByKey)}" style="color:#0f172a;font-weight:700">${esc(e.name)}</a>${e.simulated ? ' <span style="color:#7c3aed;font-weight:800">(SIMULATED — test mail)</span>' : ''} — observed <b>${fmtVal(e.value, e.unit)}</b> vs threshold ${opLabel[e.operator] || e.operator} ${fmtVal(e.threshold, e.unit)} (sample ${e.sample ?? '—'}, ${e.window_hours}h)${e.customers != null ? ` · <b style="color:${e.customers === 1 ? '#7c3aed' : '#0f172a'}">${e.customers} customer${e.customers === 1 ? '' : 's'}</b>${e.customers === 1 && e.counted > 1 ? ` (${e.counted} attempts — likely a retry storm)` : ''}` : ''}${e.downgraded ? ` · <span style="color:#7c3aed;font-weight:700">downgraded from ${esc(e.rule_severity)}</span>` : ''}${reportNames[i] ? ` · full report attached: <span style="font-family:monospace;font-size:11px">${esc(reportNames[i])}</span>` : ''}${FL.isFixed(e) && FL.inspect(e.key) ? ` · inspect: ${inspectHtml(e, 'color:#0e9f5a;font-weight:700')}` : ''}
       </div>`).join('')}
       <div style="font-size:12px;color:#64748b;margin-top:8px">Each attached PDF carries the KPIs, the APIs and request/response evidence, the alert history and the step-by-step L1 action plan — read it before escalating.</div>
     </div>` : `

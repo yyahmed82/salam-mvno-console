@@ -3068,6 +3068,18 @@ app.get('/api/rules', async (req, res) => {
      LEFT JOIN metric_catalog mc ON mc.key=r.metric_key WHERE ${segment.sqlWhere('r', 'key', seg)} ORDER BY severity, name`)).rows;
   const catalog = (await C.query(`SELECT * FROM metric_catalog WHERE ${seg === 'all' ? 'TRUE' : seg === 'fixed' ? "key LIKE 'fixed\\_%'" : "key NOT LIKE 'fixed\\_%'"} ORDER BY key`)).rows;
   for (const r of rules) { try { r.paused = await gateways.pausedReason(r); } catch (e) { r.paused = null; } }   // per-gateway rules of a disabled gateway
+  /* 11 Sep 2026: which metrics can count distinct customers / services (editor greys the option out otherwise), and a
+   * 7-day scorecard per rule (fires · acked · single-customer · false positives) for the list badges and filters */
+  let identityMap = {}; try { identityMap = require('./identity').catalog(catalog.map(c => c.key)); } catch (e) { identityMap = {}; }
+  for (const c of catalog) Object.assign(c, identityMap[c.key] || { identity: false });
+  const stats = {};
+  try {
+    const st = (await C.query(`SELECT rule_key, count(*)::int fires, count(*) FILTER (WHERE ack_at IS NOT NULL)::int acked, count(*) FILTER (WHERE status='open')::int open,
+        count(*) FILTER (WHERE customers = 1)::int single, count(*) FILTER (WHERE resolve_reason IN ('false_positive','single_customer','duplicate') OR (status='resolved' AND ack_at IS NULL))::int noise, max(fired_at) last_fired
+      FROM alerts WHERE fired_at >= now() - interval '7 days' GROUP BY rule_key`)).rows;
+    st.forEach(x => { stats[x.rule_key] = x; });
+  } catch (e) {}
+  for (const r of rules) { r.stats7d = stats[r.key] || { fires: 0, acked: 0, open: 0, single: 0, noise: 0, last_fired: null }; r.identity = !!(identityMap[r.metric_key] && identityMap[r.metric_key].identity); }
   res.json({ rules, catalog, segment: seg });
 });
 /* ---- Payment gateway registry: which customer gateways are live (drives rules, drop detector, UI, cutover) ---- */
@@ -3109,6 +3121,7 @@ app.get('/api/alerts', async (req, res) => {
 
 require('./alertHistory').mount(app, { audit });    // must precede /api/alerts/:id — XLSX history export for the SLA reviews
 require('./alertActivity').mount(app, { audit });   // WHO DID WHAT on alerts/rules/config (11 Sep 2026) — same ordering rule
+require('./alertJourney').mount(app, { audit, requireCap, boardNow });   // L1/L2 journey: noise, timeline, checklist, identity, Test now (11 Sep 2026)
 app.get('/api/alerts/summary', async (req, res) => {
   const seg = segment.forRequest(req, req.query.segment); const W = segment.sqlWhere('a', 'rule_key', seg);
   const bySev = (await C.query(
@@ -3414,9 +3427,18 @@ app.post('/api/alerts/:id/unsnooze', requireCap('ackErrors'), async (req, res) =
   try { await C.query(`UPDATE alerts SET snoozed_until=NULL WHERE id=$1`, [req.params.id]); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* RESOLVE WITH A REASON (11 Sep 2026): fixed | duplicate | false_positive | single_customer | maintenance — the reason
+ * feeds the Noise scorecard (which rules cry wolf) and is written on the incident discussion + audit. */
 app.post('/api/alerts/:id/resolve', requireCap('ackErrors'), async (req, res) => {
-  try { await C.query(`UPDATE alerts SET status='resolved', resolved_at=COALESCE(resolved_at, now()), note=COALESCE($1, note) WHERE id=$2`, [(req.body || {}).note || null, req.params.id]); await audit(req, 'incident.resolve', req.params.id, {}); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    const b = req.body || {}; const REASONS = require('./alertJourney').REASONS;
+    const reason = REASONS[b.reason] ? b.reason : 'fixed';
+    const note = String(b.note || '').slice(0, 500).trim() || null;
+    await C.query(`UPDATE alerts SET status='resolved', resolved_at=COALESCE(resolved_at, now()), note=COALESCE($1, note), resolve_reason=$3, resolved_by=$4 WHERE id=$2`, [note, req.params.id, reason, req.actor]);
+    await C.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`, [req.params.id, `Resolved by ${String(req.actor).split('@')[0]} — ${REASONS[reason]}${note ? ` — ${note}` : ''}`]).catch(() => {});
+    await audit(req, 'incident.resolve', req.params.id, { reason, note: note || undefined });
+    res.json({ ok: true, reason });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/alerts/:id/comment', requireCap('ackErrors'), async (req, res) => {
   try {
@@ -4075,11 +4097,13 @@ app.get('/api/metrics/latest', async (req, res) => {
 
 app.get('/api/metrics/series', async (req, res) => {
   const { key, window = 3 } = req.query;
+  let dim = '{}'; try { if (req.query.dim) dim = JSON.stringify(JSON.parse(req.query.dim)); } catch (e) { dim = '{}'; }
+  const days = Math.min(90, Math.max(0, Number(req.query.days) || 0));   // 0 = whole history (legacy callers)
   const rows = (await C.query(
-    `SELECT sim_now, value, sample FROM metric_snapshots
-     WHERE metric_key=$1 AND window_hours=$2 AND dim='{}'::jsonb
-     ORDER BY sim_now`, [key, window])).rows;
-  res.json({ key, window: Number(window), points: rows });
+    `SELECT sim_now, value, sample, customers, customers_total, services, services_total FROM metric_snapshots
+     WHERE metric_key=$1 AND window_hours=$2 AND dim=$3::jsonb ${days ? `AND sim_now >= now() - ($4||' days')::interval` : ''}
+     ORDER BY sim_now`, days ? [key, window, dim, String(days)] : [key, window, dim])).rows;
+  res.json({ key, window: Number(window), dim: JSON.parse(dim), points: rows });
 });
 
 app.post('/api/sync', requireCap('manageSync'), async (req, res) => {
@@ -4119,8 +4143,16 @@ app.post('/api/simulate', requireCap('manageSync'), async (req, res) => {
 app.patch('/api/rules/:id', requireCap('editRules'), async (req, res) => {
   const b = req.body || {};
   const allowed = ['enabled', 'name', 'description', 'metric_key', 'operator', 'threshold',
-    'window_hours', 'min_sample', 'team', 'severity', 'channel', 'active_from', 'active_to', 'runbook', 'trigger_codes'];
+    'window_hours', 'min_sample', 'team', 'severity', 'channel', 'active_from', 'active_to', 'runbook', 'trigger_codes',
+    'count_by', 'min_customers', 'single_customer_severity'];   // impact counting (11 Sep 2026)
   if (b.metric_key != null && !METRICS[b.metric_key]) return res.status(400).json({ error: 'unknown metric_key' });
+  if (b.count_by != null && !['events', 'customers', 'services'].includes(b.count_by)) return res.status(400).json({ error: 'count_by must be events | customers | services' });
+  if (b.single_customer_severity != null && !['P1', 'P2', 'P3', 'P4'].includes(b.single_customer_severity)) return res.status(400).json({ error: 'single_customer_severity must be P1..P4' });
+  if (b.min_customers != null && !(Number(b.min_customers) >= 0)) return res.status(400).json({ error: 'min_customers must be ≥ 0' });
+  if ((b.count_by && b.count_by !== 'events') || Number(b.min_customers) > 0) {
+    const mk = b.metric_key || (await C.query(`SELECT metric_key FROM alert_rules WHERE id=$1`, [req.params.id])).rows[0]?.metric_key;
+    const ident = require('./identity'); if (mk && !ident.supports(mk)) return res.status(400).json({ error: `this metric has no customer identity — ${ident.why(mk)}` });
+  }
   const sets = [], vals = [];
   for (const k of allowed) if (b[k] !== undefined) { vals.push(b[k]); sets.push(`${k}=$${vals.length}`); }
   if (b.dim !== undefined) { vals.push(JSON.stringify(b.dim || {})); sets.push(`dim=$${vals.length}`); }
@@ -4129,6 +4161,7 @@ app.patch('/api/rules/:id', requireCap('editRules'), async (req, res) => {
   const before = (await C.query(`SELECT * FROM alert_rules WHERE id=$1`, [req.params.id])).rows[0];
   vals.push(req.params.id);
   await C.query(`UPDATE alert_rules SET ${sets.join(',')}, updated_at=now() WHERE id=$${vals.length}`, vals);
+  try { require('./identity').invalidate(); } catch (e) {}
   await audit(req, 'rule.update', req.params.id, b);
   if (before) {
     const diff = {}; const norm = v => (v === undefined || v === null || v === '') ? null : (typeof v === 'object' ? JSON.stringify(v) : String(v));
@@ -6201,12 +6234,17 @@ app.post('/api/rules', requireCap('editRules'), async (req, res) => {
     if (!b.name || !b.metric_key || !b.operator || b.threshold == null) return res.status(400).json({ error: 'name, metric_key, operator, threshold required' });
     if (!METRICS[b.metric_key]) return res.status(400).json({ error: 'unknown metric_key' });
     const key = (b.key || b.name).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 50) + '_' + Date.now().toString(36).slice(-4);
+    const cb = ['events', 'customers', 'services'].includes(b.count_by) ? b.count_by : 'events';
+    const minC = Math.max(0, Number(b.min_customers) || 0);
+    if (cb !== 'events' || minC > 0) { const ident = require('./identity'); if (!ident.supports(b.metric_key)) return res.status(400).json({ error: `this metric has no customer identity — ${ident.why(b.metric_key)}` }); }
     await C.query(`INSERT INTO alert_rules
-      (key,name,description,metric_key,operator,threshold,window_hours,min_sample,team,severity,channel,dim,active_from,active_to,runbook,trigger_codes,enabled,builtin)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true,false)`,
+      (key,name,description,metric_key,operator,threshold,window_hours,min_sample,team,severity,channel,dim,active_from,active_to,runbook,trigger_codes,enabled,builtin,count_by,min_customers,single_customer_severity)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true,false,$17,$18,$19)`,
       [key, b.name, b.description || null, b.metric_key, b.operator, b.threshold, b.window_hours || 1,
        b.min_sample || 0, b.team || null, b.severity || 'P3', b.channel || 'any',
-       JSON.stringify(b.dim || {}), b.active_from ?? null, b.active_to ?? null, b.runbook || null, b.trigger_codes || null]);
+       JSON.stringify(b.dim || {}), b.active_from ?? null, b.active_to ?? null, b.runbook || null, b.trigger_codes || null,
+       cb, minC, ['P1', 'P2', 'P3', 'P4'].includes(b.single_customer_severity) ? b.single_customer_severity : 'P4']);
+    try { require('./identity').invalidate(); } catch (e) {}
     await audit(req, 'rule.create', key, b);
     await C.query(`INSERT INTO alert_rule_changes (rule_id, rule_key, action, actor, changes) SELECT id, key, 'create', $2, $3 FROM alert_rules WHERE key=$1`,
       [key, req.actor, JSON.stringify(Object.fromEntries(Object.entries(b).map(([k, v]) => [k, { from: null, to: v }])))]).catch(() => {});

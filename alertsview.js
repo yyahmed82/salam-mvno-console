@@ -93,10 +93,11 @@
       }).catch(()=>{});
     }
     // #alerts?tab=rules (e.g. the "Configure…" link from Monitoring › Gateway) forces that sub-tab once
-    const _mt=/[?&]tab=(open|all|rules|metrics|oncall|activity)/.exec(location.hash||""); if(_mt && _mt[1]!==window.__alertTabDeep){ window.__alertTabDeep=_mt[1]; atab=_mt[1]; if(window.pf) window.pf.set('alerts_tab',atab); }
+    const _mt=/[?&]tab=(open|all|rules|metrics|oncall|activity|noise)/.exec(location.hash||""); if(_mt && _mt[1]!==window.__alertTabDeep){ window.__alertTabDeep=_mt[1]; atab=_mt[1]; if(window.pf) window.pf.set('alerts_tab',atab); }
     const _tabs=$("#alTabs"); if(_tabs) _tabs.querySelectorAll(".pill").forEach(p=>p.classList.toggle("active", p.dataset.atab===atab));
     if(atab==="rules") renderRules();
     else if(atab==="activity") renderActivity();
+    else if(atab==="noise") renderNoise();
     else if(atab==="metrics") renderMetrics();
     else if(atab==="oncall"){ const b=$("#alBody"); b.innerHTML=""; if(window.renderOncallInto) window.renderOncallInto(b, SEG); else b.innerHTML='<div class="albanner">on-call module not loaded</div>';
       b.insertAdjacentHTML("afterbegin",`<div class="rl" style="max-width:640px;margin:0 auto 10px;color:var(--muted)">Share this snapshot with the on-call phone: <a href="#${SEG==="fixed"?"fixed-oncall":"oncall"}" style="color:var(--green)">${location.origin+location.pathname}#${SEG==="fixed"?"fixed-oncall":"oncall"}</a> — full-screen, single column, refreshes with the live sync.</div>`); }
@@ -471,13 +472,38 @@
     }
   }
 
+  /* OPEN-TAB QUICK FILTERS (11 Sep 2026): what an L1 needs first — unacknowledged, mine, my team, a severity */
+  let AF = { who:"all", sev:"all", q:"" };
+  const meEmail = ()=>(((window.opsSession&&window.opsSession().me)||{}).email||"").toLowerCase();
+  const myTeam = ()=>((window.opsSession&&window.opsSession().me)||{}).team||"";
+  const SEV_RANK = {P1:1,P2:2,P3:3,P4:4};
+  function quickBar(all){
+    const me=meEmail(), team=myTeam();
+    const n=f=>all.filter(f).length;
+    const chips=[["all","All",all.length],["unacked","Unacked",n(a=>a.status==="open"&&!a.ack_at)],["mine","Mine",n(a=>(a.ack_by||"").toLowerCase()===me||(a.assignee||"").toLowerCase()===me)],["single","1 customer",n(a=>a.customers===1)]];
+    if(team) chips.splice(3,0,["team","My team · "+team,n(a=>a.team===team)]);
+    return `<div class="rfbar" style="margin:0 0 8px"><div class="rfchips">${chips.map(([v,l,c])=>`<button class="pill rfc${AF.who===v?" active":""}" data-afwho="${v}" style="padding:3px 10px;${v==="unacked"?"border-left-color:#dc2626":v==="single"?"border-left-color:#7c3aed":""}">${l} · ${c}</button>`).join("")}</div>
+      <div class="rfchips">${["all","P1","P2","P3","P4"].map(v=>`<button class="pill rfc${AF.sev===v?" active":""}" data-afsev="${v}" style="padding:3px 10px;${v!=="all"?`border-left-color:${sevColor(v)}`:""}">${v==="all"?"Any sev":v}${v!=="all"?" · "+n(a=>a.severity===v):""}</button>`).join("")}</div>
+      <input id="afQ" class="jsearch" type="search" placeholder="search incident · metric · owner…" value="${esc(AF.q)}" style="flex:1 1 200px"></div>`;
+  }
+  function wireQuickBar(){
+    const b=$("#alBody"); b.querySelectorAll("[data-afwho]").forEach(x=>x.addEventListener("click",()=>{ AF.who=x.dataset.afwho; renderAlerts(); }));
+    b.querySelectorAll("[data-afsev]").forEach(x=>x.addEventListener("click",()=>{ AF.sev=x.dataset.afsev; renderAlerts(); }));
+    const q=$("#afQ"); if(q){ let t=null; q.addEventListener("input",e=>{ AF.q=e.target.value; clearTimeout(t); t=setTimeout(renderAlerts,250); }); }
+  }
   async function renderAlerts(){
     let stats={}; try{ stats=await api("/api/incidents/stats"); }catch(e){}
     loadRunbooks();                                     // prefetch rule runbooks (cached; never blocks render)
     const data = await api("/api/alerts?status="+(atab==="all"?"all":"open"));
     const allRows = data.alerts||[];
     // client-side class filter (chips) — server always returns everything
-    const rows = CLSFILTER.alerts==="all" ? allRows : allRows.filter(a=>a.alert_class===CLSFILTER.alerts);
+    const me=meEmail(), team=myTeam(), q=AF.q.trim().toLowerCase();
+    let rows = CLSFILTER.alerts==="all" ? allRows : allRows.filter(a=>a.alert_class===CLSFILTER.alerts);
+    rows = rows.filter(a=>(AF.sev==="all"||a.severity===AF.sev)
+      && (AF.who==="all" || (AF.who==="unacked"?(a.status==="open"&&!a.ack_at):AF.who==="mine"?((a.ack_by||"").toLowerCase()===me||(a.assignee||"").toLowerCase()===me):AF.who==="team"?a.team===team:a.customers===1))
+      && (!q||[a.name,a.metric_key,a.team,a.ack_by,a.assignee,a.message,a.rule_key].join(" ").toLowerCase().includes(q)));
+    // SEE: within a severity, the incidents nobody owns come first — that is the queue an L1 works top-down
+    rows.sort((x,y)=>(x.status==="open"?0:1)-(y.status==="open"?0:1) || (SEV_RANK[x.severity]||9)-(SEV_RANK[y.severity]||9) || ((x.status==="open"&&!x.ack_at)?0:1)-((y.status==="open"&&!y.ack_at)?0:1) || (new Date(y.last_seen_at)-new Date(x.last_seen_at)));
     const byId = {}; rows.forEach(a=>{ byId[a.id]=a; });
     // root-cause grouping: place each correlated child directly under its provider root, and
     // count children per root so the root row can say "N correlated".
@@ -500,10 +526,10 @@
       <div class="incstat"><b>${stats.resolved_24h??0}</b><span>RESOLVED · 24h</span></div>
     </div>`;
     if(!rows.length){
-      $("#alBody").innerHTML = strip + clsBar("alerts", allRows) + `<div class="okbox" style="margin-top:6px">No ${atab==="all"?"":"open "}alerts${CLSFILTER.alerts!=="all"?" in this class":""}. ${atab==="open"&&CLSFILTER.alerts==="all"?"All clear — or run a sync/simulate to evaluate rules against the replica.":""}</div>`;
-      wireClsBar(renderAlerts); return;
+      $("#alBody").innerHTML = strip + quickBar(allRows) + clsBar("alerts", allRows) + `<div class="okbox" style="margin-top:6px">No ${atab==="all"?"":"open "}alerts${CLSFILTER.alerts!=="all"||AF.who!=="all"||AF.sev!=="all"||q?" for this filter":""}. ${atab==="open"&&CLSFILTER.alerts==="all"&&AF.who==="all"?"All clear — or run a sync/simulate to evaluate rules against the replica.":""}</div>`;
+      wireClsBar(renderAlerts); wireQuickBar(); return;
     }
-    let h = strip + `<div id="alAckSla"></div>` + clsBar("alerts", allRows) + `<table class="alerts"><tr><th>SEV</th><th>INCIDENT</th><th>TEAM</th><th>OBSERVED</th><th>STATUS</th><th>OWNER</th><th>FIRST → LAST</th><th>ACTIONS</th></tr>`;
+    let h = strip + `<div id="alAckSla"></div>` + quickBar(allRows) + clsBar("alerts", allRows) + `<div style="overflow-x:auto"><table class="alerts"><tr><th>SEV</th><th>INCIDENT</th><th>IMPACT</th><th>OBSERVED</th><th>STATUS</th><th>OWNER</th><th>FIRST → LAST</th><th>ACTIONS</th></tr>`;
     ordered.forEach(a=>{
       const snoozed = a.snoozed_until && new Date(a.snoozed_until)>new Date();
       const cr = a.correlation||null;
@@ -517,17 +543,20 @@
         : snoozed ? `<span style="color:#7c3aed;font-weight:700">snoozed</span>`
         : a.ack_at ? `<span style="color:#0891b2;font-weight:700">acked</span>`
         : `<span class="st-open">open${a.breach_count>1?` ×${a.breach_count}`:""}</span>`) + (window.ackSlaChip?window.ackSlaChip(a):"") + snChip;
-      const me=((window.opsSession&&window.opsSession().me)||{}).email||"";
+      const impact = a.customers!=null
+        ? `<span class="impchip ${a.customers===1?'one':''}" title="distinct customers behind the counted rows at the last evaluation">${a.customers===1?'👤 1 customer':'👥 '+a.customers+' customers'}</span>${a.services!=null?`<br><span class="rl">${a.services} service${a.services===1?'':'s'}</span>`:''}${a.rule_severity&&a.rule_severity!==a.severity?`<br><span class="rl" style="color:#7c3aed;font-weight:700">rule ${esc(a.rule_severity)} → ${esc(a.severity)}</span>`:''}`
+        : `<span class="rl">—</span>`;
       const acts = (a.status==='open' && canAck()) ? `
         ${a.ack_at?(a.ack_by&&a.ack_by!==me?`<button class="pill" data-reack="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Take the acknowledgement over from ${esc(a.ack_by)} — logged in the incident discussion and the audit trail">Re-ack</button> `:'')+`<button class="pill" data-handover="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Hand the acknowledgement to a colleague on this side — logged">Hand over</button>`:`<button class="pill" data-ack="${a.id}" style="padding:3px 8px">Ack</button>`}
         ${a.ack_at&&!a.sn_number?`<button class="pill" data-sn="${a.id}" style="padding:3px 8px;border-left-color:#2563eb" title="Raise this confirmed incident in ServiceNow (ServiceHub)">🎫 ServiceNow</button> `:''}${a.ack_at?`<button class="pill" data-comms="${a.id}" style="padding:3px 8px;border-left-color:#2563eb" title="Send the incident notification mail (L1 template)">✉ Comms</button> `:''}
+        ${(a.assignee||"").toLowerCase()!==me?`<button class="pill" data-assignme="${a.id}" style="padding:3px 8px;border-left-color:#0891b2" title="Put your name on it (assignee) — the ack stays where it is">Assign to me</button> `:''}
         <button class="pill" data-snooze="${a.id}" style="padding:3px 8px">${snoozed?'Snoozed':'Snooze'}</button>
         <button class="pill" data-resolve="${a.id}" style="padding:3px 8px;border-left-color:var(--good)">Resolve</button>` : '';
-      h += `<tr${isChild?' style="opacity:.62"':''}>
-        <td><span class="sevpill" style="background:${sevColor(a.severity)}">${esc(a.severity)}</span></td>
-        <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span>${corrLine}</td>
-        <td>${esc(a.team||"—")}</td>
-        <td><b>${esc(a.message? a.message.split("observed ")[1]||"" : "")}</b><br><span class="rl">${esc(a.window_hours)}h window</span></td>
+      h += `<tr${isChild?' style="opacity:.62"':''} class="${a.status==='open'&&!a.ack_at?'unacked':''}">
+        <td style="border-left:4px solid ${sevColor(a.severity)}"><span class="sevpill" style="background:${sevColor(a.severity)}">${esc(a.severity)}</span></td>
+        <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span> <span class="rl">· ${esc(a.team||"no team")}</span>${corrLine}</td>
+        <td>${impact}</td>
+        <td><b>${esc(a.message? (a.message.split("observed ")[1]||"").split(" · ")[0] : "")}</b><br><span class="rl">${esc(a.window_hours)}h window</span></td>
         <td>${stateTag}</td>
         <td class="mono" style="font-size:11px">${a.assignee?esc(a.assignee.split("@")[0]):'—'}${a.ack_by?`<br><span style="color:var(--muted)">ack ${esc(a.ack_by.split("@")[0])}</span>`:''}</td>
         <td class="mono" style="color:var(--muted)">${timeAgo(a.fired_at)}<br>${timeAgo(a.last_seen_at)}</td>
@@ -536,18 +565,20 @@
       ${a.status==='open'?`<tr class="grrow" id="grrow_${a.id}" hidden><td colspan="8"></td></tr>`:''}
       <tr class="incdetail" id="incdet_${a.id}" hidden><td colspan="8"></td></tr>`;
     });
-    h += `</table>`;
+    h += `</table></div>`;
     $("#alBody").innerHTML = h;
     const body=$("#alBody");
     if(window.ackSlaNotice) window.ackSlaNotice(SEG, $("#alAckSla"));   // "N unacknowledged beyond SLA" notice for this side
+    wireQuickBar();
     body.querySelectorAll("[data-ack]").forEach(b=>b.addEventListener("click",()=>incAction(b.dataset.ack,"ack")));
+    body.querySelectorAll("[data-assignme]").forEach(b=>b.addEventListener("click",()=>incAction(b.dataset.assignme,"assign",{assignee:me})));
     body.querySelectorAll("[data-reack]").forEach(b=>b.addEventListener("click",()=>{ const a=byId[b.dataset.reack]||{}; if(confirm(`Take over the acknowledgement from ${a.ack_by||"the current holder"}? This is logged on the incident.`)) incAction(b.dataset.reack,"ack"); }));
     body.querySelectorAll("[data-handover]").forEach(b=>b.addEventListener("click",()=>handoverPanel(b, byId[b.dataset.handover])));
     SEG_ROWS=byId;
     body.querySelectorAll("[data-sn],[data-snopen]").forEach(b=>b.addEventListener("click",()=>snPanel(b.dataset.sn||b.dataset.snopen)));
     body.querySelectorAll("[data-comms]").forEach(b=>b.addEventListener("click",()=>snPanel(b.dataset.comms,"comms")));
     body.querySelectorAll("[data-snooze]").forEach(b=>b.addEventListener("click",()=>{ const hrs=prompt("Snooze for how many hours?","1"); if(hrs) incAction(b.dataset.snooze,"snooze",{hours:Number(hrs)}); }));
-    body.querySelectorAll("[data-resolve]").forEach(b=>b.addEventListener("click",()=>{ if(confirm("Resolve this incident?")) incAction(b.dataset.resolve,"resolve"); }));
+    body.querySelectorAll("[data-resolve]").forEach(b=>b.addEventListener("click",()=>resolvePanel(b, byId[b.dataset.resolve])));
     body.querySelectorAll("[data-det]").forEach(b=>b.addEventListener("click",()=>toggleDetail(b.dataset.det)));
     body.querySelectorAll("[data-guide]").forEach(b=>b.addEventListener("click",()=>toggleGuide(b.dataset.guide, byId[b.dataset.guide])));
     wireClsBar(renderAlerts);
@@ -563,6 +594,14 @@
       const btn=body.querySelector(`[data-det="${id}"]`);
       if(btn){
         window.__alertDeepDone=id; window.__alertDeepTried="";
+        /* ONE-CLICK ACK FROM THE MAIL (11 Sep 2026): #alerts?id=N&ack=1 — the reminder / digest link acknowledges
+         * the incident for the signed-in reader, once, then shows it. No token: the session is the identity. */
+        const a=byId[id];
+        if(/[?&]ack=1/.test(location.hash||"") && a && a.status==='open' && !a.ack_at && canAck() && window.__alertAckDone!==id){
+          window.__alertAckDone=id;
+          api(`/api/alerts/${id}/ack`,{method:"POST",body:JSON.stringify({})}).then(()=>{ banner(`✓ Acknowledged <b>${esc(a.name)}</b> from the mail link — reminders stop, the team sees you own it.`); deepLinkDone(); renderAlerts(); }).catch(e=>banner(`Could not acknowledge from the mail link: ${esc(e.message)}`));
+          return;
+        } else if(/[?&]ack=1/.test(location.hash||"") && a && a.ack_at){ banner(`Already acknowledged by <b>${esc((a.ack_by||'').split('@')[0])}</b> — nothing to do.`); }
         toggleDetail(id);
         const g=body.querySelector(`[data-guide="${id}"]`);
         if(g) toggleGuide(id, byId[id]);          // open alerts get the guided runbook directly
@@ -605,6 +644,22 @@
     sel.focus();
   }
   let SEG_ROWS={};
+  /* CLOSE with a reason (11 Sep 2026): the reason feeds the Noise scorecard — inline in the row, no prompt() */
+  const RESOLVE_REASONS=[["fixed","Fixed / mitigated"],["single_customer","Single customer / retry storm — no platform issue"],["false_positive","False positive — rule to review"],["duplicate","Duplicate of another incident"],["maintenance","Planned maintenance / expected"]];
+  function resolvePanel(btn, a){
+    const cell=btn.parentElement; if(!cell||cell.querySelector(".rsPanel")) return;
+    const p=el("div","rsPanel"); p.style.cssText="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px";
+    const pre=a&&a.customers===1?"single_customer":"fixed";
+    p.innerHTML=`<span class="rl" style="color:var(--muted)">resolve as</span>
+      <select class="fe-in" style="font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink);max-width:300px">${RESOLVE_REASONS.map(([v,l])=>`<option value="${v}"${v===pre?" selected":""}>${l}</option>`).join("")}</select>
+      <input placeholder="note (optional)" maxlength="500" style="font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink);width:200px">
+      <button class="pill" style="padding:3px 8px;border-left-color:var(--good)">Confirm</button><button class="pill" style="padding:3px 8px">Cancel</button>`;
+    cell.appendChild(p);
+    const [ok,cancel]=p.querySelectorAll("button"); const sel=p.querySelector("select"), note=p.querySelector("input");
+    cancel.onclick=()=>p.remove();
+    ok.onclick=()=>incAction(a.id,"resolve",{reason:sel.value, note:note.value.trim()});
+    sel.focus();
+  }
   /* ---- ServiceNow ticket + incident comms (Phase 1: manual, after ack) ------------------------------
    * The panel lives in the incident's detail row (#incdet_<id>): draft → Raise in ServiceNow → INC card with
    * work notes, state refresh, comms history → Send incident comms (the L1 "Critical Incident Notification"). */
@@ -761,15 +816,37 @@
       : c.author==='agent'
       ? `<div style="margin:4px 0;padding:5px 8px;border-left:3px solid var(--green);background:var(--green-bg);border-radius:6px;white-space:pre-wrap"><span class="rl" style="color:var(--green);font-weight:700">agent triage</span> <span class="rl">${timeAgo(c.created_at)}</span><br>${esc(c.body)}</div>`
       : `<div style="margin:4px 0"><b>${esc((c.author||'').split("@")[0]||'—')}</b> <span class="rl">${timeAgo(c.created_at)}</span><br>${esc(c.body)}</div>`).join("")||`<div class="rl">No comments yet.</div>`;
-    cell.innerHTML=`<div style="padding:10px 6px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      <div><h5 style="margin:0 0 6px">RUNBOOK</h5>${d.runbook?`<div style="font-size:12.5px;white-space:pre-wrap">${esc(d.runbook)}</div>`:`<div class="rl">No runbook set for this rule. Add one in the rule editor.</div>`}
-        <h5 style="margin:14px 0 6px">MESSAGE</h5><div class="mono" style="font-size:11.5px">${esc(d.alert.message||'')}</div></div>
-      <div><h5 style="margin:0 0 6px">DISCUSSION</h5><div id="inccomm_${id}">${comments}</div>
+    const A=d.alert||{};
+    cell.innerHTML=`<div class="incgrid" style="padding:10px 6px">
+      <div><h5 style="margin:0 0 6px">TIMELINE <span class="rl" style="font-weight:400">· everything that happened, in order</span></h5><div id="inctl_${id}"><div class="rl">Loading…</div></div>
+        <h5 style="margin:14px 0 6px">MESSAGE</h5><div class="mono" style="font-size:11.5px">${esc(A.message||'')}</div>${A.customers!=null?`<div class="rl" style="margin-top:4px">Impact at last evaluation: <b>${A.customers}</b> customer(s)${A.services!=null?`, ${A.services} service(s)`:''}${A.rule_severity&&A.rule_severity!==A.severity?` · rule severity ${esc(A.rule_severity)}, fired as ${esc(A.severity)} (customer floor)`:''}</div>`:''}</div>
+      <div><h5 style="margin:0 0 6px">RUNBOOK CHECKLIST <span class="rl" style="font-weight:400" id="incck_n_${id}"></span></h5><div id="incck_${id}"><div class="rl">Loading…</div></div>
+        <h5 style="margin:14px 0 6px">DISCUSSION</h5><div id="inccomm_${id}">${comments}</div>
         ${canAck()?`<div style="display:flex;gap:6px;margin-top:8px"><input id="incin_${id}" class="jsearch" placeholder="Add a comment…" style="flex:1"><button class="pill" id="incsend_${id}" style="border-left-color:var(--green)">Post</button></div>`:''}</div>
     </div><div id="sntix_${id}" style="padding:0 6px 12px"><div class="rl">Checking ServiceNow for related tickets…</div></div>`;
     const send=$("#incsend_"+id);
     if(send) send.onclick=async()=>{ const v=$("#incin_"+id).value.trim(); if(!v)return; try{ await api(`/api/alerts/${id}/comment`,{method:"POST",body:JSON.stringify({body:v})}); row.setAttribute("hidden",""); toggleDetail(id); }catch(e){ banner(esc(e.message)); } };
+    loadTimeline(id); loadChecklist(id, A.status==='open');
     loadSnTickets(id);
+  }
+  /* WORK: one merged timeline (fired · ack · handover · reminders · ServiceNow · comms · comments · agent · rule edits · resolved) */
+  async function loadTimeline(id){
+    const host=$("#inctl_"+id); if(!host) return;
+    let d; try{ d=await api(`/api/alerts/${id}/timeline`); }catch(e){ host.innerHTML=`<div class="rl">${esc(e.message)}</div>`; return; }
+    const ev=d.events||[];
+    if(!ev.length){ host.innerHTML=`<div class="rl">Nothing recorded yet.</div>`; return; }
+    host.innerHTML=`<div class="tl" style="padding:4px 0 0 2px">${ev.map(e=>`<div class="tlitem"><span class="dot" style="background:${e.color||'var(--muted)'}"></span><div class="dt">${esc(e.title)}${e.who?` <span class="rl">· ${esc(String(e.who).split('@')[0])}</span>`:''}</div>${e.detail?`<div class="rl" style="white-space:pre-wrap;word-break:break-word">${esc(e.detail)}</div>`:''}<div class="ts">${timeAgo(e.at)}</div></div>`).join("")}</div>`;
+  }
+  /* WORK: the runbook as a persistent checklist — who ticked what, when; ticks are logged on the incident */
+  async function loadChecklist(id, open){
+    const host=$("#incck_"+id), n=$("#incck_n_"+id); if(!host) return;
+    let d; try{ d=await api(`/api/alerts/${id}/checklist`); }catch(e){ host.innerHTML=`<div class="rl">${esc(e.message)}</div>`; return; }
+    const st=d.steps||[];
+    if(n) n.textContent=st.length?`· ${d.done} of ${d.total} done`:"";
+    if(!st.length){ host.innerHTML=`<div class="rl">No runbook set for this rule — add the steps in the rule editor (one per line) and they appear here as a checklist.</div>`; return; }
+    const can=canAck()&&open;
+    host.innerHTML=st.map(s=>`<label class="ckstep${s.done?' done':''}"><input type="checkbox" data-ck="${s.step}" ${s.done?'checked':''} ${can?'':'disabled'}><span class="ckn">${s.step}</span><span class="ckt">${esc(s.text)}${s.done?`<div class="rl">✓ ${esc((s.done_by||'').split('@')[0])} · ${timeAgo(s.done_at)}</div>`:''}</span></label>`).join("");
+    host.querySelectorAll("[data-ck]").forEach(cb=>cb.addEventListener("change",async()=>{ try{ await api(`/api/alerts/${id}/checklist`,{method:"POST",body:JSON.stringify({step:Number(cb.dataset.ck),done:cb.checked})}); loadChecklist(id,open); loadTimeline(id); }catch(e){ banner(esc(e.message)); cb.checked=!cb.checked; } }));
   }
   // READ-ONLY ServiceNow correlation — incidents this alert likely caused (server queries SN Table API)
   async function loadSnTickets(id){
@@ -860,9 +937,12 @@
       catch(e){ st.textContent="Error: "+e.message; }
     };
   }
+  /* ---- ALERT RULES (redesigned 11 Sep 2026): filter bar + 7-day scorecard badges + drawer editor ---- */
+  let RF = { q:"", sev:"all", team:"all", state:"all", count:"all", noisy:false };
+  let _rulesCache = [];
   async function renderRules(){
     const data = await api("/api/rules");
-    const rules = data.rules||[];
+    const rules = data.rules||[]; _rulesCache = rules;
     _catalog = data.catalog||[];
     const canEdit = window.opsCan && window.opsCan("editRules");
     const canMail = window.opsCan && window.opsCan("manageSync");
@@ -872,27 +952,48 @@
     h += `<span class="rl" style="align-self:center">Recipients = users with <b>Mail alert</b> on (Settings → User management). Digest also auto-emails when a new alert fires.</span></div>`;
     // PAYMENT GATEWAYS first — which gateways are live decides which per-gateway rules below can fire at all
     if(SEG!=="fixed") h += `<div id="gwSection" style="margin:4px 0 16px">${window.salamLoader?window.salamLoader("Loading payment gateways…"):"Loading payment gateways…"}</div>`;
+    const teams=[...new Set(rules.map(r=>r.team).filter(Boolean))].sort();
+    const noisyN=rules.filter(r=>r.stats7d&&(r.stats7d.noise>0||r.stats7d.single>0)).length;
+    h += `<div class="rfbar">
+      <input id="rfQ" class="jsearch" type="search" placeholder="search rule · metric · team…" value="${esc(RF.q)}">
+      <div class="rfchips">${["all","P1","P2","P3","P4"].map(v=>`<button class="pill rfc${RF.sev===v?" active":""}" data-rfsev="${v}" style="padding:3px 10px;${v!=="all"?`border-left-color:${sevColor(v)}`:""}">${v==="all"?"All severities":v} · ${v==="all"?rules.length:rules.filter(r=>r.severity===v).length}</button>`).join("")}</div>
+      <select id="rfTeam" class="jsearch" style="flex:0 0 150px;padding-left:12px;background-image:none"><option value="all">All teams</option>${teams.map(t=>`<option ${RF.team===t?"selected":""}>${esc(t)}</option>`).join("")}</select>
+      <select id="rfState" class="jsearch" style="flex:0 0 130px;padding-left:12px;background-image:none">${[["all","On + off"],["on","Enabled"],["off","Disabled"]].map(([v,l])=>`<option value="${v}" ${RF.state===v?"selected":""}>${l}</option>`).join("")}</select>
+      <select id="rfCount" class="jsearch" style="flex:0 0 170px;padding-left:12px;background-image:none">${[["all","Any counting"],["events","Counts events"],["customers","Unique customers"],["services","Unique services"],["floor","Has customer floor"]].map(([v,l])=>`<option value="${v}" ${RF.count===v?"selected":""}>${l}</option>`).join("")}</select>
+      <button class="pill rfc${RF.noisy?" active":""}" id="rfNoisy" style="padding:3px 10px;border-left-color:#d97706" title="Rules with single-customer firings or firings closed as noise in the last 7 days">⚠ Noisy · ${noisyN}</button>
+    </div>`;
     h += clsBar("rules", rules);
-    const list = CLSFILTER.rules==="all" ? rules : rules.filter(r=>r.alert_class===CLSFILTER.rules);
-    h += `<table class="alerts"><tr><th>ON</th><th>SEV</th><th>RULE</th><th>TEAM</th><th>METRIC</th><th>TRIGGER CODES</th><th>CONDITION</th><th>WINDOW</th><th>ACTIVE (KSA)</th><th></th></tr>`;
+    const q=RF.q.trim().toLowerCase();
+    const list = rules.filter(r=>(CLSFILTER.rules==="all"||r.alert_class===CLSFILTER.rules)
+      && (RF.sev==="all"||r.severity===RF.sev) && (RF.team==="all"||r.team===RF.team)
+      && (RF.state==="all"||(RF.state==="on"?r.enabled:!r.enabled))
+      && (RF.count==="all"||(RF.count==="floor"?Number(r.min_customers)>0:(r.count_by||"events")===RF.count))
+      && (!RF.noisy||(r.stats7d&&(r.stats7d.noise>0||r.stats7d.single>0)))
+      && (!q||[r.name,r.metric_key,r.team,r.description,r.key,r.trigger_codes].join(" ").toLowerCase().includes(q)));
+    h += `<div class="rl" style="margin:0 2px 6px">${list.length} of ${rules.length} rule(s)</div>`;
+    h += `<div style="overflow-x:auto"><table class="alerts rtab"><tr><th>ON</th><th>SEV</th><th>RULE · last 7 days</th><th>COUNTS</th><th>CONDITION</th><th>WINDOW</th><th>TEAM</th><th>ACTIVE (KSA)</th><th></th></tr>`;
     list.forEach(r=>{
-      const cond = `${r.operator} ${r.unit==='rate'||r.unit==='ratio' ? (r.threshold*100)+'%' : r.threshold}` + (r.min_sample?` · n≥${r.min_sample}`:"") + (r.channel&&r.channel!=='any'?` · ${r.channel}`:"") + (r.dim&&Object.keys(r.dim).length?` · ${Object.entries(r.dim).map(([k,v])=>k+'='+v).join(',')}`:"");
+      const isRate=r.unit==='rate'||r.unit==='ratio';
+      const cond = `${r.operator} ${isRate ? (r.threshold*100).toFixed(isRate&&r.threshold*100%1?1:0)+'%' : r.threshold}` + (r.min_sample?` · n≥${r.min_sample}`:"") + (r.channel&&r.channel!=='any'?` · ${r.channel}`:"") + (r.dim&&Object.keys(r.dim).length?` · ${Object.entries(r.dim).map(([k,v])=>k+'='+v).join(',')}`:"");
       const active = (r.active_from!=null&&r.active_to!=null) ? `${r.active_from}:00–${r.active_to}:00` : "always";
-      h += `<tr class="rule-row">
+      const st=r.stats7d||{};
+      const badges = `<div class="rlbadges">${st.fires?`<span class="rlb" title="firings in the last 7 days">${st.fires} fired</span><span class="rlb ${st.acked<st.fires?'warn':'ok'}" title="acknowledged">${st.acked} acked</span>`:`<span class="rlb quiet">quiet 7d</span>`}${st.single?`<span class="rlb purple" title="firings where exactly one customer was affected">${st.single} single-customer</span>`:""}${st.noise?`<span class="rlb warn" title="closed as false positive / single customer / duplicate, or resolved without anyone acknowledging">${st.noise} noise</span>`:""}${st.open?`<span class="rlb red">${st.open} open</span>`:""}</div>`;
+      const cb=r.count_by||"events";
+      const countCell = `<span class="cbchip cb-${cb}">${cb==="events"?"events":cb==="customers"?"unique customers":"unique services"}</span>${Number(r.min_customers)>0?`<br><span class="rl" title="below this many distinct customers the alert fires at ${esc(r.single_customer_severity||'P4')}">floor ≥${r.min_customers} cust · else ${esc(r.single_customer_severity||'P4')}</span>`:""}`;
+      h += `<tr class="rule-row${r.enabled?'':' off'}">
         <td><label class="switch"><input type="checkbox" data-rid="${r.id}" ${r.enabled?"checked":""} ${canEdit?'':'disabled'}><span class="slider"></span></label></td>
-        <td><span class="sevpill" style="background:${sevColor(r.severity)}">${esc(r.severity)}</span></td>
-        <td><b>${esc(r.name)}</b>${clsChip(r.alert_class)}${r.builtin?' <span class="rl" style="font-size:10px">builtin</span>':''}${r.paused?` <span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#d97706;color:#d97706" title="${esc(r.paused)}">⏸ paused · gateway disabled</span>`:''}<br><span style="color:var(--muted);font-size:11px">${esc(r.description||"")}</span></td>
-        <td>${esc(r.team||"—")}</td>
-        <td class="mono">${esc(r.metric_key)}</td>
-        <td class="mono" style="font-size:10.5px;max-width:210px;white-space:normal">${r.trigger_codes?esc(r.trigger_codes):'<span class="rl">—</span>'}</td>
+        <td style="border-left:4px solid ${sevColor(r.severity)}"><span class="sevpill" style="background:${sevColor(r.severity)}">${esc(r.severity)}</span></td>
+        <td><b>${esc(r.name)}</b>${clsChip(r.alert_class)}${r.builtin?' <span class="rl" style="font-size:10px">builtin</span>':''}${r.paused?` <span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#d97706;color:#d97706" title="${esc(r.paused)}">⏸ paused · gateway disabled</span>`:''}<br><span class="mono" style="color:var(--muted);font-size:11px">${esc(r.metric_key)}</span>${r.description?`<div style="color:var(--muted);font-size:11px;max-width:420px">${esc(r.description)}</div>`:""}${badges}</td>
+        <td>${countCell}</td>
         <td class="mono">${esc(cond)}</td>
         <td>${esc(r.window_hours)}h</td>
+        <td>${esc(r.team||"—")}</td>
         <td class="mono">${esc(active)}</td>
-        <td style="white-space:nowrap"><button class="pill" data-hist="${r.id}" style="padding:3px 9px">History</button>${canEdit?` <button class="pill" data-edit="${r.id}" style="padding:3px 9px">Edit</button>`:''}</td>
+        <td style="white-space:nowrap"><button class="pill" data-hist="${r.id}" style="padding:3px 9px">History</button>${canEdit?` <button class="pill" data-edit="${r.id}" style="padding:3px 9px;border-left-color:var(--green)">Edit</button>`:''}</td>
       </tr>`;
     });
-    h += `</table>`;
-    if(!list.length) h += `<div class="okbox" style="margin-top:6px">No rules in this class.</div>`;
+    h += `</table></div>`;
+    if(!list.length) h += `<div class="okbox" style="margin-top:6px">No rule matches these filters.</div>`;
     /* TKT-000017 — Business/Technical CODE CLASSIFICATION, editable without a deploy. This is the
      * classifier every feed/tile/alert metric uses; a code moved to Business stops counting as
      * technical from save time (history keeps its ingest-time class). */
@@ -908,18 +1009,65 @@
     if(SEG!=="fixed"&&window.renderLatencyConfig) window.renderLatencyConfig($("#latencyCfg"));
     if(canEdit) renderErrClass();
     wireClsBar(renderRules);
-    $("#alBody").querySelectorAll("input[data-rid]").forEach(cb=>{
+    const body=$("#alBody");
+    let qt=null; $("#rfQ").addEventListener("input",e=>{ RF.q=e.target.value; clearTimeout(qt); qt=setTimeout(renderRules,250); });
+    body.querySelectorAll("[data-rfsev]").forEach(b=>b.addEventListener("click",()=>{ RF.sev=b.dataset.rfsev; renderRules(); }));
+    $("#rfTeam").addEventListener("change",e=>{ RF.team=e.target.value; renderRules(); });
+    $("#rfState").addEventListener("change",e=>{ RF.state=e.target.value; renderRules(); });
+    $("#rfCount").addEventListener("change",e=>{ RF.count=e.target.value; renderRules(); });
+    $("#rfNoisy").addEventListener("click",()=>{ RF.noisy=!RF.noisy; renderRules(); });
+    body.querySelectorAll("input[data-rid]").forEach(cb=>{
       cb.addEventListener("change", async ()=>{
         try{ await api("/api/rules/"+cb.dataset.rid, {method:"PATCH", body:JSON.stringify({enabled:cb.checked})}); }
         catch(e){ banner("Failed to update rule: "+e.message); cb.checked=!cb.checked; }
       });
     });
     const byId = id => rules.find(x=>String(x.id)===String(id));
-    $("#alBody").querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>openRuleModal(byId(b.dataset.edit))));
-    $("#alBody").querySelectorAll("[data-hist]").forEach(b=>b.addEventListener("click",()=>openHistory(b.dataset.hist, byId(b.dataset.hist))));
+    body.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>openRuleModal(byId(b.dataset.edit))));
+    body.querySelectorAll("[data-hist]").forEach(b=>b.addEventListener("click",()=>openHistory(b.dataset.hist, byId(b.dataset.hist))));
     const nb=$("#newRuleBtn"); if(nb) nb.addEventListener("click", ()=>openRuleModal(null));
     const mb=$("#mailDigestBtn"); if(mb) mb.addEventListener("click", ()=>sendDigest(mb));
     if(canEdit) renderAnomalySignals();
+  }
+
+  /* ---- NOISE SCORECARD (11 Sep 2026): LEARN — which rules cry wolf, which are ignored, which are retry storms ---- */
+  let NZ={days:7};
+  async function renderNoise(){
+    const b=$("#alBody"); b.innerHTML=window.salamLoader?window.salamLoader("Scoring the rules…"):"Loading…";
+    let d; try{ d=await api(`/api/alerts/noise?segment=${SEG}&days=${NZ.days}`); }catch(e){ b.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
+    const rules=d.rules||[], T=d.totals||{};
+    const canEdit=window.opsCan&&window.opsCan("editRules");
+    const V={noisy:["#dc2626","NOISY"],"retry-storms":["#7c3aed","RETRY STORMS"],ignored:["#d97706","IGNORED"],healthy:["var(--good)","HEALTHY"],quiet:["var(--muted)","QUIET"]};
+    const cnt=v=>rules.filter(r=>r.verdict===v).length;
+    let h=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <select id="nzDays" class="jsearch" style="padding-left:12px;background-image:none;flex:0 0 140px">${[7,14,30,90].map(n=>`<option value="${n}" ${NZ.days==n?"selected":""}>last ${n} days</option>`).join("")}</select>
+      <span class="rl">Every firing is scored by what happened to it: acknowledged or ignored, closed as fixed or as noise, one customer or many. Use it to tune thresholds, floors and routing — the aim is fewer pages that all matter.</span></div>
+      <div class="incstrip">
+        <div class="incstat"><b>${T.fires||0}</b><span>FIRINGS · ${NZ.days}d</span></div>
+        <div class="incstat"><b style="color:${T.fires&&T.acked/T.fires<0.6?'#dc2626':'var(--good)'}">${T.fires?Math.round(100*T.acked/T.fires):0}%</b><span>ACKNOWLEDGED</span></div>
+        <div class="incstat"><b style="color:${T.noisy?'#d97706':'var(--good)'}">${T.fires?Math.round(100*T.noisy/T.fires):0}%</b><span>NOISE (ignored · false · single · dup)</span></div>
+        <div class="incstat"><b style="color:#7c3aed">${T.single||0}</b><span>SINGLE-CUSTOMER FIRINGS</span></div>
+        <div class="incstat"><b style="color:#dc2626">${cnt("noisy")}</b><span>NOISY RULES</span></div>
+        <div class="incstat"><b style="color:#d97706">${cnt("ignored")}</b><span>IGNORED RULES</span></div>
+      </div>`;
+    const list=rules.filter(r=>r.fires>0);
+    if(!list.length) h+=`<div class="okbox">No rule fired in the last ${NZ.days} days on this side.</div>`;
+    else h+=`<div style="overflow-x:auto"><table class="alerts"><tr><th>VERDICT</th><th>RULE</th><th>FIRED</th><th>ACKED</th><th>MTTA</th><th>1 CUSTOMER</th><th>CLOSED AS</th><th>RE-OPENS</th><th>WHAT TO DO</th><th></th></tr>`+list.map(r=>{ const v=V[r.verdict]||V.healthy;
+      return `<tr>
+        <td style="border-left:4px solid ${v[0]}"><span class="sevpill" style="background:${v[0]}">${v[1]}</span><br><span class="rl">${r.noise_share}% noise</span></td>
+        <td><b>${esc(r.name)}</b> <span class="sevpill" style="background:${sevColor(r.severity)}">${esc(r.severity)}</span>${r.enabled?'':' <span class="rl">· disabled</span>'}<br><span class="mono" style="color:var(--muted);font-size:11px">${esc(r.metric_key)} · ${esc(r.count_by||'events')}${Number(r.min_customers)>0?` · floor ${r.min_customers}`:''}</span></td>
+        <td><b>${r.fires}</b>${r.open_now?`<br><span style="color:#dc2626;font-weight:700">${r.open_now} open</span>`:''}</td>
+        <td><b style="color:${r.fires&&r.acked/r.fires<0.5?'#dc2626':'var(--ink)'}">${r.acked}</b> <span class="rl">(${r.fires?Math.round(100*r.acked/r.fires):0}%)</span>${r.untouched?`<br><span class="rl">${r.untouched} closed untouched</span>`:''}</td>
+        <td class="mono">${r.mtta_min!=null?dur(r.mtta_min*60):'—'}</td>
+        <td>${r.with_identity?`<b style="color:${r.single_share>=50?'#7c3aed':'var(--ink)'}">${r.single_customer}</b> <span class="rl">of ${r.with_identity} (${r.single_share}%)</span>${r.downgraded?`<br><span class="rl">${r.downgraded} downgraded by floor</span>`:''}`:'<span class="rl">no identity</span>'}</td>
+        <td class="rl">${[["fixed",r.fixed],["cleared",r.cleared],["false positive",r.false_positive],["single customer",r.closed_single],["duplicate",r.duplicate]].filter(([,n])=>n).map(([l,n])=>`${n} ${l}`).join(" · ")||"—"}</td>
+        <td class="mono">${r.reopens||0}</td>
+        <td style="max-width:260px;font-size:12px">${esc(r.hint||'')}</td>
+        <td style="white-space:nowrap"><button class="pill" data-hist="${r.rule_id}" style="padding:3px 9px">History</button>${canEdit?` <button class="pill" data-nzedit="${r.rule_id}" style="padding:3px 9px;border-left-color:var(--green)">Edit rule</button>`:''}</td></tr>`; }).join("")+`</table></div>`;
+    b.innerHTML=h;
+    $("#nzDays").addEventListener("change",e=>{ NZ.days=Number(e.target.value); renderNoise(); });
+    b.querySelectorAll("[data-hist]").forEach(x=>x.addEventListener("click",()=>{ const r=rules.find(y=>String(y.rule_id)===x.dataset.hist); openHistory(x.dataset.hist,{name:r&&r.name}); }));
+    b.querySelectorAll("[data-nzedit]").forEach(x=>x.addEventListener("click",async()=>{ try{ const rl=await api("/api/rules"); _catalog=rl.catalog||_catalog; const r=(rl.rules||[]).find(y=>String(y.id)===x.dataset.nzedit); if(r) openRuleModal(r); }catch(e){ banner(esc(e.message)); } }));
   }
 
   /* ---- ACTIVITY LOG (11 Sep 2026): who did what on incidents, rules and the alerting configuration ----
@@ -1168,63 +1316,160 @@
     card.querySelector(".modal-body").innerHTML=h;
   }
 
-  function openRuleModal(rule){
-    const card=$("#ruleModalCard");
+  /* ---- RULE EDITOR DRAWER (11 Sep 2026): What → Condition → Impact → Routing → Runbook, with a live
+   * preview (7-day history scored against the rule + "Test now" on the replica). Replaces the old modal. ---- */
+  const CB_LABEL = { events:"Events", customers:"Unique customers", services:"Unique services" };
+  const CB_HELP = { events:"Classic: every row counts. One customer retrying 10 times = 10.",
+                    customers:"Each customer counts once, however many times they retried. Rates become <b>customers hit ÷ customers seen</b>.",
+                    services:"Each order / payment / request counts once. Rates become <b>services hit ÷ services seen</b>." };
+  function ruleDrawerEl(){
+    let ov=document.getElementById("ruleDrawer");
+    if(!ov){ ov=document.createElement("div"); ov.id="ruleDrawer"; ov.className="drawer-ov"; ov.innerHTML=`<div class="drawer rdrawer" id="ruleDrawerBody"></div>`; document.body.appendChild(ov);
+      ov.addEventListener("click",e=>{ if(e.target===ov) closeRuleDrawer(); });
+      document.addEventListener("keydown",e=>{ if(e.key==="Escape" && ov.classList.contains("open")) closeRuleDrawer(); }); }
+    return ov;
+  }
+  function closeRuleDrawer(){ const ov=document.getElementById("ruleDrawer"); if(ov) ov.classList.remove("open"); document.body.style.overflow=""; }
+  function openRuleModal(rule){ openRuleDrawer(rule); }
+  function openRuleDrawer(rule){
+    const ov=ruleDrawerEl(), body=$("#ruleDrawerBody");
     const isEdit=!!rule;
     const sel=(v,x)=>v===x?"selected":"";
-    const opts=_catalog.map(m=>`<option value="${m.key}" ${sel(rule&&rule.metric_key,m.key)}>${esc(m.label)} (${m.unit})</option>`).join("");
-    const chOpts=CHANNELS.map(c=>`<option value="${c}" ${sel((rule&&rule.channel)||'any',c)}>${c==='any'?'Any':c}</option>`).join("");
     const g=(k,d)=> rule&&rule[k]!=null?rule[k]:d;
-    card.innerHTML=`<div class="modal-head"><span class="path">${isEdit?'Edit alert rule'+(rule.builtin?' (builtin)':''):'New alert rule'}</span><span class="x" id="ruX">×</span></div>
-      <div class="modal-body">${isEdit?`<div id="ruLast" class="rl" style="margin:-2px 0 8px"></div>`:''}
-        <div class="ffull"><label>NAME</label><input id="ru_name" placeholder="e.g. Payment failure spike (web)" value="${esc(g('name',''))}"></div>
-        <div class="fgrid" style="margin-top:10px">
-          <div><label>METRIC</label><select id="ru_metric">${opts}</select></div>
-          <div><label>OPERATOR</label><select id="ru_op">
-            ${[['gte','≥ at least'],['gt','&gt; more than'],['lte','≤ at most'],['lt','&lt; less than'],['eq','= equals']].map(([v,l])=>`<option value="${v}" ${sel(g('operator','gte'),v)}>${l}</option>`).join("")}</select></div>
-          <div><label>THRESHOLD</label><input id="ru_thr" type="number" step="any" value="${esc(g('threshold',0.2))}"></div>
-          <div><label>WINDOW (hours)</label><input id="ru_win" type="number" value="${esc(g('window_hours',3))}"></div>
-          <div><label>MIN SAMPLE</label><input id="ru_min" type="number" value="${esc(g('min_sample',20))}"></div>
-          <div><label>SEVERITY</label><select id="ru_sev">${['P1','P2','P3','P4'].map(s=>`<option ${sel(g('severity','P3'),s)}>${s}</option>`).join("")}</select></div>
-          <div><label>CHANNEL</label><select id="ru_ch">${chOpts}</select></div>
-          <div><label>TEAM</label><select id="ru_team">${['','BSS Ops','Digital Ops','Sales Ops','OSS Ops'].map(t=>`<option value="${t}" ${sel(g('team',''),t)}>${t||'—'}</option>`).join("")}</select></div>
-          <div><label>ACTIVE HOURS (KSA, optional)</label><div style="display:flex;gap:6px"><input id="ru_from" type="number" placeholder="from" min="0" max="23" value="${rule&&rule.active_from!=null?rule.active_from:''}"><input id="ru_to" type="number" placeholder="to" min="0" max="23" value="${rule&&rule.active_to!=null?rule.active_to:''}"></div></div>
-        </div>
-        <div class="ffull"><label>DESCRIPTION</label><textarea id="ru_desc" rows="2">${esc(g('description',''))}</textarea></div>
-        <div class="ffull"><label>TRIGGER CODES <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which error codes / conditions fire this alert (shown to L2 on the incident)</span></label><input id="ru_codes" placeholder="e.g. 715, 5002 (Semati provider) · excludes 727/726 business declines" value="${esc(g('trigger_codes',''))}"></div>
-        <div class="ffull"><label>RUNBOOK <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— what to do when this fires (shown on the incident)</span></label><textarea id="ru_runbook" rows="2" placeholder="e.g. Check ClearTax ZATCA queue; if backed up, page BSS on-call.">${esc(g('runbook',''))}</textarea></div>
-        <div class="testbox" id="ru_testbox">Click <b>Test now</b> to evaluate this rule against the current data.</div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
-          <button class="pill" id="ru_test">Test now</button>
-          <button class="pill" id="ru_save" style="border-left-color:var(--green)">${isEdit?'Save changes':'Save rule'}</button>
-        </div>
+    const catByKey={}; _catalog.forEach(m=>catByKey[m.key]=m);
+    const opts=_catalog.map(m=>`<option value="${m.key}" ${sel(rule&&rule.metric_key,m.key)}>${esc(m.label)} (${m.unit})${m.identity?"":" · no customer id"}</option>`).join("");
+    const chOpts=CHANNELS.map(c=>`<option value="${c}" ${sel((rule&&rule.channel)||'any',c)}>${c==='any'?'Any':c}</option>`).join("");
+    const cb0=g('count_by','events'), minC0=Number(g('min_customers',0))||0, scs0=g('single_customer_severity','P4');
+    const dim0=rule&&rule.dim&&Object.keys(rule.dim).length?rule.dim:null;
+    const sevBtns=(id,cur)=>['P1','P2','P3','P4'].map(sv=>`<button type="button" class="pill sevbtn${cur===sv?' active':''}" data-sev="${sv}" data-for="${id}" style="padding:4px 12px;--pc:${sevColor(sv)}">${sv}</button>`).join("");
+    body.innerHTML=`
+      <div class="drawer-hd"><div><div style="font-size:10.5px;letter-spacing:.08em;opacity:.8">${isEdit?'EDIT ALERT RULE'+(rule.builtin?' · BUILTIN':''):'NEW ALERT RULE'}</div><div style="font-weight:800;font-size:15px" id="rdTitle">${esc(g('name','Untitled rule'))}</div></div><span class="x" id="rdX">×</span></div>
+      <div class="rd-nav">${[["what","1 · What"],["cond","2 · Condition"],["impact","3 · Impact"],["route","4 · Routing"],["runbook","5 · Runbook"]].map(([k,l],i)=>`<button type="button" class="pill${i===0?' active':''}" data-rdnav="${k}" style="padding:4px 10px">${l}</button>`).join("")}</div>
+      <div class="rd-body">
+        ${isEdit?`<div id="ruLast" class="rl" style="margin:0 0 10px"></div>`:''}
+        <section class="rd-sec" id="rd_what"><h4>1 · What are we watching?</h4>
+          <div class="ffull"><label>NAME</label><input id="ru_name" placeholder="e.g. Payment failure spike (web)" value="${esc(g('name',''))}"></div>
+          <div class="ffull"><label>METRIC</label><select id="ru_metric">${opts}</select><div class="rl" id="ru_metric_help" style="margin-top:4px"></div></div>
+          <div class="ffull"><label>DESCRIPTION <span class="lbl-soft">— what a reader should understand when it fires</span></label><textarea id="ru_desc" rows="2">${esc(g('description',''))}</textarea></div>
+          <div class="ffull"><label>DIMENSION FILTER <span class="lbl-soft">— optional, e.g. {"platform":"web"} or {"vendor":"UPG"}</span></label><input id="ru_dim" class="mono" placeholder='{"platform":"web"}' value="${esc(dim0?JSON.stringify(dim0):'')}"></div>
+        </section>
+        <section class="rd-sec" id="rd_cond"><h4>2 · When does it fire?</h4>
+          <div class="fgrid rd-grid3">
+            <div><label>OPERATOR</label><select id="ru_op">${[['gte','≥ at least'],['gt','&gt; more than'],['lte','≤ at most'],['lt','&lt; less than'],['eq','= equals']].map(([v,l])=>`<option value="${v}" ${sel(g('operator','gte'),v)}>${l}</option>`).join("")}</select></div>
+            <div><label>THRESHOLD <span class="lbl-soft" id="ru_thr_unit"></span></label><input id="ru_thr" type="number" step="any" value="${esc(g('threshold',0.2))}"></div>
+            <div><label>WINDOW (hours)</label><input id="ru_win" type="number" step="any" min="0.25" value="${esc(g('window_hours',3))}"></div>
+            <div><label>MIN SAMPLE <span class="lbl-soft">— below this, never fires</span></label><input id="ru_min" type="number" min="0" value="${esc(g('min_sample',20))}"></div>
+            <div><label>ACTIVE HOURS (KSA, optional)</label><div style="display:flex;gap:6px"><input id="ru_from" type="number" placeholder="from" min="0" max="23" value="${rule&&rule.active_from!=null?rule.active_from:''}"><input id="ru_to" type="number" placeholder="to" min="0" max="23" value="${rule&&rule.active_to!=null?rule.active_to:''}"></div></div>
+            <div><label>CHANNEL</label><select id="ru_ch">${chOpts}</select></div>
+          </div>
+          <div class="rd-preview" id="rd_preview">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:12px;letter-spacing:.05em">LIVE PREVIEW</b><span class="rl" id="rdPrevSub">last 7 days of this metric, scored with the values above</span><button type="button" class="pill" id="ru_test" style="margin-left:auto;padding:4px 12px;border-left-color:#2563eb">▶ Test now</button></div>
+            <div id="rdSpark" style="margin-top:8px;height:74px"></div>
+            <div id="ru_testbox" class="rl" style="margin-top:6px">Click <b>Test now</b> — it evaluates the rule on the replica right now and replays the last 7 days.</div>
+          </div>
+        </section>
+        <section class="rd-sec" id="rd_impact"><h4>3 · Impact — who is behind the numbers?</h4>
+          <div class="rl" style="margin-bottom:8px">One customer retrying many times can look like an outage. Count what matters, and keep a floor so a single-customer issue never pages as a platform incident.</div>
+          <label>COUNT BY</label>
+          <div class="cbseg" id="ru_cb">${Object.keys(CB_LABEL).map(k=>`<button type="button" class="pill cbopt${cb0===k?' active':''}" data-cb="${k}" style="padding:6px 12px">${CB_LABEL[k]}</button>`).join("")}</div>
+          <div class="rl" id="ru_cb_help" style="margin:6px 0 10px"></div>
+          <div class="fgrid">
+            <div><label>CUSTOMER FLOOR <span class="lbl-soft">— 0 = off</span></label><input id="ru_minc" type="number" min="0" value="${minC0}"><div class="rl" style="margin-top:3px">Fires at the severity below when fewer distinct customers are affected.</div></div>
+            <div><label>SEVERITY BELOW THE FLOOR</label><div class="sevrow" id="ru_scs_row">${sevBtns('ru_scs',scs0)}</div><input type="hidden" id="ru_scs" value="${esc(scs0)}"></div>
+          </div>
+          <div class="rl" id="ru_ident_note" style="margin-top:6px"></div>
+        </section>
+        <section class="rd-sec" id="rd_route"><h4>4 · Severity &amp; routing</h4>
+          <div class="fgrid">
+            <div><label>SEVERITY</label><div class="sevrow" id="ru_sev_row">${sevBtns('ru_sev',g('severity','P3'))}</div><input type="hidden" id="ru_sev" value="${esc(g('severity','P3'))}"><div class="rl" style="margin-top:3px">P1 pages immediately with the shortest ack SLA · P4 is informational.</div></div>
+            <div><label>TEAM</label><select id="ru_team">${['','BSS Ops','Digital Ops','Sales Ops','OSS Ops'].map(t=>`<option value="${t}" ${sel(g('team',''),t)}>${t||'—'}</option>`).join("")}</select><div class="rl" style="margin-top:3px">Ack reminders (R1 → R3) and the digest go to this team's ACK holders.</div></div>
+          </div>
+          <div class="ffull"><label>TRIGGER CODES <span class="lbl-soft">— which error codes / conditions fire this alert (shown to L2 on the incident)</span></label><input id="ru_codes" placeholder="e.g. 715, 5002 (Semati provider) · excludes 727/726 business declines" value="${esc(g('trigger_codes',''))}"></div>
+        </section>
+        <section class="rd-sec" id="rd_runbook"><h4>5 · Runbook — what L1 does when it fires</h4>
+          <div class="rl" style="margin-bottom:6px">One step per line. On the incident every step becomes a checkbox the responder ticks (who / when is kept).</div>
+          <textarea id="ru_runbook" rows="6" placeholder="1) Open Troubleshoot → Payments and confirm the gateway&#10;2) Check the affected cases — one customer or many?&#10;3) If the gateway is down, raise ServiceNow and page BSS on-call">${esc(g('runbook',''))}</textarea>
+          <div class="rl" id="ru_rb_count" style="margin-top:4px"></div>
+        </section>
+      </div>
+      <div class="rd-foot">
+        <span class="rl" id="rdMsg"></span>
+        <button type="button" class="pill" id="rdCancel">Cancel</button>
+        <button type="button" class="pill" id="ru_save" style="border-left-color:var(--green);font-weight:800">${isEdit?'Save changes':'Create rule'}</button>
       </div>`;
-    $("#ruleModal").classList.add("open");
+    ov.classList.add("open"); document.body.style.overflow="hidden"; body.scrollTop=0;
+    $("#rdX").onclick=closeRuleDrawer; $("#rdCancel").onclick=closeRuleDrawer;
     if(isEdit){ api("/api/rules/"+rule.id+"/history").then(d=>{ const el=$("#ruLast"); if(!el) return; const e=d.lastEdit;
       el.innerHTML=e?`Last changed by <b>${esc((e.actor||'—').split('@')[0])}</b> · ${window.KT?KT.dt(e.at):esc(e.at)} KSA · ${esc(e.action)} (${Object.keys(e.changes||{}).join(', ')||'—'}) · <a href="#" id="ruLastHist" style="color:var(--green)">full history</a>`:`No edits recorded since 11 Sep 2026 · <a href="#" id="ruLastHist" style="color:var(--green)">history</a>`;
-      const a=$("#ruLastHist"); if(a) a.onclick=ev=>{ ev.preventDefault(); openHistory(rule.id, rule); }; }).catch(()=>{}); }
+      const a=$("#ruLastHist"); if(a) a.onclick=ev=>{ ev.preventDefault(); closeRuleDrawer(); openHistory(rule.id, rule); }; }).catch(()=>{}); }
+    // section nav → smooth scroll
+    body.querySelectorAll("[data-rdnav]").forEach(b=>b.addEventListener("click",()=>{ body.querySelectorAll("[data-rdnav]").forEach(x=>x.classList.toggle("active",x===b)); const t=$("#rd_"+b.dataset.rdnav); if(t) t.scrollIntoView({behavior:"smooth",block:"start"}); }));
+    $("#ru_name").addEventListener("input",e=>{ $("#rdTitle").textContent=e.target.value||"Untitled rule"; });
+    // severity buttons
+    body.querySelectorAll(".sevbtn").forEach(b=>b.addEventListener("click",()=>{ const id=b.dataset.for; body.querySelectorAll(`.sevbtn[data-for="${id}"]`).forEach(x=>x.classList.toggle("active",x===b)); $("#"+id).value=b.dataset.sev; }));
+    // count-by + identity availability
+    const paintMetric=()=>{
+      const m=catByKey[$("#ru_metric").value]||{};
+      const isRate=m.unit==='rate'||m.unit==='ratio';
+      $("#ru_thr_unit").textContent=isRate?"— fraction, 0.2 = 20%":m.unit?`— ${m.unit}`:"";
+      $("#ru_metric_help").innerHTML=`<span class="mono">${esc(m.key||'')}</span>${m.identity?` · identity: <b>${esc(m.what||'')}</b> — can count unique customers / services`:` · <span style="color:#d97706">no customer identity</span>${m.why?` — ${esc(m.why)}`:''}`}`;
+      body.querySelectorAll(".cbopt").forEach(b=>{ const off=!m.identity&&b.dataset.cb!=="events"; b.disabled=off; b.classList.toggle("disabled",off); if(off&&b.classList.contains("active")){ b.classList.remove("active"); body.querySelector('.cbopt[data-cb="events"]').classList.add("active"); } });
+      $("#ru_minc").disabled=!m.identity; body.querySelectorAll('.sevbtn[data-for="ru_scs"]').forEach(b=>b.disabled=!m.identity);
+      $("#ru_ident_note").innerHTML=m.identity?`Customer = ${esc(m.what||'the source rows')} identity (msisdn / mobile); service = the order, payment or request id. Counts are computed at each sync for this rule's window and dimension.`:`<span style="color:#d97706">This metric cannot count customers</span> — ${esc(m.why||'no per-customer rows')}. Counting stays on events and the floor is off.`;
+      const cb=(body.querySelector(".cbopt.active")||{}).dataset||{}; $("#ru_cb_help").innerHTML=CB_HELP[cb.cb||"events"];
+    };
+    body.querySelectorAll(".cbopt").forEach(b=>b.addEventListener("click",()=>{ if(b.disabled) return; body.querySelectorAll(".cbopt").forEach(x=>x.classList.toggle("active",x===b)); $("#ru_cb_help").innerHTML=CB_HELP[b.dataset.cb]; }));
+    $("#ru_metric").addEventListener("change",()=>{ paintMetric(); loadSpark(); });
+    paintMetric();
+    const rbCount=()=>{ const n=String($("#ru_runbook").value||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean).length; $("#ru_rb_count").textContent=n?`${n} step${n>1?'s':''} → ${n} checkbox${n>1?'es':''} on the incident`:"No runbook yet — L1 will see the generic guidance."; };
+    $("#ru_runbook").addEventListener("input",rbCount); rbCount();
+    const dimVal=()=>{ const t=$("#ru_dim").value.trim(); if(!t) return {}; try{ const o=JSON.parse(t); return (o&&typeof o==="object")?o:{}; }catch(e){ return null; } };
     const gather=()=>({name:$("#ru_name").value.trim(), metric_key:$("#ru_metric").value, operator:$("#ru_op").value,
       threshold:Number($("#ru_thr").value), window_hours:Number($("#ru_win").value), min_sample:Number($("#ru_min").value),
       severity:$("#ru_sev").value, channel:$("#ru_ch").value, team:$("#ru_team").value||null, description:$("#ru_desc").value.trim(), trigger_codes:$("#ru_codes").value.trim()||null,
-      runbook:$("#ru_runbook").value.trim()||null,
+      runbook:$("#ru_runbook").value.trim()||null, dim:dimVal()||{},
+      count_by:(body.querySelector(".cbopt.active")||{dataset:{cb:"events"}}).dataset.cb, min_customers:Number($("#ru_minc").value)||0, single_customer_severity:$("#ru_scs").value||"P4",
       active_from:$("#ru_from").value!==""?Number($("#ru_from").value):null, active_to:$("#ru_to").value!==""?Number($("#ru_to").value):null});
-    $("#ruX").onclick=()=>$("#ruleModal").classList.remove("open");
+    // 7-day sparkline of already-written snapshots for this metric / window / dim, threshold drawn in the rule's colour
+    async function loadSpark(){
+      const gg=gather(); const host=$("#rdSpark"); if(!host) return;
+      host.innerHTML=`<div class="rl">loading history…</div>`;
+      try{ const d=await api(`/api/metrics/series?key=${encodeURIComponent(gg.metric_key)}&window=${gg.window_hours}&days=7&dim=${encodeURIComponent(JSON.stringify(gg.dim||{}))}`);
+        const pts=(d.points||[]);
+        if(!pts.length){ host.innerHTML=`<div class="rl">No snapshots yet for this metric at a ${gg.window_hours}h window${Object.keys(gg.dim||{}).length?` and dimension ${esc(JSON.stringify(gg.dim))}`:''} — history starts accumulating after the rule is saved and enabled.</div>`; return; }
+        const m=catByKey[gg.metric_key]||{};
+        host.innerHTML=sparkline(pts.map(p=>({sim_now:p.sim_now,value:p.value==null?null:Number(p.value)})),{w:560,h:70,unit:m.unit,thrObjs:[{value:gg.threshold,severity:gg.severity,operator:gg.operator}]});
+        host.querySelector("svg").style.cssText="width:100%;height:70px";
+        $("#rdPrevSub").textContent=`${pts.length} snapshots over the last 7 days · threshold line in ${gg.severity} colour · red dots = breach`;
+      }catch(e){ host.innerHTML=`<div class="rl" style="color:#d97706">${esc(e.message)}</div>`; }
+    }
+    ["ru_thr","ru_op","ru_win","ru_sev"].forEach(id=>{ const el=$("#"+id); if(el) el.addEventListener("change",loadSpark); });
+    body.querySelectorAll('.sevbtn[data-for="ru_sev"]').forEach(b=>b.addEventListener("click",loadSpark));
+    loadSpark();
     $("#ru_test").onclick=async()=>{
-      const tb=$("#ru_testbox"); tb.innerHTML="Testing…";
-      try{ const r=await api("/api/rules/test",{method:"POST",body:JSON.stringify(gather())});
-        const val = r.value==null?"—":(r.unit==="rate"||r.unit==="ratio")?(r.value*100).toFixed(1)+"%":r.value;
-        tb.innerHTML=`Observed <b>${val}</b> (n=${r.sample}) at ${KT.dt(r.now)}Z — `+
-          (r.would_fire?`<span style="color:var(--red);font-weight:800">WOULD FIRE ✕</span>`:`<span style="color:var(--good);font-weight:800">would not fire ✓</span>`)+
-          (r.enoughSample?"":` <span style="color:var(--muted)">(below min sample)</span>`);
+      const tb=$("#ru_testbox"); tb.innerHTML="Evaluating on the replica…"; const gg=gather();
+      if(!gg.dim){ tb.innerHTML=`<span style="color:var(--red)">Dimension filter is not valid JSON.</span>`; return; }
+      try{ const r=await api("/api/rules/preview",{method:"POST",body:JSON.stringify(gg)});
+        const fv=v=>v==null?"—":(r.unit==="rate"||r.unit==="ratio")?(v*100).toFixed(1)+"%":v;
+        const verdict=r.would_fire?`<span style="color:${sevColor(r.severity)};font-weight:800">WOULD FIRE at ${esc(r.severity)}</span>${r.severity!==r.rule_severity?` <span class="rl">(rule says ${esc(r.rule_severity)} — below the customer floor)</span>`:""}`:`<span style="color:var(--good);font-weight:800">would not fire ✓</span>${r.enoughSample?"":` <span class="rl">(sample ${r.sample} below min ${gg.min_sample})</span>`}`;
+        const who=r.identity?` · <b>${r.customers??"—"}</b> customer(s) hit of ${r.customers_total??"—"} seen · <b>${r.services??"—"}</b> service(s) of ${r.services_total??"—"}`:` · <span class="rl">no customer identity for this metric</span>`;
+        const h=r.history||{};
+        const hist=h.ticks?`<div style="margin-top:4px">Last ${h.days} days: <b>${h.fires}</b> of ${h.ticks} evaluations would have fired${h.downgraded?` · <b style="color:#7c3aed">${h.downgraded}</b> of them downgraded by the customer floor`:""}${h.no_identity&&gg.count_by!=="events"?` · <span style="color:#d97706">${h.no_identity} snapshot(s) have no identity counts yet (computed from the first sync after saving)</span>`:""}</div>`:`<div class="rl" style="margin-top:4px">No 7-day history for this window yet.</div>`;
+        tb.innerHTML=`<div>Now: observed <b>${fv(r.value)}</b> (${gg.count_by==="events"?"n":gg.count_by}=${r.sample}) at ${KT.dt(r.now)} KSA — ${verdict}${who}</div>${gg.count_by!=="events"?`<div class="rl">On events it would read ${fv(r.events_value)} (n=${r.events_sample}).</div>`:""}${hist}`;
+        if(h.points&&h.points.length){ const m=catByKey[gg.metric_key]||{}; const host=$("#rdSpark"); host.innerHTML=sparkline(h.points.map(p=>({sim_now:p.sim_now,value:p.value==null?null:Number(p.value)})),{w:560,h:70,unit:m.unit,thrObjs:[{value:gg.threshold,severity:gg.severity,operator:gg.operator}]}); host.querySelector("svg").style.cssText="width:100%;height:70px"; $("#rdPrevSub").textContent=`${h.ticks} snapshots scored as "${CB_LABEL[gg.count_by]}" · red dots = would fire`; }
       }catch(e){ tb.innerHTML=`<span style="color:var(--red)">${esc(e.message)}</span>`; }
     };
     $("#ru_save").onclick=async()=>{
-      const gg=gather(); if(!gg.name){ alert("Name required"); return; }
+      const gg=gather(); const msg=$("#rdMsg");
+      if(!gg.name){ msg.innerHTML=`<span style="color:var(--red)">Name required</span>`; $("#ru_name").focus(); return; }
+      if(!gg.dim){ msg.innerHTML=`<span style="color:var(--red)">Dimension filter must be valid JSON</span>`; return; }
+      if(!(gg.window_hours>0)){ msg.innerHTML=`<span style="color:var(--red)">Window must be > 0</span>`; return; }
+      msg.textContent="Saving…";
       try{
-        if(isEdit) await api("/api/rules/"+rule.id,{method:"PATCH",body:JSON.stringify(gg)});
-        else await api("/api/rules",{method:"POST",body:JSON.stringify(gg)});
-        $("#ruleModal").classList.remove("open"); renderRules();
-      }catch(e){ alert("Save failed: "+e.message); }
+        const r=await window.fetch(API+withSeg(isEdit?"/api/rules/"+rule.id:"/api/rules"),{method:isEdit?"PATCH":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(gg)});
+        const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||("HTTP "+r.status));
+        closeRuleDrawer(); _rbMap=null; _rbPromise=null; renderRules();
+      }catch(e){ msg.innerHTML=`<span style="color:var(--red)">Save failed: ${esc(e.message)}</span>`; }
     };
   }
   document.getElementById("ruleModal").addEventListener("click",e=>{ if(e.target.id==="ruleModal") e.currentTarget.classList.remove("open"); });
