@@ -186,16 +186,20 @@ async function usage({ days = 14, actor = '' } = {}) {
     usedGlobal(),
     C.query(`SELECT at, subject, kind, threshold, used, cap, mailed_to FROM llm_budget_events ORDER BY at DESC LIMIT 20`).catch(() => ({ rows: [] })),
   ]);
+  /* WHO each person is — the same card the Alerts owner column shows (name, role, team, ack workload) */
+  let who = {};
+  try { who = await require('./people').cards(C, bySubject.rows.map(r => r.subject).filter(x => !isService(x))); } catch (_) { who = {}; }
   const users = [], agents = [];
   for (const r of bySubject.rows) {
     const cap = isService(r.subject) ? num(cfg.perCaller[r.subject], cfg.dailyCaller) : num(cfg.perUser[String(r.subject).toLowerCase()], cfg.dailyUser);
-    const row = { ...r, tokens: Number(r.tokens), today: Number(r.today), cost: Number(r.cost || 0), cap, pct: cap > 0 ? Number(r.today) / cap : 0 };
+    const row = { ...r, tokens: Number(r.tokens), today: Number(r.today), cost: Number(r.cost || 0), cap, pct: cap > 0 ? Number(r.today) / cap : 0,
+      person: isService(r.subject) ? null : (who[String(r.subject).toLowerCase()] || null) };
     (isService(r.subject) ? agents : users).push(row);
   }
   return {
     days: Number(d), budget: cfg,
     byDay: byDay.rows.map(r => ({ ...r, tokens: Number(r.tokens), agent_tokens: Number(r.agent_tokens), cost: Number(r.cost || 0) })),
-    users, agents, byPurpose: byPurpose.rows.map(r => ({ ...r, tokens: Number(r.tokens) })), byProvider: byProvider.rows.map(r => ({ ...r, tokens: Number(r.tokens), cost: Number(r.cost || 0) })),
+    users, agents, people: who, byPurpose: byPurpose.rows.map(r => ({ ...r, tokens: Number(r.tokens) })), byProvider: byProvider.rows.map(r => ({ ...r, tokens: Number(r.tokens), cost: Number(r.cost || 0) })),
     today: { calls: today.rows[0].calls, tokens: Number(today.rows[0].tokens), cap: cfg.dailyGlobal, pct: cfg.dailyGlobal > 0 ? Number(today.rows[0].tokens) / cfg.dailyGlobal : 0 },
     month: { tokens: g.month, cap: cfg.monthlyGlobal, pct: cfg.monthlyGlobal > 0 ? g.month / cfg.monthlyGlobal : 0 },
     events: events.rows,

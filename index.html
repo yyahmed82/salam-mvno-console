@@ -944,6 +944,11 @@
   @media (max-width:700px){ .detcell{max-width:none} .difk{min-width:0} }
   .owner{display:flex;gap:8px;align-items:flex-start}
   .oav{flex:none;width:30px;height:30px;border-radius:50%;color:#fff;font-weight:800;font-size:11.5px;display:inline-flex;align-items:center;justify-content:center;letter-spacing:.3px;margin-top:1px}
+  /* shared person chip (person.js) — a service caller is a square badge, never a human avatar */
+  .oav.oavsvc{border-radius:8px;background:var(--line);color:var(--muted);font-size:14px}
+  .oav.xs{width:20px;height:20px;font-size:9px;margin-top:0}
+  .pin{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--ink);white-space:nowrap}
+  .pin .oav{flex:none}
   .oinfo{min-width:0;line-height:1.35}
   .oname{font-weight:800;font-size:12.5px;color:var(--ink)}
   .omail{font-family:var(--mono);font-size:10.5px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1806,6 +1811,7 @@
 <div id="panelModal" class="modal-overlay"><div class="modal-card" id="panelModalCard" style="max-width:720px"></div></div>
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
 <script src="base.js?v=20260910c"></script>
+<script src="person.js?v=20260911b"></script>   <!-- ONE person card for every screen -->
 <script src="navdrop.js?v=20260910c" defer></script>
 <script src="adaptive.js?v=20260910c" defer></script>
 <script src="ksatime.js?v=20260910c"></script>
@@ -1819,8 +1825,8 @@
 <script src="app.js?v=20260910c"></script>
 <script src="uinav.js?v=20260910c"></script>
 <script src="latencycfg.js?v=20260910c"></script>
-<script src="alertsview.js?v=20260911h"></script>
-<script src="ops.js?v=20260910c"></script>
+<script src="alertsview.js?v=20260911i"></script>
+<script src="ops.js?v=20260911p"></script>
 <script src="opsbar.js?v=20260910c"></script>
 <script src="analytics.js?v=20260910c"></script>
 <script src="topo2data.js?v=20260910c"></script>
@@ -1842,7 +1848,7 @@
 <script src="fixed-channel.js?v=20260910c"></script>
 <script src="fixed-dash.js?v=20260910c"></script>
 <script src="fixed-errors.js?v=20260910c"></script>
-<script src="fixed-alerts.js?v=20260910c"></script>
+<script src="fixed-alerts.js?v=20260911p"></script>
 <script src="fixed-playbook.js?v=20260910c"></script>
 <script src="fixed-diagrams.js?v=20260910c"></script>
 <script src="fixed-report.js?v=20260910c"></script>
@@ -1851,7 +1857,7 @@
 <script src="acksla.js?v=20260910c"></script>
 <script src="usersmgmt.js?v=20260910c"></script>
 <script src="slo.js?v=20260910c"></script>
-<script src="audit.js?v=20260910c"></script>
+<script src="audit.js?v=20260911p"></script>
 <script src="notifycfg.js?v=20260910c"></script>
 <script src="notifyclone.js?v=20260910c"></script>
 <script src="democfg.js?v=20260910c"></script>
@@ -1864,9 +1870,9 @@
 <script src="assist.js?v=20260911a"></script>
 <script src="assistcfg.js?v=20260910c"></script>
 <script src="assistclone.js?v=20260910c"></script>
-<script src="agents.js?v=20260911d"></script>
+<script src="agents.js?v=20260911e"></script>
 <script src="navcfg.js?v=20260910c"></script>
-<script src="tickets.js?v=20260910c"></script>
+<script src="tickets.js?v=20260911p"></script>
 <script src="theme.js?v=20260910c"></script>
 <script src="router.js?v=20260910c"></script>
 <script src="live.js?v=20260910c"></script>

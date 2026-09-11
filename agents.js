@@ -205,10 +205,19 @@
   /* renders the usage screen from ANY dataset — the live one, or the sample used by the demo view */
   function renderBudget(b, U, opts){
     opts=opts||{}; const ro=!!opts.readonly;
+    if(window.PERSON && U.people) PERSON.merge(U.people);
     const B=U.budget||{}, cur=(B.price&&B.price.currency)||"SAR";
     const cost=U.byProvider.reduce((a,r)=>a+Number(r.cost||0),0);
+    const durM=m=>m==null?"—":m<60?`${m} min`:`${Math.floor(m/60)} h ${m%60?String(m%60).padStart(2,"0")+" min":""}`.trim();
+    /* WHO — the same person card the Alerts owner column shows (person.js), never a bare login */
+    const whoCell=(r,kind)=>{
+      const o=r.person||(window.PERSON?PERSON.get(r.subject):null)||null;
+      if(!window.PERSON) return `<b>${esc(String(r.subject).split("@")[0])}</b><div class="ag-sub ag-mono">${esc(r.subject)}</div>`;
+      const kpis=kind==="user"?PERSON.workload(o,durM):[];
+      return PERSON.chip(r.subject,{ o, kpis });
+    };
     const row=(r,kind)=>`<tr data-subj="${esc(r.subject)}">
-      <td><b>${esc(String(r.subject).split("@")[0])}</b><div class="ag-sub ag-mono">${esc(r.subject)}</div></td>
+      <td style="min-width:230px">${whoCell(r,kind)}</td>
       <td style="min-width:170px">${bar(r.pct,r.cap)}<div class="ag-sub">${tk(r.today)} of ${r.cap?tk(r.cap):"∞"} today${r.cap?` · ${Math.round(r.pct*100)} %`:""}</div></td>
       <td><b>${tk(r.tokens)}</b><div class="ag-sub">${U.days} d</div></td>
       <td>${n(r.calls)}${r.blocked?`<div class="ag-sub" style="color:#dc2626">${r.blocked} refused</div>`:""}${r.failed?`<div class="ag-sub">${r.failed} failed</div>`:""}</td>
@@ -246,7 +255,7 @@
           <label>Currency<input id="bCur" class="ag-in" value="${esc(cur)}" style="width:90px"></label>
         </div>
         <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="ag-btn sm" id="bSave">Save budget</button><span class="ag-sub" id="bMsg">0 = no ceiling. A refused call is never an error for the user: Yusr answers from the rule engine and the agents write their measured-evidence note.</span></div></div>
-      ${(U.events||[]).length?`<div class="ag-detail" style="margin-top:12px"><b>Budget notifications</b><div class="ag-tablew"><table class="ag-table"><thead><tr><th>When</th><th>Subject</th><th>Threshold</th><th>Used</th><th>Ceiling</th><th>Mailed</th></tr></thead><tbody>${U.events.map(e=>`<tr><td class="ag-sub">${md(e.at)}</td><td>${esc(e.subject)} <span class="ag-chip">${esc(e.kind)}</span></td><td><span class="ag-chip ${e.threshold==="over"?"a":""}">${e.threshold==="over"?"ceiling reached":"warning"}</span></td><td>${tk(Number(e.used))}</td><td>${tk(Number(e.cap))}</td><td class="ag-sub">${esc(e.mailed_to||"—")}</td></tr>`).join("")}</tbody></table></div></div>`:""}`;
+      ${(U.events||[]).length?`<div class="ag-detail" style="margin-top:12px"><b>Budget notifications</b><div class="ag-tablew"><table class="ag-table"><thead><tr><th>When</th><th>Subject</th><th>Threshold</th><th>Used</th><th>Ceiling</th><th>Mailed</th></tr></thead><tbody>${U.events.map(e=>`<tr><td class="ag-sub">${md(e.at)}</td><td>${window.PERSON?PERSON.inline(e.subject):esc(e.subject)} <span class="ag-chip">${esc(e.kind)}</span></td><td><span class="ag-chip ${e.threshold==="over"?"a":""}">${e.threshold==="over"?"ceiling reached":"warning"}</span></td><td>${tk(Number(e.used))}</td><td>${tk(Number(e.cap))}</td><td class="ag-sub">${esc(e.mailed_to||"—")}</td></tr>`).join("")}</tbody></table></div></div>`:""}`;
     if(ro){                                            // demo view: read-only, no handlers, no saves
       b.querySelectorAll("input,select,button,textarea").forEach(el=>{ el.disabled=true; el.style.opacity=".7"; el.style.cursor="not-allowed"; });
       const m=b.querySelector("#bMsg"); if(m) m.textContent="Sample data — the budget form is shown as it looks live, but nothing can be saved from the demo view.";
@@ -392,18 +401,19 @@
       const ag=Math.round(base*(0.56+0.08*Math.abs(Math.cos(i/3))));
       return { day:d(i), tokens:base, agent_tokens:ag, calls:Math.round((90+60*Math.abs(Math.sin(i/1.7)))*f), cost:i>=days-3?Number((0.6+i%3*0.4).toFixed(2)):0, blocked:i===days-4?3:0 }; });
     const sum=byDay.reduce((a,x)=>a+x.tokens,0), today=byDay[byDay.length-1];
-    const person=(mail,name,today_,cap,calls,extra)=>({ subject:mail, name, tokens:Math.round(today_*days*0.8), today:today_, cap, pct:cap?today_/cap:0,
-      calls, failed:extra&&extra.failed||0, blocked:extra&&extra.blocked||0, cost:extra&&extra.cost||0, last_at:new Date(Date.now()-(extra&&extra.agoMin||8)*60000).toISOString() });
+    const person=(mail,who,today_,cap,calls,extra)=>({ subject:mail, tokens:Math.round(today_*days*0.8), today:today_, cap, pct:cap?today_/cap:0,
+      calls, failed:extra&&extra.failed||0, blocked:extra&&extra.blocked||0, cost:extra&&extra.cost||0, last_at:new Date(Date.now()-(extra&&extra.agoMin||8)*60000).toISOString(),
+      person:Object.assign({ email:mail, enabled:true }, who||{}) });
     return {
       days, budget:{ enabled:true, dailyUser:150000, dailyCaller:600000, dailyGlobal:4000000, monthlyGlobal:80000000,
         perUser:{ "a.pandey.tcs@salammobile.sa":40000 }, perCaller:{}, warnAt:0.8, block:true, notifyUser:true, notifyAdmins:true,
         price:{ primary:0, fallback:0.012, currency:"SAR" } },
       byDay,
-      users:[ person("y.yahmed.sns@salam.sa",null,96000,150000,143,{failed:2,agoMin:6}),
-              person("s.gamannavar.tcs@salammobile.sa",null,124000,150000,61,{failed:1,cost:1.81,agoMin:22}),
-              person("a.pandey.tcs@salammobile.sa",null,41200,40000,88,{blocked:4,agoMin:35}),
-              person("m.kudire.tcs@salammobile.sa",null,38400,150000,37,{agoMin:64}),
-              person("r.kummari.tcs@salammobile.sa",null,12900,150000,14,{agoMin:210}) ],
+      users:[ person("y.yahmed.sns@salam.sa",{name:"Yosri Yahmed",role_label:"Super admin",team:"Digital Ops",open_held:1,acked_24h:6,acked_7d:31,avg_ack_min_7d:9},96000,150000,143,{failed:2,agoMin:6}),
+              person("s.gamannavar.tcs@salammobile.sa",{name:"Shivanand Gamannavar",role_label:"L2 Digital",team:"Digital Ops",open_held:1,acked_24h:9,acked_7d:44,avg_ack_min_7d:4},124000,150000,61,{failed:1,cost:1.81,agoMin:22}),
+              person("a.pandey.tcs@salammobile.sa",{name:"Akshay Pandey",role_label:"L2 Digital",team:"Digital Ops",open_held:1,acked_24h:3,acked_7d:18,avg_ack_min_7d:17},41200,40000,88,{blocked:4,agoMin:35}),
+              person("m.kudire.tcs@salammobile.sa",{name:"Mahesh Kudire",role_label:"L1 Digital",team:"Digital Ops",open_held:0,acked_24h:4,acked_7d:21,avg_ack_min_7d:12},38400,150000,37,{agoMin:64}),
+              person("r.kummari.tcs@salammobile.sa",{name:"Ravi Kummari",role_label:"L1 Digital",team:"Digital Ops",open_held:0,acked_24h:1,acked_7d:7,avg_ack_min_7d:22},12900,150000,14,{agoMin:210}) ],
       agents:[ { subject:"salam-agent-incident", tokens:Math.round(sum*0.42), today:312000, cap:600000, pct:0.52, calls:940, failed:6, blocked:0, cost:0, last_at:new Date(Date.now()-3*60000).toISOString() },
                { subject:"salam-agent-log", tokens:Math.round(sum*0.26), today:176000, cap:600000, pct:0.29, calls:410, failed:0, blocked:0, cost:0, last_at:new Date(Date.now()-11*60000).toISOString() } ],
       byPurpose:[ {purpose:"agent-incident.triage",tokens:Math.round(sum*0.42),calls:940,avg_ms:4200},
@@ -510,7 +520,7 @@
         <td><a href="#${r.segment==="fixed"?"fixed-alerts":"alerts"}?id=${r.alert_id}" style="color:var(--green);font-weight:700;text-decoration:none">#${r.alert_id}</a> <span class="ag-chip ${r.severity==="P1"?"tech":r.severity==="P2"?"a":""}">${esc(r.severity||"")}</span><div class="ag-sub" style="max-width:220px">${esc(r.name||r.rule_key||"")}</div></td>
         <td><span class="ag-chip ${r.kind==="duplicate"?"a":r.kind==="flapping"?"tech":"g"}">${esc(r.kind)}</span>${r.duplicate_of?`<div class="ag-sub">of #${r.duplicate_of}</div>`:""}${r.applied&&Object.keys(r.applied).length?`<div class="ag-sub">policy: ${esc(JSON.stringify(r.applied))}</div>`:""}</td>
         <td style="max-width:340px">${esc(r.probable_cause||"—")}${r.impact?`<div class="ag-sub">${esc(r.impact)}</div>`:""}</td><td>${esc(r.suggested_team||"—")}</td><td style="max-width:260px">${esc(r.suggested_action||"—")}</td><td>${r.confidence!=null?pct(r.confidence*100):"—"}${r.priority_hint?`<div class="ag-sub">${esc(r.priority_hint)}</div>`:""}</td>
-        <td class="ag-sub">${n(r.similar_30d)}× / 30 d${r.median_life_min!=null?`<br>median ${r.median_life_min} min`:""}</td><td class="ag-sub">${esc(r.alert_status||"")}${r.ack_by?`<br>ack ${esc(String(r.ack_by).split("@")[0])}`:""}${r.team?`<br>team ${esc(r.team)}`:""}</td><td class="ag-sub">${md(r.created_at)}<br>${n(r.ms)} ms</td>
+        <td class="ag-sub">${n(r.similar_30d)}× / 30 d${r.median_life_min!=null?`<br>median ${r.median_life_min} min`:""}</td><td class="ag-sub">${esc(r.alert_status||"")}${r.ack_by?`<br>ack ${window.PERSON?PERSON.inline(r.ack_by):esc(String(r.ack_by).split("@")[0])}`:""}${r.team?`<br>team ${esc(r.team)}`:""}</td><td class="ag-sub">${md(r.created_at)}<br>${n(r.ms)} ms</td>
         <td style="white-space:nowrap"><button class="ag-btn sm ${r.helpful===true?"":"o"}" data-fb="1" data-id="${r.id}" title="Helpful">👍</button> <button class="ag-btn sm ${r.helpful===false?"":"o"}" data-fb="0" data-id="${r.id}" title="Not helpful">👎</button></td></tr>`).join("")}</tbody></table></div>`;
       w.querySelectorAll("[data-fb]").forEach(bt=>bt.addEventListener("click",async()=>{ try{ await api(`/api/agents/triage/${bt.dataset.id}/feedback`,{method:"PUT",body:JSON.stringify({helpful:bt.dataset.fb==="1"})}); load(); }catch(e){ toast(e.message); } }));
     }
@@ -545,9 +555,9 @@
   }
 
   async function tabCalls(b){
-    let rows=[]; try{ rows=(await api("/api/llm/calls?limit=150")).calls; }catch(e){ b.innerHTML=`<div class="sub">${esc(e.message)}</div>`; return; }
+    let rows=[]; try{ const d=await api("/api/llm/calls?limit=150"); rows=d.calls||[]; if(window.PERSON&&d.people) PERSON.merge(d.people); }catch(e){ b.innerHTML=`<div class="sub">${esc(e.message)}</div>`; return; }
     if(!rows.length){ b.innerHTML=`<div class="sub" style="padding:14px 0">No LLM calls recorded yet.</div>`; return; }
-    b.innerHTML=`<div class="ag-tablew" style="margin-top:10px"><table class="ag-table"><thead><tr><th>When</th><th>Purpose</th><th>Caller</th><th>Provider</th><th>Model</th><th>ms</th><th>OK</th><th>Prompt</th><th>Answer</th><th>Error</th></tr></thead><tbody>${rows.map(r=>`<tr><td class="ag-sub">${md(r.at)}</td><td>${esc(r.purpose)}</td><td class="ag-sub">${esc(r.caller||"")}</td><td>${esc(r.provider)}${r.fallback?' <span class="ag-chip a">fallback</span>':""}</td><td class="ag-mono">${esc(r.model||"")}</td><td>${n(r.ms)}</td><td>${r.ok?'<span class="ag-chip g">ok</span>':'<span class="ag-chip tech">fail</span>'}</td><td class="ag-sub">${n(r.prompt_chars)}</td><td class="ag-sub">${n(r.answer_chars)}</td><td class="ag-sub" style="max-width:280px">${esc(r.error||"")}</td></tr>`).join("")}</tbody></table></div>`;
+    b.innerHTML=`<div class="ag-tablew" style="margin-top:10px"><table class="ag-table"><thead><tr><th>When</th><th>Purpose</th><th>Who asked</th><th>Provider</th><th>Model</th><th>ms</th><th>OK</th><th>Prompt</th><th>Answer</th><th>Error</th></tr></thead><tbody>${rows.map(r=>`<tr><td class="ag-sub">${md(r.at)}</td><td>${esc(r.purpose)}</td><td>${(r.actor||r.caller)?(window.PERSON?PERSON.inline(r.actor||r.caller):`<span class="ag-sub">${esc(r.actor||r.caller)}</span>`):'<span class="ag-sub">—</span>'}</td><td>${esc(r.provider)}${r.fallback?' <span class="ag-chip a">fallback</span>':""}</td><td class="ag-mono">${esc(r.model||"")}</td><td>${n(r.ms)}</td><td>${r.ok?'<span class="ag-chip g">ok</span>':'<span class="ag-chip tech">fail</span>'}</td><td class="ag-sub">${n(r.prompt_chars)}</td><td class="ag-sub">${n(r.answer_chars)}</td><td class="ag-sub" style="max-width:280px">${esc(r.error||"")}</td></tr>`).join("")}</tbody></table></div>`;
   }
 
   /* ------------------------------ open ------------------------------ */

@@ -507,11 +507,13 @@
   const initials=(name,email)=>{ const n=(name||"").trim(); if(n) return n.split(/\s+/).slice(0,2).map(x=>x[0]).join("").toUpperCase(); const l=(email||"").split("@")[0]; return l.split(/[._-]/).slice(0,2).map(x=>x[0]||"").join("").toUpperCase()||"?"; };
   const prettyName=(o,email)=>{ if(o&&o.name) return o.name; const l=(email||"").split("@")[0]; return l.split(/[._-]/).filter(Boolean).map(x=>x[0].toUpperCase()+x.slice(1)).join(" "); };
   const hue=str=>{ let h=0; for(const c of String(str)) h=(h*31+c.charCodeAt(0))%360; return h; };
+  /* the person card is shared with every other screen (person.js) — this only feeds it the alerts directory */
   function personChip(email, o, sub){
     const e=String(email||"").toLowerCase(); o=o||OWNERS[e]||{};
+    if(window.PERSON) return PERSON.chip(e, { o, sub });
     const dom=e.split("@")[1]||""; const roleLine=[o.role_label, o.team].filter(Boolean).join(" · ")||(dom?dom.split(".")[0]:"");
     return `<div class="owner"><span class="oav" style="background:hsl(${hue(e)} 55% 42%)" title="${esc(e)}">${esc(initials(o.name,e))}</span>
-      <div class="oinfo"><div class="oname" title="${esc(e)}">${esc(prettyName(o,e))}${o.enabled===false?' <span class="rl" style="color:#dc2626">(disabled)</span>':''}</div>
+      <div class="oinfo"><div class="oname" title="${esc(e)}">${esc(prettyName(o,e))}${o.enabled===false?' <span class="rl" style="color:#dc2626">(blocked)</span>':''}</div>
       <div class="rl omail">${esc(e)}</div>${roleLine?`<div class="rl">${esc(roleLine)}</div>`:''}${sub||''}</div></div>`;
   }
   function ownerCell(a){
@@ -535,6 +537,7 @@
     const data = await api("/api/alerts?status="+(atab==="all"?"all":"open"));
     const allRows = data.alerts||[];
     OWNERS = data.owners||{}; NOW_SRV = data.now ? new Date(data.now) : new Date();
+    if(window.PERSON) PERSON.merge(OWNERS);        // share the richest cards we have with every other screen
     // client-side class filter (chips) — server always returns everything
     const me=meEmail(), team=myTeam(), q=AF.q.trim().toLowerCase();
     let rows = CLSFILTER.alerts==="all" ? allRows : allRows.filter(a=>a.alert_class===CLSFILTER.alerts);

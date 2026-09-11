@@ -52,8 +52,14 @@ function mount(app, { audit, requireCap, requireRoot }) {
   });
 
   app.get('/api/llm/calls', ...gate, async (req, res) => {
-    try { res.json({ calls: (await C.query(`SELECT id, at, purpose, caller, provider, model, ms, ok, fallback, prompt_chars, answer_chars, error FROM llm_calls ORDER BY at DESC LIMIT $1`, [Math.min(500, Number(req.query.limit) || 100)])).rows }); }
-    catch (e) { res.status(500).json({ error: e.message }); }
+    try {
+      const calls = (await C.query(
+        `SELECT id, at, purpose, caller, actor, provider, model, ms, ok, fallback, blocked, prompt_chars, answer_chars, tokens, error
+           FROM llm_calls ORDER BY at DESC LIMIT $1`, [Math.min(500, Number(req.query.limit) || 100)])).rows;
+      let people = {};
+      try { people = await require('./people').cards(C, calls.map(c => c.actor).filter(a => a && a.indexOf('@') > 0)); } catch (_) {}
+      res.json({ calls, people });
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   /* ---- overview ---- */

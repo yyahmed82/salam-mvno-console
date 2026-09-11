@@ -113,7 +113,7 @@
     box.innerHTML=`<table class="alerts aud-tbl"><tr><th>TIME</th><th>USER</th><th>ACTION</th><th>TARGET</th><th>IP</th><th>DEVICE</th></tr>`+
       rows.map(r=>`<tr>
         <td class="mono" style="color:var(--muted)">${fmtTime(r.at)}</td>
-        <td>${esc(r.actor||"—")}</td>
+        <td>${r.actor?(window.PERSON?PERSON.inline(r.actor):esc(r.actor)):"—"}</td>
         <td><span class="catpill" style="background:${actColor(r.action)}1f;color:${actColor(r.action)}">${esc(r.action)}</span></td>
         <td class="mono" style="font-size:11px">${esc(r.target||"—")}</td>
         <td class="mono" style="font-size:11px;color:var(--muted)">${esc(r.ip||"—")}</td>

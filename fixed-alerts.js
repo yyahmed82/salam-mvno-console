@@ -34,7 +34,7 @@
     const tabs = [["rules","Alert rules","unified engine · segment fixed"],["history","History","fired alerts · last 7d"],["prod","Prod engine (transition)","/operations-console rules & firings"]];
     host.innerHTML = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         ${tabs.map(([k,l,s])=>`<button class="pill ${sub===k?"active":""}" data-fxsub="${k}" title="${esc(s)}">${esc(l)}</button>`).join("")}
-        <span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:6px"><a href="#fixed-alerts" style="color:var(--green,#0e9f5a);font-weight:700">Open the live incident view →</a> (ack · snooze · guide · discussion · metric charts) · Fixed rules run in the SAME alert engine as MVNO (alertRunner) — metrics fixed_* read sda_ops. Edits use the shared /api/rules endpoints.</span>
+        <span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:6px">Fixed rules run in the SAME alert engine as MVNO (alertRunner) — metrics fixed_* read sda_ops. Edits use the shared /api/rules endpoints.</span>
       </div><div id="fxAlBanner"></div><div id="fxAlBody"><div style="padding:24px;text-align:center;color:var(--muted)">${window.salamLoader?window.salamLoader("Loading Fixed alerts…"):"Loading…"}</div></div>`;
     host.querySelectorAll("[data-fxsub]").forEach(b=>b.addEventListener("click",()=>{ sub=b.dataset.fxsub; render(host); }));
     try {
@@ -137,7 +137,7 @@
         ${fx.chip("RULES INVOLVED", fx.fmt(new Set(rows.map(a=>a.rule_key)).size))}</div>
       ${fx.card("Fired Fixed alerts (unified engine)", fx.tbl(["STATUS","PRI","RULE","TEAM","FIRED (KSA)","LAST SEEN","RESOLVED","OBSERVED","N","BREACHES","ACK","MESSAGE"], rows.map(a=>[
         `<b style="color:${a.status==="open"?"#dc2626":"var(--green,#0e9f5a)"}">${esc(a.status)}</b>`, sevPill(a.severity), `<b>${esc(a.name)}</b><div class="rl" style="font-size:10px;color:var(--muted)">${esc(a.rule_key)}</div>`, esc(a.team||"—"),
-        fx.ts(a.fired_at), fx.ts(a.last_seen_at), a.resolved_at?fx.ts(a.resolved_at):"—", esc(a.observed_value==null?"—":a.observed_value), esc(a.sample==null?"—":a.sample), esc(a.breach_count), esc(a.ack_by||a.assignee||"—"), `<span style="white-space:normal">${esc(a.message||"")}</span>`])), `last ${esc(h.days)} days · ack / assign on the main Alerts page`)}`;
+        fx.ts(a.fired_at), fx.ts(a.last_seen_at), a.resolved_at?fx.ts(a.resolved_at):"—", esc(a.observed_value==null?"—":a.observed_value), esc(a.sample==null?"—":a.sample), esc(a.breach_count), ((a.ack_by||a.assignee)?(window.PERSON?PERSON.inline(a.ack_by||a.assignee):esc(a.ack_by||a.assignee)):"—"), `<span style="white-space:normal">${esc(a.message||"")}</span>`])), `last ${esc(h.days)} days · ack / assign on the main Alerts page`)}`;
   }
 
   /* ---------------- Prod engine (transition) ---------------- */

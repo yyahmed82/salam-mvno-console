@@ -195,7 +195,7 @@
         <td>${t.kind==="enhancement"?"💡 Suggestion":"🐞 Issue"}</td>
         <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.title)}${t.file_count?` <span class="sub">📎${t.file_count}</span>`:""}</td>
         <td>${statusPill(t.status)}</td><td>${esc(t.priority)}</td>
-        <td>${esc(t.created_by||"—")}</td><td style="white-space:nowrap">${esc(ksaT(t.created_at))}</td>
+        <td>${t.created_by?(window.PERSON?PERSON.inline(t.created_by):esc(t.created_by)):"—"}</td><td style="white-space:nowrap">${esc(ksaT(t.created_at))}</td>
         <td style="text-align:right;color:var(--muted)">›</td></tr>`).join("")
       :`<tr><td colspan="9" class="sub" style="padding:14px 8px">No tickets match this filter.</td></tr>`)
       +`</table></div>`;
@@ -235,7 +235,7 @@
     let h=`<div class="drawer-hd"><span style="font-family:var(--mono);font-weight:700">${esc(t.ref)}</span> ${statusPill(t.status)}<span class="x" id="tdX">×</span></div>
       <div style="padding:16px 18px">
         <div style="font-size:16px;font-weight:700">${t.kind==="enhancement"?"💡 ":"🐞 "}${esc(t.title)}</div>
-        <div class="sub" style="margin-top:4px">${segPill(t.segment)} · ${esc(KIND_LABEL[t.kind]||t.kind)} · raised by <b>${esc(t.created_by||"—")}</b> · ${esc(ksaT(t.created_at))} KSA</div>
+        <div class="sub" style="margin-top:4px">${segPill(t.segment)} · ${esc(KIND_LABEL[t.kind]||t.kind)} · raised by ${t.created_by?(window.PERSON?PERSON.inline(t.created_by):`<b>${esc(t.created_by)}</b>`):"—"} · ${esc(ksaT(t.created_at))} KSA</div>
         ${t.description?`<div style="${lbl}">DESCRIPTION</div><div style="white-space:pre-wrap;font-size:13px;line-height:1.55;background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">${esc(t.description)}</div>`:""}`;
     if((t.files||[]).length){
       h+=`<div style="${lbl}">SCREENSHOTS (${t.files.length})</div><div id="tdImgs" style="display:flex;gap:8px;flex-wrap:wrap"></div>`;
