@@ -38,6 +38,30 @@
     const c=host.querySelector("#fdgClose"); if(c) c.onclick=()=>{ st.slug=null; history.replaceState(null,"","#fixed?tab=diagrams"); render(host,fx); };
   }
 
+  /* SOLO PAGES (11 Sep 2026) — Journeys and BSS Topology were reachable only by opening the Diagrams
+   * gallery and picking a card, and when they were nav items sharing tab=diagrams all three highlighted
+   * at once. They are their own Fixed pages now: same viewer, one diagram, no gallery. */
+  async function solo(host, fx, slug, heading, blurb){
+    const {esc}=fx;
+    host.innerHTML=`<div style="padding:24px;text-align:center;color:var(--muted)">Loading…</div>`;
+    let list; try{ list=(await fx.api("/api/fixed/diagrams/list")).diagrams||[]; }
+    catch(e){ host.innerHTML=`<div class="albanner" style="border-left:4px solid #dc2626;padding:14px 16px"><b>Unavailable</b> — ${esc(e.message)}</div>`; return; }
+    const d=list.find(x=>x.slug===slug);
+    if(!d){ host.innerHTML=`<div class="albanner" style="padding:14px 16px">This page is not registered on the server yet.</div>`; return; }
+    const u=`${base()}/${d.url}?theme=${theme()}`;
+    host.innerHTML=`<div style="margin-bottom:12px"><h3 style="margin:0 0 3px;font-size:15px">${esc(heading)}</h3>
+        <div class="rl" style="font-size:11px;color:var(--muted);max-width:820px">${esc(blurb)}</div></div>
+      <div class="topo-card" style="padding:0;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap">
+          <b style="font-size:12.5px">${esc(d.title)}</b><span class="rl" style="font-size:10.5px;color:var(--muted)">${esc(d.tagline||"")}</span>
+          <span style="margin-left:auto"><a class="btn" href="${esc(u)}" target="_blank" rel="noreferrer" style="font-size:11px;padding:4px 10px;text-decoration:none">Open in new tab ↗</a></span></div>
+        <iframe src="${esc(u)}" title="${esc(d.title)}" style="width:100%;height:80vh;min-height:560px;border:0;display:block;background:${theme()==="dark"?"#05070d":"#fff"}"></iframe></div>`;
+  }
+
   window.FIXED_PAGES=window.FIXED_PAGES||{};
   window.FIXED_PAGES.diagrams={ label:"Diagrams", sub:"payments · journeys", render:(host,fx)=>render(host,fx||FX()) };
+  window.FIXED_PAGES.journeys={ label:"Journeys", sub:"dealer & QR journeys", render:(host,fx)=>solo(host, fx||FX(), "diagram-journeys-explorer",
+    "Every journey, end to end", "All dealer (FTTH / FTTB / 5G / Lead) and QR (e-purchase) journeys — step through each one, success or failure, with the exact API calls and what stops the order at every step.") };
+  window.FIXED_PAGES.bsstopo={ label:"BSS Topology", sub:"digital / BSS HLD", render:(host,fx)=>solo(host, fx||FX(), "diagram-fixed-bss-hld",
+    "The whole Fixed estate, one map", "IMPACT B2C Release 5 and 6 view: every channel, the digital edge, the 3Scale/OSB integration hub, the Oracle BSS core and every OSS, network and external partner. Click a node for its role, servers and flows.") };
 })();

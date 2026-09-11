@@ -11,7 +11,10 @@
    * Shared helpers live on window.FX (api, esc, ts, fmt, tbl, card, chip, bar, state, qs). Keys and order below. */
   const TAB_ORDER=[["overview","Overview","KPIs · funnel · dealers"],["epurchase","E-purchase","web / QR channel · journeys · payments · findings"],["salamhome","Salam Home","app channel · buy + manage-line · payments · findings"],["map","SDA map","dealers · pins · trace"],["qr","QR codes","referral orders · consent"],
     ["dash","Reports","KPIs · trends · dealers & QR"],["errors","Errors","error control board"],["alerts","Alerts","rules · history"],
-    ["playbook","Playbook","SLA / OLA / action plans"],["diagrams","Diagrams","payments · journeys"],["report","KPI digest","branded e-mail report"]];
+    ["playbook","Playbook","SLA / OLA / action plans"],["diagrams","Diagrams","payments · journeys"],
+    /* own pages since 11 Sep 2026 — they used to be cards inside Diagrams */
+    ["journeys","Journeys","every dealer & QR journey, step by step"],["bsstopo","BSS Topology","digital / BSS HLD — channels → 3Scale/OSB → Oracle BSS"],
+    ["report","KPI digest","branded e-mail report"]];
   window.FIXED_PAGES = window.FIXED_PAGES || {};
   const $=s=>document.querySelector(s);
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
