@@ -47,6 +47,9 @@
   .ag-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:8px} .ag-form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
   .ag-form input,.ag-form select{width:100%;box-sizing:border-box}
   .ag-note{font-size:12px;color:var(--muted);line-height:1.5}
+  .ag-tbl{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px}
+  .ag-tbl th{text-align:left;font-size:9.5px;letter-spacing:.08em;color:var(--muted);padding:4px 8px;border-bottom:1px solid var(--line)}
+  .ag-tbl td{padding:4px 8px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink)}
   .ag-rules{display:flex;flex-wrap:wrap;gap:6px;max-height:220px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--card2)}
   .ag-rules label{display:inline-flex;gap:5px;align-items:center;font-size:12px;padding:3px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer}
   .ag-rules label.on{border-color:var(--green);background:var(--green-bg)}
@@ -83,7 +86,7 @@
     h.innerHTML=`<div class="ag-wrap">
       <div class="panel"><h2>LLM layer</h2><div class="sub">Order: <b>${esc(L.order||"primary-first")}</b> · every call is audited (llm_calls) · a failed or slow primary fails over automatically.</div>
         <div class="ag-grid" style="margin-top:10px">${prov("Primary",L.primary,hp)}${prov("Fallback",L.fallback,hf)}<div class="ag-card"><h3>Calls · 24 h</h3><div class="ag-sub" style="font-size:12.5px;color:var(--ink)">${calls}</div>
-          <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><button class="ag-btn sm o" id="agProbe">Probe</button><button class="ag-btn sm o" id="agTest">Test call</button><button class="ag-btn sm o" id="agCfgT">Configure</button></div></div></div>
+          <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><button class="ag-btn sm o" id="agProbe">Probe</button><button class="ag-btn sm o" id="agTest">Test call</button><button class="ag-btn sm o" id="agSelf" title="Four probes of growing size — tells you whether an empty answer is the context window, the JSON grammar, or a model that is not running">Self-test</button><button class="ag-btn sm o" id="agCfgT">Configure</button></div><div id="agSelfOut" style="margin-top:8px"></div></div></div></div>
         <div id="agCfg" hidden class="ag-detail"></div></div>
       <div class="ag-grid">
         ${agent("Agent 1 · Log intelligence",A.log||{alive:false,d1:{runs:0,ok:0}},`${n(S.total)} signatures · <b>${n(S.new24)}</b> new 24 h · ${n(S.events24)} events 24 h · ${n(S.tech24)} technical`)}
@@ -99,6 +102,19 @@
     h.querySelectorAll("[data-run]").forEach(b=>b.addEventListener("click",async()=>{ const w=b.dataset.run; if(w==="report"&&!confirm("Build the daily log report now and mail it to the Mail-report audience?")) return;
       b.disabled=true; b.textContent="Running…"; try{ const r=await api("/api/agents/run/"+w,{method:"POST",body:"{}"}); toast(w+" done: "+JSON.stringify(r.result).slice(0,140)); render(); }catch(e){ toast("Failed: "+e.message); b.disabled=false; } }));
     const probe=$a("#agProbe"); if(probe) probe.addEventListener("click",async()=>{ probe.disabled=true; try{ await api("/api/llm/probe",{method:"POST",body:"{}"}); render(); }catch(e){ toast(e.message); probe.disabled=false; } });
+    /* SELF-TEST (11 Sep 2026): why the agents get "no answer" — context window vs JSON grammar vs model not running */
+    const self=$a("#agSelf"); if(self) self.addEventListener("click",async()=>{
+      self.disabled=true; const old=self.textContent; self.textContent="Probing…";
+      try{ const r=await api("/api/llm/selftest",{method:"POST",body:JSON.stringify({provider:"primary"})});
+        const host=$a("#agSelfOut");
+        if(host) host.innerHTML = !r.configured ? `<div class="ag-note">No primary model configured.</div>`
+          : `<div class="ag-note" style="border-left:3px solid ${r.probes.every(x=>x.ok)?"var(--green,#0e9f5a)":"#d97706"};padding-left:10px">
+              <b>${esc(r.model||"")}</b> · ${esc(r.url||"")} · prompt cap ${r.prompt_cap} chars<br><b>${esc(r.verdict)}</b>
+              <table class="ag-tbl" style="margin-top:6px"><tr><th>PROBE</th><th>ANSWERED</th><th>MS</th><th>DETAIL</th></tr>
+              ${r.probes.map(x=>`<tr><td>${esc(x.name)}</td><td style="color:${x.ok?"var(--green,#0e9f5a)":"#dc2626"};font-weight:800">${x.ok?"yes":"no"}</td><td>${x.ms}</td><td style="max-width:420px;word-break:break-word">${esc(x.error||x.answer||"")}</td></tr>`).join("")}</table></div>`;
+        else toast(r.verdict||"done");
+      }catch(e){ toast(e.message); }
+      self.disabled=false; self.textContent=old; });
     const test=$a("#agTest"); if(test) test.addEventListener("click",async()=>{ test.disabled=true; test.textContent="Asking…"; try{ const r=await api("/api/llm/test",{method:"POST",body:"{}"}); toast(`${r.provider} · ${r.model} · ${r.ms} ms${r.fallback?" (fallback)":""}: ${r.text}`); }catch(e){ toast(e.message); } test.disabled=false; test.textContent="Test call"; });
     const cfgT=$a("#agCfgT"); if(cfgT) cfgT.addEventListener("click",()=>{ const c=$a("#agCfg"); c.hidden=!c.hidden; if(!c.hidden) renderCfg(); });
     renderTab();

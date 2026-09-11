@@ -114,7 +114,7 @@ Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${Str
   const hist = `${ev.hist.n || 0}× in 30 d${ev.hist.med_min != null ? `, median ${ev.hist.med_min} min` : ''}`;
   const body = j
     ? `🤖 Agent triage (${(Number(j.confidence) * 100 || 0).toFixed(0)} % · ${j.priority_hint || a.severity}${j.is_noise ? ' · likely noise' : ''}${flapping ? ' · flapping' : ''})\nCause: ${j.probable_cause || '-'}\nImpact: ${j.impact || '-'}\nTeam: ${team || '-'}${applied.team ? ' (assigned by policy)' : ''}\nFirst action: ${j.suggested_action || '-'}\nHistory: ${hist}${ev.corr.length ? ` · fired with ${ev.corr.map(c => '#' + c.id).join(' ')}` : ''}`
-    : `🤖 Agent triage (evidence only — model unavailable)\nHistory: ${hist}${ev.lastClose ? `\nLast human note: ${String(ev.lastClose).slice(0, 160)}` : ''}${ev.corr.length ? `\nFired with ${ev.corr.map(c => '#' + c.id).join(' ')}` : ''}`;
+    : `🤖 Agent triage · measured evidence (the on-prem model gave no answer — Settings › Agents › Self-test says why)\nHistory of this rule: ${hist}${ev.hist.usual_person ? ` · usually handled by ${ev.hist.usual_person}` : ''}${ev.hist.acked != null ? ` · ${ev.hist.acked} acknowledged` : ''}\nOwner team on the rule: ${ev.rule.team || a.team || '-'}${ev.lastClose ? `\nLast human note on this rule: ${String(ev.lastClose).slice(0, 160)}` : ''}${ev.corr.length ? `\nFired within ±10 min of: ${ev.corr.map(c => `#${c.id} ${c.severity} ${c.name}`).join(' · ')}` : ''}${ev.sigs.length ? `\nBusiest backend signatures (2 h): ${ev.sigs.slice(0, 3).map(sg => `${sg.endpoint || sg.source} ${sg.code || ''} ×${sg.last_24h}`).join(' · ')}` : ''}`;
   await comment(a.id, body);
   return { kind: flapping ? 'flapping' : 'triage', model: !!j, applied };
 }

@@ -62,6 +62,29 @@ async function ensureSchema() {
   await db.console.query(`CREATE INDEX IF NOT EXISTS idx_llm_calls_at ON llm_calls (at DESC)`).catch(() => {});
 }
 
+/* ---- prompt budget (11 Sep 2026) ------------------------------------------------------------------------------
+ * Ollama does NOT error when a prompt is longer than num_ctx — it silently truncates, and llama3.1 then often emits
+ * end-of-text immediately: HTTP 200, 0 characters, ~250 ms. That is exactly the "model unavailable" the agents kept
+ * writing on incidents. Two guards: never send more than PROMPT_CHARS (~4 chars ≈ 1 token, so 9 000 ≈ 2 300 tokens)
+ * and give Ollama a context window with real headroom (8 192). Anything longer is cut in the MIDDLE, keeping the head
+ * (what the incident is) and the tail (the question / output contract) — the two parts the answer depends on. */
+const PROMPT_CHARS = Number(process.env.LLM_PROMPT_CHARS) || 9000;
+function budget(messages, cap = PROMPT_CHARS) {
+  const out = messages.map(m => ({ ...m }));
+  let total = out.reduce((s, m) => s + String(m.content || '').length, 0);
+  if (total <= cap) return { messages: out, trimmed: 0 };
+  // trim the longest message first, repeatedly, until we fit
+  let trimmed = 0;
+  for (let guard = 0; guard < 20 && total > cap; guard++) {
+    const i = out.reduce((bi, m, idx) => String(m.content || '').length > String(out[bi].content || '').length ? idx : bi, 0);
+    const t = String(out[i].content || ''); const over = total - cap;
+    const keep = Math.max(400, t.length - over - 60); const head = Math.ceil(keep * 0.65), tail = keep - head;
+    out[i].content = t.slice(0, head) + `\n…[${t.length - keep} characters trimmed to fit the model context]…\n` + t.slice(t.length - tail);
+    trimmed += t.length - String(out[i].content).length; total = out.reduce((s, m) => s + String(m.content || '').length, 0);
+  }
+  return { messages: out, trimmed };
+}
+
 /* ---- one request to one provider ---- */
 async function callProvider(p, { messages, maxTokens, temperature, numCtx, json }) {
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), p.timeoutMs || 75000);
@@ -74,19 +97,38 @@ async function callProvider(p, { messages, maxTokens, temperature, numCtx, json 
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
       const j = await r.json(); return ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '').trim();
     }
-    const body = { model: p.model, messages, stream: false, keep_alive: '30m', options: { temperature: temperature ?? 0.2, num_predict: maxTokens || 220, num_ctx: numCtx || 4096 } };
-    /* Ollama's format:'json' grammar makes llama3.1 emit end-of-text immediately on some prompts (200 OK, 0 chars,
-     * ~250 ms — seen on 152, 10 Sep 2026). So: try with the grammar, and when the answer is empty retry ONCE without it —
-     * the prompt already asks for a JSON object and chat() extracts the first {…} block. */
-    const once = async withFormat => {
-      const b = withFormat ? { ...body, format: 'json' } : body;
+    /* EMPTY-ANSWER LADDER (11 Sep 2026). Two known llama3.1 behaviours both return HTTP 200 with 0 characters:
+     *   a) format:'json' grammar → immediate end-of-text on some prompts (seen on 152, 10 Sep)
+     *   b) prompt longer than num_ctx → silent truncation → immediate end-of-text
+     * So we escalate instead of giving up: grammar → no grammar → bigger context + more tokens + the system prompt
+     * folded into the user turn. If every attempt comes back empty we THROW, so the reason is recorded in llm_calls
+     * and shown on Settings › Agents — never a silent "" that the agents report as "model unavailable". */
+    const base = budget(messages).messages;
+    const merged = () => {
+      const sys = base.filter(m => m.role === 'system').map(m => m.content).join('\n\n');
+      const rest = base.filter(m => m.role !== 'system');
+      if (!sys || !rest.length) return base;
+      return [{ ...rest[0], content: `${sys}\n\n${rest[0].content}` }, ...rest.slice(1)];
+    };
+    const attempt = async (o) => {
+      const b = { model: p.model, stream: false, keep_alive: '30m', messages: o.merge ? merged() : base,
+        options: { temperature: temperature ?? 0.2, num_predict: o.predict || maxTokens || 220, num_ctx: o.ctx || numCtx || 8192 } };
+      if (o.format) b.format = 'json';
       const r = await fetch(`${p.url}/api/chat`, { method: 'POST', headers, body: JSON.stringify(b), signal: ctl.signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
-      const j = await r.json(); return ((j.message && j.message.content) || '').trim();
+      const j = await r.json(); return { text: ((j.message && j.message.content) || '').trim(), eval_count: j.eval_count, prompt_eval_count: j.prompt_eval_count, done_reason: j.done_reason };
     };
-    let text = await once(!!json);
-    if (json && !text) { console.warn(`[LLM] ${p.model}: empty answer with format=json — retrying without the grammar`); text = await once(false); }
-    return text;
+    const ladder = json
+      ? [{ format: true, label: 'json grammar' }, { format: false, label: 'no grammar' }, { format: false, merge: true, ctx: 16384, predict: Math.max(512, maxTokens || 0), label: 'no grammar · ctx 16k · system merged' }]
+      : [{ label: 'plain' }, { merge: true, ctx: 16384, predict: Math.max(512, maxTokens || 0), label: 'ctx 16k · system merged' }];
+    let last = null, tried = [];
+    for (const step of ladder) {
+      last = await attempt(step); tried.push(`${step.label}${last.text ? ' ✓' : ' ∅'}`);
+      if (last.text) { if (tried.length > 1) console.warn(`[LLM] ${p.model}: recovered on "${step.label}" (${tried.join(' → ')})`); return last.text; }
+      console.warn(`[LLM] ${p.model}: empty answer on "${step.label}" (prompt ${last.prompt_eval_count ?? '?'} tok, done_reason ${last.done_reason || '?'}) — escalating`);
+    }
+    const chars = base.reduce((s, m) => s + String(m.content || '').length, 0);
+    throw new Error(`empty answer after ${ladder.length} attempts (${tried.join(' → ')}); prompt ${chars} chars / ${last && last.prompt_eval_count != null ? last.prompt_eval_count + ' tokens' : 'unknown tokens'}, done_reason ${last && last.done_reason || '?'} — the model loads but generates nothing: check \`ollama ps\` and the model's context size`);
   } finally { clearTimeout(timer); }
 }
 
@@ -111,7 +153,12 @@ async function chat(opts = {}) {
     if (!p || !p.url) continue;
     const t0 = Date.now();
     try {
-      const text = await callProvider(p, opts);
+      /* ROOT CAUSE of the agents' silent "model unavailable" (found 11 Sep 2026): chat() builds `messages` from
+       * system+user, but passed the ORIGINAL opts to callProvider — so callers that use { system, user } (both agents)
+       * sent NO messages field at all. Ollama answers that with HTTP 200 and an empty string in ~250 ms, exactly the
+       * symptom seen on 152 since the agents went live. Callers that pass `messages` themselves (Yusr chat / warm)
+       * were never affected, which is why the model looked healthy. Always send the built messages. */
+      const text = await callProvider(p, { ...opts, messages });
       const out = { text, provider: name, kind: p.kind, model: p.model, ms: Date.now() - t0, fallback: i > 0 };
       if (opts.json) { out.json = extractJson(text); if (!out.json) out.jsonError = text ? 'no JSON object in answer' : 'empty answer'; }
       db.console.query(`INSERT INTO llm_calls (purpose, caller, provider, model, ms, ok, fallback, prompt_chars, answer_chars) VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8)`,
@@ -126,6 +173,37 @@ async function chat(opts = {}) {
     i++;
   }
   const err = new Error(`LLM unavailable: ${lastErr ? (lastErr.name === 'AbortError' ? 'timeout' : lastErr.message) : 'no provider configured'}`); err.llm = true; throw err;
+}
+
+/* ---- SELF-TEST (11 Sep 2026): the one click that tells you WHY the agents get no answer ------------------------
+ * Sends the same provider four probes of growing size (and the JSON grammar on/off) and reports which one first
+ * comes back empty. A failure at "long" only = the context window; a failure with the grammar but not without it =
+ * the llama3.1 grammar bug; everything empty = the model is not generating (ollama ps / model pull). */
+async function selftest(which = 'primary') {
+  const cfg = await getConfig();
+  const p = which === 'fallback' ? cfg.fallback : cfg.primary;
+  if (!p || !p.url) return { configured: false, provider: which };
+  const filler = (n) => ('The Semati provider returned 715 Service is not available for MSISDN 9665xxxxxxx on the login endpoint. ').repeat(Math.ceil(n / 100)).slice(0, n);
+  const probes = [
+    { name: 'tiny', json: false, chars: 40 }, { name: 'tiny · json', json: true, chars: 40 },
+    { name: 'medium (1 k)', json: true, chars: 1000 }, { name: 'agent-size (6 k)', json: true, chars: 6000 },
+    { name: 'oversize (20 k → trimmed)', json: true, chars: 20000 },
+  ];
+  const out = [];
+  for (const pr of probes) {
+    const t0 = Date.now();
+    const messages = [{ role: 'system', content: 'You are an operations assistant. Answer with a JSON object {"ok":true,"note":"<5 words>"}.' },
+      { role: 'user', content: `${pr.chars > 100 ? filler(pr.chars) + '\n' : ''}Reply with the JSON object now.` }];
+    try { const text = await callProvider(p, { messages, json: pr.json, maxTokens: 60, numCtx: 8192 });
+      out.push({ ...pr, ok: !!text, ms: Date.now() - t0, answer: String(text).slice(0, 120) }); }
+    catch (e) { out.push({ ...pr, ok: false, ms: Date.now() - t0, error: String(e.message || e).slice(0, 300) }); }
+  }
+  const firstBad = out.find(o => !o.ok);
+  const verdict = !firstBad ? 'healthy — every probe answered, including an agent-sized prompt'
+    : out[0].ok === false ? 'the model answers nothing at all — check `ollama ps` / `ollama run ' + p.model + '` on the host'
+    : firstBad.name.startsWith('tiny · json') ? 'the JSON grammar (format:json) breaks this model — the console already retries without it'
+    : 'prompts stop being answered from "' + firstBad.name + '" — the context window is too small; raise num_ctx (OLLAMA_NUM_CTX / Modelfile) or lower LLM_PROMPT_CHARS';
+  return { configured: true, provider: which, kind: p.kind, model: p.model, url: p.url, prompt_cap: PROMPT_CHARS, probes: out, verdict };
 }
 
 /* ---- health ---- */
@@ -153,4 +231,4 @@ async function status() {
 let timer = null;
 function start() { if (timer) clearInterval(timer); probe().catch(() => {}); timer = setInterval(() => probe().catch(() => {}), 60000); if (timer.unref) timer.unref(); return { armed: true }; }
 
-module.exports = { chat, getConfig, setConfig, probe, status, start, ensureSchema };
+module.exports = { selftest, budget, chat, getConfig, setConfig, probe, status, start, ensureSchema };

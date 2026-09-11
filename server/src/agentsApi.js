@@ -16,6 +16,11 @@ function mount(app, { audit, requireCap, requireRoot }) {
   /* ---- LLM layer ---- */
   app.get('/api/llm/status', ...gate, async (req, res) => { try { res.json(await llm.status()); } catch (e) { res.status(500).json({ error: e.message }); } });
   app.post('/api/llm/probe', ...gate, async (req, res) => { try { res.json(await llm.probe()); } catch (e) { res.status(500).json({ error: e.message }); } });
+  /* why does the model answer nothing? four probes of growing size → the verdict (context / grammar / not running) */
+  app.post('/api/llm/selftest', ...gate, async (req, res) => {
+    try { res.json(await llm.selftest((req.body && req.body.provider) === 'fallback' ? 'fallback' : 'primary')); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
   app.put('/api/llm/config', ...gate, async (req, res) => {
     try {
       const b = req.body || {}; const patch = {};
