@@ -1129,6 +1129,25 @@
    * One row per console-user action, in plain words, with the exact before → after for rule edits.
    * Filters (user / kind / period / free text) are server-side; XLSX export carries a per-user summary. */
   const ACT={days:30,user:"",action:"all",q:""};
+  /* GIT-STYLE DIFF (11 Sep 2026): every field the action changed, old value in red, new value in green.
+   * Short values sit on one line (field · old → new); long ones (runbook, description, JSON) stack as −/+ blocks. */
+  const dv = v => (v===null||v===undefined||v==="") ? "∅" : (typeof v==="object" ? JSON.stringify(v) : String(v));
+  const clip = (s0,n) => s0.length>n ? s0.slice(0,n)+"…" : s0;
+  function diffRow(c){
+    const from=dv(c.from), to=dv(c.to), k=esc(c.label||c.field);
+    if(from.length>44||to.length>44||/\n/.test(from+to))
+      return `<div class="dif blk"><div class="difk">${k}</div><div class="difo">− ${esc(clip(from,300))}</div><div class="difn">+ ${esc(clip(to,300))}</div></div>`;
+    return `<div class="dif"><span class="difk">${k}</span><span class="difo">${esc(from)}</span><span class="difa">→</span><span class="difn">${esc(to)}</span></div>`;
+  }
+  function detailHtml(r){
+    const ch=r.changes||[];
+    if(!ch.length) return `<span class="det">${esc(r.what||"—")}</span>`;
+    const head=ch.slice(0,4), rest=ch.slice(4);
+    return `<div class="difwrap">${head.map(diffRow).join("")}`
+      +(rest.length?`<details class="difmore"><summary>+ ${rest.length} more field${rest.length>1?"s":""}</summary>${rest.map(diffRow).join("")}</details>`:"")
+      +(r.first_record?`<div class="rl" style="margin-top:3px">first value recorded for this setting — nothing earlier to compare with</div>`:"")
+      +`</div>`;
+  }
   async function renderActivity(){
     const b=$("#alBody");
     b.innerHTML=window.salamLoader?window.salamLoader("Loading activity…"):"Loading…";
@@ -1159,7 +1178,7 @@
       <td class="mono" style="color:var(--muted);white-space:nowrap">${esc(r.at_ksa)}</td>
       <td><b>${esc(r.actor_short)}</b>${r.role?`<div class="rl">${esc(r.role)}</div>`:""}</td>
       <td style="font-weight:700">${esc(r.label)}</td>
-      <td class="mono" style="font-size:11.5px;max-width:430px;word-break:break-word">${esc(r.what||"—")}</td>
+      <td class="detcell">${detailHtml(r)}</td>
       <td style="max-width:230px">${r.scope==="incident"?`<a href="#${SEG==="fixed"?"fixed-alerts":"alerts"}?id=${r.target_id}" style="color:var(--green);text-decoration:none">${esc(r.target_name)}</a>`:r.scope==="rule"?`<button class="pill" data-achist="${esc(String(r.target_id))}" style="padding:2px 8px">${esc(r.target_name)}</button>`:`<span class="rl">console-wide</span>`}${r.severity?` <span style="color:${sevCol(r.severity)};font-weight:700">${esc(r.severity)}</span>`:""}</td>
       <td>${scopePill(r.scope)}</td></tr>`).join("")+`</table>`;
     b.innerHTML=h;
@@ -1190,7 +1209,7 @@
       <td class="mono" style="color:var(--muted);white-space:nowrap">${window.KT?KT.dt(r.at):esc(r.at)}</td><td>${esc((r.actor||'—').split('@')[0])}</td>
       <td><span class="mono" style="color:${r.action==='disable'?'#b91c1c':r.action==='enable'||r.action==='create'?'var(--green)':'#2563eb'};font-weight:700">${esc(r.action)}</span></td>
       <td><button class="pill" data-hist="${r.rule_id}" style="padding:2px 8px">${esc(r.name||r.rule_key)}</button></td>
-      <td class="mono" style="font-size:11.5px">${Object.entries(r.changes||{}).slice(0,6).map(([k,v])=>`${esc(k)}: <span style="color:#b91c1c">${fmtV(v.from)}</span> → <span style="color:var(--green)">${fmtV(v.to)}</span>`).join(" · ")}${Object.keys(r.changes||{}).length>6?` · +${Object.keys(r.changes).length-6} more`:''}</td></tr>`).join("")+`</table>`;
+      <td class="detcell"><div class="difwrap">${Object.entries(r.changes||{}).slice(0,4).map(([k,v])=>diffRow({field:k,from:v.from,to:v.to})).join("")}${Object.keys(r.changes||{}).length>4?`<details class="difmore"><summary>+ ${Object.keys(r.changes).length-4} more field(s)</summary>${Object.entries(r.changes).slice(4).map(([k,v])=>diffRow({field:k,from:v.from,to:v.to})).join("")}</details>`:''}</div></td></tr>`).join("")+`</table>`;
     box.innerHTML=h;
     box.querySelectorAll("[data-hist]").forEach(b=>b.addEventListener("click",()=>{ const rid=b.dataset.hist; const r=rows.find(x=>String(x.rule_id)===rid); openHistory(rid,{name:r&&r.name}); }));
   }
@@ -1365,7 +1384,7 @@
     if(!edits.length) h+=`<div class="okbox">No edits recorded since change tracking started (11 Sep 2026).${changes.length?` ${changes.length} earlier edit(s) exist in the audit log below.`:''}</div>`;
     else h+=edits.map(e=>`<div style="border:1px solid var(--line);border-left:3px solid ${e.action==='create'?'var(--green)':e.action==='disable'?'#dc2626':e.action==='enable'?'var(--green)':'#2563eb'};border-radius:8px;padding:8px 10px;margin:6px 0">
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline"><b>${esc(e.action)}</b><span>${esc((e.actor||'—').split('@')[0])}</span><span class="mono rl">${window.KT?KT.dt(e.at):esc(e.at)} KSA · ${timeAgo(e.at)}</span></div>
-        <table class="alerts" style="margin-top:6px"><tr><th>FIELD</th><th>FROM</th><th>TO</th></tr>${Object.entries(e.changes||{}).map(([k,v])=>`<tr><td class="mono">${esc(k)}</td><td class="mono" style="color:#b91c1c;max-width:260px;word-break:break-word">${fmtV(v.from)}</td><td class="mono" style="color:var(--green);max-width:260px;word-break:break-word">${fmtV(v.to)}</td></tr>`).join("")}</table></div>`).join("");
+        <div class="difwrap" style="margin-top:6px">${Object.entries(e.changes||{}).map(([k,v])=>diffRow({field:k,from:v.from,to:v.to})).join("")}</div></div>`).join("");
     if(changes.length){ h+=`<h5 style="margin:16px 0 6px">AUDIT LOG (${changes.length})</h5><table class="alerts"><tr><th>WHEN</th><th>WHO</th><th>ACTION</th></tr>`+
       changes.map(c=>`<tr><td class="mono" style="color:var(--muted)">${timeAgo(c.created_at)}</td><td>${esc(c.actor||'—')}</td><td class="mono">${esc(c.action)}</td></tr>`).join("")+`</table>`; }
     card.querySelector(".modal-body").innerHTML=h;
