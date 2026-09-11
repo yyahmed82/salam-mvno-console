@@ -58,7 +58,28 @@
   [data-theme="dark"] .ag-demo-banner{color:#fbbf24}
   .ag-demo-body{padding:16px 18px 22px;background:var(--bg)}
   @media print{ body>*:not(.ag-demo-ov){display:none!important} .ag-demo-ov{position:static;padding:0;background:#fff;overflow:visible} .ag-demo{box-shadow:none;border:0;max-width:none} .ag-demo-act{display:none} }
-  @media (max-width:700px){ .ag-demo-ov{padding:8px} .ag-demo-hd{padding:12px} .ag-demo-body{padding:10px} }
+  .ag-seg{display:inline-flex;gap:0;border-radius:9px;overflow:hidden}
+  .ag-seg .ag-btn{border-radius:0}
+  .ag-seg .ag-btn:first-child{border-radius:9px 0 0 9px} .ag-seg .ag-btn:last-child{border-radius:0 9px 9px 0}
+  .ag-exec2{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  .ag-don{display:flex;flex-direction:column;align-items:center;margin:6px 0 2px}
+  .ag-don svg{width:170px;height:170px;max-width:100%}
+  .ag-don-v{font-size:26px;font-weight:800;fill:var(--ink)} .ag-don-l{font-size:11px;fill:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+  .ag-hb{display:flex;flex-direction:column;gap:12px;margin:10px 0 2px}
+  .ag-hb-r{display:grid;grid-template-columns:140px 1fr 110px;gap:10px;align-items:center}
+  .ag-hb-l{font-size:12px;font-weight:700;color:var(--ink)}
+  .ag-hb-t{height:16px;border-radius:8px;background:var(--line);overflow:hidden}
+  .ag-hb-f{height:100%;border-radius:8px}
+  .ag-hb-v{font-size:14px;font-weight:800;color:var(--ink);text-align:right}
+  .ag-hb-n{grid-column:2/4;margin-top:-6px;font-size:11px}
+  .ag-note{margin-top:10px;padding:9px 11px;border-radius:9px;background:var(--line);font-size:12px;line-height:1.55;color:var(--ink)}
+  .ag-ctls{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .ag-ctl{border:1px solid var(--line);border-radius:11px;padding:11px 12px;background:var(--card)}
+  .ag-ctl-t{font-weight:800;font-size:12px;color:var(--ink);margin-bottom:3px}
+  @media print{ .ag-exec2{grid-template-columns:1fr 1fr} .ag-ctls{grid-template-columns:repeat(3,1fr)} .ag-detail,.ag-ctl{break-inside:avoid} }
+  @media (max-width:900px){ .ag-exec2{grid-template-columns:1fr} .ag-ctls{grid-template-columns:1fr 1fr} }
+  @media (max-width:700px){ .ag-demo-ov{padding:8px} .ag-demo-hd{padding:12px} .ag-demo-body{padding:10px}
+    .ag-ctls{grid-template-columns:1fr} .ag-hb-r{grid-template-columns:1fr;gap:4px} .ag-hb-v{text-align:left} .ag-hb-n{grid-column:1} }
   .ag-bar{height:7px;border-radius:6px;background:var(--card2,#e2e8f0);overflow:hidden}
   .ag-bar i{display:block;height:100%;border-radius:6px}
   .ag-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
@@ -196,7 +217,7 @@
       <td><input class="ag-in sm" data-cap="${esc(r.subject)}" data-kind="${kind}" type="number" min="0" step="1000" value="${r.cap||0}" style="width:110px" ${ro?"disabled":""} title="0 = no ceiling for this ${kind==="user"?"person":"agent"}"></td></tr>`;
     b.innerHTML=`
       <div class="ag-filters"><select data-f="days" ${ro?"disabled":""}>${[7,14,30,90].map(x=>`<option value="${x}" ${x==BU.days?"selected":""}>last ${x} days</option>`).join("")}</select>
-        ${ro?"":`<button class="ag-btn sm o" id="bDemo" title="The same screen with a full month of sample data — for a walkthrough or a demo. Nothing is read from or written to the console.">▤ Demo view</button>`}
+        ${ro?"":`<button class="ag-btn sm o" id="bDemo" title="The same screen with a full month of sample data — for a walkthrough or a demo. Nothing is read from or written to the console.">▤ Executive / demo view</button>`}
         <span class="ag-sub">Budgets reset at 00:00 KSA. Tokens are what the model actually processes — measured when the provider reports them, otherwise estimated from characters.</span></div>
       <div class="ag-grid" style="margin-bottom:12px">
         <div class="ag-card"><h3>Console today</h3><div class="ag-big">${tk(U.today.tokens)}</div>${bar(U.today.pct,U.today.cap)}<div class="ag-sub">of ${U.today.cap?tk(U.today.cap):"∞"} tokens · ${n(U.today.calls)} calls</div></div>
@@ -256,6 +277,113 @@
    * account is not a picture you can walk a CIO through. This opens the SAME component over a generated month
    * of plausible usage, clearly stamped as sample data, with its own light / dark switch so it can be shown or
    * screenshotted in either theme. It reads nothing and writes nothing. */
+  /* Measured on 152 (ruh-salam-site03, 172.31.38.152) on 11 Sep 2026 — replace only with a fresh measurement,
+   * never with an estimate. 8 vCPU / 15 GB (6 GB free), llama3.1:8b Q4_K_M, single stream.
+   *   generation 17.6 tok/s (three runs: 17.3 / 17.8 / 17.6) · prompt eval ~400 tok/s warm, 55 tok/s cold
+   * Cloud reference prices are USD per 1M tokens, converted at 3.75 SAR/USD. */
+  const CAPACITY = {
+    measuredOn:"11 Sep 2026", host:"ruh-salam-site03 (172.31.38.152)", cpu:"8 vCPU · 15 GB RAM (6 GB free)",
+    model:"llama3.1:8b · Q4_K_M · on-prem", genTps:17.6, promptTps:400, coldPromptTps:55,
+    sar:3.75, cloud:[ {name:"Small cloud model", inUsd:0.10, outUsd:0.60}, {name:"Mid cloud model", inUsd:1.00, outUsd:6.00} ],
+    shapes:[ {name:"Agent triage", prompt:3000, answer:400}, {name:"Yusr question", prompt:1200, answer:250} ],
+  };
+  const capSecs = sh => sh.prompt/CAPACITY.promptTps + sh.answer/CAPACITY.genTps;
+  const capPerDay = sh => Math.round(86400/capSecs(sh)*(sh.prompt+sh.answer));   // tokens/day, box saturated
+  const cloudSar = (tokens, c, inShare) => { const i=tokens*inShare, o=tokens*(1-inShare);
+    return (i/1e6*c.inUsd + o/1e6*c.outUsd) * CAPACITY.sar; };
+  const hm = mins => mins>=60 ? `${Math.floor(mins/60)} h ${Math.round(mins%60)} min` : `${Math.round(mins)} min`;
+
+  /* donut — one number as a share of a whole, printable, theme-driven */
+  function donut(pct,label,sub,col){ const p=Math.max(0,Math.min(1,pct||0)), R=52, C=2*Math.PI*R;
+    return `<div class="ag-don"><svg viewBox="0 0 140 140" role="img" aria-label="${esc(label)} ${Math.round(p*100)} %">
+      <circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--line)" stroke-width="16"></circle>
+      <circle cx="70" cy="70" r="${R}" fill="none" stroke="${col||"var(--green,#0e9f5a)"}" stroke-width="16" stroke-linecap="round"
+        stroke-dasharray="${(p*C).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 70 70)"></circle>
+      <text x="70" y="66" text-anchor="middle" class="ag-don-v">${Math.round(p*100)}%</text>
+      <text x="70" y="86" text-anchor="middle" class="ag-don-l">${esc(label)}</text></svg>
+      <div class="ag-sub" style="text-align:center;margin-top:2px">${sub||""}</div></div>`; }
+
+  /* horizontal comparison bars — cost per option, biggest sets the scale */
+  function hbars(rows,unit){ const max=Math.max(1,...rows.map(r=>r.v));
+    return `<div class="ag-hb">${rows.map(r=>`<div class="ag-hb-r">
+      <div class="ag-hb-l">${esc(r.label)}</div>
+      <div class="ag-hb-t"><div class="ag-hb-f" style="width:${Math.max(2,r.v/max*100)}%;background:${r.col||"var(--green,#0e9f5a)"}"></div></div>
+      <div class="ag-hb-v">${r.v===0?"0":r.v<10?r.v.toFixed(2):Math.round(r.v).toLocaleString("en-US")}<span class="ag-sub"> ${esc(unit)}</span></div>
+      ${r.note?`<div class="ag-hb-n ag-sub">${esc(r.note)}</div>`:""}</div>`).join("")}</div>`; }
+
+  /* ---------------------- EXECUTIVE VIEW ----------------------
+   * One screen for a CIO: what the ceiling is, what the box can actually do, what it would cost in the cloud,
+   * and which four controls make it governed. Two charts, no tables of individuals. */
+  /* the measured capacity + cost appendix, shown under the detailed view */
+  function capacityAppendix(U){
+    const B=U.budget||{}, cur=(B.price&&B.price.currency)||"SAR";
+    const inShare=CAPACITY.shapes[0].prompt/(CAPACITY.shapes[0].prompt+CAPACITY.shapes[0].answer);
+    const per=[["One person, per day",B.dailyUser||0],["One agent, per day",B.dailyCaller||0],["Whole console, per day",B.dailyGlobal||0],["Whole console, per month",B.monthlyGlobal||0]];
+    return `
+      <div class="ag-detail" style="margin-top:12px"><b>Measured capacity of the on-prem server</b>
+        <div class="ag-sub" style="margin:4px 0 8px">${esc(CAPACITY.host)} · ${esc(CAPACITY.cpu)} · ${esc(CAPACITY.model)} · measured ${esc(CAPACITY.measuredOn)}. These are measurements, not estimates — re-measure before changing them.</div>
+        <div class="ag-tablew"><table class="ag-table"><thead><tr><th>What</th><th>Measured</th><th>Meaning</th></tr></thead><tbody>
+          <tr><td>Generation</td><td><b>${CAPACITY.genTps} tokens/s</b></td><td>the model writing an answer — the slow half</td></tr>
+          <tr><td>Prompt read, warm</td><td><b>${CAPACITY.promptTps} tokens/s</b></td><td>the model reading the question and its evidence</td></tr>
+          <tr><td>Prompt read, cold</td><td><b>${CAPACITY.coldPromptTps} tokens/s</b></td><td>first call after an idle period — the model had to reload</td></tr>
+          ${CAPACITY.shapes.map(sh=>`<tr><td>${esc(sh.name)} (${n(sh.prompt)} read + ${n(sh.answer)} written)</td><td><b>${capSecs(sh).toFixed(0)} s</b> per call</td><td>${Math.round(86400/capSecs(sh)).toLocaleString("en-US")} calls or ${tk(capPerDay(sh))} tokens in 24 h, saturated</td></tr>`).join("")}
+        </tbody></table></div></div>
+      <div class="ag-detail" style="margin-top:12px"><b>What each ceiling would cost in the cloud</b>
+        <div class="ag-sub" style="margin:4px 0 8px">At our real ${Math.round(inShare*100)} % read / ${Math.round((1-inShare)*100)} % written mix, converted at ${CAPACITY.sar} ${esc(cur)} per USD. On-prem is 0 — the server is already paid for.</div>
+        <div class="ag-tablew"><table class="ag-table"><thead><tr><th>Ceiling</th><th>Tokens</th><th>On-prem</th>${CAPACITY.cloud.map(c=>`<th>${esc(c.name)}<div class="ag-sub">$${c.inUsd.toFixed(2)} / $${c.outUsd.toFixed(2)} per 1M</div></th>`).join("")}</tr></thead><tbody>
+          ${per.map(([lbl,v])=>`<tr><td><b>${esc(lbl)}</b></td><td>${tk(v)}</td><td><span class="ag-sub">0 ${esc(cur)}</span></td>${CAPACITY.cloud.map(c=>{const x=cloudSar(v,c,inShare);return `<td><b>${x<10?x.toFixed(2):Math.round(x).toLocaleString("en-US")}</b> <span class="ag-sub">${esc(cur)}</span></td>`;}).join("")}</tr>`).join("")}
+        </tbody></table></div>
+        <div class="ag-note">The configured fallback price is <b>${(B.price&&B.price.fallback)||0} ${esc(cur)} per 1,000 tokens</b> = ${(((B.price&&B.price.fallback)||0)*1000).toFixed(2)} ${esc(cur)} per 1M. Keep it aligned with the model we would actually fall back to, otherwise every cost figure on this screen is inflated.</div></div>`;
+  }
+
+  function renderExec(b,U){
+    const B=U.budget||{}, cur=(B.price&&B.price.currency)||"SAR";
+    const triage=CAPACITY.shapes[0], chat=CAPACITY.shapes[1];
+    const boxDay=capPerDay(triage);                         // tokens/day, saturated, agent-shaped traffic
+    const duty=(B.dailyGlobal||0)/boxDay;                   // what the daily ceiling costs in machine time
+    const inShare=triage.prompt/(triage.prompt+triage.answer);
+    const month=B.monthlyGlobal||0;
+    const costs=CAPACITY.cloud.map(c=>({ label:c.name, v:cloudSar(month,c,inShare), col:c.inUsd<0.5?"#2563eb":"#7c3aed",
+      note:`$${c.inUsd.toFixed(2)} in / $${c.outUsd.toFixed(2)} out per 1M tokens` }));
+    const onprem={ label:"On-prem (today)", v:0, col:"var(--green,#0e9f5a)", note:"no per-token cost — the VM is already paid for" };
+    const kpi=(h,v,s)=>`<div class="ag-card"><h3>${h}</h3><div class="ag-big">${v}</div><div class="ag-sub">${s}</div></div>`;
+    const ctl=(t,d)=>`<div class="ag-ctl"><div class="ag-ctl-t">${t}</div><div class="ag-sub">${d}</div></div>`;
+    b.innerHTML=`
+      <div class="ag-grid" style="margin-bottom:14px">
+        ${kpi("Monthly ceiling", tk(month), "tokens for the whole console · resets on the 1st, KSA")}
+        ${kpi("If it ran in the cloud", Math.round(costs[0].v)+" – "+Math.round(costs[1].v)+" "+esc(cur), "per month at that ceiling, small to mid model")}
+        ${kpi("What it costs us", "0 "+esc(cur), "on-prem — no per-token cost, no data leaves the estate")}
+        ${kpi("Machine used at ceiling", Math.round(duty*100)+" %", "of one server, 24 h — the rest is headroom")}
+      </div>
+      <div class="ag-exec2">
+        <div class="ag-detail"><b>Capacity — the daily ceiling against what the server can do</b>
+          <div class="ag-sub" style="margin:4px 0 8px">Measured ${esc(CAPACITY.measuredOn)} on ${esc(CAPACITY.host)} · ${esc(CAPACITY.model)} · ${CAPACITY.genTps} tokens/s generated, ${CAPACITY.promptTps} tokens/s read.</div>
+          ${donut(duty, "used", `${tk(B.dailyGlobal)} of ${tk(boxDay)} tokens the server can process in a day`, duty>0.8?"#d97706":"var(--green,#0e9f5a)")}
+          <div class="ag-note">The limit we set is a <b>policy</b> limit, not a hardware one. At today's ceiling the server still has ${Math.round((1-duty)*100)} % of its day free.</div>
+        </div>
+        <div class="ag-detail"><b>Cost — the same volume, on-prem versus cloud</b>
+          <div class="ag-sub" style="margin:4px 0 8px">${tk(month)} tokens a month at our real ${Math.round(inShare*100)} % read / ${Math.round((1-inShare)*100)} % written mix, converted at ${CAPACITY.sar} ${esc(cur)} per USD.</div>
+          ${hbars([onprem,...costs], cur+"/month")}
+          <div class="ag-note"><b>We are not on-prem to save money.</b> At this volume a cloud model costs ${Math.round(costs[0].v)}–${Math.round(costs[1].v)} ${esc(cur)} a month, less than the server it runs on. We are on-prem because customer numbers, order IDs and raw error payloads go into these prompts and must not leave the estate.</div>
+        </div>
+      </div>
+      <h3 style="margin:18px 0 6px;font-size:13px">What “governed” means here</h3>
+      <div class="ag-ctls">
+        ${ctl("Every call is attributed", "To a named person or to a named agent service — never to “the system”. Machines have their own budget, so an agent storm can never eat a person’s allowance.")}
+        ${ctl("Ceilings at three levels", `Person ${tk(B.dailyUser)}/day · agent ${tk(B.dailyCaller)}/day · whole console ${tk(B.dailyGlobal)}/day and ${tk(month)}/month.`)}
+        ${ctl("Warned before it bites", `A mail to the person and to the super admins at ${Math.round((B.warnAt||0.8)*100)} % of the ceiling — one per person per threshold per day, never a storm.`)}
+        ${ctl("Over the ceiling degrades, never breaks", "The assistant answers from the rule engine and the agents write a measured-evidence note. A refused AI call is never an error the operator sees.")}
+        ${ctl("Auditable after the fact", "Every call is kept with who asked, what for, how many tokens, which provider answered and what it cost — exportable for any period.")}
+        ${ctl("Nothing leaves the estate", "The model runs on our server. The cloud path exists as a labelled fallback and is priced, not assumed.")}
+      </div>
+      <h3 style="margin:18px 0 6px;font-size:13px">What a ceiling buys, in plain terms</h3>
+      <div class="ag-tablew"><table class="ag-table"><thead><tr><th>Ceiling</th><th>Tokens per day</th><th>= work</th><th>= server time</th></tr></thead><tbody>
+        <tr><td><b>One person</b></td><td>${tk(B.dailyUser)}</td><td>~${Math.round((B.dailyUser||0)/(chat.prompt+chat.answer))} questions to the assistant</td><td>${hm((B.dailyUser||0)/(chat.prompt+chat.answer)*capSecs(chat)/60)}</td></tr>
+        <tr><td><b>One agent service</b></td><td>${tk(B.dailyCaller)}</td><td>~${Math.round((B.dailyCaller||0)/(triage.prompt+triage.answer))} incident diagnoses</td><td>${hm((B.dailyCaller||0)/(triage.prompt+triage.answer)*capSecs(triage)/60)}</td></tr>
+        <tr><td><b>Whole console</b></td><td>${tk(B.dailyGlobal)}</td><td>~${Math.round((B.dailyGlobal||0)/(triage.prompt+triage.answer)).toLocaleString("en-US")} calls of every kind</td><td>${hm((B.dailyGlobal||0)/boxDay*1440)} of 24 h</td></tr>
+      </tbody></table></div>`;
+  }
+
   function demoUsage(days){
     days=days||14;
     const d=i=>new Date(Date.now()-(days-1-i)*864e5).toISOString().slice(0,10);
@@ -299,9 +427,10 @@
     const theme=document.documentElement.getAttribute("data-theme")==="dark"?"dark":"light";
     ov.innerHTML=`<div class="ag-demo" data-theme="${theme}" id="agDemoCard">
         <div class="ag-demo-hd">
-          <div><div class="ag-demo-t">AI usage &amp; budget — demo view</div>
-            <div class="ag-demo-s">The live screen over <b>a generated month of sample usage</b>, so the shape of the report is visible before real history accumulates. No data is read from or written to the console.</div></div>
+          <div><div class="ag-demo-t" id="agDemoTitle">AI usage &amp; budget</div>
+            <div class="ag-demo-s" id="agDemoSub"></div></div>
           <div class="ag-demo-act">
+            <span class="ag-seg" id="agDemoMode"><button class="ag-btn sm" data-mode="exec">Executive</button><button class="ag-btn sm o" data-mode="full">Detailed</button></span>
             <button class="ag-btn sm o" data-dtheme="light">☀ Light</button>
             <button class="ag-btn sm o" data-dtheme="dark">☾ Dark</button>
             <select class="ag-in sm" id="agDemoDays">${[14,30].map(x=>`<option value="${x}">${x} days</option>`).join("")}</select>
@@ -309,15 +438,30 @@
             <button class="ag-btn sm" id="agDemoX">Close</button>
           </div>
         </div>
-        <div class="ag-demo-banner">SAMPLE DATA · for demonstration and reference only — not Salam production usage</div>
+        <div class="ag-demo-banner" id="agDemoBanner"></div>
         <div class="ag-demo-body" id="agDemoBody"></div>
       </div>`;
     ov.classList.add("open"); document.body.style.overflow="hidden";
-    const paint=days=>renderBudget(ov.querySelector("#agDemoBody"), demoUsage(Number(days)||14), { readonly:true });
-    paint(14);
+    let MODE="exec", DAYS=14;
+    const TITLES={ exec:["AI usage &amp; budget — executive view",
+        "What the AI layer is allowed to consume, what that costs, and the controls that keep it governed. Figures are our configured ceilings against the <b>measured</b> capacity of the on-prem server; the usage shape behind them is sample data."],
+      full:["AI usage &amp; budget — detailed view",
+        "The live screen over <b>a generated month of sample usage</b>, so the shape of the report is visible before real history accumulates. No data is read from or written to the console."] };
+    const BANNERS={ exec:"Configured ceilings and measured server capacity · cloud figures are public list prices, converted — no production usage is shown on this screen",
+      full:"Sample data · for demonstration and reference only — not Salam production usage" };
+    const paint=()=>{ const body=ov.querySelector("#agDemoBody"), U=demoUsage(DAYS);
+      ov.querySelector("#agDemoTitle").innerHTML=TITLES[MODE][0];
+      ov.querySelector("#agDemoSub").innerHTML=TITLES[MODE][1];
+      ov.querySelector("#agDemoBanner").textContent=BANNERS[MODE];
+      ov.querySelector("#agDemoDays").style.display=MODE==="full"?"":"none";
+      ov.querySelectorAll("#agDemoMode [data-mode]").forEach(x=>x.classList.toggle("o",x.dataset.mode!==MODE));
+      if(MODE==="exec") renderExec(body,U);
+      else { renderBudget(body,U,{ readonly:true }); body.insertAdjacentHTML("beforeend", capacityAppendix(U)); } };
+    paint();
     ov.querySelector("#agDemoX").onclick=closeBudgetDemo;
     ov.querySelector("#agDemoPrint").onclick=()=>window.print();
-    ov.querySelector("#agDemoDays").onchange=e=>paint(e.target.value);
+    ov.querySelector("#agDemoDays").onchange=e=>{ DAYS=Number(e.target.value)||14; paint(); };
+    ov.querySelectorAll("#agDemoMode [data-mode]").forEach(x=>x.addEventListener("click",()=>{ MODE=x.dataset.mode; paint(); ov.scrollTop=0; }));
     ov.querySelectorAll("[data-dtheme]").forEach(btn=>btn.addEventListener("click",()=>{ ov.querySelector("#agDemoCard").setAttribute("data-theme",btn.dataset.dtheme); }));
   }
   function closeBudgetDemo(){ const ov=document.getElementById("agDemoOv"); if(ov) ov.classList.remove("open"); document.body.style.overflow=""; }
