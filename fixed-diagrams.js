@@ -32,7 +32,7 @@
           <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap">
             <b style="font-size:12.5px">${esc(active.title)}</b><span class="rl" style="font-size:10.5px;color:var(--muted)">${esc(active.tagline||"")}</span>
             <span style="margin-left:auto;display:flex;gap:6px"><a class="btn" href="${esc(url(active))}" target="_blank" rel="noreferrer" style="font-size:11px;padding:4px 10px;text-decoration:none">Open in new tab ↗</a><button id="fdgClose" class="btn" style="font-size:11px;padding:4px 10px">Close ✕</button></span></div>
-          <iframe src="${esc(url(active))}" title="${esc(active.title)}" style="width:100%;height:78vh;min-height:520px;border:0;display:block;background:${theme()==="dark"?"#05070d":"#fff"}"></iframe></div>`
+          <iframe src="${esc(url(active))}" title="${esc(active.title)}" allow="fullscreen" allowfullscreen style="width:100%;height:78vh;min-height:520px;border:0;display:block;background:${theme()==="dark"?"#05070d":"#fff"}"></iframe></div>`
         :`<div class="rl" style="font-size:11px;color:var(--muted);text-align:center;padding:14px">pick a diagram above — it opens here, full width</div>`}</div>`;
     host.querySelectorAll(".fdg-card").forEach(b=>b.onclick=()=>{ st.slug=b.dataset.s; const h="fixed?tab=diagrams&d="+encodeURIComponent(st.slug); if(location.hash!=="#"+h) history.replaceState(null,"","#"+h); render(host,fx); setTimeout(()=>{ const p=host.querySelector("#fdgPanel"); if(p&&p.scrollIntoView) p.scrollIntoView({behavior:"smooth",block:"start"}); },50); });
     const c=host.querySelector("#fdgClose"); if(c) c.onclick=()=>{ st.slug=null; history.replaceState(null,"","#fixed?tab=diagrams"); render(host,fx); };
@@ -55,7 +55,7 @@
         <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap">
           <b style="font-size:12.5px">${esc(d.title)}</b><span class="rl" style="font-size:10.5px;color:var(--muted)">${esc(d.tagline||"")}</span>
           <span style="margin-left:auto"><a class="btn" href="${esc(u)}" target="_blank" rel="noreferrer" style="font-size:11px;padding:4px 10px;text-decoration:none">Open in new tab ↗</a></span></div>
-        <iframe src="${esc(u)}" title="${esc(d.title)}" style="width:100%;height:80vh;min-height:560px;border:0;display:block;background:${theme()==="dark"?"#05070d":"#fff"}"></iframe></div>`;
+        <iframe src="${esc(u)}" title="${esc(d.title)}" allow="fullscreen" allowfullscreen style="width:100%;height:80vh;min-height:560px;border:0;display:block;background:${theme()==="dark"?"#05070d":"#fff"}"></iframe></div>`;
   }
 
   window.FIXED_PAGES=window.FIXED_PAGES||{};

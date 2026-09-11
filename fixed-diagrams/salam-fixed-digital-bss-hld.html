@@ -77,14 +77,10 @@ svg#topo{display:block;width:100%;height:100%;cursor:grab}svg#topo:active{cursor
   function stored(){ try{ return localStorage.getItem(KEY); }catch(e){ return null; } }
   var q=new URLSearchParams(location.search).get('theme');
   var initial=(q==='light'||q==='dark')?q:(stored()||osTheme());
-  function apply(t){ root.setAttribute('data-theme',t); var b=document.getElementById('themeBtn'); if(b){ b.textContent=t==='light'?'☾':'☀'; b.title=t==='light'?'Switch to dark':'Switch to light'; } }
+  function apply(t){ root.setAttribute('data-theme',t); }
   apply(initial);
   window.__setAtlasTheme=function(t){ apply(t); try{ localStorage.setItem(KEY,t); }catch(e){} };
-  document.addEventListener('DOMContentLoaded',function(){
-    apply(root.getAttribute('data-theme')||initial);
-    var b=document.getElementById('themeBtn');
-    if(b) b.addEventListener('click',function(){ window.__setAtlasTheme(root.getAttribute('data-theme')==='light'?'dark':'light'); });
-  });
+  document.addEventListener('DOMContentLoaded',function(){ apply(root.getAttribute('data-theme')||initial); });
   /* the console can retheme a live iframe without reloading it */
   window.addEventListener('message',function(e){ var t=e&&e.data&&e.data.theme; if(t==='light'||t==='dark') apply(t); });
   if(!q){ try{ matchMedia('(prefers-color-scheme: light)').addEventListener('change',function(ev){ if(!stored()) apply(ev.matches?'light':'dark'); }); }catch(e){} }
@@ -107,7 +103,7 @@ svg#topo{display:block;width:100%;height:100%;cursor:grab}svg#topo:active{cursor
       <div class="nodeList" id="nodeList"></div>
     </aside>
     <section class="canvas">
-      <div class="canvasHud"><button class="hudBtn" id="zoomOut">−</button><button class="hudBtn" id="zoomIn">+</button><button class="hudBtn" id="fit">Fit</button><button class="hudBtn" id="themeBtn" title="Switch light / dark">☀</button><button class="hudBtn" id="exportSvg">Export SVG</button><button class="hudBtn" onclick="window.print()">Print</button></div>
+      <div class="canvasHud"><button class="hudBtn" id="zoomOut">−</button><button class="hudBtn" id="zoomIn">+</button><button class="hudBtn" id="fit">Fit</button><button class="hudBtn" id="fsBtn" title="Full screen — Esc to leave">⛶ Full screen</button><button class="hudBtn" id="exportSvg">Export SVG</button><button class="hudBtn" onclick="window.print()">Print</button></div>
       <div class="legend" id="legend"></div>
       <svg id="topo" viewBox="0 0 1600 980" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -203,6 +199,22 @@ function zoom(f,cx,cy){const r=svg.getBoundingClientRect();cx=cx??r.width/2;cy=c
 svg.addEventListener('wheel',e=>{e.preventDefault();const r=svg.getBoundingClientRect();zoom(e.deltaY<0?1.12:.89,e.clientX-r.left,e.clientY-r.top)},{passive:false});
 let drag=null;svg.addEventListener('pointerdown',e=>{if(e.target.closest('.node'))return;drag={x:e.clientX,y:e.clientY,vx:view.x,vy:view.y};svg.setPointerCapture(e.pointerId)});svg.addEventListener('pointermove',e=>{if(!drag)return;view.x=drag.vx+(e.clientX-drag.x);view.y=drag.vy+(e.clientY-drag.y);applyView()});svg.addEventListener('pointerup',()=>drag=null);
 $('zoomIn').onclick=()=>zoom(1.18);$('zoomOut').onclick=()=>zoom(.85);$('fit').onclick=fit;
+/* FULL SCREEN (11 Sep 2026) — the atlas is read inside a console iframe, so the useful control is space,
+ * not theme (the theme already follows the console). Going full screen re-fits the map to the new size;
+ * if the embedder forbids it, fall back to opening the atlas in its own tab. */
+const fsOn=()=>!!(document.fullscreenElement||document.webkitFullscreenElement);
+function paintFs(){const b=$('fsBtn');if(!b)return;b.textContent=fsOn()?'⤢ Exit full screen':'⛶ Full screen';b.title=fsOn()?'Leave full screen (Esc)':'Full screen — Esc to leave';}
+function fsToggle(){
+  const el=document.querySelector('.app')||document.documentElement;
+  try{
+    if(fsOn()){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); return; }
+    const p=(el.requestFullscreen||el.webkitRequestFullscreen).call(el);
+    if(p&&p.catch) p.catch(()=>window.open(location.href,'_blank','noopener'));
+  }catch(e){ window.open(location.href,'_blank','noopener'); }
+}
+$('fsBtn').onclick=fsToggle;
+['fullscreenchange','webkitfullscreenchange'].forEach(ev=>document.addEventListener(ev,()=>{paintFs();setTimeout(fit,140);}));
+paintFs();
 $('search').addEventListener('input',e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('.node').forEach((g,i)=>{const n=nodes[i];const hit=!q||(n.name+' '+n.sub+' '+n.meta+' '+n.desc+' '+(n.chips||[]).join(' ')).toLowerCase().includes(q);g.classList.toggle('dim',!hit)});document.querySelectorAll('.nodeItem').forEach((d,i)=>{const n=nodes[i];d.style.display=!q||(n.name+' '+n.meta+' '+(n.chips||[]).join(' ')).toLowerCase().includes(q)?'':'none'})});
 $('exportSvg').onclick=()=>{const clone=svg.cloneNode(true);clone.setAttribute('xmlns',NS);const blob=new Blob([`<!doctype svg>\n`+clone.outerHTML],{type:'image/svg+xml'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='salam-fixed-digital-bss-topology.svg';a.click();URL.revokeObjectURL(a.href)};
 svg.addEventListener('click',e=>{if(e.target===svg||e.target.classList.contains('layer')||e.target.classList.contains('layerBg')){selected=null;document.querySelectorAll('.node,.edge').forEach(x=>x.classList.remove('hot','dim'));showDetail();renderSideListOnly();applyFilter()}});

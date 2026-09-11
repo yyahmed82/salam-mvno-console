@@ -23,6 +23,11 @@
   }
   document.addEventListener('themechange', e => paintFrames((e.detail && e.detail.theme) || current()));
   document.addEventListener('DOMContentLoaded', () => setTimeout(() => paintFrames(current()), 400));
+  /* a lazily-loaded iframe misses the broadcast above, so tell each one the theme as it finishes
+   * loading (capture phase — iframe load events don't bubble) */
+  document.addEventListener('load', e => {
+    if (e.target && e.target.tagName === 'IFRAME') { try { e.target.contentWindow.postMessage({ theme: current() }, '*'); } catch (err) {} }
+  }, true);
 
   // sync the button label to the theme the head-script already applied (no dispatch/flash)
   apply(current(), false);
