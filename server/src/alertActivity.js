@@ -14,6 +14,7 @@
 const db = require('./db');
 const segment = require('./segment');
 
+const BUILD = '2026-09-11b';   // bumped whenever this module changes — visible in the API answer, so a stale deploy is obvious
 const ACTION_RE = '^(incident\\.|alert\\.|alerts\\.|rule\\.|rules\\.|ack_sla\\.|alert_flap|anomaly\\.|errclass\\.|monitoring\\.latency|escalation\\.|gateways\\.|agent\\.|oncall\\.)';
 
 const ksa = iso => { if (!iso) return ''; try { return new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Riyadh', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', ''); } catch (_) { return String(iso); } };
@@ -22,12 +23,12 @@ const val = v => (v === null || v === undefined || v === '') ? '∅' : (typeof v
 const short = (s, n) => { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n) + '…' : s; };
 
 /* action → human label + one line saying exactly what was done */
-function humanise(action, detail, extra) {
+function humanise(action, detail, extra, actor) {
   let d = detail;
   if (typeof d === 'string') { try { d = JSON.parse(d); } catch (_) { d = {}; } }
   if (!d || typeof d !== 'object') d = {};
   const M = {
-    'incident.ack': ['Acknowledged', () => `Took ownership${d.to && d.to !== d.by ? ` (${who(d.to)})` : ''}${d.note ? ` — "${short(d.note, 120)}"` : ''}`],
+    'incident.ack': ['Acknowledged', () => `Took ownership${d.to && actor && d.to !== actor ? ` — assigned to ${who(d.to)}` : ''}${d.note ? ` — "${short(d.note, 120)}"` : ''}`],
     'incident.reack': ['Ack taken over', () => `${who(d.from)} → ${who(d.to)}${d.note ? ` — "${short(d.note, 120)}"` : ''}`],
     'incident.handover': ['Ack handed over', () => `${who(d.from)} → ${who(d.to)}${d.note ? ` — "${short(d.note, 120)}"` : ''}`],
     'incident.assign': ['Assigned', () => d.assignee ? `Assignee set to ${who(d.assignee)}` : 'Assignee cleared'],
@@ -111,7 +112,7 @@ async function data({ seg, days = 30, user = '', action = '', q = '', limit = 50
     const rowSeg = key ? (/^fixed_/.test(key) ? 'fixed' : 'mvno') : null;
     if (seg && seg !== 'all' && rowSeg && rowSeg !== seg) continue;          // incident/rule rows of the other business
     const extra = isRule ? diffOf(r.actor, r.rule_key_j || r.target, r.at) : null;
-    const h = humanise(r.action, r.detail, extra);
+    const h = humanise(r.action, r.detail, extra, r.actor);
     out.push({
       id: r.id, at: r.at, at_ksa: ksa(r.at), actor: r.actor, actor_short: who(r.actor), role: r.role || '',
       action: r.action, label: h.label, what: h.what,
@@ -123,7 +124,7 @@ async function data({ seg, days = 30, user = '', action = '', q = '', limit = 50
       segment: rowSeg || 'both', ip: r.ip || '', ua: r.ua || '',
     });
   }
-  if (q) { const s = String(q).toLowerCase(); return out.filter(r => (r.actor + ' ' + r.label + ' ' + r.what + ' ' + r.target_name).toLowerCase().includes(s)); }
+  if (q) { const s = String(q).toLowerCase(); return out.filter(r => (r.actor + ' ' + r.action + ' ' + r.label + ' ' + r.what + ' ' + r.target_name + ' ' + r.severity).toLowerCase().includes(s)); }
   return out;
 }
 
@@ -157,7 +158,7 @@ function mount(app, { audit }) {
         return res.send(xlsx(seg, days, rows, req.actor || 'console'));
       }
       const users = [...new Set(rows.map(r => r.actor))].sort();
-      res.json({ segment: seg, days, count: rows.length, users, activity: rows.slice(0, 800) });
+      res.json({ build: BUILD, segment: seg, days, count: rows.length, users, activity: rows.slice(0, 800) });
     } catch (e) { console.error('[activity]', e.message); res.status(500).json({ error: 'activity log: ' + e.message }); }
   });
 }

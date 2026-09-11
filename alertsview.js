@@ -929,7 +929,13 @@
   async function renderActivity(){
     const b=$("#alBody");
     b.innerHTML=window.salamLoader?window.salamLoader("Loading activity…"):"Loading…";
-    let d; try{ d=await api(`/api/alerts/activity?segment=${SEG}&days=${ACT.days}&user=${encodeURIComponent(ACT.user)}&action=${ACT.action}&q=${encodeURIComponent(ACT.q)}`); }
+    let d;
+    try{
+      const r=await window.fetch(API+`/api/alerts/activity?segment=${SEG}&days=${ACT.days}&user=${encodeURIComponent(ACT.user)}&action=${ACT.action}&q=${encodeURIComponent(ACT.q)}`,{headers:{"Content-Type":"application/json"}});
+      const txt=await r.text(); let j=null; try{ j=JSON.parse(txt); }catch(_){}
+      if(!r.ok) throw new Error((j&&j.error)||`HTTP ${r.status} — ${esc(txt.slice(0,200))}`);
+      d=j||{};
+    }
     catch(e){ b.innerHTML=`<div class="albanner">Could not load the activity log — ${esc(e.message)}</div>`; return; }
     const rows=d.activity||[], users=d.users||[];
     const canX=window.opsCan&&window.opsCan("export");
