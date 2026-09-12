@@ -50,10 +50,12 @@ CONSOLE_HEAVY="metric_snapshots api_error_events api_traffic_events apigw_probe_
 TSCOLS="created_at,occurred_at,captured_at,event_time,started_at,at,ts,hour,day,bucket"
 
 # ---------- tunnel ---------------------------------------------------------------------------
-declare -a LFWD=(); declare -A PORTOF=()
+LFWD=""            # bash 3.2 on macOS: no associative arrays, so a plain "host:port=localport" map
+MAP=""
 NEXT=15432
-local_url(){                                   # rewrite a prod URL onto the tunnel
-  python3 - "$1" "${PORTOF[$2]}" <<'PY'
+portof(){ printf '%s\n' "$MAP" | awk -F= -v k="$1" '$1==k{print $2; exit}'; }
+local_url(){                                   # local_url <prod-url> <local-port>
+  python3 - "$1" "$2" <<'PY'
 import sys, urllib.parse as u
 raw, port = sys.argv[1], sys.argv[2]
 p = u.urlsplit(raw)
@@ -74,16 +76,21 @@ p=u.urlsplit(sys.argv[1]); print("%s:%s"%(p.hostname,p.port or 5432))
 PY
 }
 for v in CONSOLE_DATABASE_URL SOURCE_DATABASE_URL OPS_DATABASE_URL OPS_BETA_DATABASE_URL; do
-  url="${!v:-}"; [ -n "$url" ] || continue
+  eval "url=\${$v:-}"; [ -n "$url" ] || continue
   hp="$(hostport "$url")"
-  if [ -z "${PORTOF[$hp]:-}" ]; then PORTOF[$hp]=$NEXT; LFWD+=(-L "$NEXT:$hp"); NEXT=$((NEXT+1)); fi
+  if [ -z "$(portof "$hp")" ]; then
+    MAP="$MAP$hp=$NEXT
+"
+    LFWD="$LFWD -L $NEXT:$hp"
+    NEXT=$((NEXT+1))
+  fi
 done
-[ ${#LFWD[@]} -gt 0 ] || die "no *_DATABASE_URL found in $CRED"
+[ -n "$LFWD" ] || die "no *_DATABASE_URL found in $CRED"
 
 say "SSH tunnel via $SSH_HOST"
-for hp in "${!PORTOF[@]}"; do echo "   127.0.0.1:${PORTOF[$hp]}  ->  $hp"; done
+printf '%s' "$MAP" | awk -F= 'NF{print "   127.0.0.1:"$2"  ->  "$1}' 
 CTL="$(mktemp -u /tmp/salam-tun.XXXXXX)"
-ssh -f -N -M -S "$CTL" -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 "${LFWD[@]}" "$SSH_HOST"
+ssh -f -N -M -S "$CTL" -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 $LFWD "$SSH_HOST"
 cleanup(){ ssh -S "$CTL" -O exit "$SSH_HOST" 2>/dev/null || true; }
 trap cleanup EXIT
 sleep 1
@@ -95,7 +102,7 @@ pull(){                          # pull <label> <prod-url-var> <schema> <tables|
   local label="$1" var="$2" schema="$3" want="$4"
   local prod="${!var:-}"
   [ -n "$prod" ] || { echo "   (skipped - $var not set)"; return 0; }
-  local url; url="$(local_url "$prod" "$(hostport "$prod")")"
+  local url; url="$(local_url "$prod" "$(portof "$(hostport "$prod")")")"
   local dir="$OUT/$label"; mkdir -p "$dir"
 
   psql "$url" -Atc "SELECT 1" >/dev/null || die "$label: cannot reach the database through the tunnel"
