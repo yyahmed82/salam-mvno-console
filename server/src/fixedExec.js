@@ -40,7 +40,12 @@ async function errorBudget() {
  * row every cycle. Counting those rows read as ~900 "alerts" in 7 d, which made the radar look like
  * noise. The radar's unit is therefore DISTINCT RULES, and a rule counts as still open when its most
  * recent evaluation (at any time, not just in the window) is FIRED. */
-const LAST_EVAL = `SELECT DISTINCT ON (rule_key) rule_key, status FROM alert_events ORDER BY rule_key, fired_at DESC`;
+/* Bounded to the same window as the outer query on purpose, and still exact: we only ask about
+ * rules that FIRED inside the window, and a rule's latest evaluation is by definition at or
+ * after that firing, so it is always inside `fired_at >= $1` too. An unbounded DISTINCT ON
+ * would scan the whole evaluation log on every page load. */
+const LAST_EVAL = `SELECT DISTINCT ON (rule_key) rule_key, status FROM alert_events
+                    WHERE fired_at >= $1 ORDER BY rule_key, fired_at DESC`;
 async function alertsByDay(fromIso) {
   try { return (await db.ops.query(
     `WITH last AS (${LAST_EVAL})
