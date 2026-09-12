@@ -243,6 +243,19 @@
   .chip.st{background:var(--tint-green);color:var(--tint-green-fg);font-family:var(--mono);font-weight:600}
   /* topology */
   .topo-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+  /* shared card grid: never leaves a lonely orphan card with dead space beside it.
+     1 col on phones, 2 from 820px, 3 only when there are exactly 3 cards or 5+ (so 4 cards tile 2x2). */
+  .gcards{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:stretch;margin-bottom:12px}
+  .gcards>*{min-width:0;height:100%}
+  .gcards>.topo-card{display:flex;flex-direction:column}
+  @media (min-width:820px){.gcards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (min-width:1480px){.gcards:has(>*:nth-child(3):last-child),.gcards:has(>*:nth-child(5)){grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media (min-width:1480px){.gcards.two{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (min-width:820px) and (max-width:1479px){.gcards:has(>*:nth-child(odd):last-child)>*:last-child{grid-column:1/-1}}
+  @media (min-width:1480px){.gcards:has(>*:nth-child(5):last-child){grid-template-columns:repeat(6,minmax(0,1fr))}.gcards:has(>*:nth-child(5):last-child)>*{grid-column:span 2}.gcards:has(>*:nth-child(5):last-child)>*:nth-child(n+4){grid-column:span 3}.gcards:has(>*:nth-child(7):last-child)>*:last-child{grid-column:1/-1}}
+  .tblwrap{width:100%;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tblwrap>table{min-width:100%}
+  .gcards>.topo-card>.tblwrap{flex:1}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
   .stat b{font-size:20px}
   .stat span{display:block;font-size:10px;letter-spacing:1.2px;color:var(--muted);font-weight:700;margin-top:2px}
@@ -1436,7 +1449,7 @@
       <button class="navtab" data-view="fixed" data-fxtab="map"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4z"/><path d="M8 2v16M16 6v16"/></svg></span><span>SDA map<small>dealers · pins · trace</small></span></button>
       <button class="navtab" data-view="fixed" data-fxtab="qr"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h2v2h-2zM19 15h2v2h-2zM15 19h2v2h-2zM19 19h2v2h-2z"/></svg></span><span>QR codes<small>referral orders · consent</small></span></button>
       <button class="navtab" data-view="fixed" data-fxtab="dash"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M8 17V9M12 17v-4M16 17V7"/></svg></span><span>Reports<small>KPIs · trends · dealers &amp; QR</small></span></button>
-      <button class="navtab" data-view="fixed" data-fxtab="errors"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span><span>Errors<small>error control board</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="errors"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span><span>Troubleshoot<small>error control board · live failures</small></span></button>
       <button class="navtab" data-view="fixed" data-fxtab="alerts"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg></span><span>Alerts<small>incidents · rules · charts</small></span></button>
         <div class="navgroup">EXPLORE</div>
       <button class="navtab" data-view="fixed" data-fxtab="playbook"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4z"/><path d="M8 8h8M8 12h8"/></svg></span><span>Playbook<small>SLA / OLA / action plans</small></span></button>
@@ -1858,7 +1871,7 @@
 <script src="alertsview.js?v=20260911i"></script>
 <script src="ops.js?v=20260912c"></script>
 <script src="opsbar.js?v=20260910c"></script>
-<script src="analytics.js?v=20260910c"></script>
+<script src="analytics.js?v=20260912d"></script>
 <script src="topo2data.js?v=20260910c"></script>
 <script src="topology2.js?v=20260911w"></script>
 <script src="tapdocs.js?v=20260910c"></script>
@@ -1870,7 +1883,7 @@
 <script src="dmsjourney.js?v=20260910c"></script>
 <script src="dms.js?v=20260910c"></script>
 <script src="landing.js?v=20260912c"></script>
-<script src="fixed.js?v=20260912c"></script>
+<script src="fixed.js?v=20260912d"></script>
 <script src="fixed-maps-ui.js?v=20260910c"></script>
 <script src="fixed-leaflet.js?v=20260910c"></script>
 <script src="fixed-map.js?v=20260910c"></script>
@@ -1881,7 +1894,7 @@
 <script src="fixed-alerts.js?v=20260911s"></script>
 <script src="fixed-playbook.js?v=20260910c"></script>
 <script src="fixed-diagrams.js?v=20260911x"></script>
-<script src="execops.js?v=20260912c"></script>
+<script src="execops.js?v=20260912d"></script>
 <script src="fixed-report.js?v=20260910c"></script>
 <script src="otodocs.js?v=20260910c"></script>
 <script src="salamdocs.js?v=20260910c"></script>

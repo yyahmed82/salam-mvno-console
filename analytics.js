@@ -558,6 +558,27 @@
     if(!st.dashboards.length){ try{ const dl=await api("/api/analytics/dashboards"); st.dashboards=dl.dashboards||[]; }catch(e){} }
     return st.dashboards;
   }
+  /* Panel widths are stored per dashboard (1-12 columns). Taken literally they leave a lonely
+     chart on the last row with dead space beside it (4 panels of w=4 -> 3 + 1). This rebalances
+     for DISPLAY only - nothing is written back to the saved spec.
+       - all panels the same width and a column count divides them evenly -> perfect tiling (4 -> 2x2)
+       - otherwise the last row's panels grow to absorb the columns that would stay empty */
+  function layoutSpans(panels){
+    const w = panels.map(p=>Math.min(12,Math.max(2,(p&&p.w)||6)));
+    const n = w.length; if(!n) return w;
+    if(w.every(x=>x===w[0])){
+      const per = Math.floor(12/w[0]);
+      for(let c=per;c>=2;c--) if(n%c===0 && 12%c===0) return w.map(()=>12/c);
+    }
+    const out=w.slice(); let row=[], used=0;
+    const flush=()=>{ if(!row.length) return; let gap=12-used;
+      for(let i=0;gap>0;i=(i+1)%row.length,gap--) out[row[i]]+=1;
+      if(row.length===1&&out[row[0]]<12) out[row[0]]=12;
+      row=[]; used=0; };
+    for(let i=0;i<n;i++){ if(used+w[i]>12) flush(); row.push(i); used+=w[i]; }
+    flush();
+    return out;
+  }
   window.anaEnsureLoaded = ensureLoaded;
   window.anaDashboards = ()=> st.dashboards.slice();
   // render one dashboard's panels (read-only) into a container, using an explicit range
@@ -571,8 +592,9 @@
     const panels=spec.panels||[];
     const yield_=()=>new Promise(r=>requestAnimationFrame(()=>r()));
     // 1) Lay out every panel shell WITH a loader immediately, so the grid appears at once (no blank freeze).
+    const spans=layoutSpans(panels);
     const bodies=panels.map((panel,idx)=>{
-      const p=el("div","apanel"); p.style.gridColumn=`span ${Math.min(12,Math.max(2,panel.w||6))}`;
+      const p=el("div","apanel"); p.style.gridColumn=`span ${spans[idx]}`;
       p.innerHTML=`<div class="ah"><b>${titleHTML(panel, range&&range.hours)}</b><div class="atools"><button data-edit="${idx}" title="Edit chart">✎</button><button data-del="${idx}" title="Remove">✕</button></div></div><div class="abody">${window.salamLoader?window.salamLoader("Loading…"):'<div class="sub">Loading…</div>'}</div>`;
       container.appendChild(p);
       return p.querySelector(".abody");

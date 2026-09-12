@@ -12,7 +12,7 @@
   const TAB_ORDER=[["overview","Operations Dashboard","KPIs · funnel · dealers · SLOs · trends · alerts"],
     /* the two pages the Fixed Operations agent used to generate as static HTML — live since 12 Sep 2026 */
     ["exec","Executive","north-star KPIs · SLOs · top issues"],["ops","Operations","health · trends · pipeline · alerts"],["epurchase","E-purchase","web / QR channel · journeys · payments · findings"],["salamhome","Salam Home","app channel · buy + manage-line · payments · findings"],["map","SDA map","dealers · pins · trace"],["qr","QR codes","referral orders · consent"],
-    ["dash","Reports","KPIs · trends · dealers & QR"],["errors","Errors","error control board"],["alerts","Alerts","rules · history"],
+    ["dash","Reports","KPIs · trends · dealers & QR"],["errors","Troubleshoot","error control board · live failures"],["alerts","Alerts","rules · history"],
     ["playbook","Playbook","SLA / OLA / action plans"],["diagrams","Diagrams","payments · journeys"],
     /* own pages since 11 Sep 2026 — they used to be cards inside Diagrams */
     ["bsstopo","Topology","digital / BSS HLD — channels → 3Scale/OSB → Oracle BSS"],["journeys","Journeys","every dealer & QR journey, step by step"],
@@ -42,7 +42,7 @@
   const chip=(l,v,c,sub)=>`<div class="stat" style="min-width:130px"><b style="${c?`color:${c}`:""}">${v}</b><span>${esc(l)}</span>${sub?`<div class="rl" style="font-size:10.5px;color:var(--muted);margin-top:3px">${sub}</div>`:""}</div>`;
   const bar=(n,max,color)=>`<div style="height:6px;border-radius:4px;background:var(--line);overflow:hidden;min-width:80px"><div style="width:${max?Math.round(100*n/max):0}%;height:100%;background:${color||"var(--green,#0e9f5a)"}"></div></div>`;
   const card=(title,body,sub)=>`<div class="topo-card" style="padding:14px 16px"><div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px"><h3 style="margin:0;font-size:13.5px">${title}</h3>${sub?`<span class="rl" style="font-size:10.5px;color:var(--muted)">${sub}</span>`:""}</div>${body}</div>`;
-  const tbl=(head,rows)=>`<table class="mono" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr>${head.map(h=>`<th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:700;font-size:10px;letter-spacing:.6px;border-bottom:1px solid var(--line)">${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td style="padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top">${c}</td>`).join("")}</tr>`).join("")||`<tr><td colspan="${head.length}" style="padding:10px;color:var(--muted)">nothing in this window</td></tr>`}</tbody></table>`;
+  const tbl=(head,rows)=>`<div class="tblwrap"><table class="mono" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr>${head.map(h=>`<th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:700;font-size:10px;letter-spacing:.6px;border-bottom:1px solid var(--line)">${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td style="padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top">${c}</td>`).join("")}</tr>`).join("")||`<tr><td colspan="${head.length}" style="padding:10px;color:var(--muted)">nothing in this window</td></tr>`}</tbody></table></div>`;
 
   async function renderOverview(host){
     host.innerHTML=`<div style="display:flex;justify-content:flex-end;margin-bottom:10px">${rangeChips()}</div><div id="fxFresh"></div>
@@ -116,13 +116,13 @@
         ${chip("NAFATH FAIL RATE",naf.total?naf.failRate+"%":"—",naf.failRate>25?"#dc2626":null,`${fmt(naf.total)} 5G checks`)}
         ${chip("MANAFITH DENIED",man.total?man.deniedRate+"%":"—",man.deniedRate>10?"#d97706":null,`${fmt(man.denied)} of ${fmt(man.total)}`)}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;margin-bottom:12px">
+      <div class="gcards">
         ${card("Outcome mix",d.outcomes.map(o=>`<div style="display:grid;grid-template-columns:110px 1fr 70px;gap:8px;align-items:center;font-size:12px;margin:4px 0"><span class="mono">${esc(o.outcome)}</span>${bar(o.n,outMax,OUT_COLOR[o.outcome])}<b style="text-align:right">${fmt(o.n)}</b></div>`).join("")+spark,"attempts per KSA day, green share = completed")}
         ${card("By journey (workflow)",d.byWorkflow.map(w=>`<div style="display:grid;grid-template-columns:1fr 90px 60px 60px;gap:8px;align-items:center;font-size:12px;margin:4px 0"><span>${esc(w.label)}</span>${bar(w.n,wfMax)}<b style="text-align:right">${fmt(w.n)}</b><span class="mono" style="text-align:right;color:${w.conversion<40?"#d97706":"var(--muted)"}">${w.conversion}%</span></div>`).join(""),"count · conversion")}
         ${card("By channel",d.byChannel.map(c=>`<div style="display:flex;justify-content:space-between;font-size:12px;margin:5px 0"><span class="mono">${esc(c.channel)}</span><span><b>${fmt(c.n)}</b> <span style="color:var(--muted)">· ${c.conversion}%</span></span></div>`).join("")+`<div class="rl" style="font-size:10.5px;color:var(--muted);margin-top:8px">consumer-direct e-purchase (no referral code) excluded — same as the beta</div>`)}
         ${card("Nafath outcomes (SDA · 5G)",naf.breakdown.map(o=>`<div style="display:flex;justify-content:space-between;font-size:12px;margin:5px 0"><span class="mono">${esc(o.outcome)}</span><b>${fmt(o.n)}</b></div>`).join("")||`<div style="color:var(--muted);font-size:12px">no Nafath checks in window</div>`)}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px;margin-bottom:12px">
+      <div class="gcards">
         ${card("Regions",tbl(["REGION","ATTEMPTS","COMPLETED","NAFATH FAIL","MANAFITH DENIED"],d.byRegion.map(r=>[esc(r.region),fmt(r.n),fmt(r.completed),r.nafath_failed?`<span style="color:#dc2626">${fmt(r.nafath_failed)}</span>`:"0",r.manafith_denied?`<span style="color:#d97706">${fmt(r.manafith_denied)}</span>`:"0"])),"order region, else dealer region")}
         ${card("Top dealers",tbl(["DEALER","STAFF","REGION","ATTEMPTS","CONV.","LAST SEEN"],d.topDealers.map(r=>[`<b>${esc(r.dealer_name||r.dealer_code||"—")}</b><div class="rl" style="color:var(--muted);font-size:10px">${esc(r.dealer_code||"")}</div>`,`${esc(r.staff_name||"")}<div class="rl" style="color:var(--muted);font-size:10px">${esc(r.staff_code)} · ${esc(r.role||"")}</div>`,esc(r.region||"—"),fmt(r.n),`${r.conversion}%`,ts(r.last_seen)])),"by attempts in window")}
         ${card("Error categories",tbl(["CATEGORY","EVENTS","OPEN","LAST"],d.errors.map(e=>[`<span class="pill" style="font-size:10.5px">${esc(e.category)}</span>`,fmt(e.n),e.open?`<b style="color:#dc2626">${fmt(e.open)}</b>`:"0",ts(e.last_at)])),"error_events · taxonomy from the Error Control Board")}

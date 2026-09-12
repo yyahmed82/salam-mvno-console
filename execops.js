@@ -94,45 +94,87 @@
     return `<a href="${esc(a.href)}" class="xo-al ${cls}"><span class="xo-sev ${cls}">${esc(a.severity)}</span><div class="xo-at">${badge(h, unified)}<b>${esc(a.name)}</b>${a.text ? ` — ${esc(a.text)}` : ''}${a.team ? `<span class="xo-dim"> · ${esc(a.team)}</span>` : ''}</div><span class="xo-dim">${a.status === 'open' ? 'open · ' : ''}${ts(a.at)}</span></a>`; }).join('');
 
 
-  /* ---------- radar: 4 severity rings x 7 day sectors, sweeping ---------- */
-  const SEV_COLOR = { P1: TOK.red, P2: TOK.amber, P3: TOK.blue, P4: 'var(--muted)' };
-  const RING_R = { P1: 34, P2: 60, P3: 86, P4: 112 };
+  /* ---------- radar: P1-P3 rings x day sectors, sweeping, blips revealed by the sweep ---------- */
+  const SEV_COLOR = { P1: TOK.red, P2: TOK.amber, P3: TOK.blue };
+  const RADAR_SEVS = ['P1', 'P2', 'P3'];
+  const RING_R = { P1: 62, P2: 112, P3: 162 };
+  const RD = { cx: 210, cy: 210, R: 186, VB: 420 };
+  const SWEEP_S = 8;
   function radar(halves) {
     const parts = halves.map(h => h.radar).filter(Boolean);
     if (!parts.length) return '';
     const days = parts[0].days || [];
     if (!days.length) return `<div class="xo-empty">No alert history in this window.</div>`;
-    const cx = 140, cy = 140, R = 124, n7 = days.length;
-    const ang = i => (-90 + i * (360 / n7)) * Math.PI / 180;
+    const { cx, cy, R, VB } = RD, nd = days.length;
+    const ang = i => (-90 + i * (360 / nd)) * Math.PI / 180;
     const at = (i, r, off) => [cx + r * Math.cos(ang(i) + (off || 0)), cy + r * Math.sin(ang(i) + (off || 0))];
-    const rings = ['P4', 'P3', 'P2', 'P1'].map(sev => `<circle cx="${cx}" cy="${cy}" r="${RING_R[sev]}" fill="none" stroke="${SEV_COLOR[sev]}" stroke-width="1" opacity=".28"/>`).join('');
-    const spokes = days.map((d, i) => { const [x, y] = at(i, R); return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${TOK.line}" stroke-width="1" opacity=".55"/>`; }).join('');
-    const dayLab = days.map((d, i) => { const [x, y] = at(i, R + 12); return `<text x="${x}" y="${y + 3}" font-size="9.5" fill="${TOK.muted}" text-anchor="middle" font-weight="700">${d.slice(5)}</text>`; }).join('');
-    const ringLab = ['P1', 'P2', 'P3', 'P4'].map(sev => `<text x="${cx + 3}" y="${cy - RING_R[sev] + 11}" font-size="9" fill="${SEV_COLOR[sev]}" font-weight="800" opacity=".85">${sev}</text>`).join('');
-    const maxN = Math.max(1, ...parts.flatMap(p => p.cells.map(c => c.n)));
+    /* seconds into the loop at which the beam actually crosses sector i.
+     * The sweep wedge's leading edge starts at 3 o'clock (90 deg clockwise from 12), so a blip at
+     * theta degrees is reached when the group has turned theta-90. Blips are delayed by that much,
+     * which is what makes them appear to be *discovered* by the beam rather than just pulsing. */
+    const tAt = (i, off) => {
+      const deg = i * (360 / nd) + (off || 0) * 180 / Math.PI - 90;
+      return (((deg % 360) + 360) % 360) / 360 * SWEEP_S;
+    };
+    const rings = RADAR_SEVS.slice().reverse().map(sev =>
+      `<circle cx="${cx}" cy="${cy}" r="${RING_R[sev]}" fill="none" stroke="${SEV_COLOR[sev]}" stroke-width="1.1" opacity=".3" stroke-dasharray="3 4"/>`).join('');
+    const spokes = days.map((d, i) => { const [x, y] = at(i, R); return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${TOK.line}" stroke-width="1" opacity=".5"/>`; }).join('');
+    /* long windows: label every other / every third day so the rim never overlaps.
+     * Up to 10 sectors the labels stay horizontal (easiest to read); denser rims turn tangentially. */
+    const step = nd <= 10 ? 1 : nd <= 16 ? 2 : Math.ceil(nd / 10);
+    const halo = `stroke="var(--card,#fff)" stroke-width="3.2" paint-order="stroke"`;
+    const dayLab = days.map((d, i) => {
+      if (i % step) return '';
+      const [x, y] = at(i, R + 15);
+      const a = (ang(i) * 180 / Math.PI + 450) % 360, flip = a > 90 && a < 270;
+      const rot = nd <= 10 ? '' : ` transform="rotate(${flip ? a + 180 : a} ${x} ${y})"`;
+      return `<text x="${x}" y="${y}" font-size="10" fill="${TOK.muted}" text-anchor="middle" dominant-baseline="middle" font-weight="700" ${halo}${rot}>${d.slice(5)}</text>`;
+    }).join('');
+    const ringLab = RADAR_SEVS.map(sev =>
+      `<text x="${cx + 4}" y="${cy - RING_R[sev] + 13}" font-size="11" fill="${SEV_COLOR[sev]}" font-weight="800" ${halo}>${sev}</text>`).join('');
+    const cells = halves.flatMap(h => (h.radar ? h.radar.cells : []).filter(c => RING_R[c.sev]).map(c => ({ c, h })));
+    const maxN = Math.max(1, ...cells.map(x => x.c.n));
+    /* dot size and the two-business offset both scale with the sector width, so a 30-day window
+     * stays readable instead of turning into one solid ring of overlapping dots */
+    const rMax = Math.max(3.2, Math.min(11, 170 / nd));
+    const rMin = Math.max(1.8, rMax * 0.34);
+    const OFF = halves.length > 1 ? Math.min(0.14, (Math.PI / nd) * 0.44) : 0;
     const blips = halves.flatMap((h, hi) => (h.radar ? h.radar.cells : []).map(c => {
       const di = days.indexOf(c.day); if (di < 0 || !RING_R[c.sev]) return '';
-      const off = halves.length > 1 ? (hi === 0 ? -0.11 : 0.11) : 0;
+      const off = hi === 0 ? -OFF : OFF;
       const [x, y] = at(di, RING_R[c.sev], off);
-      const rr = 3 + 5 * Math.sqrt(c.n / maxN);
-      return `<g class="xo-blip"><circle cx="${x}" cy="${y}" r="${rr + 4}" fill="${SEV_COLOR[c.sev]}" opacity=".16"/><circle cx="${x}" cy="${y}" r="${rr}" fill="${SEV_COLOR[c.sev]}" stroke="${h.biz === 'mobile' ? '#93c5fd' : '#86efac'}" stroke-width="1.2"><title>${esc(h.label)} · ${c.sev} · ${c.day} · ${c.n} alert(s)</title></circle></g>`;
+      const rr = rMin + (rMax - rMin) * Math.sqrt(c.n / maxN);
+      const dly = tAt(di, off).toFixed(2);
+      const ring = h.biz === 'mobile' ? '#93c5fd' : '#86efac';
+      return `<g class="xo-blip" style="--d:${dly}s">`
+        + `<circle class="xo-ping" cx="${x}" cy="${y}" r="${(rr + rr * 0.5 + 2).toFixed(1)}" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.4"/>`
+        + `<circle class="xo-halo" cx="${x}" cy="${y}" r="${(rr + rr * 0.55 + 2).toFixed(1)}" fill="${SEV_COLOR[c.sev]}"/>`
+        + `<circle class="xo-dot" cx="${x}" cy="${y}" r="${rr.toFixed(1)}" fill="${SEV_COLOR[c.sev]}" stroke="${ring}" stroke-width="${Math.min(1.4, rr * 0.3).toFixed(2)}">`
+        + `<title>${esc(h.label)} · ${c.sev} · ${c.day} · ${c.n} alert(s)</title></circle></g>`;
     })).join('');
     const tot = halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || { total: 0 }).total }));
-    const sevTot = {}; halves.forEach(h => (h.radar ? h.radar.cells : []).forEach(c => sevTot[c.sev] = (sevTot[c.sev] || 0) + c.n));
+    const sevTot = {}; cells.forEach(({ c }) => sevTot[c.sev] = (sevTot[c.sev] || 0) + c.n);
+    const grand = RADAR_SEVS.reduce((a, s) => a + (sevTot[s] || 0), 0);
+    const peak = cells.slice().sort((a, b) => b.c.n - a.c.n)[0];
     return `<div class="xo-radarwrap">
-      <svg viewBox="0 0 280 280" class="xo-radar" role="img" aria-label="Alert radar: severity rings by day">
-        <defs><radialGradient id="xoRadBg" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${TOK.green}" stop-opacity=".16"/><stop offset="65%" stop-color="${TOK.green}" stop-opacity=".04"/><stop offset="100%" stop-color="${TOK.green}" stop-opacity="0"/></radialGradient>
-          <linearGradient id="xoSweep" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${TOK.green}" stop-opacity="0"/><stop offset="100%" stop-color="${TOK.green}" stop-opacity=".5"/></linearGradient></defs>
+      <svg viewBox="0 0 ${VB} ${VB}" class="xo-radar" role="img" aria-label="Alert radar: P1 to P3 severity rings by day">
+        <defs><radialGradient id="xoRadBg" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${TOK.green}" stop-opacity=".18"/><stop offset="62%" stop-color="${TOK.green}" stop-opacity=".05"/><stop offset="100%" stop-color="${TOK.green}" stop-opacity="0"/></radialGradient>
+          <linearGradient id="xoSweep" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${TOK.green}" stop-opacity="0"/><stop offset="78%" stop-color="${TOK.green}" stop-opacity=".28"/><stop offset="100%" stop-color="${TOK.green}" stop-opacity=".72"/></linearGradient></defs>
         <circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#xoRadBg)"/>
+        <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${TOK.line}" stroke-width="1"/>
         ${spokes}${rings}
-        <path class="xo-sweep" d="M${cx},${cy} L${cx},${cy - R} A${R},${R} 0 0,1 ${cx + R},${cy} Z" fill="url(#xoSweep)" opacity=".45"/>
+        <g class="xo-sweepg"><path class="xo-sweep" d="M${cx},${cy} L${cx},${cy - R} A${R},${R} 0 0,1 ${cx + R},${cy} Z" fill="url(#xoSweep)"/>
+          <line class="xo-beam" x1="${cx}" y1="${cy}" x2="${cx + R}" y2="${cy}" stroke="${TOK.green}" stroke-width="1.6" opacity=".8"/></g>
         ${blips}${ringLab}${dayLab}
-        <circle cx="${cx}" cy="${cy}" r="3" fill="${TOK.green}"/><circle cx="${cx}" cy="${cy}" r="7" fill="none" stroke="${TOK.green}" stroke-width="1" opacity=".5"/>
+        <circle cx="${cx}" cy="${cy}" r="4" fill="${TOK.green}"/><circle cx="${cx}" cy="${cy}" r="9" fill="none" stroke="${TOK.green}" stroke-width="1" opacity=".5"/>
       </svg>
       <div class="xo-radarlegend">
         <div class="xo-rl-h">Alerts fired · ${days.length} days</div>
-        ${['P1', 'P2', 'P3', 'P4'].map(sev => `<div class="xo-rl"><i style="background:${SEV_COLOR[sev]}"></i><b>${sev}</b><span>${num(sevTot[sev] || 0)}</span></div>`).join('')}
-        <div class="xo-rl-d">ring = severity · sector = day · dot size = how many</div>
+        <div class="xo-rl-tot">${num(grand)}<span>P1–P3 total</span></div>
+        ${RADAR_SEVS.map(sev => { const v = sevTot[sev] || 0, w = grand ? Math.round(100 * v / grand) : 0;
+          return `<div class="xo-rl"><i style="background:${SEV_COLOR[sev]}"></i><b>${sev}</b><span class="xo-rlb"><u style="background:${SEV_COLOR[sev]};width:${w}%"></u></span><span class="xo-rln">${num(v)}</span></div>`; }).join('')}
+        ${peak ? `<div class="xo-rl-d">busiest: <b>${esc(peak.c.sev)}</b> · ${esc(peak.c.day)} · ${num(peak.c.n)} on ${esc(peak.h.label)}</div>` : ''}
+        <div class="xo-rl-d">ring = severity · sector = day · dot size = how many · the sweep reveals them</div>
         ${tot.length > 1 ? `<div class="xo-rl-d">${tot.map(t => `<span class="xo-biz xo-biz-${t.biz}">${esc(t.label)}</span>${num(t.t)}`).join(' ')}</div>` : ''}
         <a href="#alerts" class="xo-link">open alerts →</a>
       </div></div>`;
@@ -191,8 +233,8 @@
       `<div class="xo-charts">${H.flatMap(h => h.series.charts.filter(c => c.exec).map(c => chartCard(c, h, u))).join('')}</div>`,
     trendsAll: (H, u) => sec('trends', 'Trends & analytics', `${H[0].days} days · KSA`) +
       `<div class="xo-charts">${H.flatMap(h => h.series.charts.map(c => chartCard(c, h, u))).join('')}</div>`,
-    pipeline: (H, u) => H.map(h => sec('pipeline', `${u ? h.label + ' · ' : ''}${h.pipeline.title}`, h.pipeline.sub) +
-      `<div class="topo-card xo-chart">${h.pipeline.rows.length ? hbars(h.pipeline.rows, h.pipeline.title) : `<div class="xo-empty">Nothing stopped in this window.</div>`}<div class="xo-dim" style="margin-top:6px"><a href="${esc(h.pipeline.href)}" class="xo-link">open ${esc(h.label)} detail →</a></div></div>`).join(''),
+    pipeline: (H, u) => sec('pipeline', u ? 'Where volume stops' : H[0].pipeline.title, u ? 'per business · same window' : H[0].pipeline.sub) +
+      `<div class="xo-charts">${H.map(h => `<div class="topo-card xo-chart">${u ? `<div class="xo-ct">${badge(h, u)}${esc(h.pipeline.title)}<span class="xo-dim"> · ${esc(h.pipeline.sub || '')}</span></div>` : ''}${h.pipeline.rows.length ? hbars(h.pipeline.rows, h.pipeline.title) : `<div class="xo-empty">Nothing stopped in this window.</div>`}<div class="xo-dim" style="margin-top:auto;padding-top:6px"><a href="${esc(h.pipeline.href)}" class="xo-link">open ${esc(h.label)} detail →</a></div></div>`).join('')}</div>`,
     issues: (H, u) => sec('issues', 'Top ongoing issues', 'open in window · sorted by open count') +
       `<div class="topo-card xo-tblwrap">${H.some(h => h.issues.length) ? `<div class="tscroll"><table class="xo-tbl"><thead><tr><th>Severity</th><th>Issue</th><th>Open / total</th><th>First seen</th><th>Trend</th><th></th></tr></thead><tbody>${H.flatMap(h => h.issues.map(i => ({ h, i }))).sort((a, b) => b.i.open - a.i.open).map(({ h, i }) => issuesRows({ ...h, issues: [i] }, u)).join('')}</tbody></table></div>` : `<div class="xo-empty">No open issue in this window.</div>`}</div>`,
     alerts: (H, u) => sec('alerts', 'Alerts', `open first · fired in ${H[0].days} d`) +
@@ -277,10 +319,12 @@
       .xo-biz{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:999px;margin-right:6px;vertical-align:middle;border:1px solid transparent}
       .xo-biz-mobile{color:#2563eb;background:color-mix(in srgb,#2563eb 12%,transparent);border-color:color-mix(in srgb,#2563eb 30%,transparent)}
       .xo-biz-fixed{color:var(--green,#0e9f5a);background:color-mix(in srgb,var(--green,#0e9f5a) 12%,transparent);border-color:color-mix(in srgb,var(--green,#0e9f5a) 30%,transparent)}
-      .xo-sumgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+      .xo-sumgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:12px;align-items:stretch}
+      .xo-sumgrid>*{min-width:0}
       .xo-summary{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:12px;padding:14px 18px;font-size:13.5px;line-height:1.55}
       .xo-summary div+div{margin-top:5px}.xo-sumh{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-      .xo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+      .xo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:stretch}
+      .xo-grid>*{min-width:0}
       .xo-kpi{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);border-top:4px solid var(--line);border-radius:12px;padding:12px 14px;transition:box-shadow .2s,transform .2s,border-color .2s}
       a.xo-kpi:hover{transform:translateY(-1px);box-shadow:var(--shadow,0 10px 26px rgba(15,23,42,.10));border-color:color-mix(in srgb,var(--line) 50%,var(--green,#0e9f5a))}
       .xo-t-red{border-top-color:#dc2626}.xo-t-amber{border-top-color:#d97706}.xo-t-green{border-top-color:var(--green,#0e9f5a)}.xo-t-muted{opacity:.75;border-top-style:dashed}
@@ -290,16 +334,23 @@
       .xo-kv{font-size:28px;font-weight:800;line-height:1.15;margin:8px 0 3px;font-variant-numeric:tabular-nums}
       .xo-t-red .xo-kv{color:#dc2626}.xo-t-amber .xo-kv{color:#d97706}.xo-t-green .xo-kv{color:var(--green,#0e9f5a)}.xo-t-muted .xo-kv{color:var(--muted)}
       .xo-ks{font-size:11.5px;color:var(--muted);line-height:1.4}.xo-kd{font-size:11px;font-weight:700;margin-top:6px}
-      .xo-slos{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+      .xo-slos{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:stretch}
+      .xo-slos>*{min-width:0}
       .xo-slo{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:12px;text-align:center;transition:box-shadow .2s,transform .2s}
       a.xo-slo:hover{transform:translateY(-1px);box-shadow:var(--shadow,0 10px 26px rgba(15,23,42,.10))}
       .xo-slo.ok{border-left-color:var(--green,#0e9f5a)}.xo-slo.breach{border-left-color:#dc2626}.xo-slo.nowire{opacity:.7;border-left-style:dashed}
       .xo-si{font-size:18px;font-weight:800}.xo-slo.ok .xo-si{color:var(--green,#0e9f5a)}.xo-slo.breach .xo-si{color:#dc2626}.xo-slo.nowire .xo-si{color:var(--muted)}
       .xo-sn{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:800;margin:4px 0}
       .xo-sa{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}.xo-st{font-size:10.5px;color:var(--muted);margin-top:3px}
-      .xo-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px}
-      .xo-chart{padding:12px 14px}.xo-ct{font-size:12.5px;font-weight:800;margin-bottom:6px}.xo-svg{width:100%;height:auto;display:block;font-family:inherit}
-      .xo-health{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+      .xo-charts{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:stretch}
+      .xo-charts>*{min-width:0;height:100%}
+      @media (min-width:820px){.xo-charts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      @media (min-width:1480px){.xo-charts:has(>*:nth-child(3):last-child),.xo-charts:has(>*:nth-child(5)){grid-template-columns:repeat(3,minmax(0,1fr))}}
+      @media (min-width:820px) and (max-width:1479px){.xo-charts:has(>*:nth-child(odd):last-child)>*:last-child{grid-column:1/-1}}
+      @media (min-width:1480px){.xo-charts:has(>*:nth-child(5):last-child){grid-template-columns:repeat(6,minmax(0,1fr))}.xo-charts:has(>*:nth-child(5):last-child)>*{grid-column:span 2}.xo-charts:has(>*:nth-child(5):last-child)>*:nth-child(n+4){grid-column:span 3}.xo-charts:has(>*:nth-child(7):last-child)>*:last-child{grid-column:1/-1}}
+      .xo-chart{padding:12px 14px;display:flex;flex-direction:column}.xo-ct{font-size:12.5px;font-weight:800;margin-bottom:6px}.xo-svg{width:100%;height:auto;display:block;font-family:inherit}
+      .xo-health{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;align-items:stretch}
+      .xo-health>*{min-width:0}
       .xo-hi{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;transition:box-shadow .2s,transform .2s}
       a.xo-hi:hover{transform:translateY(-1px);box-shadow:var(--shadow,0 10px 26px rgba(15,23,42,.10))}
       .xo-hl{font-size:10.5px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
@@ -329,16 +380,27 @@
       @media (max-width:720px){.xo-grid{grid-template-columns:repeat(2,1fr)}.xo-kv{font-size:22px}.xo-charts,.xo-sumgrid{grid-template-columns:1fr}.xo-h{font-size:17px}.xo-slos,.xo-health{grid-template-columns:repeat(2,1fr)}#view-execops{padding:10px 12px 24px}}
       @media (max-width:420px){.xo-grid,.xo-slos,.xo-health{grid-template-columns:1fr}}
       .xo-block{margin-top:24px;padding-top:4px;border-top:1px solid var(--line)}
-      .xo-radarwrap{display:flex;gap:20px;align-items:center;flex-wrap:wrap;justify-content:center}
-      .xo-radar{width:min(340px,100%);height:auto;flex:none}
-      .xo-sweep{transform-origin:140px 140px;animation:xoSweep 6s linear infinite}
+      .xo-radarwrap{display:flex;gap:26px;align-items:center;flex-wrap:wrap;justify-content:center}
+      .xo-radar{width:min(560px,100%);height:auto;flex:1 1 380px;max-width:560px;overflow:visible}
+      .xo-sweepg{transform-origin:210px 210px;animation:xoSweep 8s linear infinite}
       @keyframes xoSweep{from{transform:rotate(0)}to{transform:rotate(360deg)}}
-      .xo-blip circle:first-child{animation:xoPulse 3.2s ease-in-out infinite}
-      @keyframes xoPulse{0%,100%{opacity:.12}50%{opacity:.34}}
-      .xo-radarlegend{min-width:190px;font-size:12px}
+      .xo-sweep{opacity:.62}.xo-beam{filter:drop-shadow(0 0 4px var(--green,#0e9f5a))}
+      .xo-blip .xo-dot{animation:xoFound 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
+      .xo-blip .xo-halo{opacity:0;animation:xoHalo 8s linear infinite backwards;animation-delay:var(--d,0s)}
+      .xo-blip .xo-ping{opacity:0;animation:xoPing 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
+      @keyframes xoFound{0%{opacity:.18;transform:scale(.55)}3%{opacity:1;transform:scale(1.5)}9%{opacity:1;transform:scale(1)}70%{opacity:.9}100%{opacity:.3;transform:scale(.9)}}
+      @keyframes xoHalo{0%{opacity:0}3%{opacity:.5}26%{opacity:.12}100%{opacity:0}}
+      @keyframes xoPing{0%{opacity:0;transform:scale(.5)}2%{opacity:.85;transform:scale(.7)}14%{opacity:0;transform:scale(2.6)}100%{opacity:0;transform:scale(2.6)}}
+      @media (prefers-reduced-motion:reduce){.xo-sweepg{animation:none}.xo-blip .xo-dot{animation:none;opacity:1}.xo-blip .xo-halo{animation:none;opacity:.16}.xo-blip .xo-ping{animation:none;opacity:0}}
+      .xo-radarlegend{min-width:210px;flex:1 1 210px;max-width:320px;font-size:12px}
+      .xo-rl-tot{font-size:30px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums;margin-bottom:10px}
+      .xo-rl-tot span{display:block;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}
+      .xo-rlb{flex:1;height:6px;border-radius:999px;background:var(--line);overflow:hidden;min-width:40px}
+      .xo-rlb u{display:block;height:100%;border-radius:999px;text-decoration:none}
+      .xo-rln{width:52px;text-align:right;color:var(--ink);font-weight:700}
       .xo-rl-h{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:800;margin-bottom:8px}
       .xo-rl{display:flex;align-items:center;gap:8px;padding:3px 0;font-variant-numeric:tabular-nums}
-      .xo-rl i{width:9px;height:9px;border-radius:50%;flex:none}.xo-rl b{width:26px}.xo-rl span{color:var(--muted)}
+      .xo-rl i{width:10px;height:10px;border-radius:50%;flex:none}.xo-rl b{width:26px}.xo-rl>span{color:var(--muted)}
       .xo-rl-d{font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.5}
       .xo-brief{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);font-weight:800}
       .xo-modal{position:fixed;inset:0;z-index:3000;background:rgba(8,12,20,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:22px;animation:xoFade .18s ease}
@@ -347,7 +409,7 @@
       .xo-modal-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px;flex-wrap:wrap}
       .xo-modal-tools{display:flex;gap:8px;align-items:center}.xo-modal-tools .xo-btn{text-decoration:none}
       .xo-modal-in iframe{flex:1;width:100%;border:0;background:#050a08}
-      @media (max-width:720px){.xo-radarwrap{flex-direction:column}.xo-modal{padding:8px}}
+      @media (max-width:820px){.xo-radarwrap{flex-direction:column;gap:14px}.xo-radar{flex:none;width:min(420px,100%)}.xo-radarlegend{max-width:none;width:100%}.xo-modal{padding:8px}}
       @media print{.xo-tools,.xo-range,.xo-modal{display:none}.xo-kpi,.xo-slo,.xo-chart,.xo-hi{break-inside:avoid}}`;
     document.head.appendChild(st);
   }
