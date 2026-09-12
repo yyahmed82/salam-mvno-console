@@ -20,18 +20,22 @@ const K = require('./execContract');
 const { n, pct, delta, dayKey, dayAxis, trendOf, sevOf } = K;
 const C = () => db.console;
 
+/* technical = the two app-error rules the console already ships: backend/provider failures and
+ * unhandled crashes. NOT -700 (Semati business refusal) and NOT the auth family. */
+const TECH = `(error_code IN (-500,-702,-20003) OR error_code = -501)`;
+const ENDPOINT = `COALESCE(NULLIF(controller,'')||'#'||COALESCE(NULLIF(action,''),'?'), action_name, source, 'unknown')`;
 const ROLLUP = `SELECT (date_trunc('day', hour AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, journey, outcome, sum(cnt)::int AS c
                   FROM rollup_hourly WHERE hour >= $1 AND hour < $2 GROUP BY 1,2,3`;
 const ERR_DAY = `SELECT (date_trunc('day', ts AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, count(*)::int AS n
-                   FROM api_error_events WHERE ts >= $1 AND ts < $2 AND (error_code IS NULL OR error_code <= -500 OR error_code IN (-702,-20003)) GROUP BY 1`;
-const ERR_CAT = `SELECT COALESCE(endpoint, controller||'#'||action, 'unknown') AS category, error_code, count(*)::int AS total,
+                   FROM api_error_events WHERE ts >= $1 AND ts < $2 AND ${TECH} GROUP BY 1`;
+const ERR_CAT = `SELECT ${ENDPOINT} AS category, error_code, count(*)::int AS total,
                         min(ts) AS first_seen, max(ts) AS last_seen
-                   FROM api_error_events WHERE ts >= $1 AND ts < $2 AND (error_code IS NULL OR error_code <= -500 OR error_code IN (-702,-20003))
+                   FROM api_error_events WHERE ts >= $1 AND ts < $2 AND ${TECH}
                   GROUP BY 1,2 ORDER BY total DESC LIMIT 8`;
-const ERR_CAT_DAY = `SELECT COALESCE(endpoint, controller||'#'||action, 'unknown') AS category, error_code,
+const ERR_CAT_DAY = `SELECT ${ENDPOINT} AS category, error_code,
                             (date_trunc('day', ts AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, count(*)::int AS n
-                       FROM api_error_events WHERE ts >= $1 AND ts < $2 AND (error_code IS NULL OR error_code <= -500 OR error_code IN (-702,-20003)) GROUP BY 1,2,3`;
-const ERR_24 = `SELECT count(*)::int AS n FROM api_error_events WHERE ts >= $1 AND (error_code IS NULL OR error_code <= -500 OR error_code IN (-702,-20003))`;
+                       FROM api_error_events WHERE ts >= $1 AND ts < $2 AND ${TECH} GROUP BY 1,2,3`;
+const ERR_24 = `SELECT count(*)::int AS n FROM api_error_events WHERE ts >= $1 AND ${TECH}`;
 const SNAP = `SELECT DISTINCT ON (metric_key) metric_key, value, sample, sim_now FROM metric_snapshots
                WHERE metric_key = ANY($1) AND window_hours = 24 AND dim = '{}'::jsonb ORDER BY metric_key, sim_now DESC`;
 
@@ -44,12 +48,15 @@ const fmtRate = r => r == null ? '—' : `${Math.round(r * 1000) / 10}%`;
 
 async function exec(q, { homeKpis, boardNow, segment }) {
   const range = K.rangeOf(q), days = range === '30d' ? 30 : 7;
-  const now = await boardNow(q.sim), D = 864e5;
-  const to = now.toISOString(), from = new Date(now - days * D).toISOString(), from24 = new Date(now - D).toISOString();
+  // boardNow() returns an ISO STRING (the replay cursor / newest row clamped to wall clock), or
+  // undefined when dataBounds fails - never a Date. Normalise once, then work in millis.
+  const now = new Date((await boardNow(q.sim)) || Date.now()), D = 864e5;
+  const nowIso = now.toISOString();
+  const to = nowIso, from = new Date(now.getTime() - days * D).toISOString(), from24 = new Date(now.getTime() - D).toISOString();
   const segWhere = segment.sqlWhere('a', 'rule_key', 'mvno');
 
   const [h, roll, errDays, errCats, errCatDays, err24, bud, alerts, snaps] = await Promise.all([
-    homeKpis(now, from24, to),
+    homeKpis(nowIso, from24, to),
     safe(C().query(ROLLUP, [from, to]), []), safe(C().query(ERR_DAY, [from, to]), []), safe(C().query(ERR_CAT, [from, to]), []),
     safe(C().query(ERR_CAT_DAY, [from, to]), []), safe(C().query(ERR_24, [from24]), [{ n: 0 }]), budget(),
     safe(C().query(`SELECT a.severity, a.name, a.rule_key, a.team, a.status, a.message, a.observed_value, a.threshold, a.fired_at, a.last_seen_at
@@ -85,7 +92,7 @@ async function exec(q, { homeKpis, boardNow, segment }) {
   const catKey = r => `${r.category} ${r.error_code == null ? '' : r.error_code}`.trim();
   const cd = {}; for (const r of errCatDays) (cd[catKey(r)] = cd[catKey(r)] || {})[r.day] = n(r.n);
   const issues = errCats.map(c => { const key = catKey(c); const spark = daysArr.map(d => (cd[key] || {})[d.day] || 0); const last2 = spark.slice(-2).reduce((a, b) => a + b, 0);
-    return { category: key, label: `${c.category}${c.error_code == null ? '' : ' · ' + c.error_code}`, open: last2, total: n(c.total), first_seen: c.first_seen, daysOngoing: Math.max(1, Math.round((now - new Date(c.first_seen)) / D)), trend: trendOf(spark), spark, sev: sevOf(last2), href: `#troubleshoot?cls=technical` }; });
+    return { category: key, label: `${c.category}${c.error_code == null ? '' : ' · ' + c.error_code}`, open: last2, total: n(c.total), first_seen: c.first_seen, daysOngoing: Math.max(1, Math.round((now.getTime() - new Date(c.first_seen)) / D)), trend: trendOf(spark), spark, sev: sevOf(last2), href: `#troubleshoot?cls=technical` }; });
 
   // ---- alerts
   const sev = { P1: 0, P2: 0, P3: 0 }; for (const a of alerts) sev[a.severity] = (sev[a.severity] || 0) + 1;
@@ -116,7 +123,7 @@ async function exec(q, { homeKpis, boardNow, segment }) {
   const worst = issues[0]; summary.push(worst ? `Busiest technical error: ${worst.label} (${worst.total} in ${days} d, ${worst.trend}).` : 'No technical error in the app error log for the window.');
 
   return {
-    configured: true, biz: 'mobile', label: 'Mobile', generatedAt: now.toISOString(), range, days, window: { from, to },
+    configured: true, biz: 'mobile', label: 'Mobile', generatedAt: nowIso, range, days, window: { from, to },
     source: h.source === 'raw' ? 'salam_replica + console rollups' : h.source, freshness: { text: `dashboard clock ${dayKey(now)}`, stale: false },
     provisional: 'Revenue is not measured by this console — shown as not wired',
     status, summary, counts: { critical, warnings, alerts24, bySeverity: sev },

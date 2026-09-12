@@ -135,8 +135,12 @@
     if (!host.dataset.loaded) host.innerHTML = `<div class="xo-loading">Loading…</div>`;
     let d; try { d = await load(`${SRC[biz]}?range=${state.range}`, force); } catch (e) { host.innerHTML = `<div class="topo-card xo-err"><b>Could not load</b><div class="xo-dim">${esc(e.message)}</div></div>`; return; }
     const halves = biz === 'all' ? [d.mobile, d.fixed].filter(h => h && h.configured) : (d.configured ? [d] : []);
+    const missing = biz === 'all' ? (d.missing || []) : (d.configured ? [] : [{ label: d.label || 'This business', reason: d.reason }]);
     if (!halves.length) { host.innerHTML = `<div class="topo-card xo-err"><b>Nothing to show</b><div class="xo-dim">${esc((d.reason) || (d.mobile && d.mobile.reason) || (d.fixed && d.fixed.reason) || 'no business configured for your role')}</div></div>`; return; }
     (tab === 'ops' ? renderOps : renderExec)(host, halves, biz === 'all');
+    if (missing.length) { const w = document.createElement('div'); w.className = 'xo-missing';
+      w.innerHTML = missing.map(m => `<b>${esc(m.label)} half unavailable</b> — ${esc(m.reason || 'not configured')}`).join('<br>');
+      host.insertBefore(w, host.children[1] || null); }
     host.dataset.loaded = '1';
     host.querySelectorAll('.xo-r').forEach(b => b.onclick = () => { state.range = b.dataset.r; localStorage.setItem('exec_range', state.range); page(host, biz, tab, true); });
     const rb = host.querySelector('[data-act="refresh"]'); if (rb) rb.onclick = () => page(host, biz, tab, true);
@@ -222,6 +226,7 @@
       .xo-at{flex:1;font-size:12.5px;min-width:0}
       .xo-empty{padding:22px;text-align:center;color:var(--muted);font-style:italic}.xo-loading{padding:30px;text-align:center;color:var(--muted)}
       .xo-err{padding:18px;border-left:4px solid #dc2626}
+      .xo-missing{margin:10px 0;padding:10px 14px;border:1px solid color-mix(in srgb,#d97706 35%,transparent);background:color-mix(in srgb,#d97706 10%,transparent);border-left:4px solid #d97706;border-radius:10px;font-size:12.5px;line-height:1.5}
       .xo-foot{margin:20px 0 6px;font-size:11px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;line-height:1.6}
       html[dir=rtl] .xo-summary,html[dir=rtl] .xo-slo,html[dir=rtl] .xo-al{border-left:1px solid var(--line);border-right:4px solid var(--c,var(--line))}
       html[dir=rtl] .xo-tbl th,html[dir=rtl] .xo-tbl td{text-align:right}html[dir=rtl] .xo-biz{margin-right:0;margin-left:6px}
