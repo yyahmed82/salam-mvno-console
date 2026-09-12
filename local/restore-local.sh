@@ -11,15 +11,13 @@
 set -euo pipefail
 
 IN="${1:-$HOME/Downloads/console-local}"
-PGUSER_LOCAL="${PGUSER_LOCAL:-$(whoami)}"
-PGHOST_LOCAL="${PGHOST_LOCAL:-127.0.0.1}"
-PGPORT_LOCAL="${PGPORT_LOCAL:-5700}"
+cd "$(dirname "$0")/.."
+. local/_pglocal.sh
+pglocal_find || exit 1
 PSQL=(psql -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$PGUSER_LOCAL" -v ON_ERROR_STOP=1)
 say(){ printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 
 [ -d "$IN" ] || { echo "no snapshot at $IN - run local/pull-from-prod.sh first"; exit 1; }
-"${PSQL[@]}" -d postgres -Atc "SELECT 1" >/dev/null \
-  || { echo "cannot reach local Postgres at $PGHOST_LOCAL:$PGPORT_LOCAL as $PGUSER_LOCAL"; exit 1; }
 
 ensure_db(){                                  # ensure_db <db>
   local db="$1" a
@@ -67,4 +65,29 @@ for db in unified_console_local salam_source_local sda_ops_local; do
       FROM pg_stat_user_tables WHERE n_live_tup>0 ORDER BY n_live_tup DESC LIMIT 12" 2>/dev/null || true
 done
 
-say "DONE - now write local/.env (see local/.env.example) and run  bash local/run-local.sh"
+say "local/.env"
+AUTH="$PGUSER_LOCAL"
+[ -n "${PGPASSWORD:-}" ] && AUTH="$PGUSER_LOCAL:$PGPASSWORD"
+[ -f local/.env ] || cp local/.env.example local/.env
+python3 - "postgres://$AUTH@$PGHOST_LOCAL:$PGPORT_LOCAL" <<'PY'
+import sys
+base = sys.argv[1]
+urls = {
+  'CONSOLE_DATABASE_URL':  base + '/unified_console_local',
+  'SOURCE_DATABASE_URL':   base + '/salam_source_local',
+  'OPS_DATABASE_URL':      base + '/sda_ops_local?schema=public',
+  'OPS_BETA_DATABASE_URL': base + '/sda_ops_local?schema=beta',
+}
+lines = open('local/.env').read().split('\n')
+seen, out = set(), []
+for line in lines:
+    k = line.split('=', 1)[0].strip()
+    if k in urls: out.append(k + '=' + urls[k]); seen.add(k)
+    else: out.append(line)
+for k, v in urls.items():
+    if k not in seen: out.append(k + '=' + v)
+open('local/.env', 'w').write('\n'.join(out))
+PY
+sed -E 's#://[^@]*@#://****@#' local/.env | grep -E '^(PORT|CONSOLE_DATABASE_URL|SOURCE_DATABASE_URL|OPS)' | sed 's/^/   /'
+
+say "DONE - start it with:   bash local/run-local.sh"

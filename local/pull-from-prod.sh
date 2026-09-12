@@ -29,7 +29,9 @@ OUT="${2:-$HOME/Downloads/console-local}"
 ONLY="${ONLY:-}"                 # e.g. ONLY=ops,opsbeta to redo just those two
 SSH_HOST="${SSH_HOST:-yosri@ruh-salam-site03}"
 CRED="${CRED:-$HOME/.salam-prod-db.env}"
-export PGOPTIONS='-c timezone=UTC -c default_transaction_read_only=on'
+STMT_TIMEOUT_MS="${STMT_TIMEOUT_MS:-1800000}"   # 30 min: sda_ops has 17 GB tables and the role's
+                                                # own statement_timeout cancelled the big \copy
+export PGOPTIONS="-c timezone=UTC -c default_transaction_read_only=on -c statement_timeout=$STMT_TIMEOUT_MS"
 export PGCONNECT_TIMEOUT=10
 
 say(){ printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
@@ -143,7 +145,11 @@ pull(){                          # pull <label> <prod-url-var> <schema> <tables|
     fi
     local q="SELECT * FROM \"$schema\".\"$t\""
     [ -n "$col" ] && q="$q WHERE \"$col\" >= (now() at time zone 'UTC') - interval '$DAYS days'"
-    psql "$url" -q -c "\\copy ($q) TO '$dir/$t.csv' CSV HEADER"
+    if ! psql "$url" -q -c "\\copy ($q) TO '$dir/$t.csv' CSV HEADER"; then
+      printf '     %-34s %s\n' "$t" "FAILED - skipped (re-run with a smaller DAYS or a bigger STMT_TIMEOUT_MS)"
+      rm -f "$dir/$t.csv"
+      continue
+    fi
     local rows sz
     rows=$(( $(wc -l < "$dir/$t.csv") - 1 )); [ "$rows" -lt 0 ] && rows=0
     sz=$(du -h "$dir/$t.csv" | cut -f1)
