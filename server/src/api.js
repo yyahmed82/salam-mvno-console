@@ -237,6 +237,13 @@ function auditWhere(q) {
   if (q.from) { p.push(q.from); w.push(`at >= $${p.length}::timestamptz`); }
   if (q.to) { p.push(q.to); w.push(`at < ($${p.length}::timestamptz + interval '1 day')`); }
   if (q.nav === '0') w.push(`action NOT IN ('VIEW_PAGE','APPLY_FILTER')`);
+  /* notuser: hide one actor from the VIEW only — the page sends the viewer's own e-mail so a
+   * super-admin who is testing all day is not drowned in their own VIEW_PAGE rows. Nothing is
+   * deleted and nothing is hidden by default on the server: the row stays in audit_log, the
+   * filter is a query parameter the caller chooses, the page shows it is on and can turn it off,
+   * and the CSV export always carries every row. An audit trail that can silently drop the
+   * auditor's own actions is not an audit trail. */
+  if (q.notuser) { p.push(String(q.notuser).toLowerCase()); w.push(`lower(coalesce(actor,'')) <> $${p.length}`); }
   return { clause: w.length ? ('WHERE ' + w.join(' AND ')) : '', params: p };
 }
 
