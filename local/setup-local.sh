@@ -36,19 +36,38 @@ psql --version | sed 's/^/   /'
 
 PGHOST_LOCAL="${PGHOST_LOCAL:-127.0.0.1}"
 PGPORT_LOCAL="${PGPORT_LOCAL:-5432}"
-export PGHOST_LOCAL PGPORT_LOCAL
-if SRV="$(psql -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$(whoami)" -d postgres -Atc "SELECT version()" 2>&1)"; then
-  echo "   server: ${SRV%% (*}"
+[ -f local/.pglocal.env ] && { set -a; . local/.pglocal.env; set +a; }   # optional: PGUSER_LOCAL / PGPASSWORD
+
+probe(){ PGCONNECT_TIMEOUT=5 psql -w -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$1" -d "$2" -Atc "SELECT version()" 2>&1; }
+FOUND=""
+for cand in ${PGUSER_LOCAL:-} "$(whoami)" postgres; do
+  [ -n "$cand" ] || continue
+  for dbc in postgres "$cand"; do
+    if OUTV="$(probe "$cand" "$dbc")"; then FOUND="$cand"; FOUNDDB="$dbc"; break 2; fi
+  done
+done
+
+if [ -n "$FOUND" ]; then
+  echo "   server: ${OUTV%% (*}"
+  echo "   role:   $FOUND   (via $FOUNDDB)"
+  PGUSER_LOCAL="$FOUND"
 else
-  echo "   NO PostgreSQL SERVER answering on $PGHOST_LOCAL:$PGPORT_LOCAL as $(whoami)"
-  echo "   ($SRV)"
-  echo "   psql above is only the client. Start or install a server, then re-run this script:"
-  echo "       brew install postgresql@16"
-  echo "       brew services start postgresql@16"
-  echo "       createdb \"$(whoami)\""
-  echo "   Postgres.app: open it, press Start, and put its bin directory first on PATH."
+  echo "   a server IS listening on $PGHOST_LOCAL:$PGPORT_LOCAL but no role connects without a password."
+  echo "   last error: $OUTV"
+  echo
+  echo "   Pick ONE of these, then re-run this script:"
+  echo "     A) you know the password - store it once:"
+  echo "          printf '%s\n' \"$PGHOST_LOCAL:$PGPORT_LOCAL:*:$(whoami):YOURPASSWORD\" >> ~/.pgpass && chmod 600 ~/.pgpass"
+  echo "        or put PGUSER_LOCAL=... and PGPASSWORD=... in local/.pglocal.env"
+  echo "     B) trust local connections (a laptop, so this is fine):"
+  echo "          psql -h $PGHOST_LOCAL -U postgres -d postgres -Atc \"SHOW hba_file\""
+  echo "          then set the 127.0.0.1/::1 lines to 'trust' and: brew services restart postgresql@16"
+  echo "     C) start fresh with a Homebrew server that trusts you:"
+  echo "          brew install postgresql@16 && brew services start postgresql@16"
+  echo "          export PATH=\"/opt/homebrew/opt/postgresql@16/bin:\$PATH\" && createdb \"$(whoami)\""
   exit 1
 fi
+export PGHOST_LOCAL PGPORT_LOCAL PGUSER_LOCAL
 
 say "2/4  pull $DAYS days from prod (read-only, through the SSH tunnel)"
 bash local/pull-from-prod.sh "$DAYS" "$OUT"
