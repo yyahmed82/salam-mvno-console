@@ -3071,7 +3071,8 @@ require('./fixedExec').mount(app, { requireView });   // Fixed › Executive + O
 // own KPI function so the 24 h numbers are the Dashboard's numbers, not a second implementation of them.
 { const execDeps = { requireView, homeKpis: homeKpisFromSource, boardNow, segment };
   require('./mvnoExec').mount(app, execDeps);
-  require('./execUnified').mount(app, execDeps); }
+  require('./execUnified').mount(app, execDeps);
+  require('./execRadar').mount(app, execDeps); }   // the case file behind one radar contact
 
 /* Mobile-side alert endpoints are SEGMENT-SCOPED (8 Sep 2026): they answer for 'mvno' unless ?segment=fixed|all is
  * asked by a user whose business allows it (segment.forRequest). Fixed › Alerts has its own /api/fixed/alerts/*.

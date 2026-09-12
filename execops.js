@@ -172,16 +172,18 @@
       const tip = `<title>${esc(h.label)} · ${c.sev} · ${c.day} · ${c.n} rule${c.n === 1 ? '' : 's'}`
         + `${live ? ` · ${c.open} still open` : ' · all cleared'} · ${num(c.firings)} firing${c.firings === 1 ? '' : 's'}`
         + `${c.rules && c.rules.length ? '\n' + c.rules.map(r => '• ' + esc(r)).join('\n') : ''}</title>`;
+      const coord = `data-cell="1" data-biz="${esc(b)}" data-sev="${esc(c.sev)}" data-day="${esc(c.day)}" data-label="${esc(h.label)}" tabindex="0" role="button" aria-label="${esc(h.label)} ${c.sev} ${c.day}: open the case file"`;
       if (!live) { const dr = Math.max(2, rr * 0.62);
-        return `<g class="xo-blip xo-dead xo-b-${b}" style="--d:${dly}s">`
+        return `<g class="xo-blip xo-dead xo-b-${b}" style="--d:${dly}s" ${coord}>`
           + glyph(b, x, y, dr, `class="xo-dot" fill="none" stroke="${G}" stroke-width="1.1"`, tip)
-          + glyph(b, x, y, Math.max(0.8, dr * 0.26), `class="xo-core" fill="${G}"`) + `</g>`; }
-      return `<g class="xo-blip xo-live xo-b-${b}" style="--d:${dly}s">`
+          + glyph(b, x, y, Math.max(0.8, dr * 0.26), `class="xo-core" fill="${G}"`)
+          + `<circle class="xo-hit" cx="${x}" cy="${y}" r="${Math.max(9, dr + 6).toFixed(1)}" fill="transparent"/></g>`; }
+      return `<g class="xo-blip xo-live xo-b-${b}" style="--d:${dly}s" ${coord}>`
         + glyph(b, x, y, rr + 5, `class="xo-lock" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.1" stroke-dasharray="3 3"`)
         + glyph(b, x, y, rr + rr * 0.5 + 2, `class="xo-ping" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.4"`)
         + glyph(b, x, y, rr + rr * 0.6 + 3, `class="xo-halo" fill="${SEV_COLOR[c.sev]}"`)
         + glyph(b, x, y, rr, `class="xo-dot" fill="${SEV_COLOR[c.sev]}" stroke="${b === 'mobile' ? '#e6f0ff' : '#d8fde9'}" stroke-width="${Math.min(1.3, rr * 0.28).toFixed(2)}" filter="url(#xoGlow)"`, tip)
-        + `</g>`;
+        + `<circle class="xo-hit" cx="${x}" cy="${y}" r="${Math.max(11, rr + 7).toFixed(1)}" fill="transparent"/></g>`;
     })).join('');
 
     const tot = halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || {}).rules || 0, o: (h.radar || {}).open || 0 }));
@@ -240,12 +242,89 @@
         <div class="xo-rl-d"${fireTot > ruleTot ? ` title="${num(fireTot)} firing events behind them — the same rule re-fires on every evaluation cycle, which is why the radar counts rules, not firings"` : ''}><b>${num(ruleTot)}</b> rule${ruleTot === 1 ? '' : 's'} fired in ${days.length} d</div>
         ${peak ? `<div class="xo-rl-d">busiest: <b>${esc(peak.c.sev)}</b> · ${esc(peak.c.day)} · ${num(peak.c.n)} rule${peak.c.n === 1 ? '' : 's'} on ${esc(peak.h.label)}</div>` : ''}
         <div class="xo-rl-d"><span class="xo-lg"><i class="xo-lg-live"></i>open — still breaching</span><span class="xo-lg"><i class="xo-lg-dead"></i>cleared — kept as history</span></div>
-        <div class="xo-rl-d">ring = severity · sector = day · dot size = distinct rules · the sweep reveals them</div>
+        <div class="xo-rl-d">ring = severity · sector = day · dot size = distinct rules · <b>click a contact for its case file</b></div>
         <div class="xo-rl-biz">${(tot.length > 1 ? tot : halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || {}).rules || 0, o: (h.radar || {}).open || 0 })))
           .map(t => `<span class="xo-bz"><i class="xo-gl xo-gl-${t.biz}"></i><b>${esc(t.label)}</b><span>${num(t.o)} open / ${num(t.t)}</span></span>`).join('')}</div>
         <a href="#alerts" class="xo-link">open alerts →</a>
       </div></div>`;
   }
+
+  /* ---------- the case file behind one contact ----------
+   * Click a blip -> every rule that fired in that (business x severity x day) cell, with who has it,
+   * how long it has been open, the acknowledgement SLA it is measured against, and the rule's own
+   * MTTR. Rendered in the scope's own phosphor palette so it reads as part of the instrument.
+   * Fields the source does not record are stated as not recorded — never left blank, because a blank
+   * owner column reads as "nobody is on it" when the truth is "this source does not track it". */
+  const dur = m => { if (m == null) return '—'; const a = Math.abs(m);
+    if (a < 60) return `${Math.round(a)} min`;
+    if (a < 1440) return `${Math.floor(a / 60)} h ${Math.round(a % 60)} m`;
+    return `${Math.floor(a / 1440)} d ${Math.floor((a % 1440) / 60)} h`; };
+  const na = (v, why) => v ? esc(v) : `<em class="xo-na" title="${esc(why || 'not recorded by this source')}">not recorded</em>`;
+
+  function caseRow(r) {
+    const open = r.status === 'open';
+    const ack = r.ack;
+    const slaCell = !ack ? na(null, 'no acknowledgement SLA is configured for this business and priority')
+      : !ack.enabled ? `<em class="xo-na">SLA off</em>`
+      : ack.overdue ? `<b class="xo-bad">overdue ${dur(ack.overdueByMin)}</b><span class="xo-dim"> · target ${ack.targetMin} min${ack.level ? ` · reminder ${ack.level}` : ''}</span>`
+      : r.ackAt ? `<b class="xo-good">acked ${dur(ack.elapsedMin)}</b><span class="xo-dim"> · target ${ack.targetMin} min</span>`
+      : `<span class="xo-dim">due in ${dur(ack.targetMin - ack.elapsedMin)} · target ${ack.targetMin} min</span>`;
+    const mttr = r.mttr ? `<b>${dur(r.mttr.p50Min)}</b><span class="xo-dim"> median · ${dur(r.mttr.avgMin)} avg · ${num(r.mttr.samples)} resolved</span>`
+      : `<em class="xo-na" title="this rule has no resolved history to measure from">no resolved history</em>`;
+    return `<div class="xo-case ${open ? 'open' : 'cleared'}">
+      <div class="xo-caseh">
+        <span class="xo-sevdot" style="background:${SEV_COLOR[r.severity] || 'var(--muted)'}"></span>
+        <b class="xo-casen">${esc(r.name)}</b>
+        <span class="xo-state ${open ? 'open' : 'cleared'}">${open ? 'OPEN' : 'CLEARED'}</span>
+        ${r.ticket ? `<span class="xo-tick">${esc(r.ticket)}</span>` : ''}
+        <a href="${esc(r.href)}" class="xo-link">open rule →</a>
+      </div>
+      <div class="xo-casegrid">
+        <div><span>owner</span>${r.owner ? `<b>${esc(r.owner)}</b><em class="xo-dim"> · ${esc(r.ownerFrom)}</em>` : `<b class="xo-bad">unassigned</b>`}</div>
+        <div><span>team</span>${na(r.team, 'the rule carries no team')}</div>
+        <div><span>${open ? 'open for' : 'was open'}</span><b>${dur(r.openMin)}</b></div>
+        <div><span>ack SLA</span>${slaCell}</div>
+        <div><span>MTTR (this rule)</span>${mttr}</div>
+        <div><span>fired</span><b>${ts(r.firedAt)}</b>${r.breachCount > 1 ? `<em class="xo-dim"> · ${num(r.breachCount)} breaches</em>` : ''}</div>
+        <div><span>${open ? 'last seen' : 'cleared'}</span><b>${ts(r.resolvedAt || r.lastSeenAt)}</b></div>
+        <div><span>value vs threshold</span>${r.observed == null ? na(null) : `<b>${num(r.observed)}</b><em class="xo-dim"> vs ${num(r.threshold)}${r.peak != null ? ` · peak ${num(r.peak)}` : ''}</em>`}</div>
+      </div>
+      ${r.message ? `<div class="xo-casemsg">${esc(r.message)}</div>` : ''}
+      ${r.note ? `<div class="xo-casemsg xo-casenote">note: ${esc(r.note)}</div>` : ''}
+    </div>`;
+  }
+
+  let caseSeq = 0;
+  async function openCase(biz, sev, day, label) {
+    const me = ++caseSeq;
+    let m = $('#xoCase');
+    if (!m) { m = document.createElement('div'); m.id = 'xoCase'; m.className = 'xo-modal xo-scope'; document.body.appendChild(m); }
+    const close = () => { m.remove(); document.removeEventListener('keydown', esckey); };
+    const esckey = e => { if (e.key === 'Escape') close(); };
+    const shell = body => { m.innerHTML = `<div class="xo-modal-in xo-caseb"><div class="xo-modal-bar">
+        <b>${esc(label)} · ${esc(sev)} · ${esc(day)}</b>
+        <span class="xo-modal-tools"><a href="#alerts" class="xo-btn">all alerts ↗</a><button type="button" class="xo-btn" data-x="close">✕ close</button></span>
+      </div><div class="xo-casebody">${body}</div></div>`;
+      const b = m.querySelector('[data-x="close"]'); if (b) b.onclick = close; };
+    shell(`<div class="xo-loading">Reading the case file…</div>`);
+    m.onclick = e => { if (e.target === m) close(); };
+    document.addEventListener('keydown', esckey);
+    let d;
+    try { d = await api(`/api/exec/radar/cell?biz=${encodeURIComponent(biz)}&sev=${encodeURIComponent(sev)}&day=${encodeURIComponent(day)}`); }
+    catch (e) { if (me === caseSeq) shell(`<div class="topo-card xo-err"><b>Could not read the case file</b><div class="xo-dim">${esc(e.message)}</div></div>`); return; }
+    if (me !== caseSeq) return;
+    const rules = d.rules || [], open = d.open || 0;
+    shell(`<div class="xo-casetop">
+        <div class="xo-casestat"><b class="${open ? 'xo-bad' : 'xo-good'}">${num(open)}</b><span>still open</span></div>
+        <div class="xo-casestat"><b>${num(rules.length)}</b><span>rule${rules.length === 1 ? '' : 's'} in this contact</span></div>
+        <div class="xo-casestat"><b>${num(rules.filter(r => !r.owner && r.status === 'open').length)}</b><span>open &amp; unassigned</span></div>
+        <div class="xo-casestat"><b>${num(rules.filter(r => r.ack && r.ack.overdue).length)}</b><span>past ack SLA</span></div>
+      </div>
+      ${rules.length ? rules.map(caseRow).join('') : `<div class="xo-empty">Nothing fired in this cell.</div>`}
+      ${(d.missing || []).length ? `<div class="xo-missing">${(d.missing || []).map(x => esc(x)).join('<br>')}</div>` : ''}
+      <div class="xo-foot">source ${esc(d.source || '—')} · read ${hm(d.generatedAt)}</div>`);
+  }
+  window.execopsCase = openCase;
 
   /* ---------- executive brief: the slide deck, in a modal, only if the file is deployed ---------- */
   const BRIEF = 'exec-brief.html';
@@ -366,6 +445,12 @@
       o.sections.map(k => SECTION[k] ? SECTION[k](halves, u) : '').join('');
     host.dataset.xoLoaded = '1';
     host.querySelectorAll('.xo-r').forEach(b => b.onclick = () => { state.range = b.dataset.r; localStorage.setItem('exec_range', state.range); document.querySelectorAll('[data-xo-host]').forEach(h2 => { if (h2._xo) render(h2, h2._xo, true); }); });
+    /* delegated so it survives every re-render and the 5-minute auto-refresh */
+    host.querySelectorAll('.xo-blip[data-cell]').forEach(g => {
+      const go = () => openCase(g.dataset.biz, g.dataset.sev, g.dataset.day, g.dataset.label);
+      g.addEventListener('click', go);
+      g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    });
     const rb = host.querySelector('[data-act="refresh"]'); if (rb) rb.onclick = () => render(host, o, true);
     const bb = host.querySelector('[data-act="brief"]'); if (bb) { bb.onclick = openBrief; briefExists().then(ok => { if (ok) bb.hidden = false; }); }
     host.setAttribute('data-xo-host', '1'); host._xo = o;
@@ -467,6 +552,39 @@
       .xo-si{font-size:18px;font-weight:800}.xo-slo.ok .xo-si{color:var(--green,#0e9f5a)}.xo-slo.breach .xo-si{color:#dc2626}.xo-slo.nowire .xo-si{color:var(--muted)}
       .xo-sn{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:800;margin:4px 0}
       .xo-sa{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}.xo-st{font-size:10.5px;color:var(--muted);margin-top:3px}
+      /* a contact is a control: pointer, a visible focus ring for the keyboard, and a hit target
+         big enough that a 3px dead star is still clickable */
+      .xo-blip[data-cell]{cursor:pointer}
+      .xo-blip[data-cell]:hover .xo-dot,.xo-blip[data-cell]:focus-visible .xo-dot{stroke-width:2}
+      .xo-blip[data-cell]:focus{outline:none}
+      .xo-blip[data-cell]:focus-visible .xo-hit{stroke:var(--xo-grid,#37d39a);stroke-width:1.5;stroke-dasharray:2 2}
+      .xo-caseb{width:min(1080px,100%);height:min(86vh,100%)}
+      .xo-casebody{flex:1;overflow:auto;padding:16px 18px 20px}
+      .xo-casetop{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+      .xo-casestat{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+      .xo-casestat b{display:block;font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+      .xo-casestat span{display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:3px}
+      .xo-bad{color:var(--xo-p1,#dc2626)}.xo-good{color:#37d39a}
+      .xo-case{border:1px solid var(--line);border-left:3px solid var(--muted);border-radius:11px;padding:13px 15px;margin-bottom:11px;background:rgba(255,255,255,.02)}
+      .xo-case.open{border-left-color:var(--xo-p1,#dc2626);background:rgba(255,95,95,.05)}
+      .xo-case.cleared{opacity:.78}
+      .xo-caseh{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:10px}
+      .xo-sevdot{width:9px;height:9px;border-radius:50%;flex:none}
+      .xo-casen{font-size:14px;font-weight:800;flex:1;min-width:180px}
+      .xo-state{font-size:9.5px;font-weight:800;letter-spacing:.7px;padding:3px 8px;border-radius:6px}
+      .xo-state.open{color:var(--xo-p1,#dc2626);background:color-mix(in srgb,var(--xo-p1,#dc2626) 16%,transparent)}
+      .xo-state.cleared{color:var(--muted);background:rgba(255,255,255,.07)}
+      .xo-tick{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:6px;color:#57a8ff;background:color-mix(in srgb,#57a8ff 15%,transparent);font-family:var(--mono,ui-monospace,monospace)}
+      /* exactly four columns on a wide modal so the eight fields tile 4+4 with no ragged gap */
+      .xo-casegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px}
+      @media (min-width:760px){.xo-casegrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+      .xo-casegrid>div{font-size:12.5px;line-height:1.45;min-width:0}
+      .xo-casegrid span{display:block;font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px}
+      .xo-casegrid b{font-weight:700;font-variant-numeric:tabular-nums}
+      .xo-na{font-style:italic;color:var(--muted);opacity:.85;border-bottom:1px dotted currentColor;cursor:help}
+      .xo-casemsg{margin-top:9px;padding-top:9px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.5}
+      .xo-casenote{color:var(--ink)}
+      @media (max-width:520px){.xo-casegrid{grid-template-columns:1fr}.xo-caseb{height:100%}}
       .xo-bgrp{margin-bottom:15px}.xo-bgrp:last-child{margin-bottom:0}
       .xo-bgh{display:flex;align-items:center;gap:10px;margin:0 0 9px}
       .xo-bgh i{flex:1;height:1px;background:var(--line)}
