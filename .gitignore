@@ -32,3 +32,4 @@ console-local/
 local/.pglocal.env
 local/uploads/
 local/out/
+cache/

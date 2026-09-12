@@ -58,7 +58,7 @@ cp server/package.json        "$STAGE/server/"
 printf '{ "version": "%s", "commit": "%s", "tag": "%s", "builtAt": "%s" }\n' \
   "$(cat VERSION 2>/dev/null | tr -d '[:space:]')" "$(git rev-parse --short HEAD 2>/dev/null || echo dev)" \
   "$(git describe --tags --exact-match 2>/dev/null || git describe --tags 2>/dev/null || echo '')" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STAGE/server/build.json"
-cp ./*.js ./*.html            "$STAGE/web/" 2>/dev/null || true
+cp ./*.js ./*.html ./*.css     "$STAGE/web/" 2>/dev/null || true
 # docs artifacts: imported API references (otoDocs/salamApiDocs .json for the viewers) and the
 # .md runbooks/KB files that assist.js reads from STATIC_DIR (OPS_RUNBOOK, OTO_API_DOCS, …)
 cp ./*.json ./*.md            "$STAGE/web/" 2>/dev/null || true

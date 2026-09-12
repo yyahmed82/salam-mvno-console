@@ -1,0 +1,105 @@
+/* ============================================================================
+   uipolish.css — additive UI polish layer (12 Sep 2026)
+
+   Loaded AFTER the inline <style> in index.html, so anything here WINS. That is
+   the whole risk of this file, and the rule it follows: touch only what the
+   inline sheet does not already own, and use :where() (specificity 0) wherever
+   a component rule must still be able to beat us.
+
+   DELIBERATELY NOT HERE — each of these fought something that already exists:
+     · border-radius inside :focus-visible — that changes the ELEMENT's radius,
+       not the outline's. .pill/.navtab are 10-11px, .chip 12px, .navtab .num is
+       a 50% circle: every one of them squared off while focused.
+     · a{color:var(--blue)} — .pill is an <a> in two places, and navigation
+       chrome is green-only.
+     · translucent + backdrop-filter header — header is sticky at z-index 1200
+       over 4M-row tables: rows scrolled visibly through it, and the blur forced
+       a GPU recomposite on every scroll frame.
+     · scrollbars (index.html:1146-1147) and ::selection (1144) already themed.
+     · font-feature-settings "cv11"/"ss01" — Inter features; the stack is
+       -apple-system / Segoe UI / Noto Kufi Arabic. No effect.
+   ========================================================================== */
+
+/* ---- 1 · Rendering quality ------------------------------------------------ */
+html{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+
+/* Aligned numerals wherever people compare numbers down a column. */
+table, .num, code, pre, .mono, [class*="kpi"], [class*="metric"], [class*="stat"]{
+  font-variant-numeric:tabular-nums;
+}
+
+/* ---- 2 · A focus ring for what does not already have one (a11y) ------------ */
+/* :where() = specificity 0, so .btn:focus-visible (177), .tkb-tab (770) and
+   :where(select,textarea,input) (1138) all keep their own ring. This only
+   reaches the elements the inline sheet never styled. No border-radius here. */
+:where(a, button, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible{
+  outline:2px solid var(--green);
+  outline-offset:2px;
+}
+
+/* ---- 3 · Panels: gentle elevation on hover --------------------------------- */
+.panel{ transition:box-shadow .2s ease, border-color .2s ease; }
+.panel:hover{
+  box-shadow:var(--shadow);
+  border-color:color-mix(in srgb, var(--line) 60%, var(--green));
+}
+
+/* ---- 4 · Prose links only -------------------------------------------------- */
+/* Scoped hard: never nav chrome, never anything already styled as a control. */
+.panel a:not(.pill):not(.btn):not(.navtab):not(.chip):not([class*="tab"]){
+  color:var(--blue);
+  text-underline-offset:2px;
+  transition:color .15s ease;
+}
+.panel a:not(.pill):not(.btn):not(.navtab):not(.chip):not([class*="tab"]):hover{
+  color:color-mix(in srgb, var(--blue) 80%, var(--ink));
+}
+
+/* ---- 5 · Interactive affordances ------------------------------------------- */
+button{
+  transition:background .15s ease, border-color .15s ease, box-shadow .15s ease,
+             transform .12s ease, filter .15s ease;
+}
+button:not(:disabled):active{ transform:translateY(1px) scale(.99); }
+
+/* Inputs: ADD a soft halo. The outline and border-color stay owned by 1138. */
+input, select, textarea{ transition:box-shadow .15s ease, border-color .15s ease; }
+:where(input, select, textarea):focus-visible{
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
+}
+
+/* Scan-line hover on the tables that do not already have one.
+   table.umtable paints the td (382/413), which covers any tr background. */
+table:not(.umtable) tbody tr{ transition:background .12s ease; }
+table:not(.umtable) tbody tr:hover{
+  background:color-mix(in srgb, var(--green-bg) 55%, transparent);
+}
+
+/* ---- 6 · Entrances --------------------------------------------------------- */
+.view.active{ animation:viewIn .22s cubic-bezier(.2,.8,.2,1); }
+@keyframes viewIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+
+/* .modal-card only. [class*="modal"]>div replayed popIn on every re-render of
+   anything whose class merely contained "modal". */
+.modal-card{ animation:popIn .18s cubic-bezier(.2,.8,.2,1); }
+@keyframes popIn{ from{ opacity:0; transform:translateY(8px) scale(.985); } to{ opacity:1; transform:none; } }
+
+/* ---- 7 · Code blocks ------------------------------------------------------- */
+pre, code{ border-radius:6px; }
+pre{ border:1px solid var(--code-line); }
+
+/* ---- 8 · Reduced motion, everywhere ---------------------------------------- */
+@media (prefers-reduced-motion:reduce){
+  *, *::before, *::after{
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+    scroll-behavior:auto !important;
+  }
+}
+
+/* ---- 9 · Print ------------------------------------------------------------- */
+@media print{
+  .panel{ break-inside:avoid; box-shadow:none; }
+  header{ position:static; }
+}
