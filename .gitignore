@@ -30,3 +30,5 @@ local/.env
 local/*.dump
 console-local/
 local/.pglocal.env
+local/uploads/
+local/out/

@@ -16,6 +16,15 @@ case "${1:-}" in
   --sync) node server/src/cli.js sync; exit 0;;
 esac
 
+PID="$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
+if [ -n "$PID" ]; then
+  echo "port ${PORT} is already served by pid $PID - stopping it so this run picks up local/.env"
+  kill "$PID" 2>/dev/null || true
+  for i in 1 2 3 4 5 6 7 8 9 10; do lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t >/dev/null 2>&1 || break; sleep 1; done
+  lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t >/dev/null 2>&1 && { echo "pid $PID would not stop - kill it yourself"; exit 1; }
+fi
+mkdir -p "${UPLOAD_DIR:-local/uploads}/tickets" "${UPLOAD_DIR:-local/uploads}/docs" "${OUTDIR:-local/out}" 2>/dev/null || true
+
 echo "console on http://localhost:${PORT}   (console DB: ${CONSOLE_DATABASE_URL##*/})"
 echo "sign in as ${CONSOLE_ADMIN_USER} - with no SMTP the 6-digit code is printed right here"
 exec node server/src/api.js

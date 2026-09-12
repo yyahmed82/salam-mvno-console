@@ -44,9 +44,10 @@ curl -sS -m 5 "$OLLAMA_URL/api/tags" \
 
 say "3/4  local/.env"
 [ -f local/.env ] || { echo "   local/.env missing - run local/restore-local.sh first"; exit 1; }
-python3 - "$OLLAMA_URL" "$MODEL" <<'PY'
+mkdir -p local/uploads/tickets local/uploads/docs local/out
+python3 - "$OLLAMA_URL" "$MODEL" "$PWD" <<'PY'
 import sys
-url, model = sys.argv[1], sys.argv[2]
+url, model, root = sys.argv[1], sys.argv[2], sys.argv[3]
 want = {
   # OVERRIDE beats the restored prod value (host.docker.internal) in llm.js and assist.js
   'OLLAMA_URL_OVERRIDE': url,
@@ -59,7 +60,11 @@ want = {
   'LLM_PRIMARY_TIMEOUT_MS': '120000',   # a laptop CPU is slower than 152
   'AGENT_LOG_ENABLED': '1',
   'AGENT_INCIDENT_ENABLED': '1',
+  # prod paths - on a laptop they live in the repo
+  'UPLOAD_DIR': 'LOCALROOT/local/uploads',
+  'OUTDIR': 'LOCALROOT/local/out',
 }
+want = {k: v.replace('LOCALROOT', root) for k, v in want.items()}
 lines = open('local/.env').read().split('\n')
 seen, out = set(), []
 for line in lines:
@@ -70,7 +75,7 @@ for k, v in want.items():
     if k not in seen: out.append(k + '=' + v)
 open('local/.env', 'w').write('\n'.join(out))
 PY
-grep -E '^(OLLAMA_|LLM_PRIMARY_|AGENT_)' local/.env | sed 's/^/   /'
+grep -E '^(OLLAMA_|LLM_PRIMARY_|AGENT_|UPLOAD_DIR|OUTDIR)' local/.env | sed 's/^/   /'
 
 say "4/4  end-to-end check"
 printf '   asking the model through Ollama directly ... '
