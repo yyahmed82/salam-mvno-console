@@ -26,6 +26,7 @@ set -euo pipefail
 
 DAYS="${1:-30}"
 OUT="${2:-$HOME/Downloads/console-local}"
+ONLY="${ONLY:-}"                 # e.g. ONLY=ops,opsbeta to redo just those two
 SSH_HOST="${SSH_HOST:-yosri@ruh-salam-site03}"
 CRED="${CRED:-$HOME/.salam-prod-db.env}"
 export PGOPTIONS='-c timezone=UTC -c default_transaction_read_only=on'
@@ -62,8 +63,10 @@ p = u.urlsplit(raw)
 # The prod passwords contain an unencoded '@'. urlsplit does split on the LAST '@', but the
 # parts must be re-encoded or libpq mis-parses them - and psql rejects the Prisma-only params
 # (schema / connection_limit / pool_timeout), so drop them here.
-user = u.quote(p.username or '', safe='')
-pwd  = u.quote(p.password or '', safe='')
+# decode first: the OPS URLs store the password already percent-encoded, and encoding it a
+# second time turned %2F into %252F -> "password authentication failed".
+user = u.quote(u.unquote(p.username or ''), safe='')
+pwd  = u.quote(u.unquote(p.password or ''), safe='')
 auth = (user + (':' + pwd if pwd else '') + '@') if user else ''
 q = [(k, v) for k, v in u.parse_qsl(p.query, keep_blank_values=True)
      if k not in ('schema', 'connection_limit', 'pool_timeout', 'pgbouncer', 'connect_timeout')]
@@ -100,6 +103,9 @@ mkdir -p "$OUT"
 # ---------- one dataset ----------------------------------------------------------------------
 pull(){                          # pull <label> <prod-url-var> <schema> <tables|ALL>
   local label="$1" var="$2" schema="$3" want="$4"
+  if [ -n "$ONLY" ]; then
+    case ",$ONLY," in *",$label,"*) ;; *) echo "   (skipped - not in ONLY=$ONLY)"; return 0;; esac
+  fi
   local prod="${!var:-}"
   [ -n "$prod" ] || { echo "   (skipped - $var not set)"; return 0; }
   local url; url="$(local_url "$prod" "$(portof "$(hostport "$prod")")")"
