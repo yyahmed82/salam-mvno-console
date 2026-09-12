@@ -284,6 +284,15 @@
 
   /* Each section is a function of the halves. A page asks for the ones it does not already show,
    * which is what keeps the merged pages free of repeated numbers. */
+  /* With two businesses one wrapped grid splits a business across rows — the last Fixed SLO ended
+   * up alone at the end of the Mobile row, which reads as if it belonged to Mobile. Group per
+   * business instead: each gets its own grid under a thin header, so a row never mixes the two and
+   * the tiles no longer need to carry a badge each. One business: a single grid, unchanged. */
+  const grouped = (H, u, cls, tiles) => u
+    ? H.map(h => { const t = tiles(h); return t.length
+        ? `<div class="xo-bgrp"><div class="xo-bgh">${badge(h, true)}<i></i></div><div class="${cls}">${t.join('')}</div></div>` : ''; }).join('')
+    : `<div class="${cls}">${H.flatMap(h => tiles(h)).join('')}</div>`;
+
   const SECTION = {
     /* Executive verdict, not a paragraph. Three sentences of prose per business was a briefing note;
      * an executive needs the one thing that is wrong and the numbers that say how wrong. Everything
@@ -315,13 +324,13 @@
           </div></div>`; }).join('')}</div>`,
     radar: (H) => sec('signal', 'Alert radar', 'severity by day · click through to alerts') + `<div class="topo-card xo-chart xo-scope">${radar(H)}</div>`,
     kpisExec: (H, u) => sec('north-star', 'Key indicators', 'click a tile to open its page') +
-      `<div class="xo-grid">${H.flatMap(h => h.kpis.filter(k => k.exec).map(k => kpiTile(k, h, u))).join('')}</div>`,
+      grouped(H, u, 'xo-grid', h => h.kpis.filter(k => k.exec).map(k => kpiTile(k, h, false))),
     kpisAll: (H, u) => sec('indicators', 'Key indicators', 'click a tile to open its page') +
-      `<div class="xo-grid">${H.flatMap(h => h.kpis.filter(k => k.key !== 'availability' && k.key !== 'revenue').map(k => kpiTile(k, h, u))).join('')}</div>`,
+      grouped(H, u, 'xo-grid', h => h.kpis.filter(k => k.key !== 'availability' && k.key !== 'revenue').map(k => kpiTile(k, h, false))),
     slos: (H, u) => sec('slo', 'SLO compliance', '○ = not measured by this console') +
-      `<div class="xo-slos">${H.flatMap(h => h.slos.map(x => sloTile(x, h, u))).join('')}</div>`,
+      grouped(H, u, 'xo-slos', h => h.slos.map(x => sloTile(x, h, false))),
     health: (H, u) => sec('health', 'System health', 'click a tile to open its page') +
-      `<div class="xo-health">${H.flatMap(h => h.health.map(x => healthTile(x, h, u))).join('')}</div>`,
+      grouped(H, u, 'xo-health', h => h.health.map(x => healthTile(x, h, false))),
     trendsExec: (H, u) => sec('trends', 'Trends', `${H[0].days} days · KSA`) +
       `<div class="xo-charts">${H.flatMap(h => h.series.charts.filter(c => c.exec).map(c => chartCard(c, h, u))).join('')}</div>`,
     trendsAll: (H, u) => sec('trends', 'Trends & analytics', `${H[0].days} days · KSA`) +
@@ -458,6 +467,10 @@
       .xo-si{font-size:18px;font-weight:800}.xo-slo.ok .xo-si{color:var(--green,#0e9f5a)}.xo-slo.breach .xo-si{color:#dc2626}.xo-slo.nowire .xo-si{color:var(--muted)}
       .xo-sn{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:800;margin:4px 0}
       .xo-sa{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}.xo-st{font-size:10.5px;color:var(--muted);margin-top:3px}
+      .xo-bgrp{margin-bottom:15px}.xo-bgrp:last-child{margin-bottom:0}
+      .xo-bgh{display:flex;align-items:center;gap:10px;margin:0 0 9px}
+      .xo-bgh i{flex:1;height:1px;background:var(--line)}
+      .xo-bgh .xo-biz{margin-right:0}
       .xo-charts{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:stretch}
       .xo-charts>*{min-width:0;height:100%}
       @media (min-width:820px){.xo-charts{grid-template-columns:repeat(2,minmax(0,1fr))}}
