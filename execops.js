@@ -326,7 +326,7 @@
     sections: ['trendsAll', 'pipeline', 'alerts', 'foot'], head: false });
   window.execopsFixed = window.execopsFixedBottom;   // back-compat for any old deep link
   // Mobile › Operations Dashboard: the Dashboard owns today's KPIs and order flow.
-  window.execopsMobileTop = () => mountInto($('#view-home'), 'prepend', 'xoMobTop', { biz: 'mobile', kicker: 'operations', range: false, sections: ['slos'] });
+  window.execopsMobileTop = () => mountInto($('#homeOps') || $('#view-home'), $('#homeOps') ? 'append' : 'prepend', 'xoMobTop', { biz: 'mobile', kicker: 'operations', range: false, sections: ['slos'] });
   window.execopsMobileBottom = () => mountInto($('#view-home'), 'append', 'xoMobBot', { biz: 'mobile', kicker: 'operations', range: false, sections: ['trendsAll', 'pipeline', 'alerts', 'foot'] });
   // Home: the landing page owns the status pills, growth and the attention list; add the charts and alerts.
   window.execopsHome = () => mountInto($('#view-landing'), 'append', 'xoHome', { biz: 'all', kicker: 'operations', range: false, sections: ['trendsExec', 'alerts', 'foot'] });
@@ -412,6 +412,8 @@
       .xo-block{margin-top:24px;padding-top:4px;border-top:1px solid var(--line)}
       #fxOps:not(:empty){margin:0 0 6px}
       #fxOps .xo-head{margin-top:0}
+      #homeOps:not(:empty){margin:0 0 10px}
+      #homeOps .xo-block{margin-top:0;padding-top:0;border-top:0}
       .xo-radarwrap{display:flex;gap:26px;align-items:center;flex-wrap:wrap;justify-content:center}
       .xo-radar{width:min(560px,100%);height:auto;flex:1 1 380px;max-width:560px;overflow:visible}
       .xo-sweepg{transform-origin:210px 210px;animation:xoSweep 8s linear infinite}

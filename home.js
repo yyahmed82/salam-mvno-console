@@ -785,7 +785,7 @@
     </div>`;
   }
   async function renderGrowthCards(){
-    const anchor=$("#nocAnoms"); if(!anchor||!anchor.parentNode) return;   // right after the P1/P2 anomaly notifs, before the range picker
+    const anchor=$("#homeOps")||$("#nocAnoms"); if(!anchor||!anchor.parentNode) return;   // after the ops status + SLO block, before the range picker
     let box=document.getElementById("homeGrowth");
     if(!box){ box=document.createElement("div"); box.id="homeGrowth"; box.style.margin="0 0 10px"; }
     anchor.parentNode.insertBefore(box, anchor.nextSibling);   // (re)position after the anomaly notifs
@@ -969,8 +969,9 @@
 
   function renderAll(){ renderNoc(); renderAnoms(); renderGreeting(); renderKpis(); renderJourneys(); renderGrowthCards(); renderDash(); renderOps(); }
   /* Operations Dashboard (12 Sep 2026): the old Mobile "Operations" page merged in here. This page
-   * already owns today's KPIs, the journeys and the order flow, so it adds only the SLO tiles at the
-   * top and the day trends / funnel / alerts at the bottom — no number appears twice. */
+   * already owns today's KPIs, the journeys and the order flow, so it adds only the status + SLO
+   * tiles (into #homeOps, under the greeting / journey health / degraded strip — those open the
+   * page) and the day trends / funnel / alerts at the bottom — no number appears twice. */
   function renderOps(){ if(window.execopsMobileTop) window.execopsMobileTop(); if(window.execopsMobileBottom) window.execopsMobileBottom(); }
 
   // ---- customize (pick + reorder) ----
