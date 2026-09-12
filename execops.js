@@ -199,6 +199,11 @@
     const peak = cells.slice().sort((a, b) => (b.c.open - a.c.open) || (b.c.n - a.c.n) || (b.c.firings - a.c.firings))[0];
 
     return `<div class="xo-radarwrap">
+      <div class="xo-tty">
+        <div class="xo-tty-bar"><i></i><i></i><i></i><b class="xo-tty-ttl">open contacts</b>
+          <button type="button" class="xo-tty-b" data-tty="back" hidden>◂ all open</button></div>
+        <div class="xo-tty-out" role="log" aria-live="polite" aria-label="Open alert contacts"></div>
+      </div>
       <svg viewBox="0 0 ${VB} ${VB}" class="xo-radar" role="img" aria-label="Alert radar: P1 to P3 severity rings by day, open contacts and cleared history">
         <defs>
           <radialGradient id="xoFace" cx="50%" cy="46%" r="58%">
@@ -242,89 +247,106 @@
         <div class="xo-rl-d"${fireTot > ruleTot ? ` title="${num(fireTot)} firing events behind them — the same rule re-fires on every evaluation cycle, which is why the radar counts rules, not firings"` : ''}><b>${num(ruleTot)}</b> rule${ruleTot === 1 ? '' : 's'} fired in ${days.length} d</div>
         ${peak ? `<div class="xo-rl-d">busiest: <b>${esc(peak.c.sev)}</b> · ${esc(peak.c.day)} · ${num(peak.c.n)} rule${peak.c.n === 1 ? '' : 's'} on ${esc(peak.h.label)}</div>` : ''}
         <div class="xo-rl-d"><span class="xo-lg"><i class="xo-lg-live"></i>open — still breaching</span><span class="xo-lg"><i class="xo-lg-dead"></i>cleared — kept as history</span></div>
-        <div class="xo-rl-d">ring = severity · sector = day · dot size = distinct rules · <b>click a contact for its case file</b></div>
+        <div class="xo-rl-d">ring = severity · sector = day · dot size = distinct rules · <b>click a contact to tune the console</b></div>
         <div class="xo-rl-biz">${(tot.length > 1 ? tot : halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || {}).rules || 0, o: (h.radar || {}).open || 0 })))
           .map(t => `<span class="xo-bz"><i class="xo-gl xo-gl-${t.biz}"></i><b>${esc(t.label)}</b><span>${num(t.o)} open / ${num(t.t)}</span></span>`).join('')}</div>
         <a href="#alerts" class="xo-link">open alerts →</a>
       </div></div>`;
   }
 
-  /* ---------- the case file behind one contact ----------
-   * Click a blip -> every rule that fired in that (business x severity x day) cell, with who has it,
-   * how long it has been open, the acknowledgement SLA it is measured against, and the rule's own
-   * MTTR. Rendered in the scope's own phosphor palette so it reads as part of the instrument.
-   * Fields the source does not record are stated as not recorded — never left blank, because a blank
-   * owner column reads as "nobody is on it" when the truth is "this source does not track it". */
+  /* ---------- the scope console: open contacts, typed out ----------
+   * Sits beside the radar, not over it — nothing about an open alert should need a click to see.
+   * It teletypes the alerts that are STILL BREACHING right now; clicking a contact on the scope
+   * retunes it to that contact instead of opening a dialog. Same rule as everywhere else here:
+   * fields the source does not record are printed as "not recorded", never left blank, because a
+   * blank owner line reads as "nobody is on it" when the truth is "this source does not track it".
+   * ETA has no field anywhere, so the console prints the ack-SLA clock and the rule's own MTTR. */
   const dur = m => { if (m == null) return '—'; const a = Math.abs(m);
     if (a < 60) return `${Math.round(a)} min`;
     if (a < 1440) return `${Math.floor(a / 60)} h ${Math.round(a % 60)} m`;
     return `${Math.floor(a / 1440)} d ${Math.floor((a % 1440) / 60)} h`; };
-  const na = (v, why) => v ? esc(v) : `<em class="xo-na" title="${esc(why || 'not recorded by this source')}">not recorded</em>`;
 
-  function caseRow(r) {
-    const open = r.status === 'open';
-    const ack = r.ack;
-    const slaCell = !ack ? na(null, 'no acknowledgement SLA is configured for this business and priority')
-      : !ack.enabled ? `<em class="xo-na">SLA off</em>`
-      : ack.overdue ? `<b class="xo-bad">overdue ${dur(ack.overdueByMin)}</b><span class="xo-dim"> · target ${ack.targetMin} min${ack.level ? ` · reminder ${ack.level}` : ''}</span>`
-      : r.ackAt ? `<b class="xo-good">acked ${dur(ack.elapsedMin)}</b><span class="xo-dim"> · target ${ack.targetMin} min</span>`
-      : `<span class="xo-dim">due in ${dur(ack.targetMin - ack.elapsedMin)} · target ${ack.targetMin} min</span>`;
-    const mttr = r.mttr ? `<b>${dur(r.mttr.p50Min)}</b><span class="xo-dim"> median · ${dur(r.mttr.avgMin)} avg · ${num(r.mttr.samples)} resolved</span>`
-      : `<em class="xo-na" title="this rule has no resolved history to measure from">no resolved history</em>`;
-    return `<div class="xo-case ${open ? 'open' : 'cleared'}">
-      <div class="xo-caseh">
-        <span class="xo-sevdot" style="background:${SEV_COLOR[r.severity] || 'var(--muted)'}"></span>
-        <b class="xo-casen">${esc(r.name)}</b>
-        <span class="xo-state ${open ? 'open' : 'cleared'}">${open ? 'OPEN' : 'CLEARED'}</span>
-        ${r.ticket ? `<span class="xo-tick">${esc(r.ticket)}</span>` : ''}
-        <a href="${esc(r.href)}" class="xo-link">open rule →</a>
-      </div>
-      <div class="xo-casegrid">
-        <div><span>owner</span>${r.owner ? `<b>${esc(r.owner)}</b><em class="xo-dim"> · ${esc(r.ownerFrom)}</em>` : `<b class="xo-bad">unassigned</b>`}</div>
-        <div><span>team</span>${na(r.team, 'the rule carries no team')}</div>
-        <div><span>${open ? 'open for' : 'was open'}</span><b>${dur(r.openMin)}</b></div>
-        <div><span>ack SLA</span>${slaCell}</div>
-        <div><span>MTTR (this rule)</span>${mttr}</div>
-        <div><span>fired</span><b>${ts(r.firedAt)}</b>${r.breachCount > 1 ? `<em class="xo-dim"> · ${num(r.breachCount)} breaches</em>` : ''}</div>
-        <div><span>${open ? 'last seen' : 'cleared'}</span><b>${ts(r.resolvedAt || r.lastSeenAt)}</b></div>
-        <div><span>value vs threshold</span>${r.observed == null ? na(null) : `<b>${num(r.observed)}</b><em class="xo-dim"> vs ${num(r.threshold)}${r.peak != null ? ` · peak ${num(r.peak)}` : ''}</em>`}</div>
-      </div>
-      ${r.message ? `<div class="xo-casemsg">${esc(r.message)}</div>` : ''}
-      ${r.note ? `<div class="xo-casemsg xo-casenote">note: ${esc(r.note)}</div>` : ''}
-    </div>`;
+  /* the script is built as typed LINES: {t: text, c: class} — the typewriter walks characters */
+  function ruleLines(r, showBiz) {
+    const L = [], pad = k => (k + '          ').slice(0, 10);
+    const sev = r.severity || 'P?';
+    L.push({ t: `[${sev}] ${r.name}`, c: 'hd ' + sev.toLowerCase() });
+    L.push({ t: `       ${showBiz ? showBiz + ' · ' : ''}${(r.firedAt || '').slice(0, 10)} · open ${dur(r.openMin)}`, c: 'dim' });
+    L.push({ t: `  ${pad('OWNER')}${r.owner ? r.owner + '  (' + r.ownerFrom + ')' : '·· UNASSIGNED ··'}`, c: r.owner ? '' : 'bad' });
+    L.push({ t: `  ${pad('TEAM')}${r.team || 'not recorded'}`, c: r.team ? '' : 'na' });
+    if (r.ticket) L.push({ t: `  ${pad('TICKET')}${r.ticket}`, c: 'tick' });
+    const a = r.ack;
+    L.push(!a ? { t: `  ${pad('ACK SLA')}not configured for this business / priority`, c: 'na' }
+      : !a.enabled ? { t: `  ${pad('ACK SLA')}off`, c: 'na' }
+      : a.overdue ? { t: `  ${pad('ACK SLA')}OVERDUE by ${dur(a.overdueByMin)}   target ${a.targetMin} min${a.level ? `   reminder ${a.level} sent` : ''}`, c: 'bad' }
+      : r.ackAt ? { t: `  ${pad('ACK SLA')}acknowledged in ${dur(a.elapsedMin)}   target ${a.targetMin} min`, c: 'good' }
+      : { t: `  ${pad('ACK SLA')}due in ${dur(a.targetMin - a.elapsedMin)}   target ${a.targetMin} min`, c: '' });
+    L.push(r.mttr ? { t: `  ${pad('MTTR')}${dur(r.mttr.p50Min)} median · ${dur(r.mttr.avgMin)} avg · ${r.mttr.samples} resolved` , c: '' }
+      : { t: `  ${pad('MTTR')}no resolved history for this rule`, c: 'na' });
+    L.push({ t: `  ${pad('ETA')}no ETA field is captured — see ACK SLA / MTTR`, c: 'na' });
+    if (r.observed != null) L.push({ t: `  ${pad('VALUE')}${num(r.observed)} vs ${num(r.threshold)}${r.peak != null ? `   peak ${num(r.peak)}` : ''}${r.breachCount > 1 ? `   ${num(r.breachCount)} breaches` : ''}`, c: '' });
+    if (r.message) L.push({ t: `  > ${r.message}`, c: 'msg' });
+    L.push({ t: '', c: '' });
+    return L;
   }
 
-  let caseSeq = 0;
-  async function openCase(biz, sev, day, label) {
-    const me = ++caseSeq;
-    let m = $('#xoCase');
-    if (!m) { m = document.createElement('div'); m.id = 'xoCase'; m.className = 'xo-modal xo-scope'; document.body.appendChild(m); }
-    const close = () => { m.remove(); document.removeEventListener('keydown', esckey); };
-    const esckey = e => { if (e.key === 'Escape') close(); };
-    const shell = body => { m.innerHTML = `<div class="xo-modal-in xo-caseb"><div class="xo-modal-bar">
-        <b>${esc(label)} · ${esc(sev)} · ${esc(day)}</b>
-        <span class="xo-modal-tools"><a href="#alerts" class="xo-btn">all alerts ↗</a><button type="button" class="xo-btn" data-x="close">✕ close</button></span>
-      </div><div class="xo-casebody">${body}</div></div>`;
-      const b = m.querySelector('[data-x="close"]'); if (b) b.onclick = close; };
-    shell(`<div class="xo-loading">Reading the case file…</div>`);
-    m.onclick = e => { if (e.target === m) close(); };
-    document.addEventListener('keydown', esckey);
-    let d;
-    try { d = await api(`/api/exec/radar/cell?biz=${encodeURIComponent(biz)}&sev=${encodeURIComponent(sev)}&day=${encodeURIComponent(day)}`); }
-    catch (e) { if (me === caseSeq) shell(`<div class="topo-card xo-err"><b>Could not read the case file</b><div class="xo-dim">${esc(e.message)}</div></div>`); return; }
-    if (me !== caseSeq) return;
-    const rules = d.rules || [], open = d.open || 0;
-    shell(`<div class="xo-casetop">
-        <div class="xo-casestat"><b class="${open ? 'xo-bad' : 'xo-good'}">${num(open)}</b><span>still open</span></div>
-        <div class="xo-casestat"><b>${num(rules.length)}</b><span>rule${rules.length === 1 ? '' : 's'} in this contact</span></div>
-        <div class="xo-casestat"><b>${num(rules.filter(r => !r.owner && r.status === 'open').length)}</b><span>open &amp; unassigned</span></div>
-        <div class="xo-casestat"><b>${num(rules.filter(r => r.ack && r.ack.overdue).length)}</b><span>past ack SLA</span></div>
-      </div>
-      ${rules.length ? rules.map(caseRow).join('') : `<div class="xo-empty">Nothing fired in this cell.</div>`}
-      ${(d.missing || []).length ? `<div class="xo-missing">${(d.missing || []).map(x => esc(x)).join('<br>')}</div>` : ''}
-      <div class="xo-foot">source ${esc(d.source || '—')} · read ${hm(d.generatedAt)}</div>`);
+  let ttySeq = 0, ttyTimer = null;
+  function ttyEl(host) { return host.querySelector('.xo-tty-out'); }
+  function typeInto(out, lines, done) {
+    clearTimeout(ttyTimer);
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    out.innerHTML = ''; out.scrollTop = 0;
+    if (reduce) { out.innerHTML = lines.map(l => `<div class="xo-ttyl ${l.c}">${esc(l.t) || '&nbsp;'}</div>`).join(''); if (done) done(); return; }
+    let li = 0, ci = 0, node = null;
+    const step = () => {
+      if (li >= lines.length) { out.classList.remove('typing'); if (done) done(); return; }
+      const l = lines[li];
+      if (!node) { node = document.createElement('div'); node.className = 'xo-ttyl ' + l.c; out.appendChild(node); }
+      /* whole words at a time: a per-character crawl on 40 lines takes half a minute */
+      const chunk = Math.max(3, Math.round(l.t.length / 14));
+      ci += chunk;
+      node.textContent = l.t.slice(0, ci) || ' ';
+      out.scrollTop = out.scrollHeight;
+      if (ci >= l.t.length) { node.textContent = l.t || ' '; li++; ci = 0; node = null; ttyTimer = setTimeout(step, 34); }
+      else ttyTimer = setTimeout(step, 12);
+    };
+    out.classList.add('typing'); step();
   }
-  window.execopsCase = openCase;
+
+  async function ttyLoad(host, halves, scope) {
+    const out = ttyEl(host); if (!out) return;
+    const me = ++ttySeq;
+    const ttl = host.querySelector('.xo-tty-ttl');
+    const all = !scope;
+    if (ttl) ttl.textContent = all ? 'open contacts' : `${scope.label} · ${scope.sev} · ${scope.day}`;
+    const back = host.querySelector('[data-tty="back"]'); if (back) back.hidden = all;
+    typeInto(out, [{ t: '> ' + (all ? 'scanning all sectors…' : `tuning to ${scope.label} ${scope.sev} ${scope.day}…`), c: 'dim' }]);
+    const ask = h => api(`/api/exec/radar/cell?biz=${encodeURIComponent(h.biz)}`
+      + (all ? `&days=${state.range === '30d' ? 30 : 7}&open=1` : `&sev=${encodeURIComponent(scope.sev)}&day=${encodeURIComponent(scope.day)}`))
+      .then(d => ({ h, d })).catch(e => ({ h, d: { rules: [], error: e.message } }));
+    const targets = all ? halves : halves.filter(h => h.biz === scope.biz);
+    const res = await Promise.all(targets.map(ask));
+    if (me !== ttySeq) return;
+    const multi = halves.length > 1;
+    const lines = [];
+    const days = state.range === '30d' ? 30 : 7;
+    lines.push({ t: `> SALAM OPERATIONS · ALERT SCOPE`, c: 'dim' });
+    lines.push({ t: `> ${all ? `still breaching now · last ${days} d` : `contact ${scope.sev} · ${scope.day}`}`, c: 'dim' });
+    lines.push({ t: '', c: '' });
+    let n = 0;
+    for (const { h, d } of res) {
+      if (d.error) { lines.push({ t: `! ${h.label}: ${d.error}`, c: 'bad' }, { t: '', c: '' }); continue; }
+      const rules = (d.rules || []).filter(r => all ? r.status === 'open' : true);
+      n += rules.length;
+      if (!rules.length) continue;
+      if (multi) lines.push({ t: `── ${h.label.toUpperCase()} ${'─'.repeat(Math.max(2, 34 - h.label.length))}`, c: 'rule' });
+      rules.forEach(r => ruleLines(r, multi ? null : null).forEach(x => lines.push(x)));
+      (d.missing || []).filter(m => !/no ETA/.test(m)).forEach(m => lines.push({ t: `  · ${m}`, c: 'na' }, { t: '', c: '' }));
+    }
+    if (!n) lines.push({ t: all ? '  nothing is breaching right now — the scope is clear.' : '  nothing fired in this contact.', c: 'good' }, { t: '', c: '' });
+    lines.push({ t: `> ${n} contact${n === 1 ? '' : 's'} listed · ${hm(new Date())}`, c: 'dim' });
+    typeInto(out, lines);
+  }
 
   /* ---------- executive brief: the slide deck, in a modal, only if the file is deployed ---------- */
   const BRIEF = 'exec-brief.html';
@@ -445,12 +467,20 @@
       o.sections.map(k => SECTION[k] ? SECTION[k](halves, u) : '').join('');
     host.dataset.xoLoaded = '1';
     host.querySelectorAll('.xo-r').forEach(b => b.onclick = () => { state.range = b.dataset.r; localStorage.setItem('exec_range', state.range); document.querySelectorAll('[data-xo-host]').forEach(h2 => { if (h2._xo) render(h2, h2._xo, true); }); });
-    /* delegated so it survives every re-render and the 5-minute auto-refresh */
-    host.querySelectorAll('.xo-blip[data-cell]').forEach(g => {
-      const go = () => openCase(g.dataset.biz, g.dataset.sev, g.dataset.day, g.dataset.label);
-      g.addEventListener('click', go);
-      g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
-    });
+    /* a contact retunes the console beside the scope — never a dialog over it */
+    if (host.querySelector('.xo-tty-out')) {
+      const wrap = host.querySelector('.xo-radarwrap');
+      const tune = scope => { host.querySelectorAll('.xo-blip.sel').forEach(x => x.classList.remove('sel')); ttyLoad(host, halves, scope); };
+      host.querySelectorAll('.xo-blip[data-cell]').forEach(g => {
+        const go = () => { host.querySelectorAll('.xo-blip.sel').forEach(x => x.classList.remove('sel')); g.classList.add('sel');
+          ttyLoad(host, halves, { biz: g.dataset.biz, sev: g.dataset.sev, day: g.dataset.day, label: g.dataset.label });
+          if (wrap) wrap.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
+        g.addEventListener('click', go);
+        g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+      });
+      const back = host.querySelector('[data-tty="back"]'); if (back) back.onclick = () => tune(null);
+      ttyLoad(host, halves, null);
+    }
     const rb = host.querySelector('[data-act="refresh"]'); if (rb) rb.onclick = () => render(host, o, true);
     const bb = host.querySelector('[data-act="brief"]'); if (bb) { bb.onclick = openBrief; briefExists().then(ok => { if (ok) bb.hidden = false; }); }
     host.setAttribute('data-xo-host', '1'); host._xo = o;
@@ -555,36 +585,37 @@
       /* a contact is a control: pointer, a visible focus ring for the keyboard, and a hit target
          big enough that a 3px dead star is still clickable */
       .xo-blip[data-cell]{cursor:pointer}
-      .xo-blip[data-cell]:hover .xo-dot,.xo-blip[data-cell]:focus-visible .xo-dot{stroke-width:2}
+      .xo-blip[data-cell]:hover .xo-dot,.xo-blip[data-cell]:focus-visible .xo-dot,.xo-blip.sel .xo-dot{stroke-width:2}
       .xo-blip[data-cell]:focus{outline:none}
-      .xo-blip[data-cell]:focus-visible .xo-hit{stroke:var(--xo-grid,#37d39a);stroke-width:1.5;stroke-dasharray:2 2}
-      .xo-caseb{width:min(1080px,100%);height:min(86vh,100%)}
-      .xo-casebody{flex:1;overflow:auto;padding:16px 18px 20px}
-      .xo-casetop{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
-      .xo-casestat{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
-      .xo-casestat b{display:block;font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
-      .xo-casestat span{display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:3px}
-      .xo-bad{color:var(--xo-p1,#dc2626)}.xo-good{color:#37d39a}
-      .xo-case{border:1px solid var(--line);border-left:3px solid var(--muted);border-radius:11px;padding:13px 15px;margin-bottom:11px;background:rgba(255,255,255,.02)}
-      .xo-case.open{border-left-color:var(--xo-p1,#dc2626);background:rgba(255,95,95,.05)}
-      .xo-case.cleared{opacity:.78}
-      .xo-caseh{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:10px}
-      .xo-sevdot{width:9px;height:9px;border-radius:50%;flex:none}
-      .xo-casen{font-size:14px;font-weight:800;flex:1;min-width:180px}
-      .xo-state{font-size:9.5px;font-weight:800;letter-spacing:.7px;padding:3px 8px;border-radius:6px}
-      .xo-state.open{color:var(--xo-p1,#dc2626);background:color-mix(in srgb,var(--xo-p1,#dc2626) 16%,transparent)}
-      .xo-state.cleared{color:var(--muted);background:rgba(255,255,255,.07)}
-      .xo-tick{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:6px;color:#57a8ff;background:color-mix(in srgb,#57a8ff 15%,transparent);font-family:var(--mono,ui-monospace,monospace)}
-      /* exactly four columns on a wide modal so the eight fields tile 4+4 with no ragged gap */
-      .xo-casegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px}
-      @media (min-width:760px){.xo-casegrid{grid-template-columns:repeat(4,minmax(0,1fr))}}
-      .xo-casegrid>div{font-size:12.5px;line-height:1.45;min-width:0}
-      .xo-casegrid span{display:block;font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px}
-      .xo-casegrid b{font-weight:700;font-variant-numeric:tabular-nums}
-      .xo-na{font-style:italic;color:var(--muted);opacity:.85;border-bottom:1px dotted currentColor;cursor:help}
-      .xo-casemsg{margin-top:9px;padding-top:9px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.5}
-      .xo-casenote{color:var(--ink)}
-      @media (max-width:520px){.xo-casegrid{grid-template-columns:1fr}.xo-caseb{height:100%}}
+      .xo-blip[data-cell]:focus-visible .xo-hit,.xo-blip.sel .xo-hit{stroke:var(--xo-beam,#8affd0);stroke-width:1.6;stroke-dasharray:2 2}
+      /* ---- the scope console: open contacts, typed out beside the scope (never over it) ---- */
+      .xo-tty{flex:1 1 340px;min-width:0;max-width:430px;align-self:stretch;display:flex;flex-direction:column;
+        background:linear-gradient(180deg,rgba(4,16,11,.92),rgba(4,14,10,.97));
+        border:1px solid rgba(55,211,154,.24);border-radius:12px;overflow:hidden;
+        box-shadow:inset 0 0 50px rgba(55,211,154,.06)}
+      .xo-tty-bar{display:flex;align-items:center;gap:6px;padding:8px 11px;border-bottom:1px solid rgba(55,211,154,.18);background:rgba(55,211,154,.06)}
+      .xo-tty-bar i{width:8px;height:8px;border-radius:50%;background:rgba(55,211,154,.35);flex:none}
+      .xo-tty-ttl{flex:1;margin-left:6px;font-size:10.5px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:#8fd8ba;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .xo-tty-b{font:inherit;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;
+        padding:3px 9px;border-radius:6px;border:1px solid rgba(55,211,154,.4);background:transparent;color:#5ce0aa}
+      .xo-tty-b:hover{background:rgba(55,211,154,.14)}
+      .xo-tty-out{flex:1;min-height:340px;max-height:min(70vh,560px);overflow:auto;padding:11px 13px 14px;
+        font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);font-size:11.5px;line-height:1.62;
+        color:#7fe3b4;text-shadow:0 0 7px rgba(55,211,154,.28);white-space:pre-wrap;word-break:break-word}
+      /* hanging indent: a wrapped value stays under its own column instead of falling back to
+         the left margin, where it reads as a new field */
+      .xo-ttyl{min-height:1.62em;padding-left:12ch;text-indent:-12ch}
+      .xo-ttyl.hd{color:#c9ffe6;font-weight:700;margin-top:4px}
+      .xo-ttyl.hd.p1{color:#ff8f8f}.xo-ttyl.hd.p2{color:#ffcc6b}.xo-ttyl.hd.p3{color:#9ccbff}
+      .xo-ttyl.dim{color:#4f9c79}.xo-ttyl.rule{color:#37d39a;opacity:.55;letter-spacing:1px}
+      .xo-ttyl.bad{color:#ff7b7b;text-shadow:0 0 8px rgba(255,95,95,.35)}
+      .xo-ttyl.good{color:#54efb2}.xo-ttyl.na{color:#4f8f72;font-style:italic}
+      .xo-ttyl.tick{color:#7cc0ff}.xo-ttyl.msg{color:#a9d9c3;opacity:.9}
+      .xo-tty-out.typing .xo-ttyl:last-child::after{content:'▌';margin-left:1px;animation:xoCaret 1s steps(1) infinite;color:#8affd0}
+      @keyframes xoCaret{50%{opacity:0}}
+      .xo-tty-out::-webkit-scrollbar{width:8px}
+      .xo-tty-out::-webkit-scrollbar-thumb{background:rgba(55,211,154,.22);border-radius:8px}
       .xo-bgrp{margin-bottom:15px}.xo-bgrp:last-child{margin-bottom:0}
       .xo-bgh{display:flex;align-items:center;gap:10px;margin:0 0 9px}
       .xo-bgh i{flex:1;height:1px;background:var(--line)}
@@ -642,8 +673,8 @@
         box-shadow:inset 0 0 90px rgba(55,211,154,.07),0 12px 34px rgba(0,0,0,.28);padding:18px}
       .xo-scope .xo-link{color:#5ce0aa}
       .xo-scope .xo-biz{border-color:rgba(55,211,154,.35)}
-      .xo-radarwrap{display:flex;gap:28px;align-items:center;flex-wrap:wrap;justify-content:center}
-      .xo-radar{width:min(560px,100%);height:auto;flex:1 1 380px;max-width:560px;overflow:visible}
+      .xo-radarwrap{display:flex;gap:22px;align-items:center;flex-wrap:wrap;justify-content:center}
+      .xo-radar{width:min(520px,100%);height:auto;flex:1 1 360px;max-width:520px;overflow:visible}
       .xo-sweepg{transform-origin:210px 210px;animation:xoSweep 8s linear infinite}
       @keyframes xoSweep{from{transform:rotate(0)}to{transform:rotate(360deg)}}
       .xo-sweep{opacity:1}.xo-scan{pointer-events:none;mix-blend-mode:multiply;opacity:.5}
@@ -697,6 +728,7 @@
       .xo-modal-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px;flex-wrap:wrap}
       .xo-modal-tools{display:flex;gap:8px;align-items:center}.xo-modal-tools .xo-btn{text-decoration:none}
       .xo-modal-in iframe{flex:1;width:100%;border:0;background:#050a08}
+      @media (max-width:1180px){.xo-tty{max-width:none;flex-basis:100%;order:3}.xo-tty-out{min-height:260px;max-height:340px}}
       @media (max-width:820px){.xo-radarwrap{flex-direction:column;gap:14px}.xo-radar{flex:none;width:min(420px,100%)}.xo-radarlegend{max-width:none;width:100%}.xo-modal{padding:8px}}
       @media print{.xo-tools,.xo-range,.xo-modal{display:none}.xo-kpi,.xo-slo,.xo-chart,.xo-hi{break-inside:avoid}}`;
     document.head.appendChild(st);

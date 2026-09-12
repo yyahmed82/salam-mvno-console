@@ -1,11 +1,16 @@
 /* execRadar.js — the case file behind one radar contact (13 Sep 2026).
  *
- *   GET /api/exec/radar/cell?biz=mobile|fixed&sev=P1|P2|P3&day=YYYY-MM-DD   (gate: that business)
+ *   GET /api/exec/radar/cell?biz=mobile|fixed[&sev=P1|P2|P3][&day=YYYY-MM-DD][&days=7|30][&open=1]
+ *                                                                           (gate: that business)
  *
- * A blip on the Executive radar is one (KSA day x severity) cell for one business. Clicking it opens
- * this: every distinct RULE that fired in that cell, and for each one who has it, how long it has been
+ * A blip on the Executive radar is one (KSA day x severity) cell for one business. Clicking it asks for
+ * that cell: every distinct RULE that fired in it, and for each one who has it, how long it has been
  * open, the acknowledgement SLA it is being measured against, and how long this rule has historically
  * taken to clear.
+ *
+ * Omit `day` (and `sev`) and it answers for the WHOLE window instead — `days` back from now — which is
+ * how the scope's console lists everything still open without asking cell by cell. `open=1` keeps only
+ * rules that are still breaching.
  *
  * WHAT IS REAL AND WHAT IS NOT — this file invents nothing:
  *   owner        alerts.assignee, else alerts.ack_by (who acknowledged it). NULL = nobody has taken it.
@@ -41,14 +46,17 @@ const M_COLS = `a.id, a.rule_key, a.name, a.severity, a.team, a.status, a.messag
                 a.fired_at, a.last_seen_at, a.resolved_at, a.opened_wall, a.snoozed_until,
                 a.assignee, a.ack_by, a.ack_at, a.ack_reminder_level, a.ack_reminder_at, a.sn_number, a.note`;
 
-async function mobileCell(day, sev) {
+async function mobileCell({ day, sev, days, openOnly }) {
   const C = db.console;
   const segWhere = SEG.sqlWhere('a', 'rule_key', 'mvno');
+  const w = [segWhere], pp = [];
+  if (sev) { pp.push(sev); w.push(`a.severity = $${pp.length}`); }
+  if (day) { pp.push(day); w.push(`(a.fired_at AT TIME ZONE 'Asia/Riyadh')::date = $${pp.length}::date`); }
+  else { pp.push(days); w.push(`a.fired_at >= now() - ($${pp.length}::int || ' days')::interval`); }
+  if (openOnly) w.push(`a.status = 'open' AND a.resolved_at IS NULL`);
   const rows = (await C.query(
-    `SELECT ${M_COLS} FROM alerts a
-      WHERE ${segWhere} AND a.severity = $1
-        AND (a.fired_at AT TIME ZONE 'Asia/Riyadh')::date = $2::date
-      ORDER BY (a.status = 'open') DESC, a.fired_at DESC LIMIT 60`, [sev, day])).rows;
+    `SELECT ${M_COLS} FROM alerts a WHERE ${w.join(' AND ')}
+      ORDER BY (a.status = 'open') DESC, a.severity, a.fired_at DESC LIMIT 60`, pp)).rows;
   if (!rows.length) return { rules: [], ladder: null };
 
   /* MTTR from each rule's own resolved history — all time, not just this window, so a rule that
@@ -106,24 +114,28 @@ async function mobileCell(day, sev) {
 }
 
 /* ---------------------------------------------------------------- fixed: sda_ops.alert_events */
-async function fixedCell(day, sev) {
+async function fixedCell({ day, sev, days, openOnly }) {
   const P = db.ops; if (!P) return { rules: [], ladder: null, missing: ['OPS_DATABASE_URL not set'] };
+  const w = [`e.status = 'FIRED'`], pp = [];
+  if (sev) { pp.push(sev); w.push(`e.severity = $${pp.length}`); }
+  if (day) { pp.push(day); w.push(`(e.fired_at AT TIME ZONE 'Asia/Riyadh')::date = $${pp.length}::date`); }
+  else { pp.push(days); w.push(`e.fired_at >= now() - ($${pp.length}::int || ' days')::interval`); }
+  const having = openOnly ? `HAVING max(l.status) = 'FIRED'` : '';
   const rows = (await P.query(
     `WITH last AS (SELECT DISTINCT ON (rule_key) rule_key, status, fired_at, metric_value, metric_text
                      FROM alert_events ORDER BY rule_key, fired_at DESC)
      SELECT e.rule_key, max(e.rule_name) AS name, max(e.team) AS team, count(*)::int AS firings,
-            min(e.fired_at) AS first_at, max(e.fired_at) AS last_at,
+            min(e.fired_at) AS first_at, max(e.fired_at) AS last_at, max(e.severity) AS severity,
             max(e.threshold) AS threshold, max(e.metric_value) AS metric_value, max(e.metric_text) AS metric_text,
             max(l.status) AS last_status, max(l.fired_at) AS last_eval_at
        FROM alert_events e LEFT JOIN last l ON l.rule_key = e.rule_key
-      WHERE e.status = 'FIRED' AND e.severity = $1
-        AND (e.fired_at AT TIME ZONE 'Asia/Riyadh')::date = $2::date
-      GROUP BY e.rule_key ORDER BY max(e.fired_at) DESC LIMIT 60`, [sev, day])).rows;
+      WHERE ${w.join(' AND ')}
+      GROUP BY e.rule_key ${having} ORDER BY max(e.fired_at) DESC LIMIT 60`, pp)).rows;
   const now = Date.now();
   return {
     ladder: null,
     rules: rows.map(r => ({
-      id: null, key: r.rule_key, name: r.name || r.rule_key, severity: sev, team: r.team || null,
+      id: null, key: r.rule_key, name: r.name || r.rule_key, severity: r.severity || sev, team: r.team || null,
       status: r.last_status === 'FIRED' ? 'open' : 'cleared',
       firedAt: r.first_at, lastSeenAt: r.last_at, resolvedAt: null,
       openMin: r.last_status === 'FIRED' ? minsBetween(r.first_at, now) : minsBetween(r.first_at, r.last_at),
@@ -149,13 +161,16 @@ function mount(app, { requireView }) {
   }, async (req, res) => {
     try {
       const biz = req.query.biz === 'fixed' ? 'fixed' : 'mobile';
-      const sev = String(req.query.sev || '').toUpperCase();
-      const day = String(req.query.day || '');
-      if (!SEVS.has(sev)) return res.status(400).json({ error: 'sev must be P1, P2, P3 or P4' });
-      if (!isDay(day)) return res.status(400).json({ error: 'day must be YYYY-MM-DD (KSA)' });
-      const out = biz === 'fixed' ? await fixedCell(day, sev) : await mobileCell(day, sev);
+      const sev = req.query.sev ? String(req.query.sev).toUpperCase() : null;
+      const day = req.query.day ? String(req.query.day) : null;
+      const days = Math.min(90, Math.max(1, Number(req.query.days || 7)));
+      const openOnly = req.query.open === '1' || req.query.open === 'true';
+      if (sev && !SEVS.has(sev)) return res.status(400).json({ error: 'sev must be P1, P2, P3 or P4' });
+      if (day && !isDay(day)) return res.status(400).json({ error: 'day must be YYYY-MM-DD (KSA)' });
+      const q = { day, sev, days, openOnly };
+      const out = biz === 'fixed' ? await fixedCell(q) : await mobileCell(q);
       res.json({
-        biz, label: biz === 'fixed' ? 'Fixed' : 'Mobile', sev, day,
+        biz, label: biz === 'fixed' ? 'Fixed' : 'Mobile', sev, day, days: day ? null : days, openOnly,
         generatedAt: new Date().toISOString(),
         source: biz === 'fixed' ? 'sda_ops.alert_events' : 'unified_console.alerts',
         open: out.rules.filter(r => r.status === 'open').length,
