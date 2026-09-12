@@ -35,7 +35,9 @@ load(){                                       # load <snapshot-dir-name> <db>
   sql="$(mktemp /tmp/load-$label.XXXXXX.sql)"
   {
     echo "SET session_replication_role = replica;"   # no FK/trigger ordering worries
-    cat "$dir/schema.sql"
+    # pg_dump 17/18 writes SETs that PostgreSQL 16 does not know (transaction_timeout, ...).
+    # The Mac's client is newer than the unified-db container, so drop them.
+    sed -E '/^SET (transaction_timeout|idle_session_timeout|allow_alter_system) *=/d' "$dir/schema.sql"
     while read -r t; do
       [ -f "$dir/$t.csv" ] || continue
       # schema.sql already created the table in its own schema; search_path below picks it up

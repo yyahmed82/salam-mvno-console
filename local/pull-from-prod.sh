@@ -126,7 +126,9 @@ pull(){                          # pull <label> <prod-url-var> <schema> <tables|
 
   # DDL (read-only): schema + indexes + constraints for exactly these tables
   local targs=(); for t in $tables; do targs+=(-t "$schema.$t"); done
-  pg_dump --schema-only --no-owner --no-privileges -n "$schema" "${targs[@]}" -d "$url" > "$dir/schema.sql"
+  # strip the SETs a newer pg_dump emits that an older target server rejects
+  pg_dump --schema-only --no-owner --no-privileges -n "$schema" "${targs[@]}" -d "$url" \
+    | sed -E '/^SET (transaction_timeout|idle_session_timeout|allow_alter_system) *=/d' > "$dir/schema.sql"
   echo "   DDL: $(wc -l < "$dir/schema.sql" | tr -d ' ') lines"
 
   : > "$dir/manifest.txt"
