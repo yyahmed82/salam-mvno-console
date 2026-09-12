@@ -25,7 +25,7 @@ else
     | grep -E '^(CONSOLE|SOURCE|OPS|OPS_BETA)_DATABASE_URL=' > "$CRED"
   chmod 600 "$CRED"
 fi
-sed 's/:[^:@]*@/:****@/' "$CRED" | sed 's/^/   /'
+sed -E 's#://[^@]*@*[^@/]*@#://****@#' "$CRED" | sed 's/^/   /'  
 
 say "1/4  PostgreSQL client on this Mac"
 if ! command -v psql >/dev/null || ! command -v pg_dump >/dev/null; then
@@ -33,7 +33,22 @@ if ! command -v psql >/dev/null || ! command -v pg_dump >/dev/null; then
   brew install libpq && brew link --force libpq
 fi
 psql --version | sed 's/^/   /'
-pg_isready | sed 's/^/   /'
+
+PGHOST_LOCAL="${PGHOST_LOCAL:-127.0.0.1}"
+PGPORT_LOCAL="${PGPORT_LOCAL:-5432}"
+export PGHOST_LOCAL PGPORT_LOCAL
+if SRV="$(psql -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$(whoami)" -d postgres -Atc "SELECT version()" 2>&1)"; then
+  echo "   server: ${SRV%% (*}"
+else
+  echo "   NO PostgreSQL SERVER answering on $PGHOST_LOCAL:$PGPORT_LOCAL as $(whoami)"
+  echo "   ($SRV)"
+  echo "   psql above is only the client. Start or install a server, then re-run this script:"
+  echo "       brew install postgresql@16"
+  echo "       brew services start postgresql@16"
+  echo "       createdb \"$(whoami)\""
+  echo "   Postgres.app: open it, press Start, and put its bin directory first on PATH."
+  exit 1
+fi
 
 say "2/4  pull $DAYS days from prod (read-only, through the SSH tunnel)"
 bash local/pull-from-prod.sh "$DAYS" "$OUT"

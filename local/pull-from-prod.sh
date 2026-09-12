@@ -54,11 +54,18 @@ declare -a LFWD=(); declare -A PORTOF=()
 NEXT=15432
 local_url(){                                   # rewrite a prod URL onto the tunnel
   python3 - "$1" "${PORTOF[$2]}" <<'PY'
-import sys,urllib.parse as u
-p=u.urlsplit(sys.argv[1]); port=sys.argv[2]
-auth=p.netloc.split('@')[0] if '@' in p.netloc else ''
-net=(auth+'@' if auth else '')+'127.0.0.1:'+port
-print(u.urlunsplit((p.scheme,net,p.path,p.query,p.fragment)))
+import sys, urllib.parse as u
+raw, port = sys.argv[1], sys.argv[2]
+p = u.urlsplit(raw)
+# The prod passwords contain an unencoded '@'. urlsplit does split on the LAST '@', but the
+# parts must be re-encoded or libpq mis-parses them - and psql rejects the Prisma-only params
+# (schema / connection_limit / pool_timeout), so drop them here.
+user = u.quote(p.username or '', safe='')
+pwd  = u.quote(p.password or '', safe='')
+auth = (user + (':' + pwd if pwd else '') + '@') if user else ''
+q = [(k, v) for k, v in u.parse_qsl(p.query, keep_blank_values=True)
+     if k not in ('schema', 'connection_limit', 'pool_timeout', 'pgbouncer', 'connect_timeout')]
+print(u.urlunsplit((p.scheme, auth + '127.0.0.1:' + port, p.path, u.urlencode(q), '')))
 PY
 }
 hostport(){ python3 - "$1" <<'PY'
