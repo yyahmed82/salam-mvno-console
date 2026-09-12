@@ -43,9 +43,15 @@ load(){                                       # load <snapshot-dir-name> <db>
     done < "$dir/manifest.txt"
   } > "$sql"
   local sch; sch="$(grep -m1 -oE 'CREATE SCHEMA[^;]*' "$dir/schema.sql" | awk '{print $NF}' || true)"
-  PGOPTIONS="-c search_path=${sch:-public},public" "${PSQL[@]}" -d "$db" -q -f "$sql" \
-    | grep -vE '^(SET|COPY)' || true
-  rm -f "$sql"
+  local log="/tmp/restore-$label.log"
+  if PGOPTIONS="-c search_path=${sch:-public},public" "${PSQL[@]}" -d "$db" -q -f "$sql" > "$log" 2>&1; then
+    :
+  else
+    echo "   !! $label FAILED - first errors:"
+    grep -iE '^(psql:|ERROR|FATAL)' "$log" | head -8 | sed 's/^/      /'
+    echo "      full log: $log"
+    rm -f "$sql"; return 1
+  fi
   "${PSQL[@]}" -d "$db" -q -c "ANALYZE" >/dev/null 2>&1 || true
   printf '   %-22s %-9s %s\n' "$db/${sch:-public}" \
     "$("${PSQL[@]}" -d "$db" -Atc "SELECT pg_size_pretty(pg_database_size('$db'))")" \
@@ -54,9 +60,10 @@ load(){                                       # load <snapshot-dir-name> <db>
 
 say "restoring into Postgres at $PGHOST_LOCAL:$PGPORT_LOCAL as $PGUSER_LOCAL"
 
-if ensure_db unified_console_local; then load console "unified_console_local"; fi
-if ensure_db salam_source_local;    then load source  "salam_source_local";    fi
-if ensure_db sda_ops_local;         then load ops     "sda_ops_local"; load opsbeta "sda_ops_local"; fi
+FAILED=0
+if ensure_db unified_console_local; then load console "unified_console_local" || FAILED=1; fi
+if ensure_db salam_source_local;    then load source  "salam_source_local"    || FAILED=1; fi
+if ensure_db sda_ops_local;         then load ops     "sda_ops_local" || FAILED=1; load opsbeta "sda_ops_local" || FAILED=1; fi
 
 say "what landed"
 for db in unified_console_local salam_source_local sda_ops_local; do
@@ -78,6 +85,13 @@ urls = {
   'OPS_DATABASE_URL':      base + '/sda_ops_local?schema=public',
   'OPS_BETA_DATABASE_URL': base + '/sda_ops_local?schema=beta',
 }
+# hard OFF locally - a laptop must never mail a real person or reach prod
+urls.update({
+  'SMTP_HOST': '', 'SMTP_USER': '', 'SMTP_PASS': '', 'SMTP_FROM': '',
+  'HEALTHCHECK_INTERVAL_MIN': '0', 'PROD_DATABASE_URL': '',
+  'AGENT_LOG_ENABLED': '0', 'AGENT_INCIDENT_ENABLED': '0',
+  'SN_URL': '', 'API_LOG_HOSTS': '', 'ZIPKIN_HOSTS': '', 'OSB_LOG_URL': '', 'UPG_DATABASE_URL': '',
+})
 lines = open('local/.env').read().split('\n')
 seen, out = set(), []
 for line in lines:
@@ -89,5 +103,11 @@ for k, v in urls.items():
 open('local/.env', 'w').write('\n'.join(out))
 PY
 sed -E 's#://[^@]*@#://****@#' local/.env | grep -E '^(PORT|CONSOLE_DATABASE_URL|SOURCE_DATABASE_URL|OPS)' | sed 's/^/   /'
+echo "   mail: OFF (SMTP_HOST empty - notify.js and otp.js gate every send on it)"
+grep -c '^SMTP_HOST=$' local/.env >/dev/null && true
 
+if [ "$FAILED" = "1" ]; then
+  say "FINISHED WITH ERRORS - see the logs above. The console will not start cleanly."
+  exit 1
+fi
 say "DONE - start it with:   bash local/run-local.sh"
