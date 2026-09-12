@@ -127,7 +127,8 @@ AUTH="$PGUSER_LOCAL"
 [ -n "${PGPASSWORD:-}" ] && AUTH="$PGUSER_LOCAL:$PGPASSWORD"
 [ -f local/.env ] || cp local/.env.example local/.env
 python3 - "postgres://$AUTH@$PGHOST_LOCAL:$PGPORT_LOCAL" <<'PY'
-import sys
+import sys, re
+q = lambda v: '"%s"' % v.replace('"', '\\"') if re.search(r'\s', v) else v
 base = sys.argv[1]
 urls = {
   'CONSOLE_DATABASE_URL':  base + '/unified_console_local',
@@ -149,8 +150,8 @@ for line in lines:
     if k in urls: out.append(k + '=' + urls[k]); seen.add(k)
     else: out.append(line)
 for k, v in urls.items():
-    if k not in seen: out.append(k + '=' + v)
-open('local/.env', 'w').write('\n'.join(out))
+    if k not in seen: out.append(k + '=' + q(v))
+open('local/.env', 'w').write('\n'.join(out).rstrip('\n') + '\n')
 PY
 sed -E 's#://[^@]*@#://****@#' local/.env | grep -E '^(PORT|CONSOLE_DATABASE_URL|SOURCE_DATABASE_URL|OPS)' | sed 's/^/   /'
 echo "   mail: OFF (SMTP_HOST empty - notify.js and otp.js gate every send on it)"

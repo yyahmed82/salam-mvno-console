@@ -46,7 +46,10 @@ say "3/4  local/.env"
 [ -f local/.env ] || { echo "   local/.env missing - run local/restore-local.sh first"; exit 1; }
 mkdir -p local/uploads/tickets local/uploads/docs local/out
 python3 - "$OLLAMA_URL" "$MODEL" "$PWD" <<'PY'
-import sys
+import sys, re
+# local/.env is SOURCED by bash - any value with a space (the repo lives under
+# "Salam DMS") must be quoted or bash splits it and tries to run the second word.
+q = lambda v: '"%s"' % v.replace('"', '\\"') if re.search(r'\s', v) else v
 url, model, root = sys.argv[1], sys.argv[2], sys.argv[3]
 want = {
   # OVERRIDE beats the restored prod value (host.docker.internal) in llm.js and assist.js
@@ -72,8 +75,8 @@ for line in lines:
     if k in want: out.append(k + '=' + want[k]); seen.add(k)
     else: out.append(line)
 for k, v in want.items():
-    if k not in seen: out.append(k + '=' + v)
-open('local/.env', 'w').write('\n'.join(out))
+    if k not in seen: out.append(k + '=' + q(v))
+open('local/.env', 'w').write('\n'.join(out).rstrip('\n') + '\n')
 PY
 grep -E '^(OLLAMA_|LLM_PRIMARY_|AGENT_|UPLOAD_DIR|OUTDIR)' local/.env | sed 's/^/   /'
 
