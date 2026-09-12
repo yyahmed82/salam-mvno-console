@@ -73,7 +73,7 @@
 
   /* ---------- pieces ---------- */
   const badge = (h, unified) => unified ? `<span class="xo-biz xo-biz-${h.biz}">${esc(h.label)}</span>` : '';
-  const wrapA = (href, cls, inner, title) => href ? `<a href="${esc(href)}" class="${cls}" title="${esc(title || 'open')}">${inner}</a>` : `<div class="${cls}">${inner}</div>`;
+  const wrapA = (href, cls, inner, title) => href ? `<a href="${esc(href)}" class="${cls}" title="${esc(title || 'open')}">${inner}</a>` : `<div class="${cls}"${title ? ` title="${esc(title)}"` : ''}>${inner}</div>`;
   const sec = (kicker, title, right) => `<div class="xo-sec"><div><div class="xo-kick">${esc(kicker)}</div><h3 class="xo-title">${title}</h3></div>${right ? `<div class="xo-dim">${right}</div>` : ''}</div>`;
   const statusPill = s => `<span class="xo-status" style="--c:${SEV[s] || TOK.muted}"><i></i>${esc(s)}</span>`;
   const trend = t => t === 'improving' ? `<span class="xo-tr" style="color:${TOK.green}">▼ improving</span>` : t === 'worsening' ? `<span class="xo-tr" style="color:${TOK.red}">▲ worsening</span>` : `<span class="xo-tr" style="color:${TOK.muted}">→ stable</span>`;
@@ -285,8 +285,34 @@
   /* Each section is a function of the halves. A page asks for the ones it does not already show,
    * which is what keeps the merged pages free of repeated numbers. */
   const SECTION = {
-    summary: (H, u) => sec('summary', 'What matters today') +
-      `<div class="xo-sumgrid">${H.map(h => `<div class="xo-summary" style="--c:${SEV[h.status]}">${u ? `<div class="xo-sumh">${badge(h, true)}${statusPill(h.status)}</div>` : ''}${h.summary.map(x => `<div>${esc(x)}</div>`).join('')}</div>`).join('')}</div>`,
+    /* Executive verdict, not a paragraph. Three sentences of prose per business was a briefing note;
+     * an executive needs the one thing that is wrong and the numbers that say how wrong. Everything
+     * here is derived from the contract's structured fields, so it stays a statement of fact:
+     *   headline  = the worst breaching SLO, stated as a gap (or the worst red KPI, or "all met")
+     *   chips     = SLOs breaching / rules still open / biggest ongoing issue — each a link
+     * The page header already carries critical/warning counts and Key indicators carries the KPI
+     * tiles, so neither is repeated. The server's full prose is kept on hover, not on screen. */
+    summary: (H, u) => sec('verdict', 'Where we stand', 'the one thing to fix, per business') +
+      `<div class="xo-sumgrid">${H.map(h => {
+        const measured = (h.slos || []).filter(s => s.measured);
+        const breach = measured.filter(s => !s.ok);
+        const worstK = (h.kpis || []).filter(k => k.exec && k.tone === 'red')[0];
+        const head = breach.length
+          ? { t: breach[0].name, v: breach[0].actual, x: `target ${breach[0].target}`, href: breach[0].href }
+          : worstK ? { t: worstK.title, v: num(worstK.value), x: esc(worstK.sub || ''), href: worstK.href }
+          : { t: 'Every measured SLO is within target', v: '', x: `${measured.length} measured`, href: null };
+        const issue = (h.issues || [])[0];
+        const openRules = (h.radar || {}).open || 0;
+        const clip = (t, n) => { t = String(t || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+        const chip = (tone, label, val, href, tip) => wrapA(href, `xo-vchip ${tone}`, `<b>${val}</b><span>${esc(label)}</span>`, tip || label);
+        return `<div class="xo-summary xo-vd" style="--c:${SEV[h.status]}" title="${esc((h.summary || []).join(' \n'))}">
+          <div class="xo-sumh">${u ? badge(h, true) : `<span class="xo-biz xo-biz-${h.biz}">${esc(h.label)}</span>`}${statusPill(h.status)}</div>
+          <div class="xo-vdl">${head.v ? `<b>${esc(head.v)}</b>` : ''}${esc(head.t)}${head.x ? `<span> — ${head.x}</span>` : ''}</div>
+          <div class="xo-vdc">
+            ${chip(breach.length ? 'red' : 'green', measured.length ? `of ${measured.length} SLOs breaching` : 'SLOs measured', breach.length, (breach[0] || {}).href)}
+            ${chip(openRules ? 'amber' : 'green', 'alert rules still open', num(openRules), '#alerts')}
+            ${issue ? chip(issue.sev === 'critical' ? 'red' : issue.sev === 'warning' ? 'amber' : 'info', clip(issue.label, 30) + ' open', num(issue.open), issue.href, issue.label + ' — biggest ongoing issue') : ''}
+          </div></div>`; }).join('')}</div>`,
     radar: (H) => sec('signal', 'Alert radar', 'severity by day · click through to alerts') + `<div class="topo-card xo-chart xo-scope">${radar(H)}</div>`,
     kpisExec: (H, u) => sec('north-star', 'Key indicators', 'click a tile to open its page') +
       `<div class="xo-grid">${H.flatMap(h => h.kpis.filter(k => k.exec).map(k => kpiTile(k, h, u))).join('')}</div>`,
@@ -393,6 +419,21 @@
       .xo-sumgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:12px;align-items:stretch}
       .xo-sumgrid>*{min-width:0}
       .xo-summary{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:12px;padding:14px 18px;font-size:13.5px;line-height:1.55}
+      .xo-vd{display:flex;flex-direction:column;gap:9px;padding:15px 17px}
+      .xo-vdl{font-size:15px;font-weight:700;line-height:1.35}
+      .xo-vdl b{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-right:9px;letter-spacing:-.5px}
+      .xo-vdl span{font-weight:600;color:var(--muted);font-size:13px}
+      .xo-vdc{display:flex;flex-wrap:wrap;gap:8px;margin-top:1px}
+      .xo-vchip{display:inline-flex;align-items:baseline;gap:6px;padding:5px 11px;border-radius:8px;font-size:11.5px;white-space:nowrap;max-width:100%;
+        border:1px solid transparent;text-decoration:none;color:inherit;transition:transform .15s,box-shadow .15s}
+      a.xo-vchip:hover{transform:translateY(-1px);box-shadow:var(--shadow,0 6px 16px rgba(15,23,42,.10))}
+      .xo-vchip b{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
+      .xo-vchip span{color:var(--muted);font-weight:600}
+      .xo-vchip.red{color:#dc2626;background:color-mix(in srgb,#dc2626 11%,transparent);border-color:color-mix(in srgb,#dc2626 28%,transparent)}
+      .xo-vchip.amber{color:#d97706;background:color-mix(in srgb,#d97706 11%,transparent);border-color:color-mix(in srgb,#d97706 28%,transparent)}
+      .xo-vchip.info{color:#2563eb;background:color-mix(in srgb,#2563eb 11%,transparent);border-color:color-mix(in srgb,#2563eb 28%,transparent)}
+      .xo-vchip.green{color:var(--green,#0e9f5a);background:color-mix(in srgb,var(--green,#0e9f5a) 11%,transparent);border-color:color-mix(in srgb,var(--green,#0e9f5a) 28%,transparent)}
+      .xo-vchip.red span,.xo-vchip.amber span,.xo-vchip.info span,.xo-vchip.green span{color:inherit;opacity:.8}
       .xo-summary div+div{margin-top:5px}.xo-sumh{display:flex;align-items:center;gap:8px;margin-bottom:8px}
       .xo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:stretch}
       .xo-grid>*{min-width:0}
