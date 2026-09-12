@@ -24,3 +24,8 @@ dist/
 .local-uploads/
 tools/local/probe-out*.txt
 _to_delete/
+
+# local dev (local/.env holds localhost DB URLs; the snapshots are big)
+local/.env
+local/*.dump
+console-local/
