@@ -967,7 +967,11 @@
     holder.querySelectorAll('[data-svctxn]').forEach(b=>b.addEventListener('click',()=>{ if(window.opsAnalyzeTrace) window.opsAnalyzeTrace(b.dataset.svctxn); }));
   }
 
-  function renderAll(){ renderNoc(); renderAnoms(); renderGreeting(); renderKpis(); renderJourneys(); renderGrowthCards(); renderDash(); }
+  function renderAll(){ renderNoc(); renderAnoms(); renderGreeting(); renderKpis(); renderJourneys(); renderGrowthCards(); renderDash(); renderOps(); }
+  /* Operations Dashboard (12 Sep 2026): the old Mobile "Operations" page merged in here. This page
+   * already owns today's KPIs, the journeys and the order flow, so it adds only the SLO tiles at the
+   * top and the day trends / funnel / alerts at the bottom — no number appears twice. */
+  function renderOps(){ if(window.execopsMobileTop) window.execopsMobileTop(); if(window.execopsMobileBottom) window.execopsMobileBottom(); }
 
   // ---- customize (pick + reorder) ----
   function openCustomize(){

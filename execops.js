@@ -1,8 +1,13 @@
-/* execops.js — Executive and Operations pages, ONE renderer for six routes (12 Sep 2026)
+/* execops.js — Executive Dashboard + the ops half of every merged page (12 Sep 2026)
  *
- *   Fixed  › Executive / Operations   FIXED_PAGES.exec / .ops        /api/fixed/exec
- *   Mobile › Executive / Operations   #mobile-exec / #mobile-ops     /api/mvno/exec
- *   Home   › Executive / Operations   #exec / #ops                   /api/exec  (both businesses, badged)
+ *   Executive Dashboard   #exec, top-level, both businesses        /api/exec
+ *   Fixed  › Operations Dashboard   ops sections under the hub Overview      /api/fixed/exec
+ *   Mobile › Operations Dashboard   ops sections around the Dashboard        /api/mvno/exec
+ *   Home                            ops sections around the landing page     /api/exec
+ *
+ * EXECOPS.render(host, {biz, sections, title, sub}) renders ONLY the sections asked for. That is how
+ * the merged pages stay free of duplicate numbers: each host page already owns some of the story, so
+ * it asks for the part it is missing and nothing else.
  *
  * The server hands every page the same execContract shape; this file knows nothing about either business.
  * UX rules baked in (the review of the first Fixed › Operations cut):
@@ -88,80 +93,171 @@
   const alertRows = (h, unified) => h.alerts.map(a => { const cls = a.severity === 'P1' ? 'critical' : a.severity === 'P2' ? 'warning' : 'info';
     return `<a href="${esc(a.href)}" class="xo-al ${cls}"><span class="xo-sev ${cls}">${esc(a.severity)}</span><div class="xo-at">${badge(h, unified)}<b>${esc(a.name)}</b>${a.text ? ` — ${esc(a.text)}` : ''}${a.team ? `<span class="xo-dim"> · ${esc(a.team)}</span>` : ''}</div><span class="xo-dim">${a.status === 'open' ? 'open · ' : ''}${ts(a.at)}</span></a>`; }).join('');
 
+
+  /* ---------- radar: 4 severity rings x 7 day sectors, sweeping ---------- */
+  const SEV_COLOR = { P1: TOK.red, P2: TOK.amber, P3: TOK.blue, P4: 'var(--muted)' };
+  const RING_R = { P1: 34, P2: 60, P3: 86, P4: 112 };
+  function radar(halves) {
+    const parts = halves.map(h => h.radar).filter(Boolean);
+    if (!parts.length) return '';
+    const days = parts[0].days || [];
+    if (!days.length) return `<div class="xo-empty">No alert history in this window.</div>`;
+    const cx = 140, cy = 140, R = 124, n7 = days.length;
+    const ang = i => (-90 + i * (360 / n7)) * Math.PI / 180;
+    const at = (i, r, off) => [cx + r * Math.cos(ang(i) + (off || 0)), cy + r * Math.sin(ang(i) + (off || 0))];
+    const rings = ['P4', 'P3', 'P2', 'P1'].map(sev => `<circle cx="${cx}" cy="${cy}" r="${RING_R[sev]}" fill="none" stroke="${SEV_COLOR[sev]}" stroke-width="1" opacity=".28"/>`).join('');
+    const spokes = days.map((d, i) => { const [x, y] = at(i, R); return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${TOK.line}" stroke-width="1" opacity=".55"/>`; }).join('');
+    const dayLab = days.map((d, i) => { const [x, y] = at(i, R + 12); return `<text x="${x}" y="${y + 3}" font-size="9.5" fill="${TOK.muted}" text-anchor="middle" font-weight="700">${d.slice(5)}</text>`; }).join('');
+    const ringLab = ['P1', 'P2', 'P3', 'P4'].map(sev => `<text x="${cx + 3}" y="${cy - RING_R[sev] + 11}" font-size="9" fill="${SEV_COLOR[sev]}" font-weight="800" opacity=".85">${sev}</text>`).join('');
+    const maxN = Math.max(1, ...parts.flatMap(p => p.cells.map(c => c.n)));
+    const blips = halves.flatMap((h, hi) => (h.radar ? h.radar.cells : []).map(c => {
+      const di = days.indexOf(c.day); if (di < 0 || !RING_R[c.sev]) return '';
+      const off = halves.length > 1 ? (hi === 0 ? -0.11 : 0.11) : 0;
+      const [x, y] = at(di, RING_R[c.sev], off);
+      const rr = 3 + 5 * Math.sqrt(c.n / maxN);
+      return `<g class="xo-blip"><circle cx="${x}" cy="${y}" r="${rr + 4}" fill="${SEV_COLOR[c.sev]}" opacity=".16"/><circle cx="${x}" cy="${y}" r="${rr}" fill="${SEV_COLOR[c.sev]}" stroke="${h.biz === 'mobile' ? '#93c5fd' : '#86efac'}" stroke-width="1.2"><title>${esc(h.label)} · ${c.sev} · ${c.day} · ${c.n} alert(s)</title></circle></g>`;
+    })).join('');
+    const tot = halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || { total: 0 }).total }));
+    const sevTot = {}; halves.forEach(h => (h.radar ? h.radar.cells : []).forEach(c => sevTot[c.sev] = (sevTot[c.sev] || 0) + c.n));
+    return `<div class="xo-radarwrap">
+      <svg viewBox="0 0 280 280" class="xo-radar" role="img" aria-label="Alert radar: severity rings by day">
+        <defs><radialGradient id="xoRadBg" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${TOK.green}" stop-opacity=".16"/><stop offset="65%" stop-color="${TOK.green}" stop-opacity=".04"/><stop offset="100%" stop-color="${TOK.green}" stop-opacity="0"/></radialGradient>
+          <linearGradient id="xoSweep" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${TOK.green}" stop-opacity="0"/><stop offset="100%" stop-color="${TOK.green}" stop-opacity=".5"/></linearGradient></defs>
+        <circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#xoRadBg)"/>
+        ${spokes}${rings}
+        <path class="xo-sweep" d="M${cx},${cy} L${cx},${cy - R} A${R},${R} 0 0,1 ${cx + R},${cy} Z" fill="url(#xoSweep)" opacity=".45"/>
+        ${blips}${ringLab}${dayLab}
+        <circle cx="${cx}" cy="${cy}" r="3" fill="${TOK.green}"/><circle cx="${cx}" cy="${cy}" r="7" fill="none" stroke="${TOK.green}" stroke-width="1" opacity=".5"/>
+      </svg>
+      <div class="xo-radarlegend">
+        <div class="xo-rl-h">Alerts fired · ${days.length} days</div>
+        ${['P1', 'P2', 'P3', 'P4'].map(sev => `<div class="xo-rl"><i style="background:${SEV_COLOR[sev]}"></i><b>${sev}</b><span>${num(sevTot[sev] || 0)}</span></div>`).join('')}
+        <div class="xo-rl-d">ring = severity · sector = day · dot size = how many</div>
+        ${tot.length > 1 ? `<div class="xo-rl-d">${tot.map(t => `<span class="xo-biz xo-biz-${t.biz}">${esc(t.label)}</span>${num(t.t)}`).join(' ')}</div>` : ''}
+        <a href="#alerts" class="xo-link">open alerts →</a>
+      </div></div>`;
+  }
+
+  /* ---------- executive brief: the slide deck, in a modal, only if the file is deployed ---------- */
+  const BRIEF = 'exec-brief.html';
+  let briefKnown = null;
+  async function briefExists() {
+    if (briefKnown !== null) return briefKnown;
+    try { const r = await fetch(BRIEF, { method: 'HEAD' }); briefKnown = r.ok; }
+    catch (_) { briefKnown = false; }
+    return briefKnown;
+  }
+  function openBrief() {
+    if ($('#xoBrief')) return;
+    const m = document.createElement('div'); m.id = 'xoBrief'; m.className = 'xo-modal';
+    m.innerHTML = `<div class="xo-modal-in"><div class="xo-modal-bar"><b>Salam Observability Portal — executive brief</b>
+        <span class="xo-modal-tools"><a href="${BRIEF}" target="_blank" rel="noopener" class="xo-btn">open in a tab ↗</a><button type="button" class="xo-btn" data-x="close">✕ close</button></span></div>
+      <iframe src="${BRIEF}" title="Executive brief" loading="lazy"></iframe></div>`;
+    document.body.appendChild(m);
+    const close = () => { m.remove(); document.removeEventListener('keydown', esckey); };
+    const esckey = e => { if (e.key === 'Escape') close(); };
+    m.querySelector('[data-x="close"]').onclick = close;
+    m.addEventListener('click', e => { if (e.target === m) close(); });
+    document.addEventListener('keydown', esckey);
+  }
+
   /* ---------- pages ---------- */
-  function head(title, sub, halves, mode) {
+  function head(title, sub, halves, opts) {
     const status = halves.length === 1 ? halves[0].status : halves.reduce((w, h) => ({ CRITICAL: 3, WARNING: 2, HEALTHY: 1 }[h.status] > { CRITICAL: 3, WARNING: 2, HEALTHY: 1 }[w] ? h.status : w), 'HEALTHY');
     const c = halves.reduce((a, h) => ({ critical: a.critical + h.counts.critical, warnings: a.warnings + h.counts.warnings, alerts24: a.alerts24 + h.counts.alerts24 }), { critical: 0, warnings: 0, alerts24: 0 });
-    return `<div class="xo-head"><div><div class="xo-kick">${halves.map(h => h.label).join(' + ')} · ${mode === 'exec' ? 'executive overview' : 'operations'}</div><h2 class="xo-h">${title}</h2><div class="xo-meta">${sub}</div></div>
+    return `<div class="xo-head"><div><div class="xo-kick">${esc(halves.map(h => h.label).join(' + '))}${opts.kicker ? ' · ' + esc(opts.kicker) : ''}</div>
+        ${title ? `<h2 class="xo-h">${esc(title)}</h2>` : ''}${sub ? `<div class="xo-meta">${esc(sub)}</div>` : ''}</div>
       <div class="xo-tools">${statusPill(status)}<span class="xo-dim">${c.critical} critical · ${c.warnings} warning · ${c.alerts24} alert(s) in 24 h</span>
-        <span class="xo-range">${['7d', '30d'].map(r => `<button type="button" class="xo-r${state.range === r ? ' on' : ''}" data-r="${r}">${r}</button>`).join('')}</span>
+        ${opts.range === false ? '' : `<span class="xo-range">${['7d', '30d'].map(r => `<button type="button" class="xo-r${state.range === r ? ' on' : ''}" data-r="${r}">${r}</button>`).join('')}</span>`}
+        ${opts.brief ? `<button type="button" class="xo-btn xo-brief" data-act="brief" hidden>▶ Executive brief</button>` : ''}
         <button type="button" class="xo-btn" data-act="refresh" title="refresh now">↻ <span class="xo-upd">updated ${hm(new Date())}</span></button></div></div>`;
   }
-  function renderExec(host, halves, unified) {
-    const days = halves[0].days;
-    host.innerHTML = `${head('Executive overview', `north-star KPIs · SLO compliance · trends · top ongoing issues · last 24 h, trends ${days} d, KSA`, halves, 'exec')}
-      ${sec('summary', 'What matters today')}
-      <div class="xo-sumgrid">${halves.map(h => `<div class="xo-summary" style="--c:${SEV[h.status]}">${unified ? `<div class="xo-sumh">${badge(h, true)}${statusPill(h.status)}</div>` : ''}${h.summary.map(s => `<div>${esc(s)}</div>`).join('')}</div>`).join('')}</div>
-      ${sec('north-star', 'Key indicators', 'click a tile to open its page')}
-      <div class="xo-grid">${halves.flatMap(h => h.kpis.filter(k => k.exec).map(k => kpiTile(k, h, unified))).join('')}</div>
-      ${sec('slo', 'SLO compliance', '○ = not measured by this console')}
-      <div class="xo-slos">${halves.flatMap(h => h.slos.map(s => sloTile(s, h, unified))).join('')}</div>
-      ${sec('trends', 'Trends', `${days} days · KSA`)}
-      <div class="xo-charts">${halves.flatMap(h => h.series.charts.filter(c => c.exec).map(c => chartCard(c, h, unified))).join('')}</div>
-      ${sec('issues', 'Top ongoing issues', 'open in window · sorted by open count')}
-      <div class="topo-card xo-tblwrap">${halves.some(h => h.issues.length) ? `<div class="tscroll"><table class="xo-tbl"><thead><tr><th>Severity</th><th>Issue</th><th>Open / total</th><th>First seen</th><th>Trend</th><th></th></tr></thead><tbody>${halves.flatMap(h => h.issues.map(i => ({ h, i }))).sort((a, b) => b.i.open - a.i.open).map(({ h, i }) => issuesRows({ ...h, issues: [i] }, unified)).join('')}</tbody></table></div>` : `<div class="xo-empty">No open issue in this window.</div>`}</div>
-      <div class="xo-foot">${halves.map(h => `${h.label}: ${esc(h.provisional)} · source ${esc(h.source || '—')} · ${esc(h.freshness.text)}`).join('<br>')}</div>`;
-  }
-  function renderOps(host, halves, unified) {
-    const days = halves[0].days;
-    const sev = halves.reduce((a, h) => ({ P1: a.P1 + (h.counts.bySeverity.P1 || 0), P2: a.P2 + (h.counts.bySeverity.P2 || 0), P3: a.P3 + (h.counts.bySeverity.P3 || 0) }), { P1: 0, P2: 0, P3: 0 });
-    host.innerHTML = `${head('Operations', `health · key indicators · trends · pipeline · alerts · last 24 h, trends ${days} d, KSA`, halves, 'ops')}
-      <div class="xo-pills"><span class="xo-pill critical">P1 · ${sev.P1}</span><span class="xo-pill warning">P2 · ${sev.P2}</span><span class="xo-pill info">P3 · ${sev.P3}</span><span class="xo-dim">alerts fired in ${days} d</span></div>
-      ${sec('health', 'System health', 'click a tile to open its page')}
-      <div class="xo-health">${halves.flatMap(h => h.health.map(x => healthTile(x, h, unified))).join('')}</div>
-      ${sec('indicators', 'Key indicators')}
-      <div class="xo-grid">${halves.flatMap(h => h.kpis.filter(k => k.key !== 'availability' && k.key !== 'revenue').map(k => kpiTile(k, h, unified))).join('')}</div>
-      ${sec('trends', 'Trends & analytics', `${days} days · KSA`)}
-      <div class="xo-charts">${halves.flatMap(h => h.series.charts.map(c => chartCard(c, h, unified))).join('')}</div>
-      ${halves.map(h => `${sec('pipeline', `${unified ? h.label + ' · ' : ''}${esc(h.pipeline.title)}`, esc(h.pipeline.sub))}<div class="topo-card xo-chart">${h.pipeline.rows.length ? hbars(h.pipeline.rows, h.pipeline.title) : `<div class="xo-empty">Nothing stopped in this window.</div>`}<div class="xo-dim" style="margin-top:6px"><a href="${esc(h.pipeline.href)}" class="xo-link">open ${esc(h.label)} detail →</a></div></div>`).join('')}
-      ${sec('alerts', 'Alerts', `open first · fired in ${days} d`)}
-      <div class="topo-card xo-tblwrap">${halves.some(h => h.alerts.length) ? halves.flatMap(h => h.alerts.map(a => ({ h, a }))).sort((x, y) => (y.a.status === 'open') - (x.a.status === 'open') || new Date(y.a.at) - new Date(x.a.at)).map(({ h, a }) => alertRows({ ...h, alerts: [a] }, unified)).join('') : `<div class="xo-empty">No alert fired in this window.</div>`}</div>
-      <div class="xo-foot">${halves.map(h => `${h.label}: ${esc(h.provisional)} · source ${esc(h.source || '—')} · ${esc(h.freshness.text)}`).join('<br>')}</div>`;
-  }
 
-  let timer = null;
-  async function page(host, biz, tab, force) {
+  /* Each section is a function of the halves. A page asks for the ones it does not already show,
+   * which is what keeps the merged pages free of repeated numbers. */
+  const SECTION = {
+    summary: (H, u) => sec('summary', 'What matters today') +
+      `<div class="xo-sumgrid">${H.map(h => `<div class="xo-summary" style="--c:${SEV[h.status]}">${u ? `<div class="xo-sumh">${badge(h, true)}${statusPill(h.status)}</div>` : ''}${h.summary.map(x => `<div>${esc(x)}</div>`).join('')}</div>`).join('')}</div>`,
+    radar: (H) => sec('signal', 'Alert radar', 'severity by day · click through to alerts') + `<div class="topo-card xo-chart">${radar(H)}</div>`,
+    kpisExec: (H, u) => sec('north-star', 'Key indicators', 'click a tile to open its page') +
+      `<div class="xo-grid">${H.flatMap(h => h.kpis.filter(k => k.exec).map(k => kpiTile(k, h, u))).join('')}</div>`,
+    kpisAll: (H, u) => sec('indicators', 'Key indicators', 'click a tile to open its page') +
+      `<div class="xo-grid">${H.flatMap(h => h.kpis.filter(k => k.key !== 'availability' && k.key !== 'revenue').map(k => kpiTile(k, h, u))).join('')}</div>`,
+    slos: (H, u) => sec('slo', 'SLO compliance', '○ = not measured by this console') +
+      `<div class="xo-slos">${H.flatMap(h => h.slos.map(x => sloTile(x, h, u))).join('')}</div>`,
+    health: (H, u) => sec('health', 'System health', 'click a tile to open its page') +
+      `<div class="xo-health">${H.flatMap(h => h.health.map(x => healthTile(x, h, u))).join('')}</div>`,
+    trendsExec: (H, u) => sec('trends', 'Trends', `${H[0].days} days · KSA`) +
+      `<div class="xo-charts">${H.flatMap(h => h.series.charts.filter(c => c.exec).map(c => chartCard(c, h, u))).join('')}</div>`,
+    trendsAll: (H, u) => sec('trends', 'Trends & analytics', `${H[0].days} days · KSA`) +
+      `<div class="xo-charts">${H.flatMap(h => h.series.charts.map(c => chartCard(c, h, u))).join('')}</div>`,
+    pipeline: (H, u) => H.map(h => sec('pipeline', `${u ? h.label + ' · ' : ''}${h.pipeline.title}`, h.pipeline.sub) +
+      `<div class="topo-card xo-chart">${h.pipeline.rows.length ? hbars(h.pipeline.rows, h.pipeline.title) : `<div class="xo-empty">Nothing stopped in this window.</div>`}<div class="xo-dim" style="margin-top:6px"><a href="${esc(h.pipeline.href)}" class="xo-link">open ${esc(h.label)} detail →</a></div></div>`).join(''),
+    issues: (H, u) => sec('issues', 'Top ongoing issues', 'open in window · sorted by open count') +
+      `<div class="topo-card xo-tblwrap">${H.some(h => h.issues.length) ? `<div class="tscroll"><table class="xo-tbl"><thead><tr><th>Severity</th><th>Issue</th><th>Open / total</th><th>First seen</th><th>Trend</th><th></th></tr></thead><tbody>${H.flatMap(h => h.issues.map(i => ({ h, i }))).sort((a, b) => b.i.open - a.i.open).map(({ h, i }) => issuesRows({ ...h, issues: [i] }, u)).join('')}</tbody></table></div>` : `<div class="xo-empty">No open issue in this window.</div>`}</div>`,
+    alerts: (H, u) => sec('alerts', 'Alerts', `open first · fired in ${H[0].days} d`) +
+      `<div class="topo-card xo-tblwrap">${H.some(h => h.alerts.length) ? H.flatMap(h => h.alerts.map(a => ({ h, a }))).sort((x, y) => (y.a.status === 'open') - (x.a.status === 'open') || new Date(y.a.at) - new Date(x.a.at)).map(({ h, a }) => alertRows({ ...h, alerts: [a] }, u)).join('') : `<div class="xo-empty">No alert fired in this window.</div>`}</div>`,
+    foot: (H) => `<div class="xo-foot">${H.map(h => `${esc(h.label)}: ${esc(h.provisional)} · source ${esc(h.source || '—')} · ${esc(h.freshness.text)}`).join('<br>')}</div>`,
+  };
+
+  const timers = new WeakMap();
+  const EXEC_SECTIONS = ['summary', 'radar', 'kpisExec', 'slos', 'trendsExec', 'issues', 'foot'];
+
+  async function render(host, opts, force) {
     ensureCss();
-    if (!host.dataset.loaded) host.innerHTML = `<div class="xo-loading">Loading…</div>`;
-    let d; try { d = await load(`${SRC[biz]}?range=${state.range}`, force); } catch (e) { host.innerHTML = `<div class="topo-card xo-err"><b>Could not load</b><div class="xo-dim">${esc(e.message)}</div></div>`; return; }
-    const halves = biz === 'all' ? [d.mobile, d.fixed].filter(h => h && h.configured) : (d.configured ? [d] : []);
-    const missing = biz === 'all' ? (d.missing || []) : (d.configured ? [] : [{ label: d.label || 'This business', reason: d.reason }]);
-    if (!halves.length) { host.innerHTML = `<div class="topo-card xo-err"><b>Nothing to show</b><div class="xo-dim">${esc((d.reason) || (d.mobile && d.mobile.reason) || (d.fixed && d.fixed.reason) || 'no business configured for your role')}</div></div>`; return; }
-    (tab === 'ops' ? renderOps : renderExec)(host, halves, biz === 'all');
-    if (missing.length) { const w = document.createElement('div'); w.className = 'xo-missing';
-      w.innerHTML = missing.map(m => `<b>${esc(m.label)} half unavailable</b> — ${esc(m.reason || 'not configured')}`).join('<br>');
-      host.insertBefore(w, host.children[1] || null); }
-    host.dataset.loaded = '1';
-    host.querySelectorAll('.xo-r').forEach(b => b.onclick = () => { state.range = b.dataset.r; localStorage.setItem('exec_range', state.range); page(host, biz, tab, true); });
-    const rb = host.querySelector('[data-act="refresh"]'); if (rb) rb.onclick = () => page(host, biz, tab, true);
-    clearTimeout(timer); timer = setTimeout(() => { if (host.isConnected && !document.hidden) page(host, biz, tab, true); }, 300e3);
+    const o = Object.assign({ biz: 'all', sections: EXEC_SECTIONS, title: '', sub: '', kicker: '', brief: false }, opts);
+    if (!host.dataset.xoLoaded) host.innerHTML = `<div class="xo-loading">Loading…</div>`;
+    let d; try { d = await load(`${SRC[o.biz]}?range=${state.range}`, force); }
+    catch (e) { host.innerHTML = `<div class="topo-card xo-err"><b>Could not load</b><div class="xo-dim">${esc(e.message)}</div></div>`; return; }
+    const halves = o.biz === 'all' ? [d.mobile, d.fixed].filter(h => h && h.configured) : (d.configured ? [d] : []);
+    const missing = o.biz === 'all' ? (d.missing || []) : (d.configured ? [] : [{ label: d.label || 'This business', reason: d.reason }]);
+    if (!halves.length) { host.innerHTML = `<div class="topo-card xo-err"><b>Nothing to show</b><div class="xo-dim">${esc(missing.map(m => m.label + ': ' + (m.reason || 'not configured')).join(' · ') || 'no business configured for your role')}</div></div>`; return; }
+    const u = halves.length > 1;
+    host.innerHTML = head(o.title, o.sub, halves, o) +
+      (missing.length ? `<div class="xo-missing">${missing.map(m => `<b>${esc(m.label)} half unavailable</b> — ${esc(m.reason || 'not configured')}`).join('<br>')}</div>` : '') +
+      o.sections.map(k => SECTION[k] ? SECTION[k](halves, u) : '').join('');
+    host.dataset.xoLoaded = '1';
+    host.querySelectorAll('.xo-r').forEach(b => b.onclick = () => { state.range = b.dataset.r; localStorage.setItem('exec_range', state.range); document.querySelectorAll('[data-xo-host]').forEach(h2 => { if (h2._xo) render(h2, h2._xo, true); }); });
+    const rb = host.querySelector('[data-act="refresh"]'); if (rb) rb.onclick = () => render(host, o, true);
+    const bb = host.querySelector('[data-act="brief"]'); if (bb) { bb.onclick = openBrief; briefExists().then(ok => { if (ok) bb.hidden = false; }); }
+    host.setAttribute('data-xo-host', '1'); host._xo = o;
+    clearTimeout(timers.get(host)); timers.set(host, setTimeout(() => { if (host.isConnected && !document.hidden) render(host, o, true); }, 300e3));
   }
 
-  /* ---------- Fixed hub pages ---------- */
-  window.FIXED_PAGES = window.FIXED_PAGES || {};
-  window.FIXED_PAGES.exec = { label: 'Executive', sub: 'north-star KPIs · SLOs · top issues', render: host => page(host, 'fixed', 'exec') };
-  window.FIXED_PAGES.ops  = { label: 'Operations', sub: 'health · trends · pipeline · alerts', render: host => page(host, 'fixed', 'ops') };
+  /* mount ops sections into a page that already owns part of the story */
+  function mountInto(anchor, where, id, opts) {
+    if (!anchor) return null;
+    let el = document.getElementById(id);
+    if (!el) { el = document.createElement('div'); el.id = id; el.className = 'xo-block';
+      if (where === 'prepend') anchor.insertBefore(el, anchor.firstChild);
+      else if (where === 'before') anchor.parentNode.insertBefore(el, anchor);
+      else anchor.appendChild(el); }
+    render(el, opts);
+    return el;
+  }
+  window.EXECOPS = { render, mountInto, openBrief, sections: SECTION };
 
-  /* ---------- standalone view: Home › Executive/Operations and Mobile › Executive/Operations ---------- */
-  window.openExecOps = function (biz, tab) {
+  /* ---------- the Executive Dashboard view (top level, both businesses) ---------- */
+  window.openExecOps = function () {
     const host = $('#view-execops'); if (!host) return;
-    biz = biz === 'mobile' ? 'mobile' : 'all'; tab = tab === 'ops' ? 'ops' : 'exec';
-    const want = biz === 'all' ? tab : `mobile-${tab}`;
-    document.querySelectorAll('.navtab[data-view="execops"]').forEach(b => b.classList.toggle('active', b.dataset.hash === want));
+    document.querySelectorAll('.navtab[data-view="execops"]').forEach(b => b.classList.add('active'));
     document.querySelectorAll('.navtab:not([data-view="execops"]).active').forEach(b => b.classList.remove('active'));
     if (window.navdropSync) window.navdropSync();
-    page(host, biz, tab);
+    render(host, { biz: 'all', sections: EXEC_SECTIONS, title: 'Executive Dashboard',
+      sub: 'both businesses · north-star KPIs, SLO compliance, alert radar and the issues that are still open',
+      kicker: 'executive', brief: true });
   };
+
+  /* ---------- ops sections for the three merged pages ---------- */
+  // Fixed › Operations Dashboard: the hub Overview already shows KPIs, funnel, dealers, regions and
+  // error categories, so this adds only what it lacks - SLOs, day trends, the stop-step pipeline, alerts.
+  window.execopsFixed = host => render(host, { biz: 'fixed', kicker: 'operations', range: false,
+    sections: ['slos', 'trendsAll', 'pipeline', 'alerts', 'foot'] });
+  // Mobile › Operations Dashboard: the Dashboard owns today's KPIs and order flow.
+  window.execopsMobileTop = () => mountInto($('#view-home'), 'prepend', 'xoMobTop', { biz: 'mobile', kicker: 'operations', range: false, sections: ['slos'] });
+  window.execopsMobileBottom = () => mountInto($('#view-home'), 'append', 'xoMobBot', { biz: 'mobile', kicker: 'operations', range: false, sections: ['trendsAll', 'pipeline', 'alerts', 'foot'] });
+  // Home: the landing page owns the status pills, growth and the attention list; add the charts and alerts.
+  window.execopsHome = () => mountInto($('#view-landing'), 'append', 'xoHome', { biz: 'all', kicker: 'operations', range: false, sections: ['trendsExec', 'alerts', 'foot'] });
 
   function ensureCss() {
     if ($('#xoCss')) return;
@@ -232,7 +328,27 @@
       html[dir=rtl] .xo-tbl th,html[dir=rtl] .xo-tbl td{text-align:right}html[dir=rtl] .xo-biz{margin-right:0;margin-left:6px}
       @media (max-width:720px){.xo-grid{grid-template-columns:repeat(2,1fr)}.xo-kv{font-size:22px}.xo-charts,.xo-sumgrid{grid-template-columns:1fr}.xo-h{font-size:17px}.xo-slos,.xo-health{grid-template-columns:repeat(2,1fr)}#view-execops{padding:10px 12px 24px}}
       @media (max-width:420px){.xo-grid,.xo-slos,.xo-health{grid-template-columns:1fr}}
-      @media print{.xo-tools,.xo-range{display:none}.xo-kpi,.xo-slo,.xo-chart,.xo-hi{break-inside:avoid}}`;
+      .xo-block{margin-top:24px;padding-top:4px;border-top:1px solid var(--line)}
+      .xo-radarwrap{display:flex;gap:20px;align-items:center;flex-wrap:wrap;justify-content:center}
+      .xo-radar{width:min(340px,100%);height:auto;flex:none}
+      .xo-sweep{transform-origin:140px 140px;animation:xoSweep 6s linear infinite}
+      @keyframes xoSweep{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+      .xo-blip circle:first-child{animation:xoPulse 3.2s ease-in-out infinite}
+      @keyframes xoPulse{0%,100%{opacity:.12}50%{opacity:.34}}
+      .xo-radarlegend{min-width:190px;font-size:12px}
+      .xo-rl-h{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:800;margin-bottom:8px}
+      .xo-rl{display:flex;align-items:center;gap:8px;padding:3px 0;font-variant-numeric:tabular-nums}
+      .xo-rl i{width:9px;height:9px;border-radius:50%;flex:none}.xo-rl b{width:26px}.xo-rl span{color:var(--muted)}
+      .xo-rl-d{font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.5}
+      .xo-brief{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);font-weight:800}
+      .xo-modal{position:fixed;inset:0;z-index:3000;background:rgba(8,12,20,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:22px;animation:xoFade .18s ease}
+      @keyframes xoFade{from{opacity:0}to{opacity:1}}
+      .xo-modal-in{background:var(--card);border:1px solid var(--line);border-radius:14px;width:min(1400px,100%);height:min(88vh,100%);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.45)}
+      .xo-modal-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px;flex-wrap:wrap}
+      .xo-modal-tools{display:flex;gap:8px;align-items:center}.xo-modal-tools .xo-btn{text-decoration:none}
+      .xo-modal-in iframe{flex:1;width:100%;border:0;background:#050a08}
+      @media (max-width:720px){.xo-radarwrap{flex-direction:column}.xo-modal{padding:8px}}
+      @media print{.xo-tools,.xo-range,.xo-modal{display:none}.xo-kpi,.xo-slo,.xo-chart,.xo-hi{break-inside:avoid}}`;
     document.head.appendChild(st);
   }
 })();

@@ -14,7 +14,8 @@
  *   series:{days:[{day,...}], charts:[{key,title,type:'line'|'bar',field,color,threshold,thresholdLabel,exec}]},
  *   pipeline:{title,sub,rows:[{step,label,n,share,tone}],href},
  *   issues:[{category,label,open,total,first_seen,daysOngoing,trend,spark,sev,href}],
- *   alerts:[{severity,name,text,team,at,href,status}]
+ *   alerts:[{severity,name,text,team,at,href,status}],
+ *   radar:{days:[KSA day], cells:[{day,sev:'P1'|'P2'|'P3'|'P4',n}], total}
  * } */
 const n = v => Number(v) || 0;
 const pct = (a, b) => b > 0 ? Math.round((a / b) * 1000) / 10 : 0;
@@ -30,4 +31,13 @@ const sevOf = open => open >= 100 ? 'critical' : open >= 20 ? 'warning' : 'info'
 const rangeOf = q => q && q.range === '30d' ? '30d' : '7d';
 const statusOf = (critical, warnings) => critical > 0 ? 'CRITICAL' : warnings > 0 ? 'WARNING' : 'HEALTHY';
 const humanStep = s => String(s || '').replace(/^(ePurchase|salamHome)/, (m) => m === 'ePurchase' ? 'E-purchase · ' : 'Salam Home · ').replace(/([a-z])([A-Z])/g, '$1 $2');
-module.exports = { n, pct, delta, dayKey, dayAxis, trendOf, sevOf, rangeOf, statusOf, humanStep };
+const SEVS = ['P1', 'P2', 'P3', 'P4'];
+const radarOf = (rows, days) => {                 // rows: {day, severity, n}
+  const cells = [];
+  for (const d of days) for (const sev of SEVS) {
+    const hit = rows.find(r => r.day === d && r.severity === sev);
+    if (hit) cells.push({ day: d, sev, n: Number(hit.n) || 0 });
+  }
+  return { days, cells, total: cells.reduce((a, c) => a + c.n, 0) };
+};
+module.exports = { SEVS, radarOf, n, pct, delta, dayKey, dayAxis, trendOf, sevOf, rangeOf, statusOf, humanStep };

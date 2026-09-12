@@ -40,7 +40,7 @@
       <div class="ld-sec" id="ldMineSec"><h3>My incidents <span>what I acknowledged or was handed — age, time in my hands, SLA</span></h3><div id="ldMine" class="ld-mine"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-sec"><h3>Needs attention <span>open incidents and open Fixed error categories</span></h3><div id="ldAttention" class="ld-att"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-quick">
-        <a href="#exec" class="ld-q">📈 Executive</a><a href="#ops" class="ld-q">🔧 Operations</a><a href="#subscriber" class="ld-q">◉ Customer 360</a><a href="#alerts" class="ld-q" data-biz="mobile">🔔 Alerts</a><a href="#troubleshoot" class="ld-q" data-biz="mobile">⚡ Troubleshoot</a><a href="#fixed?tab=map" class="ld-q" data-biz="fixed">🗺 SDA map</a><a href="#fixed?tab=errors" class="ld-q" data-biz="fixed">⚠ Fixed errors</a><a href="#fixed?tab=alerts" class="ld-q" data-biz="fixed">🔔 Fixed alerts</a><a href="#analytics" class="ld-q" data-biz="mobile">📈 Analytics</a>
+        <a href="#exec" class="ld-q">📈 Executive Dashboard</a><a href="#subscriber" class="ld-q">◉ Customer 360</a><a href="#alerts" class="ld-q" data-biz="mobile">🔔 Alerts</a><a href="#troubleshoot" class="ld-q" data-biz="mobile">⚡ Troubleshoot</a><a href="#fixed?tab=map" class="ld-q" data-biz="fixed">🗺 SDA map</a><a href="#fixed?tab=errors" class="ld-q" data-biz="fixed">⚠ Fixed errors</a><a href="#fixed?tab=alerts" class="ld-q" data-biz="fixed">🔔 Fixed alerts</a><a href="#analytics" class="ld-q" data-biz="mobile">📈 Analytics</a>
       </div>
     </div>`;
     ensureCss(); load();
@@ -69,6 +69,9 @@
       canF?P("/api/fixed/summary?range=30d",null):null,
       canM?P("/api/errors/summary?window=24",null):null ]);
     renderStatus({m24,noc,f24,al}); renderInsights({m24,m7,anoms,f7,f7p,f24}); renderGrowth({m7,f7,f7p,f30}); renderMobile({m24,noc,al,canM}); renderFixed({f24,canF}); renderAttention({al,f24,anoms,merr});
+    /* Operations merged into Home (12 Sep 2026): the landing page already owns status, growth and the
+     * attention list, so it adds only the day trends and the alert list — nothing repeated. */
+    if(window.execopsHome) window.execopsHome();
   }
 
   function renderStatus({m24,noc,f24,al}){

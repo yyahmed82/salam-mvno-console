@@ -9,7 +9,7 @@
    *   window.FIXED_PAGES[key] = { label, sub, render(hostEl, ctx) }      (render is idempotent; ctx = window.FX)
    * and gets its data from /api/fixed/<key>/... (server: server/src/fixed<Key>.js mounted by fixed.js).
    * Shared helpers live on window.FX (api, esc, ts, fmt, tbl, card, chip, bar, state, qs). Keys and order below. */
-  const TAB_ORDER=[["overview","Overview","KPIs · funnel · dealers"],
+  const TAB_ORDER=[["overview","Operations Dashboard","KPIs · funnel · dealers · SLOs · trends · alerts"],
     /* the two pages the Fixed Operations agent used to generate as static HTML — live since 12 Sep 2026 */
     ["exec","Executive","north-star KPIs · SLOs · top issues"],["ops","Operations","health · trends · pipeline · alerts"],["epurchase","E-purchase","web / QR channel · journeys · payments · findings"],["salamhome","Salam Home","app channel · buy + manage-line · payments · findings"],["map","SDA map","dealers · pins · trace"],["qr","QR codes","referral orders · consent"],
     ["dash","Reports","KPIs · trends · dealers & QR"],["errors","Errors","error control board"],["alerts","Alerts","rules · history"],
@@ -57,7 +57,12 @@
       $("#fxBody").innerHTML=`<div class="albanner" style="border-left:4px solid #dc2626;padding:14px 16px"><b>Fixed data unavailable</b> — ${esc(e.message)}<div class="rl" style="font-size:11px;color:var(--muted);margin-top:4px">Set OPS_DATABASE_URL (sda_ops) and restart. /api/fixed/ping shows each source.</div></div>`;
     }
   }
-  window.FIXED_PAGES.overview={ label:"Overview", render:renderOverview };
+  /* Operations Dashboard (12 Sep 2026): the old Overview plus the ops half that used to be its own
+   * "Operations" page — SLOs, day trends, the stop-step pipeline and alerts, appended once, so nothing
+   * on this page is stated twice. */
+  window.FIXED_PAGES.overview={ label:"Operations Dashboard", sub:"KPIs · funnel · dealers · SLOs · trends · alerts",
+    render:async (host,fx)=>{ await renderOverview(host,fx);
+      if(window.execopsFixed){ const b=document.createElement("div"); b.className="xo-block"; host.appendChild(b); window.execopsFixed(b); } } };
 
   /* ---- HUB ---- */
   let curTab="overview";

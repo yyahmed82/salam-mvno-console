@@ -191,7 +191,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   window.opsSession = () => SES;   // { email, role, me:{name,mobile,dashboard,...} }
   /* 2 Sep 2026 view split: home→'dashboard', dms→'dms' (own view), every Explore-menu entry
    * (topology/apigw/docs/journeys/integrations/sub360) → the single 'explore' view. */
-  const NAV_VIEW = { landing:"dashboard", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
+  const NAV_VIEW = { landing:"dashboard", execops:"dashboard", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
     explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", tapdocs:"explore", alerts:"alerts", errors:"errors", analytics:"analytics", sub360:"explore", settings:"settings" };
 
   async function loadMe(){
@@ -222,7 +222,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       // Fixed sub-pages answer to their own view (matrix column); the hub itself to 'fixed'
       const v = b.dataset.fxtab ? (FTV[b.dataset.fxtab]||"fixed") : NAV_VIEW[b.dataset.view];
       // Executive / Operations: the Home entries need either business, the Mobile entries need the Dashboard view
-      const ok = b.dataset.view==="execops" ? (/^mobile-/.test(b.dataset.hash||"") ? views.includes("dashboard") : (views.includes("dashboard")||views.includes("fixed"))) : views.includes(v);
+      const ok = b.dataset.view==="execops" ? (views.includes("dashboard")||views.includes("fixed")) : views.includes(v);
       b.classList.toggle("hidden", !ok);   // Dashboard too — a real gated view since 2 Sep 2026
     });
     window.FIXED_TAB_VIEWS = FTV; window.FIXED_VIEWS_HELD = views.filter(v=>/^fixed/.test(v));

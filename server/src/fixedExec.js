@@ -36,6 +36,11 @@ async function errorBudget() {
   try { const r = await db.ops.query(`SELECT threshold FROM alert_rules WHERE key='fixed_error_spike' AND enabled LIMIT 1`); const t = n((r.rows[0] || {}).threshold); return t > 0 ? t : 50; }
   catch (_) { return 50; }
 }
+async function alertsByDay(fromIso) {
+  try { return (await db.ops.query(`SELECT (date_trunc('day', fired_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, severity, count(*)::int AS n
+                                     FROM alert_events WHERE status='FIRED' AND fired_at >= $1 GROUP BY 1,2`, [fromIso])).rows; }
+  catch (_) { return []; }
+}
 async function firedAlerts(fromIso) {
   try { return (await db.ops.query(`SELECT rule_key, rule_name, team, severity, metric_value, threshold, metric_text, fired_at
                                      FROM alert_events WHERE status='FIRED' AND fired_at >= $1 ORDER BY fired_at DESC LIMIT 50`, [fromIso])).rows; }
@@ -54,6 +59,7 @@ async function exec(q = {}) {
     both(ERR_DAY, [from, to]), both(ERR_CAT, [from, to]), both(ERR_CAT_DAY, [from, to]), both(STEPS, [from, to]),
     errorBudget(), firedAlerts(from), both(ERR_24, [from24]),
   ]);
+  const radarRows = await alertsByDay(from);
 
   // ---- day axis
   const byDay = {}; for (const r of series.byDay || []) byDay[dayKey(r.day)] = { n: n(r.n), completed: n(r.completed) };
@@ -140,6 +146,7 @@ async function exec(q = {}) {
     ] },
     pipeline: { title: 'Order pipeline — where not-completed attempts stopped', sub: `${notDone.toLocaleString('en-US')} attempts in ${days} d did not complete`, rows: pipelineRows, href: '#fixed?tab=epurchase' },
     issues,
+    radar: K.radarOf(radarRows, daysArr.map(d => d.day)),
     alerts: alerts.slice(0, 12).map(a => ({ severity: a.severity, name: a.rule_name || a.rule_key, text: a.metric_text || (a.metric_value != null ? `${a.metric_value} vs ${a.threshold}` : ''), team: a.team, at: a.fired_at, href: '#fixed-alerts', status: 'fired' })),
   };
 }
