@@ -76,6 +76,9 @@ load(){                                       # load <snapshot-dir-name> <db>
   PGOPTIONS="-c search_path=$sch,public" psql -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" \
        -U "$PGUSER_LOCAL" -d "$db" -q -f "$sql" > "$dat" 2>&1 || true
   rm -f "$sql"
+  # \copy keeps the original ids but leaves every sequence at 1 - the next INSERT would collide
+  # ("duplicate key value violates unique constraint login_otps_pkey" at sign-in). Move them past max(id).
+  "${PSQL[@]}" -d "$db" -q -f local/fix-sequences.sql >/dev/null 2>&1 || true
   "${PSQL[@]}" -d "$db" -q -c "ANALYZE" >/dev/null 2>&1 || true
 
   # --- pass 3: verify every table we have a CSV for actually has its rows
