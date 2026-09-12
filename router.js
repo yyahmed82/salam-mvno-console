@@ -17,9 +17,11 @@
     "settings-assist":{assistClone:true}, "settings-assist-clone":{assistClone:true},
     "settings-demo":{demoCfg:true},
     agents:{agents:true}, "settings-agents":{agents:true},
+    /* Executive / Operations (12 Sep 2026): Home = both businesses, Mobile = MVNO only; Fixed lives in the hub (#fixed?tab=exec|ops) */
+    exec:{view:"execops",xb:"all",xt:"exec"}, ops:{view:"execops",xb:"all",xt:"ops"}, "mobile-exec":{view:"execops",xb:"mobile",xt:"exec"}, "mobile-ops":{view:"execops",xb:"mobile",xt:"ops"},
     audit:{audit:true}, tickets:{tickets:true}
   };
-  const VIEW_HASH={landing:"home",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
+  const VIEW_HASH={landing:"home",execops:"exec",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
   let _cur=null;
 
   /* ---- ROLE GUARD (2 Sep 2026) ---------------------------------------------------------------
@@ -104,7 +106,7 @@
     const need=neededFor(r);
     if(need && lacks(need)){ showDenied(need); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (denied)"); return; }
     // business guard (6 Sep 2026): a Mobile-only user never lands on a Fixed page and vice-versa, deep link or not
-    const bizOf=r=>{ if(r.view==="fixed"||r.seg==="fixed") return "fixed"; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","mvnohld","otodocs","tapdocs","salamdocs","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
+    const bizOf=r=>{ if(r.view==="fixed"||r.seg==="fixed") return "fixed"; if(r.view==="execops") return r.xb==="mobile"?"mobile":null; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","mvnohld","otodocs","tapdocs","salamdocs","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
     const biz=(sess().me||{}).business||"both", rb=bizOf(r);
     if(rb && biz!=="both" && rb!==biz){ showDeniedBiz(rb,biz); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (outside business)"); return; }
     if(r.home){ window.opsGoHome && window.opsGoHome(); }
@@ -142,10 +144,11 @@
       /* clickNav is a no-op when the tab is already active, so any view that only renders on a
        * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
-      const OPENER={ landing:"openLanding", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2" };
+      const OPENER={ landing:"openLanding", execops:"openExecOps", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2" };
       const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{
         if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); window[fn](m?m[1]:"overview"); }
         else if(r.view==="alerts"){ window[fn](r.seg||"mvno"); }
+        else if(r.view==="execops"){ window[fn](r.xb, r.xt); }
         else if(r.view==="topology2"){ const m=/(?:^|&)t=([a-z]+)/.exec(qs||""); window[fn](r.t2||(m?m[1]:"map")); }   // #mvnohld / #topology2?t=hld
         else window[fn](); }catch(e){} }
       // Subscriber 360 deep link: #subscriber?key=966...
@@ -166,7 +169,7 @@
 
   // reflect user navigation into the URL (activation is handled by the existing modules)
   document.querySelectorAll(".navtab").forEach(b=>b.addEventListener("click",()=>{ if(b.dataset.fxtab) return;   // Home sub-tabs set their own hash (navdrop.js)
-    const v=b.dataset.view; setHash(VIEW_HASH[v]||v); }));
+    const v=b.dataset.view; setHash(b.dataset.hash||VIEW_HASH[v]||v); }));   // data-hash: one view, several entries (Executive / Operations)
   const logo=document.querySelector(".logo"); if(logo) logo.addEventListener("click",()=>setHash("dashboard"));
   document.querySelectorAll("#settingsMenu [data-seg]").forEach(b=>b.addEventListener("click",()=>setHash("settings-"+b.dataset.seg)));
   const auditItem=document.querySelector("#settingsMenu [data-audit]"); if(auditItem) auditItem.addEventListener("click",()=>setHash("audit"));

@@ -40,7 +40,7 @@
       <div class="ld-sec" id="ldMineSec"><h3>My incidents <span>what I acknowledged or was handed — age, time in my hands, SLA</span></h3><div id="ldMine" class="ld-mine"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-sec"><h3>Needs attention <span>open incidents and open Fixed error categories</span></h3><div id="ldAttention" class="ld-att"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-quick">
-        <a href="#subscriber" class="ld-q">◉ Customer 360</a><a href="#alerts" class="ld-q" data-biz="mobile">🔔 Alerts</a><a href="#troubleshoot" class="ld-q" data-biz="mobile">⚡ Troubleshoot</a><a href="#fixed?tab=exec" class="ld-q" data-biz="fixed">📈 Fixed executive</a><a href="#fixed?tab=ops" class="ld-q" data-biz="fixed">🔧 Fixed operations</a><a href="#fixed?tab=map" class="ld-q" data-biz="fixed">🗺 SDA map</a><a href="#fixed?tab=errors" class="ld-q" data-biz="fixed">⚠ Fixed errors</a><a href="#fixed?tab=alerts" class="ld-q" data-biz="fixed">🔔 Fixed alerts</a><a href="#analytics" class="ld-q" data-biz="mobile">📈 Analytics</a>
+        <a href="#exec" class="ld-q">📈 Executive</a><a href="#ops" class="ld-q">🔧 Operations</a><a href="#subscriber" class="ld-q">◉ Customer 360</a><a href="#alerts" class="ld-q" data-biz="mobile">🔔 Alerts</a><a href="#troubleshoot" class="ld-q" data-biz="mobile">⚡ Troubleshoot</a><a href="#fixed?tab=map" class="ld-q" data-biz="fixed">🗺 SDA map</a><a href="#fixed?tab=errors" class="ld-q" data-biz="fixed">⚠ Fixed errors</a><a href="#fixed?tab=alerts" class="ld-q" data-biz="fixed">🔔 Fixed alerts</a><a href="#analytics" class="ld-q" data-biz="mobile">📈 Analytics</a>
       </div>
     </div>`;
     ensureCss(); load();

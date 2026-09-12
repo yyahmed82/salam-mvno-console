@@ -221,7 +221,9 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     document.querySelectorAll(".navtab").forEach(b=>{
       // Fixed sub-pages answer to their own view (matrix column); the hub itself to 'fixed'
       const v = b.dataset.fxtab ? (FTV[b.dataset.fxtab]||"fixed") : NAV_VIEW[b.dataset.view];
-      b.classList.toggle("hidden", !views.includes(v));   // Dashboard too — a real gated view since 2 Sep 2026
+      // Executive / Operations: the Home entries need either business, the Mobile entries need the Dashboard view
+      const ok = b.dataset.view==="execops" ? (/^mobile-/.test(b.dataset.hash||"") ? views.includes("dashboard") : (views.includes("dashboard")||views.includes("fixed"))) : views.includes(v);
+      b.classList.toggle("hidden", !ok);   // Dashboard too — a real gated view since 2 Sep 2026
     });
     window.FIXED_TAB_VIEWS = FTV; window.FIXED_VIEWS_HELD = views.filter(v=>/^fixed/.test(v));
     // business scope (6 Sep 2026): the server already intersected the views with the user's business; here the

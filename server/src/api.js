@@ -3060,6 +3060,11 @@ app.get('/api/health', async (req, res) => {
 // Fixed / Salam Home routes — all under /api/fixed/* (see fixed.js)
 require('./fixed').mount(app, { requireView, audit, requireCap });
 require('./fixedExec').mount(app, { requireView });   // Fixed › Executive + Operations (one endpoint, read models only)
+// Mobile › Executive + Operations and Home › Executive + Operations (both businesses). mvnoExec gets the Dashboard's
+// own KPI function so the 24 h numbers are the Dashboard's numbers, not a second implementation of them.
+{ const execDeps = { requireView, homeKpis: homeKpisFromSource, boardNow, segment };
+  require('./mvnoExec').mount(app, execDeps);
+  require('./execUnified').mount(app, execDeps); }
 
 /* Mobile-side alert endpoints are SEGMENT-SCOPED (8 Sep 2026): they answer for 'mvno' unless ?segment=fixed|all is
  * asked by a user whose business allows it (segment.forRequest). Fixed › Alerts has its own /api/fixed/alerts/*.

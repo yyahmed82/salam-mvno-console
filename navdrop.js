@@ -41,7 +41,7 @@
       el.addEventListener("focus", ()=>showTip(el)); el.addEventListener("blur", hideTip); el.addEventListener("click", hideTip);
     });
   }
-  window.navTipShow=showTip; window.navTipHide=hideTip;
+  window.navTipShow=showTip; window.navTipHide=hideTip; window.navdropSync=sync;
   window.navdropOpen=key=>{ const d=document.querySelector('.navdrop[data-drop="'+key+'"]'); if(d) openOne(d); }; window.navdropClose=closeAll;
   function wire(){
     wireTips();
