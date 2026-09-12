@@ -36,9 +36,31 @@ async function errorBudget() {
   try { const r = await db.ops.query(`SELECT threshold FROM alert_rules WHERE key='fixed_error_spike' AND enabled LIMIT 1`); const t = n((r.rows[0] || {}).threshold); return t > 0 ? t : 50; }
   catch (_) { return 50; }
 }
+/* alert_events is an EVALUATION log, one row per rule check, so a rule that keeps breaching writes a
+ * row every cycle. Counting those rows read as ~900 "alerts" in 7 d, which made the radar look like
+ * noise. The radar's unit is therefore DISTINCT RULES, and a rule counts as still open when its most
+ * recent evaluation (at any time, not just in the window) is FIRED. */
+const LAST_EVAL = `SELECT DISTINCT ON (rule_key) rule_key, status FROM alert_events ORDER BY rule_key, fired_at DESC`;
 async function alertsByDay(fromIso) {
-  try { return (await db.ops.query(`SELECT (date_trunc('day', fired_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, severity, count(*)::int AS n
-                                     FROM alert_events WHERE status='FIRED' AND fired_at >= $1 GROUP BY 1,2`, [fromIso])).rows; }
+  try { return (await db.ops.query(
+    `WITH last AS (${LAST_EVAL})
+     SELECT (date_trunc('day', e.fired_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, e.severity,
+            count(DISTINCT e.rule_key)::int AS n,
+            count(DISTINCT e.rule_key) FILTER (WHERE l.status = 'FIRED')::int AS open,
+            count(*)::int AS firings,
+            (array_agg(DISTINCT coalesce(e.rule_name, e.rule_key)))[1:4] AS rules
+       FROM alert_events e LEFT JOIN last l ON l.rule_key = e.rule_key
+      WHERE e.status='FIRED' AND e.fired_at >= $1 GROUP BY 1,2`, [fromIso])).rows; }
+  catch (_) { return []; }
+}
+async function alertsTotals(fromIso) {
+  try { return (await db.ops.query(
+    `WITH last AS (${LAST_EVAL})
+     SELECT e.severity, count(DISTINCT e.rule_key)::int AS rules,
+            count(DISTINCT e.rule_key) FILTER (WHERE l.status = 'FIRED')::int AS open,
+            count(*)::int AS firings
+       FROM alert_events e LEFT JOIN last l ON l.rule_key = e.rule_key
+      WHERE e.status='FIRED' AND e.fired_at >= $1 GROUP BY 1`, [fromIso])).rows; }
   catch (_) { return []; }
 }
 async function firedAlerts(fromIso) {
@@ -59,7 +81,7 @@ async function exec(q = {}) {
     both(ERR_DAY, [from, to]), both(ERR_CAT, [from, to]), both(ERR_CAT_DAY, [from, to]), both(STEPS, [from, to]),
     errorBudget(), firedAlerts(from), both(ERR_24, [from24]),
   ]);
-  const radarRows = await alertsByDay(from);
+  const [radarRows, radarTot] = await Promise.all([alertsByDay(from), alertsTotals(from)]);
 
   // ---- day axis
   const byDay = {}; for (const r of series.byDay || []) byDay[dayKey(r.day)] = { n: n(r.n), completed: n(r.completed) };
@@ -146,7 +168,7 @@ async function exec(q = {}) {
     ] },
     pipeline: { title: 'Order pipeline — where not-completed attempts stopped', sub: `${notDone.toLocaleString('en-US')} attempts in ${days} d did not complete`, rows: pipelineRows, href: '#fixed?tab=epurchase' },
     issues,
-    radar: K.radarOf(radarRows, daysArr.map(d => d.day)),
+    radar: K.radarOf(radarRows, daysArr.map(d => d.day), radarTot),
     alerts: alerts.slice(0, 12).map(a => ({ severity: a.severity, name: a.rule_name || a.rule_key, text: a.metric_text || (a.metric_value != null ? `${a.metric_value} vs ${a.threshold}` : ''), team: a.team, at: a.fired_at, href: '#fixed-alerts', status: 'fired' })),
   };
 }

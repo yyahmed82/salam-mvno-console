@@ -139,6 +139,9 @@
     const rMax = Math.max(3.2, Math.min(11, 170 / nd));
     const rMin = Math.max(1.8, rMax * 0.34);
     const OFF = halves.length > 1 ? Math.min(0.14, (Math.PI / nd) * 0.44) : 0;
+    /* A cell holding at least one still-breaching rule is a LIVE contact: solid, bright, pings as the
+     * beam passes. A cell whose rules have all cleared is a dead star: hollow, dim, no ping - history,
+     * not something to act on. Size = how many DISTINCT RULES, never how many firings. */
     const blips = halves.flatMap((h, hi) => (h.radar ? h.radar.cells : []).map(c => {
       const di = days.indexOf(c.day); if (di < 0 || !RING_R[c.sev]) return '';
       const off = hi === 0 ? -OFF : OFF;
@@ -146,16 +149,31 @@
       const rr = rMin + (rMax - rMin) * Math.sqrt(c.n / maxN);
       const dly = tAt(di, off).toFixed(2);
       const ring = h.biz === 'mobile' ? '#93c5fd' : '#86efac';
-      return `<g class="xo-blip" style="--d:${dly}s">`
+      const live = c.open > 0;
+      const tip = `<title>${esc(h.label)} · ${c.sev} · ${c.day} · ${c.n} rule${c.n === 1 ? '' : 's'}`
+        + `${live ? ` · ${c.open} still open` : ' · all cleared'} · ${num(c.firings)} firing${c.firings === 1 ? '' : 's'}`
+        + `${c.rules && c.rules.length ? '\n' + c.rules.map(r => '• ' + esc(r)).join('\n') : ''}</title>`;
+      if (!live) { const dr = Math.max(2, rr * 0.62);
+        return `<g class="xo-blip xo-dead" style="--d:${dly}s">`
+          + `<circle class="xo-dot" cx="${x}" cy="${y}" r="${dr.toFixed(1)}" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.1">${tip}</circle>`
+          + `<circle class="xo-core" cx="${x}" cy="${y}" r="${Math.max(0.8, dr * 0.26).toFixed(1)}" fill="${SEV_COLOR[c.sev]}"/></g>`; }
+      return `<g class="xo-blip xo-live" style="--d:${dly}s">`
+        + `<circle class="xo-lock" cx="${x}" cy="${y}" r="${(rr + 4.5).toFixed(1)}" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.1" stroke-dasharray="3 3" opacity=".55"/>`
         + `<circle class="xo-ping" cx="${x}" cy="${y}" r="${(rr + rr * 0.5 + 2).toFixed(1)}" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.4"/>`
         + `<circle class="xo-halo" cx="${x}" cy="${y}" r="${(rr + rr * 0.55 + 2).toFixed(1)}" fill="${SEV_COLOR[c.sev]}"/>`
-        + `<circle class="xo-dot" cx="${x}" cy="${y}" r="${rr.toFixed(1)}" fill="${SEV_COLOR[c.sev]}" stroke="${ring}" stroke-width="${Math.min(1.4, rr * 0.3).toFixed(2)}">`
-        + `<title>${esc(h.label)} · ${c.sev} · ${c.day} · ${c.n} alert(s)</title></circle></g>`;
+        + `<circle class="xo-dot" cx="${x}" cy="${y}" r="${rr.toFixed(1)}" fill="${SEV_COLOR[c.sev]}" stroke="${ring}" stroke-width="${Math.min(1.4, rr * 0.3).toFixed(2)}">${tip}</circle></g>`;
     })).join('');
-    const tot = halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || { total: 0 }).total }));
-    const sevTot = {}; cells.forEach(({ c }) => sevTot[c.sev] = (sevTot[c.sev] || 0) + c.n);
-    const grand = RADAR_SEVS.reduce((a, s) => a + (sevTot[s] || 0), 0);
-    const peak = cells.slice().sort((a, b) => b.c.n - a.c.n)[0];
+    const tot = halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || {}).rules || 0, o: (h.radar || {}).open || 0 }));
+    /* window totals come from the payload, never from summing the daily cells: one rule firing on
+     * five days is five cells but ONE rule */
+    const sevTot = {};
+    halves.forEach(h => Object.entries((h.radar || {}).sev || {}).forEach(([sv, e]) => {
+      const a = sevTot[sv] || (sevTot[sv] = { rules: 0, open: 0, firings: 0 });
+      a.rules += e.rules || 0; a.open += e.open || 0; a.firings += e.firings || 0;
+    }));
+    const sum = k => RADAR_SEVS.reduce((a, sv) => a + ((sevTot[sv] || {})[k] || 0), 0);
+    const openNow = sum('open'), ruleTot = sum('rules'), fireTot = sum('firings');
+    const peak = cells.slice().sort((a, b) => (b.c.open - a.c.open) || (b.c.n - a.c.n) || (b.c.firings - a.c.firings))[0];
     return `<div class="xo-radarwrap">
       <svg viewBox="0 0 ${VB} ${VB}" class="xo-radar" role="img" aria-label="Alert radar: P1 to P3 severity rings by day">
         <defs><radialGradient id="xoRadBg" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${TOK.green}" stop-opacity=".18"/><stop offset="62%" stop-color="${TOK.green}" stop-opacity=".05"/><stop offset="100%" stop-color="${TOK.green}" stop-opacity="0"/></radialGradient>
@@ -169,13 +187,21 @@
         <circle cx="${cx}" cy="${cy}" r="4" fill="${TOK.green}"/><circle cx="${cx}" cy="${cy}" r="9" fill="none" stroke="${TOK.green}" stroke-width="1" opacity=".5"/>
       </svg>
       <div class="xo-radarlegend">
-        <div class="xo-rl-h">Alerts fired · ${days.length} days</div>
-        <div class="xo-rl-tot">${num(grand)}<span>P1–P3 total</span></div>
-        ${RADAR_SEVS.map(sev => { const v = sevTot[sev] || 0, w = grand ? Math.round(100 * v / grand) : 0;
-          return `<div class="xo-rl"><i style="background:${SEV_COLOR[sev]}"></i><b>${sev}</b><span class="xo-rlb"><u style="background:${SEV_COLOR[sev]};width:${w}%"></u></span><span class="xo-rln">${num(v)}</span></div>`; }).join('')}
-        ${peak ? `<div class="xo-rl-d">busiest: <b>${esc(peak.c.sev)}</b> · ${esc(peak.c.day)} · ${num(peak.c.n)} on ${esc(peak.h.label)}</div>` : ''}
-        <div class="xo-rl-d">ring = severity · sector = day · dot size = how many · the sweep reveals them</div>
-        ${tot.length > 1 ? `<div class="xo-rl-d">${tot.map(t => `<span class="xo-biz xo-biz-${t.biz}">${esc(t.label)}</span>${num(t.t)}`).join(' ')}</div>` : ''}
+        <div class="xo-rl-h">Distinct rules · ${days.length} days</div>
+        <div class="xo-rl-tot ${openNow ? 'hot' : 'calm'}">${num(openNow)}<span>still open now</span></div>
+        <div class="xo-rlh2"><span>severity</span><span>open / fired</span></div>
+        ${RADAR_SEVS.map(sev => { const e = sevTot[sev] || { rules: 0, open: 0 };
+          if (!e.rules) return '';
+          const w = Math.round(100 * e.open / e.rules);
+          return `<div class="xo-rl"><i style="background:${SEV_COLOR[sev]}"></i><b>${sev}</b>`
+            + `<span class="xo-rlb"><u style="background:${SEV_COLOR[sev]};width:${w}%"></u></span>`
+            + `<span class="xo-rln">${num(e.open)}<em> / ${num(e.rules)}</em></span></div>`; }).join('')
+          || `<div class="xo-rl-d">No rule fired in this window.</div>`}
+        <div class="xo-rl-d"${fireTot > ruleTot ? ` title="${num(fireTot)} firing events behind them — the same rule re-fires on every evaluation cycle, which is why the radar counts rules, not firings"` : ''}><b>${num(ruleTot)}</b> rule${ruleTot === 1 ? '' : 's'} fired in ${days.length} d</div>
+        ${peak ? `<div class="xo-rl-d">busiest: <b>${esc(peak.c.sev)}</b> · ${esc(peak.c.day)} · ${num(peak.c.n)} rule${peak.c.n === 1 ? '' : 's'} on ${esc(peak.h.label)}</div>` : ''}
+        <div class="xo-rl-d"><span class="xo-lg"><i class="xo-lg-live"></i>open — still breaching</span><span class="xo-lg"><i class="xo-lg-dead"></i>cleared — kept as history</span></div>
+        <div class="xo-rl-d">ring = severity · sector = day · dot size = distinct rules · the sweep reveals them</div>
+        ${tot.length > 1 ? `<div class="xo-rl-d">${tot.map(t => `<span class="xo-biz xo-biz-${t.biz}">${esc(t.label)}</span>${num(t.o)} open / ${num(t.t)}`).join(' &nbsp; ')}</div>` : ''}
         <a href="#alerts" class="xo-link">open alerts →</a>
       </div></div>`;
   }
@@ -385,19 +411,35 @@
       .xo-sweepg{transform-origin:210px 210px;animation:xoSweep 8s linear infinite}
       @keyframes xoSweep{from{transform:rotate(0)}to{transform:rotate(360deg)}}
       .xo-sweep{opacity:.62}.xo-beam{filter:drop-shadow(0 0 4px var(--green,#0e9f5a))}
-      .xo-blip .xo-dot{animation:xoFound 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
-      .xo-blip .xo-halo{opacity:0;animation:xoHalo 8s linear infinite backwards;animation-delay:var(--d,0s)}
-      .xo-blip .xo-ping{opacity:0;animation:xoPing 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
-      @keyframes xoFound{0%{opacity:.18;transform:scale(.55)}3%{opacity:1;transform:scale(1.5)}9%{opacity:1;transform:scale(1)}70%{opacity:.9}100%{opacity:.3;transform:scale(.9)}}
+      .xo-live .xo-dot{animation:xoFound 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
+      .xo-live .xo-halo{opacity:0;animation:xoHalo 8s linear infinite backwards;animation-delay:var(--d,0s)}
+      .xo-live .xo-ping{opacity:0;animation:xoPing 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
+      /* an OPEN contact never fades below legible - the sweep adds the pop, it does not gate
+       * visibility. Only cleared rules (dead stars) live in the dark. */
+      @keyframes xoFound{0%{opacity:.82;transform:scale(1)}3%{opacity:1;transform:scale(1.45)}9%{opacity:1;transform:scale(1)}60%{opacity:.94}100%{opacity:.82;transform:scale(1)}}
       @keyframes xoHalo{0%{opacity:0}3%{opacity:.5}26%{opacity:.12}100%{opacity:0}}
       @keyframes xoPing{0%{opacity:0;transform:scale(.5)}2%{opacity:.85;transform:scale(.7)}14%{opacity:0;transform:scale(2.6)}100%{opacity:0;transform:scale(2.6)}}
-      @media (prefers-reduced-motion:reduce){.xo-sweepg{animation:none}.xo-blip .xo-dot{animation:none;opacity:1}.xo-blip .xo-halo{animation:none;opacity:.16}.xo-blip .xo-ping{animation:none;opacity:0}}
+      /* cleared rules are dead stars: hollow, dim, no ping - the beam only glints off them */
+      .xo-dead .xo-dot{opacity:.16;animation:xoDead 8s linear infinite backwards;animation-delay:var(--d,0s)}
+      .xo-dead .xo-core{opacity:.22}
+      .xo-dead:hover .xo-dot,.xo-dead:hover .xo-core{opacity:.85}
+      @keyframes xoDead{0%{opacity:.11}3%{opacity:.42}16%{opacity:.18}100%{opacity:.11}}
+      .xo-live .xo-lock{animation:xoLock 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
+      @keyframes xoLock{0%{opacity:.4;transform:scale(1)}2%{opacity:.85;transform:scale(1.35)}8%{opacity:.8;transform:scale(1)}100%{opacity:.4;transform:scale(1)}}
+      @media (prefers-reduced-motion:reduce){.xo-sweepg{animation:none}.xo-blip .xo-dot{animation:none;opacity:1}.xo-live .xo-lock{animation:none;opacity:.5}.xo-dead .xo-dot{opacity:.3}.xo-blip .xo-halo{animation:none;opacity:.16}.xo-blip .xo-ping{animation:none;opacity:0}}
       .xo-radarlegend{min-width:210px;flex:1 1 210px;max-width:320px;font-size:12px}
-      .xo-rl-tot{font-size:30px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums;margin-bottom:10px}
-      .xo-rl-tot span{display:block;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}
-      .xo-rlb{flex:1;height:6px;border-radius:999px;background:var(--line);overflow:hidden;min-width:40px}
+      .xo-rl-tot{font-size:34px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;margin-bottom:10px}
+      .xo-rl-tot.hot{color:#dc2626}.xo-rl-tot.calm{color:var(--green,#0e9f5a)}
+      .xo-rl-tot span{display:block;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:3px}
+      .xo-rlh2{display:flex;justify-content:space-between;font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;padding-bottom:4px;margin-bottom:2px;border-bottom:1px solid var(--line)}
+      .xo-rlb{flex:1;height:6px;border-radius:999px;background:var(--line);overflow:hidden;min-width:34px}
       .xo-rlb u{display:block;height:100%;border-radius:999px;text-decoration:none}
-      .xo-rln{width:52px;text-align:right;color:var(--ink);font-weight:700}
+      .xo-rln{width:62px;text-align:right;color:var(--ink);font-weight:700}
+      .xo-rln em{font-style:normal;font-weight:600;color:var(--muted)}
+      .xo-lg{display:inline-flex;align-items:center;gap:5px;margin-right:10px;white-space:nowrap}
+      .xo-lg i{width:9px;height:9px;border-radius:50%;flex:none}
+      .xo-lg-live{background:var(--muted);box-shadow:0 0 0 3px color-mix(in srgb,var(--muted) 22%,transparent)}
+      .xo-lg-dead{background:transparent;border:1.5px solid var(--muted);opacity:.55}
       .xo-rl-h{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:800;margin-bottom:8px}
       .xo-rl{display:flex;align-items:center;gap:8px;padding:3px 0;font-variant-numeric:tabular-nums}
       .xo-rl i{width:10px;height:10px;border-radius:50%;flex:none}.xo-rl b{width:26px}.xo-rl>span{color:var(--muted)}

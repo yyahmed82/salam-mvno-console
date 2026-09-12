@@ -55,14 +55,25 @@ async function exec(q, { homeKpis, boardNow, segment }) {
   const to = nowIso, from = new Date(now.getTime() - days * D).toISOString(), from24 = new Date(now.getTime() - D).toISOString();
   const segWhere = segment.sqlWhere('a', 'rule_key', 'mvno');
 
-  const [h, roll, errDays, errCats, errCatDays, err24, bud, alerts, radarRows, snaps] = await Promise.all([
+  const [h, roll, errDays, errCats, errCatDays, err24, bud, alerts, radarRows, radarTot, snaps] = await Promise.all([
     homeKpis(nowIso, from24, to),
     safe(C().query(ROLLUP, [from, to]), []), safe(C().query(ERR_DAY, [from, to]), []), safe(C().query(ERR_CAT, [from, to]), []),
     safe(C().query(ERR_CAT_DAY, [from, to]), []), safe(C().query(ERR_24, [from24]), [{ n: 0 }]), budget(),
     safe(C().query(`SELECT a.severity, a.name, a.rule_key, a.team, a.status, a.message, a.observed_value, a.threshold, a.fired_at, a.last_seen_at
                       FROM alerts a WHERE ${segWhere} AND (a.status='open' OR a.fired_at >= $1) ORDER BY a.status='open' DESC, a.fired_at DESC LIMIT 50`, [from]), []),
-    safe(C().query(`SELECT (date_trunc('day', a.fired_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, a.severity, count(*)::int AS n
+    /* radar, per KSA day x severity: DISTINCT RULES, not firings. The same rule re-firing all week is
+     * one rule, not 900 alerts. `open` = rules whose incident row is still open right now. */
+    safe(C().query(`SELECT (date_trunc('day', a.fired_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, a.severity,
+                           count(DISTINCT a.rule_key)::int AS n,
+                           count(DISTINCT a.rule_key) FILTER (WHERE a.status='open')::int AS open,
+                           count(*)::int AS firings,
+                           (array_agg(DISTINCT coalesce(a.name, a.rule_key)))[1:4] AS rules
                       FROM alerts a WHERE ${segWhere} AND a.fired_at >= $1 GROUP BY 1,2`, [from]), []),
+    /* window totals are queried apart: a rule firing on five days is five daily rows but ONE rule */
+    safe(C().query(`SELECT a.severity, count(DISTINCT a.rule_key)::int AS rules,
+                           count(DISTINCT a.rule_key) FILTER (WHERE a.status='open')::int AS open,
+                           count(*)::int AS firings
+                      FROM alerts a WHERE ${segWhere} AND a.fired_at >= $1 GROUP BY 1`, [from]), []),
     safe(C().query(SNAP, [['eligibility_deny_rate', 'semati_provider_error_rate', 'otp_verify_rate', 'api_technical_fail_rate']]), []),
   ]);
 
@@ -158,7 +169,7 @@ async function exec(q, { homeKpis, boardNow, segment }) {
     ] },
     pipeline: { title: 'Onboarding funnel — 24 h', sub: 'orders → checkouts → paid → activated → Nafath → delivery', rows: pipelineRows, href: '#dashboard' },
     issues,
-    radar: K.radarOf(radarRows, daysArr.map(d => d.day)),
+    radar: K.radarOf(radarRows, daysArr.map(d => d.day), radarTot),
     alerts: alerts.slice(0, 12).map(a => ({ severity: a.severity, name: a.name, text: a.message || (a.observed_value != null ? `${a.observed_value} vs ${a.threshold}` : ''), team: a.team, at: a.fired_at, href: '#alerts', status: a.status })),
   };
 }

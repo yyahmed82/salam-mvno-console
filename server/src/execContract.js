@@ -15,7 +15,12 @@
  *   pipeline:{title,sub,rows:[{step,label,n,share,tone}],href},
  *   issues:[{category,label,open,total,first_seen,daysOngoing,trend,spark,sev,href}],
  *   alerts:[{severity,name,text,team,at,href,status}],
- *   radar:{days:[KSA day], cells:[{day,sev:'P1'|'P2'|'P3'|'P4',n}], total}
+ *   radar:{days:[KSA day],
+ *          cells:[{day, sev, n:<distinct RULES that fired that day>, open:<of those, still breaching now>,
+ *                  firings:<raw event rows>, rules:[name]}],
+ *          sev:{P1:{rules,open,firings},…}, rules, open, firings, total}
+ *     n / rules are DISTINCT RULE COUNTS, never raw firings: one noisy rule re-firing every
+ *     evaluation used to read as ~900 'alerts' in 7 d, which made the board look like noise.
  * } */
 const n = v => Number(v) || 0;
 const pct = (a, b) => b > 0 ? Math.round((a / b) * 1000) / 10 : 0;
@@ -32,12 +37,30 @@ const rangeOf = q => q && q.range === '30d' ? '30d' : '7d';
 const statusOf = (critical, warnings) => critical > 0 ? 'CRITICAL' : warnings > 0 ? 'WARNING' : 'HEALTHY';
 const humanStep = s => String(s || '').replace(/^(ePurchase|salamHome)/, (m) => m === 'ePurchase' ? 'E-purchase · ' : 'Salam Home · ').replace(/([a-z])([A-Z])/g, '$1 $2');
 const SEVS = ['P1', 'P2', 'P3', 'P4'];
-const radarOf = (rows, days) => {                 // rows: {day, severity, n}
+/* rows:   {day, severity, n, open, firings, rules[]}  — one per KSA day x severity
+ * totals: {severity, rules, open, firings}            — one per severity for the WHOLE window
+ * The window totals cannot be summed from the daily rows: a rule that fires on five days is five
+ * daily rows but ONE rule. That is the whole point of the unit change, so they are queried apart. */
+const radarOf = (rows, days, totals) => {
   const cells = [];
   for (const d of days) for (const sev of SEVS) {
     const hit = rows.find(r => r.day === d && r.severity === sev);
-    if (hit) cells.push({ day: d, sev, n: Number(hit.n) || 0 });
+    if (!hit) continue;
+    const n = Number(hit.n) || 0; if (!n) continue;
+    cells.push({ day: d, sev, n,
+      open: Math.min(n, Number(hit.open) || 0),
+      firings: Number(hit.firings) || 0,
+      rules: Array.isArray(hit.rules) ? hit.rules.filter(Boolean).map(String).slice(0, 4) : [] });
   }
-  return { days, cells, total: cells.reduce((a, c) => a + c.n, 0) };
+  const by = {}; for (const t of (totals || [])) if (t && t.severity) by[t.severity] = t;
+  const sev = {}; let rules = 0, open = 0, firings = 0;
+  for (const s of SEVS) {
+    const t = by[s]; if (!t) continue;
+    const e = { rules: Number(t.rules) || 0, open: Number(t.open) || 0, firings: Number(t.firings) || 0 };
+    if (!e.rules && !e.firings) continue;
+    e.open = Math.min(e.rules, e.open);
+    sev[s] = e; rules += e.rules; open += e.open; firings += e.firings;
+  }
+  return { days, cells, sev, rules, open, firings, total: rules };
 };
 module.exports = { SEVS, radarOf, n, pct, delta, dayKey, dayAxis, trendOf, sevOf, rangeOf, statusOf, humanStep };
