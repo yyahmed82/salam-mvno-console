@@ -273,7 +273,7 @@
 
   async function render(host, opts, force) {
     ensureCss();
-    const o = Object.assign({ biz: 'all', sections: EXEC_SECTIONS, title: '', sub: '', kicker: '', brief: false }, opts);
+    const o = Object.assign({ biz: 'all', sections: EXEC_SECTIONS, title: '', sub: '', kicker: '', brief: false, head: true }, opts);
     if (!host.dataset.xoLoaded) host.innerHTML = `<div class="xo-loading">Loading…</div>`;
     let d; try { d = await load(`${SRC[o.biz]}?range=${state.range}`, force); }
     catch (e) { host.innerHTML = `<div class="topo-card xo-err"><b>Could not load</b><div class="xo-dim">${esc(e.message)}</div></div>`; return; }
@@ -281,7 +281,7 @@
     const missing = o.biz === 'all' ? (d.missing || []) : (d.configured ? [] : [{ label: d.label || 'This business', reason: d.reason }]);
     if (!halves.length) { host.innerHTML = `<div class="topo-card xo-err"><b>Nothing to show</b><div class="xo-dim">${esc(missing.map(m => m.label + ': ' + (m.reason || 'not configured')).join(' · ') || 'no business configured for your role')}</div></div>`; return; }
     const u = halves.length > 1;
-    host.innerHTML = head(o.title, o.sub, halves, o) +
+    host.innerHTML = (o.head === false ? '' : head(o.title, o.sub, halves, o)) +
       (missing.length ? `<div class="xo-missing">${missing.map(m => `<b>${esc(m.label)} half unavailable</b> — ${esc(m.reason || 'not configured')}`).join('<br>')}</div>` : '') +
       o.sections.map(k => SECTION[k] ? SECTION[k](halves, u) : '').join('');
     host.dataset.xoLoaded = '1';
@@ -319,8 +319,12 @@
   /* ---------- ops sections for the three merged pages ---------- */
   // Fixed › Operations Dashboard: the hub Overview already shows KPIs, funnel, dealers, regions and
   // error categories, so this adds only what it lacks - SLOs, day trends, the stop-step pipeline, alerts.
-  window.execopsFixed = host => render(host, { biz: 'fixed', kicker: 'operations', range: false,
-    sections: ['slos', 'trendsAll', 'pipeline', 'alerts', 'foot'] });
+  /* Fixed › Operations Dashboard, split the same way Mobile is: the status header + SLO compliance
+   * lead the page, the heavy analytics sit under the page's own content. */
+  window.execopsFixedTop = host => render(host, { biz: 'fixed', kicker: 'operations', range: false, sections: ['slos'] });
+  window.execopsFixedBottom = host => render(host, { biz: 'fixed', kicker: 'operations', range: false,
+    sections: ['trendsAll', 'pipeline', 'alerts', 'foot'], head: false });
+  window.execopsFixed = window.execopsFixedBottom;   // back-compat for any old deep link
   // Mobile › Operations Dashboard: the Dashboard owns today's KPIs and order flow.
   window.execopsMobileTop = () => mountInto($('#view-home'), 'prepend', 'xoMobTop', { biz: 'mobile', kicker: 'operations', range: false, sections: ['slos'] });
   window.execopsMobileBottom = () => mountInto($('#view-home'), 'append', 'xoMobBot', { biz: 'mobile', kicker: 'operations', range: false, sections: ['trendsAll', 'pipeline', 'alerts', 'foot'] });
@@ -406,6 +410,8 @@
       @media (max-width:720px){.xo-grid{grid-template-columns:repeat(2,1fr)}.xo-kv{font-size:22px}.xo-charts,.xo-sumgrid{grid-template-columns:1fr}.xo-h{font-size:17px}.xo-slos,.xo-health{grid-template-columns:repeat(2,1fr)}#view-execops{padding:10px 12px 24px}}
       @media (max-width:420px){.xo-grid,.xo-slos,.xo-health{grid-template-columns:1fr}}
       .xo-block{margin-top:24px;padding-top:4px;border-top:1px solid var(--line)}
+      #fxOps:not(:empty){margin:0 0 6px}
+      #fxOps .xo-head{margin-top:0}
       .xo-radarwrap{display:flex;gap:26px;align-items:center;flex-wrap:wrap;justify-content:center}
       .xo-radar{width:min(560px,100%);height:auto;flex:1 1 380px;max-width:560px;overflow:visible}
       .xo-sweepg{transform-origin:210px 210px;animation:xoSweep 8s linear infinite}

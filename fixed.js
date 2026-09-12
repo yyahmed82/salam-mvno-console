@@ -46,6 +46,7 @@
 
   async function renderOverview(host){
     host.innerHTML=`<div style="display:flex;justify-content:flex-end;margin-bottom:10px">${rangeChips()}</div><div id="fxFresh"></div>
+      <div id="fxOps"></div>
       <div id="fxBody"><div style="padding:30px;text-align:center;color:var(--muted)">${window.salamLoader?window.salamLoader("Reading Fixed data…"):"Loading…"}</div></div>`;
     bindRange(host);
     try{
@@ -58,11 +59,18 @@
     }
   }
   /* Operations Dashboard (12 Sep 2026): the old Overview plus the ops half that used to be its own
-   * "Operations" page — SLOs, day trends, the stop-step pipeline and alerts, appended once, so nothing
-   * on this page is stated twice. */
+   * "Operations" page — SLOs, day trends, the stop-step pipeline and alerts, each shown once.
+   * Laid out like Mobile › Operations Dashboard: status header + SLO compliance LEAD the page
+   * (that is what someone opening it needs first), the heavy analytics follow the page's own KPIs. */
   window.FIXED_PAGES.overview={ label:"Operations Dashboard", sub:"KPIs · funnel · dealers · SLOs · trends · alerts",
-    render:async (host,fx)=>{ await renderOverview(host,fx);
-      if(window.execopsFixed){ const b=document.createElement("div"); b.className="xo-block"; host.appendChild(b); window.execopsFixed(b); } } };
+    render:async (host,fx)=>{
+      const p=renderOverview(host,fx);
+      /* #fxOps exists as soon as renderOverview has painted its shell (synchronously, before its
+       * first await), so the status header + SLOs load in parallel with the Fixed summary instead
+       * of waiting for it. */
+      const top=$("#fxOps"); if(top && window.execopsFixedTop) window.execopsFixedTop(top);
+      await p;
+      if(window.execopsFixedBottom){ const b=document.createElement("div"); b.className="xo-block"; host.appendChild(b); window.execopsFixedBottom(b); } } };
 
   /* ---- HUB ---- */
   let curTab="overview";
