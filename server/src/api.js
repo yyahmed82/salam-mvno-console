@@ -3059,6 +3059,7 @@ app.get('/api/health', async (req, res) => {
 
 // Fixed / Salam Home routes — all under /api/fixed/* (see fixed.js)
 require('./fixed').mount(app, { requireView, audit, requireCap });
+require('./fixedExec').mount(app, { requireView });   // Fixed › Executive + Operations (one endpoint, read models only)
 
 /* Mobile-side alert endpoints are SEGMENT-SCOPED (8 Sep 2026): they answer for 'mvno' unless ?segment=fixed|all is
  * asked by a user whose business allows it (segment.forRequest). Fixed › Alerts has its own /api/fixed/alerts/*.

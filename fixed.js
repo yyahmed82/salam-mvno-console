@@ -9,7 +9,9 @@
    *   window.FIXED_PAGES[key] = { label, sub, render(hostEl, ctx) }      (render is idempotent; ctx = window.FX)
    * and gets its data from /api/fixed/<key>/... (server: server/src/fixed<Key>.js mounted by fixed.js).
    * Shared helpers live on window.FX (api, esc, ts, fmt, tbl, card, chip, bar, state, qs). Keys and order below. */
-  const TAB_ORDER=[["overview","Overview","KPIs · funnel · dealers"],["epurchase","E-purchase","web / QR channel · journeys · payments · findings"],["salamhome","Salam Home","app channel · buy + manage-line · payments · findings"],["map","SDA map","dealers · pins · trace"],["qr","QR codes","referral orders · consent"],
+  const TAB_ORDER=[["overview","Overview","KPIs · funnel · dealers"],
+    /* the two pages the Fixed Operations agent used to generate as static HTML — live since 12 Sep 2026 */
+    ["exec","Executive","north-star KPIs · SLOs · top issues"],["ops","Operations","health · trends · pipeline · alerts"],["epurchase","E-purchase","web / QR channel · journeys · payments · findings"],["salamhome","Salam Home","app channel · buy + manage-line · payments · findings"],["map","SDA map","dealers · pins · trace"],["qr","QR codes","referral orders · consent"],
     ["dash","Reports","KPIs · trends · dealers & QR"],["errors","Errors","error control board"],["alerts","Alerts","rules · history"],
     ["playbook","Playbook","SLA / OLA / action plans"],["diagrams","Diagrams","payments · journeys"],
     /* own pages since 11 Sep 2026 — they used to be cards inside Diagrams */
