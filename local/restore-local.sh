@@ -13,7 +13,7 @@ set -euo pipefail
 IN="${1:-$HOME/Downloads/console-local}"
 PGUSER_LOCAL="${PGUSER_LOCAL:-$(whoami)}"
 PGHOST_LOCAL="${PGHOST_LOCAL:-127.0.0.1}"
-PGPORT_LOCAL="${PGPORT_LOCAL:-5432}"
+PGPORT_LOCAL="${PGPORT_LOCAL:-5700}"
 PSQL=(psql -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$PGUSER_LOCAL" -v ON_ERROR_STOP=1)
 say(){ printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 

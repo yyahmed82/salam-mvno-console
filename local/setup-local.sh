@@ -35,22 +35,23 @@ fi
 psql --version | sed 's/^/   /'
 
 PGHOST_LOCAL="${PGHOST_LOCAL:-127.0.0.1}"
-PGPORT_LOCAL="${PGPORT_LOCAL:-5432}"
+PGPORT_LOCAL="${PGPORT_LOCAL:-5700}"
 [ -f local/.pglocal.env ] && { set -a; . local/.pglocal.env; set +a; }   # optional: PGUSER_LOCAL / PGPASSWORD
 
-probe(){ PGCONNECT_TIMEOUT=5 psql -w -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$1" -d "$2" -Atc "SELECT version()" 2>&1; }
+probe(){ PGPASSWORD="$3" PGCONNECT_TIMEOUT=5 psql -w -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$1" -d "$2" -Atc "SELECT version()" 2>&1; }
 FOUND=""
-for cand in ${PGUSER_LOCAL:-} "$(whoami)" postgres; do
+for pair in "${PGUSER_LOCAL:-}|${PGPASSWORD:-}" "$(whoami)|" "postgres|postgres" "postgres|"; do
+  cand="${pair%%|*}"; pw="${pair#*|}"
   [ -n "$cand" ] || continue
   for dbc in postgres "$cand"; do
-    if OUTV="$(probe "$cand" "$dbc")"; then FOUND="$cand"; FOUNDDB="$dbc"; break 2; fi
+    if OUTV="$(probe "$cand" "$dbc" "$pw")"; then FOUND="$cand"; FOUNDPW="$pw"; FOUNDDB="$dbc"; break 2; fi
   done
 done
 
 if [ -n "$FOUND" ]; then
   echo "   server: ${OUTV%% (*}"
   echo "   role:   $FOUND   (via $FOUNDDB)"
-  PGUSER_LOCAL="$FOUND"
+  PGUSER_LOCAL="$FOUND"; PGPASSWORD="$FOUNDPW"
 else
   echo "   a server IS listening on $PGHOST_LOCAL:$PGPORT_LOCAL but no role connects without a password."
   echo "   last error: $OUTV"
@@ -67,7 +68,7 @@ else
   echo "          export PATH=\"/opt/homebrew/opt/postgresql@16/bin:\$PATH\" && createdb \"$(whoami)\""
   exit 1
 fi
-export PGHOST_LOCAL PGPORT_LOCAL PGUSER_LOCAL
+export PGHOST_LOCAL PGPORT_LOCAL PGUSER_LOCAL PGPASSWORD
 
 say "2/4  pull $DAYS days from prod (read-only, through the SSH tunnel)"
 bash local/pull-from-prod.sh "$DAYS" "$OUT"
@@ -76,14 +77,37 @@ say "3/4  restore into the Mac's Postgres"
 bash local/restore-local.sh "$OUT"
 
 say "4/4  local/.env"
+AUTH="$PGUSER_LOCAL"
+[ -n "${PGPASSWORD:-}" ] && AUTH="$PGUSER_LOCAL:$PGPASSWORD"
+BASE="postgres://$AUTH@$PGHOST_LOCAL:$PGPORT_LOCAL"
 if [ -f local/.env ]; then
-  echo "   local/.env already exists - left untouched"
+  echo "   local/.env exists - rewriting only the four database URLs"
 else
   cp local/.env.example local/.env
-  sed -i '' "s/CHANGEME/$(whoami)/g" local/.env
-  echo "   written with PGUSER=$(whoami)"
 fi
-grep -E '^(PORT|CONSOLE_DATABASE_URL|SOURCE_DATABASE_URL|OPS)' local/.env | sed 's/^/   /'
+python3 - "$BASE" <<'PY'
+import sys, re, io
+base = sys.argv[1]
+urls = {
+  'CONSOLE_DATABASE_URL':  base + '/unified_console_local',
+  'SOURCE_DATABASE_URL':   base + '/salam_source_local',
+  'OPS_DATABASE_URL':      base + '/sda_ops_local?schema=public',
+  'OPS_BETA_DATABASE_URL': base + '/sda_ops_local?schema=beta',
+}
+txt = open('local/.env').read().split('\n')
+seen = set()
+out = []
+for line in txt:
+    k = line.split('=', 1)[0].strip()
+    if k in urls:
+        out.append(k + '=' + urls[k]); seen.add(k)
+    else:
+        out.append(line)
+for k, v in urls.items():
+    if k not in seen: out.append(k + '=' + v)
+open('local/.env', 'w').write('\n'.join(out))
+PY
+sed -E 's#://[^@]*@#://****@#' local/.env | grep -E '^(PORT|CONSOLE_DATABASE_URL|SOURCE_DATABASE_URL|OPS)' | sed 's/^/   /'
 
 if [ "$RUN" = "--run" ]; then
   say "starting the console"
