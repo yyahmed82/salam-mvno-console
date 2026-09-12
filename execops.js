@@ -336,7 +336,11 @@
   };
 
   const timers = new WeakMap();
-  const EXEC_SECTIONS = ['summary', 'radar', 'kpisExec', 'slos', 'trendsExec', 'issues', 'foot'];
+  /* Order is the argument the page makes: the verdict, then the numbers behind it, then how they
+   * are trending, then the radar as the bridge from trend to what is still open, then the
+   * issues themselves. The radar sits directly above Top ongoing issues because the contacts
+   * it leaves lit ARE that list. */
+  const EXEC_SECTIONS = ['summary', 'kpisExec', 'slos', 'trendsExec', 'radar', 'issues', 'foot'];
 
   async function render(host, opts, force) {
     ensureCss();
