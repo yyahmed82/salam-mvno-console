@@ -23,7 +23,7 @@
   const $ = (s, r) => (r || document).querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const num = v => typeof v === 'number' ? v.toLocaleString('en-US') : esc(v);
-  const TOK = { green: 'var(--green,#0e9f5a)', amber: '#d97706', red: '#dc2626', blue: '#2563eb', muted: 'var(--muted)', line: 'var(--line)', ink: 'var(--ink)' };
+  const TOK = { green: 'var(--green,#0e9f5a)', amber: 'var(--xo-p2,#d97706)', red: 'var(--xo-p1,#dc2626)', blue: 'var(--xo-p3,#2563eb)', muted: 'var(--muted)', line: 'var(--line)', ink: 'var(--ink)' };
   const SEV = { CRITICAL: TOK.red, WARNING: TOK.amber, HEALTHY: TOK.green };
   const KSA = 3 * 3600e3;
   const ts = v => { if (!v) return '—'; const d = new Date(v); return isNaN(d) ? esc(v) : new Date(d.getTime() + KSA).toISOString().replace('T', ' ').slice(0, 16); };
@@ -94,8 +94,15 @@
     return `<a href="${esc(a.href)}" class="xo-al ${cls}"><span class="xo-sev ${cls}">${esc(a.severity)}</span><div class="xo-at">${badge(h, unified)}<b>${esc(a.name)}</b>${a.text ? ` — ${esc(a.text)}` : ''}${a.team ? `<span class="xo-dim"> · ${esc(a.team)}</span>` : ''}</div><span class="xo-dim">${a.status === 'open' ? 'open · ' : ''}${ts(a.at)}</span></a>`; }).join('');
 
 
-  /* ---------- radar: P1-P3 rings x day sectors, sweeping, blips revealed by the sweep ---------- */
-  const SEV_COLOR = { P1: TOK.red, P2: TOK.amber, P3: TOK.blue };
+  /* ---------- radar: a CRT scope, not a chart ----------
+   * The scope face is its own instrument: dark green, phosphor grid, scanlines, sweeping beam —
+   * in BOTH themes, because a radar reads as a radar. .xo-scope redefines --ink/--muted/--line
+   * locally so the legend beside it inherits the instrument palette instead of the page's.
+   * Encoding: ring = severity, sector = KSA day, dot size = distinct rules.
+   *   live contact (a rule still breaching)  = severity colour, solid, glowing, locked, pings
+   *   dead star   (every rule cleared)       = faint phosphor green, hollow — its RING still says
+   *                                            which severity it was, so no information is lost. */
+  const SEV_COLOR = { P1: 'var(--xo-p1,#dc2626)', P2: 'var(--xo-p2,#d97706)', P3: 'var(--xo-p3,#2563eb)' };
   const RADAR_SEVS = ['P1', 'P2', 'P3'];
   const RING_R = { P1: 62, P2: 112, P3: 162 };
   const RD = { cx: 210, cy: 210, R: 186, VB: 420 };
@@ -108,30 +115,36 @@
     const { cx, cy, R, VB } = RD, nd = days.length;
     const ang = i => (-90 + i * (360 / nd)) * Math.PI / 180;
     const at = (i, r, off) => [cx + r * Math.cos(ang(i) + (off || 0)), cy + r * Math.sin(ang(i) + (off || 0))];
-    /* seconds into the loop at which the beam actually crosses sector i.
-     * The sweep wedge's leading edge starts at 3 o'clock (90 deg clockwise from 12), so a blip at
-     * theta degrees is reached when the group has turned theta-90. Blips are delayed by that much,
-     * which is what makes them appear to be *discovered* by the beam rather than just pulsing. */
+    /* seconds into the loop at which the beam crosses sector i. The wedge's leading edge starts at
+     * 3 o'clock (90 deg clockwise from 12), so a blip at theta is reached after theta-90 of turn. */
     const tAt = (i, off) => {
       const deg = i * (360 / nd) + (off || 0) * 180 / Math.PI - 90;
       return (((deg % 360) + 360) % 360) / 360 * SWEEP_S;
     };
+    const G = 'var(--xo-grid,#37d39a)';
+
+    const spokes = days.map((d, i) => { const [x, y] = at(i, R); return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${G}" stroke-width=".8" opacity=".16"/>`; }).join('');
+    const axes = [0, 90, 180, 270].map(a => { const r = a * Math.PI / 180;
+      return `<line x1="${cx - R * Math.cos(r)}" y1="${cy - R * Math.sin(r)}" x2="${cx + R * Math.cos(r)}" y2="${cy + R * Math.sin(r)}" stroke="${G}" stroke-width="1" opacity=".3"/>`; }).join('');
     const rings = RADAR_SEVS.slice().reverse().map(sev =>
-      `<circle cx="${cx}" cy="${cy}" r="${RING_R[sev]}" fill="none" stroke="${SEV_COLOR[sev]}" stroke-width="1.1" opacity=".3" stroke-dasharray="3 4"/>`).join('');
-    const spokes = days.map((d, i) => { const [x, y] = at(i, R); return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${TOK.line}" stroke-width="1" opacity=".5"/>`; }).join('');
+      `<circle cx="${cx}" cy="${cy}" r="${RING_R[sev]}" fill="none" stroke="${G}" stroke-width="1" opacity=".34"/>`).join('')
+      + [26, 140, 186].map(r => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${G}" stroke-width=".7" opacity=".14"/>`).join('');
+
     /* long windows: label every other / every third day so the rim never overlaps.
      * Up to 10 sectors the labels stay horizontal (easiest to read); denser rims turn tangentially. */
     const step = nd <= 10 ? 1 : nd <= 16 ? 2 : Math.ceil(nd / 10);
-    const halo = `stroke="var(--card,#fff)" stroke-width="3.2" paint-order="stroke"`;
     const dayLab = days.map((d, i) => {
       if (i % step) return '';
       const [x, y] = at(i, R + 15);
       const a = (ang(i) * 180 / Math.PI + 450) % 360, flip = a > 90 && a < 270;
       const rot = nd <= 10 ? '' : ` transform="rotate(${flip ? a + 180 : a} ${x} ${y})"`;
-      return `<text x="${x}" y="${y}" font-size="10" fill="${TOK.muted}" text-anchor="middle" dominant-baseline="middle" font-weight="700" ${halo}${rot}>${d.slice(5)}</text>`;
+      return `<text x="${x}" y="${y}" font-size="10" fill="${G}" opacity=".72" text-anchor="middle" dominant-baseline="middle" font-weight="700"${rot}>${d.slice(5)}</text>`;
     }).join('');
-    const ringLab = RADAR_SEVS.map(sev =>
-      `<text x="${cx + 4}" y="${cy - RING_R[sev] + 13}" font-size="11" fill="${SEV_COLOR[sev]}" font-weight="800" ${halo}>${sev}</text>`).join('');
+    /* severity labels sit on a dark plate so the phosphor grid never runs through them */
+    const ringLab = RADAR_SEVS.map(sev => { const y = cy - RING_R[sev];
+      return `<g><rect x="${cx - 15}" y="${y - 8}" width="30" height="16" rx="5" fill="var(--xo-plate,#06180f)" opacity=".92"/>`
+        + `<text x="${cx}" y="${y}" font-size="11" fill="${SEV_COLOR[sev]}" text-anchor="middle" dominant-baseline="central" font-weight="800">${sev}</text></g>`; }).join('');
+
     const cells = halves.flatMap(h => (h.radar ? h.radar.cells : []).filter(c => RING_R[c.sev]).map(c => ({ c, h })));
     const maxN = Math.max(1, ...cells.map(x => x.c.n));
     /* dot size and the two-business offset both scale with the sector width, so a 30-day window
@@ -139,30 +152,38 @@
     const rMax = Math.max(3.2, Math.min(11, 170 / nd));
     const rMin = Math.max(1.8, rMax * 0.34);
     const OFF = halves.length > 1 ? Math.min(0.14, (Math.PI / nd) * 0.44) : 0;
-    /* A cell holding at least one still-breaching rule is a LIVE contact: solid, bright, pings as the
-     * beam passes. A cell whose rules have all cleared is a dead star: hollow, dim, no ping - history,
-     * not something to act on. Size = how many DISTINCT RULES, never how many firings. */
+    /* Which BUSINESS a contact belongs to is carried by its SHAPE, the way a tactical display
+     * separates track types — colour is already spent on severity and brightness on open/cleared.
+     *   Mobile = round contact      Fixed = diamond contact
+     * It survives at 3 px, in both the live and the dead-star state, and reads without a legend
+     * lookup once you have seen it twice. A diamond of the same "radius" looks smaller than a
+     * circle, so it is drawn 1.18x to match. */
+    const DIA = 1.18;
+    const glyph = (biz, x, y, r, attrs, inner) => biz === 'fixed'
+      ? `<path d="M${x} ${(y - r * DIA).toFixed(1)}L${(x + r * DIA).toFixed(1)} ${y}L${x} ${(y + r * DIA).toFixed(1)}L${(x - r * DIA).toFixed(1)} ${y}Z" ${attrs}>${inner || ''}</path>`
+      : `<circle cx="${x}" cy="${y}" r="${r.toFixed(1)}" ${attrs}>${inner || ''}</circle>`;
     const blips = halves.flatMap((h, hi) => (h.radar ? h.radar.cells : []).map(c => {
       const di = days.indexOf(c.day); if (di < 0 || !RING_R[c.sev]) return '';
       const off = hi === 0 ? -OFF : OFF;
       const [x, y] = at(di, RING_R[c.sev], off);
       const rr = rMin + (rMax - rMin) * Math.sqrt(c.n / maxN);
       const dly = tAt(di, off).toFixed(2);
-      const ring = h.biz === 'mobile' ? '#93c5fd' : '#86efac';
-      const live = c.open > 0;
+      const live = c.open > 0, b = h.biz;
       const tip = `<title>${esc(h.label)} · ${c.sev} · ${c.day} · ${c.n} rule${c.n === 1 ? '' : 's'}`
         + `${live ? ` · ${c.open} still open` : ' · all cleared'} · ${num(c.firings)} firing${c.firings === 1 ? '' : 's'}`
         + `${c.rules && c.rules.length ? '\n' + c.rules.map(r => '• ' + esc(r)).join('\n') : ''}</title>`;
       if (!live) { const dr = Math.max(2, rr * 0.62);
-        return `<g class="xo-blip xo-dead" style="--d:${dly}s">`
-          + `<circle class="xo-dot" cx="${x}" cy="${y}" r="${dr.toFixed(1)}" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.1">${tip}</circle>`
-          + `<circle class="xo-core" cx="${x}" cy="${y}" r="${Math.max(0.8, dr * 0.26).toFixed(1)}" fill="${SEV_COLOR[c.sev]}"/></g>`; }
-      return `<g class="xo-blip xo-live" style="--d:${dly}s">`
-        + `<circle class="xo-lock" cx="${x}" cy="${y}" r="${(rr + 4.5).toFixed(1)}" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.1" stroke-dasharray="3 3" opacity=".55"/>`
-        + `<circle class="xo-ping" cx="${x}" cy="${y}" r="${(rr + rr * 0.5 + 2).toFixed(1)}" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.4"/>`
-        + `<circle class="xo-halo" cx="${x}" cy="${y}" r="${(rr + rr * 0.55 + 2).toFixed(1)}" fill="${SEV_COLOR[c.sev]}"/>`
-        + `<circle class="xo-dot" cx="${x}" cy="${y}" r="${rr.toFixed(1)}" fill="${SEV_COLOR[c.sev]}" stroke="${ring}" stroke-width="${Math.min(1.4, rr * 0.3).toFixed(2)}">${tip}</circle></g>`;
+        return `<g class="xo-blip xo-dead xo-b-${b}" style="--d:${dly}s">`
+          + glyph(b, x, y, dr, `class="xo-dot" fill="none" stroke="${G}" stroke-width="1.1"`, tip)
+          + glyph(b, x, y, Math.max(0.8, dr * 0.26), `class="xo-core" fill="${G}"`) + `</g>`; }
+      return `<g class="xo-blip xo-live xo-b-${b}" style="--d:${dly}s">`
+        + glyph(b, x, y, rr + 5, `class="xo-lock" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.1" stroke-dasharray="3 3"`)
+        + glyph(b, x, y, rr + rr * 0.5 + 2, `class="xo-ping" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.4"`)
+        + glyph(b, x, y, rr + rr * 0.6 + 3, `class="xo-halo" fill="${SEV_COLOR[c.sev]}"`)
+        + glyph(b, x, y, rr, `class="xo-dot" fill="${SEV_COLOR[c.sev]}" stroke="${b === 'mobile' ? '#e6f0ff' : '#d8fde9'}" stroke-width="${Math.min(1.3, rr * 0.28).toFixed(2)}" filter="url(#xoGlow)"`, tip)
+        + `</g>`;
     })).join('');
+
     const tot = halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || {}).rules || 0, o: (h.radar || {}).open || 0 }));
     /* window totals come from the payload, never from summing the daily cells: one rule firing on
      * five days is five cells but ONE rule */
@@ -174,17 +195,36 @@
     const sum = k => RADAR_SEVS.reduce((a, sv) => a + ((sevTot[sv] || {})[k] || 0), 0);
     const openNow = sum('open'), ruleTot = sum('rules'), fireTot = sum('firings');
     const peak = cells.slice().sort((a, b) => (b.c.open - a.c.open) || (b.c.n - a.c.n) || (b.c.firings - a.c.firings))[0];
+
     return `<div class="xo-radarwrap">
-      <svg viewBox="0 0 ${VB} ${VB}" class="xo-radar" role="img" aria-label="Alert radar: P1 to P3 severity rings by day">
-        <defs><radialGradient id="xoRadBg" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="${TOK.green}" stop-opacity=".18"/><stop offset="62%" stop-color="${TOK.green}" stop-opacity=".05"/><stop offset="100%" stop-color="${TOK.green}" stop-opacity="0"/></radialGradient>
-          <linearGradient id="xoSweep" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${TOK.green}" stop-opacity="0"/><stop offset="78%" stop-color="${TOK.green}" stop-opacity=".28"/><stop offset="100%" stop-color="${TOK.green}" stop-opacity=".72"/></linearGradient></defs>
-        <circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#xoRadBg)"/>
-        <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${TOK.line}" stroke-width="1"/>
-        ${spokes}${rings}
-        <g class="xo-sweepg"><path class="xo-sweep" d="M${cx},${cy} L${cx},${cy - R} A${R},${R} 0 0,1 ${cx + R},${cy} Z" fill="url(#xoSweep)"/>
-          <line class="xo-beam" x1="${cx}" y1="${cy}" x2="${cx + R}" y2="${cy}" stroke="${TOK.green}" stroke-width="1.6" opacity=".8"/></g>
-        ${blips}${ringLab}${dayLab}
-        <circle cx="${cx}" cy="${cy}" r="4" fill="${TOK.green}"/><circle cx="${cx}" cy="${cy}" r="9" fill="none" stroke="${TOK.green}" stroke-width="1" opacity=".5"/>
+      <svg viewBox="0 0 ${VB} ${VB}" class="xo-radar" role="img" aria-label="Alert radar: P1 to P3 severity rings by day, open contacts and cleared history">
+        <defs>
+          <radialGradient id="xoFace" cx="50%" cy="46%" r="58%">
+            <stop offset="0%" stop-color="var(--xo-face1,#123a2a)"/><stop offset="55%" stop-color="var(--xo-face2,#0a2419)"/><stop offset="100%" stop-color="var(--xo-face3,#05130d)"/></radialGradient>
+          <radialGradient id="xoBloom" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="${G}" stop-opacity=".16"/><stop offset="70%" stop-color="${G}" stop-opacity=".03"/><stop offset="100%" stop-color="${G}" stop-opacity="0"/></radialGradient>
+          <linearGradient id="xoSweep" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="${G}" stop-opacity="0"/><stop offset="45%" stop-color="${G}" stop-opacity=".12"/>
+            <stop offset="80%" stop-color="${G}" stop-opacity=".34"/><stop offset="100%" stop-color="${G}" stop-opacity=".8"/></linearGradient>
+          <pattern id="xoScan" width="3" height="3" patternUnits="userSpaceOnUse"><rect width="3" height="1.2" fill="#000" opacity=".22"/></pattern>
+          <filter id="xoGlow" x="-120%" y="-120%" width="340%" height="340%">
+            <feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          <clipPath id="xoFaceClip"><circle cx="${cx}" cy="${cy}" r="${R}"/></clipPath>
+        </defs>
+        <circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#xoFace)"/>
+        <circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#xoBloom)"/>
+        <g clip-path="url(#xoFaceClip)">
+          ${spokes}${axes}${rings}
+          <g class="xo-sweepg"><path class="xo-sweep" d="M${cx},${cy} L${cx},${cy - R} A${R},${R} 0 0,1 ${cx + R},${cy} Z" fill="url(#xoSweep)"/>
+            <line class="xo-beam" x1="${cx}" y1="${cy}" x2="${cx + R}" y2="${cy}" stroke="var(--xo-beam,#8affd0)" stroke-width="2.2" filter="url(#xoGlow)"/></g>
+          <rect x="${cx - R}" y="${cy - R}" width="${2 * R}" height="${2 * R}" fill="url(#xoScan)" class="xo-scan"/>
+          ${blips}${ringLab}
+        </g>
+        <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${G}" stroke-width="1.6" opacity=".45"/>
+        <circle cx="${cx}" cy="${cy}" r="${R + 5}" fill="none" stroke="${G}" stroke-width="1" opacity=".14"/>
+        ${dayLab}
+        <circle cx="${cx}" cy="${cy}" r="4" fill="${G}" filter="url(#xoGlow)"/>
+        <circle cx="${cx}" cy="${cy}" r="10" fill="none" stroke="${G}" stroke-width="1" opacity=".45"/>
       </svg>
       <div class="xo-radarlegend">
         <div class="xo-rl-h">Distinct rules · ${days.length} days</div>
@@ -201,7 +241,8 @@
         ${peak ? `<div class="xo-rl-d">busiest: <b>${esc(peak.c.sev)}</b> · ${esc(peak.c.day)} · ${num(peak.c.n)} rule${peak.c.n === 1 ? '' : 's'} on ${esc(peak.h.label)}</div>` : ''}
         <div class="xo-rl-d"><span class="xo-lg"><i class="xo-lg-live"></i>open — still breaching</span><span class="xo-lg"><i class="xo-lg-dead"></i>cleared — kept as history</span></div>
         <div class="xo-rl-d">ring = severity · sector = day · dot size = distinct rules · the sweep reveals them</div>
-        ${tot.length > 1 ? `<div class="xo-rl-d">${tot.map(t => `<span class="xo-biz xo-biz-${t.biz}">${esc(t.label)}</span>${num(t.o)} open / ${num(t.t)}`).join(' &nbsp; ')}</div>` : ''}
+        <div class="xo-rl-biz">${(tot.length > 1 ? tot : halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || {}).rules || 0, o: (h.radar || {}).open || 0 })))
+          .map(t => `<span class="xo-bz"><i class="xo-gl xo-gl-${t.biz}"></i><b>${esc(t.label)}</b><span>${num(t.o)} open / ${num(t.t)}</span></span>`).join('')}</div>
         <a href="#alerts" class="xo-link">open alerts →</a>
       </div></div>`;
   }
@@ -246,7 +287,7 @@
   const SECTION = {
     summary: (H, u) => sec('summary', 'What matters today') +
       `<div class="xo-sumgrid">${H.map(h => `<div class="xo-summary" style="--c:${SEV[h.status]}">${u ? `<div class="xo-sumh">${badge(h, true)}${statusPill(h.status)}</div>` : ''}${h.summary.map(x => `<div>${esc(x)}</div>`).join('')}</div>`).join('')}</div>`,
-    radar: (H) => sec('signal', 'Alert radar', 'severity by day · click through to alerts') + `<div class="topo-card xo-chart">${radar(H)}</div>`,
+    radar: (H) => sec('signal', 'Alert radar', 'severity by day · click through to alerts') + `<div class="topo-card xo-chart xo-scope">${radar(H)}</div>`,
     kpisExec: (H, u) => sec('north-star', 'Key indicators', 'click a tile to open its page') +
       `<div class="xo-grid">${H.flatMap(h => h.kpis.filter(k => k.exec).map(k => kpiTile(k, h, u))).join('')}</div>`,
     kpisAll: (H, u) => sec('indicators', 'Key indicators', 'click a tile to open its page') +
@@ -414,44 +455,65 @@
       #fxOps .xo-head{margin-top:0}
       #homeOps:not(:empty){margin:0 0 10px}
       #homeOps .xo-block{margin-top:0;padding-top:0;border-top:0}
-      .xo-radarwrap{display:flex;gap:26px;align-items:center;flex-wrap:wrap;justify-content:center}
+      /* ---- the scope is an instrument, not a chart: it keeps its own dark-phosphor palette in
+             BOTH themes, and redefines --ink/--muted/--line locally so the legend beside it
+             inherits the instrument look instead of the page's. ---- */
+      .xo-scope{--ink:#e3f6ec;--muted:#79ab95;--line:rgba(55,211,154,.20);--card:#082016;
+        --xo-grid:#37d39a;--xo-plate:#06180f;--xo-face1:#123a2a;--xo-face2:#0a2419;--xo-face3:#05130d;
+        --xo-p1:#ff5f5f;--xo-p2:#ffb224;--xo-p3:#57a8ff;--green:#37d39a;--xo-beam:#8affd0;
+        background:radial-gradient(120% 120% at 50% 0%,#0d2a1e 0%,#082016 55%,#05140e 100%);
+        border-color:rgba(55,211,154,.24);color:#e3f6ec;
+        box-shadow:inset 0 0 90px rgba(55,211,154,.07),0 12px 34px rgba(0,0,0,.28);padding:18px}
+      .xo-scope .xo-link{color:#5ce0aa}
+      .xo-scope .xo-biz{border-color:rgba(55,211,154,.35)}
+      .xo-radarwrap{display:flex;gap:28px;align-items:center;flex-wrap:wrap;justify-content:center}
       .xo-radar{width:min(560px,100%);height:auto;flex:1 1 380px;max-width:560px;overflow:visible}
       .xo-sweepg{transform-origin:210px 210px;animation:xoSweep 8s linear infinite}
       @keyframes xoSweep{from{transform:rotate(0)}to{transform:rotate(360deg)}}
-      .xo-sweep{opacity:.62}.xo-beam{filter:drop-shadow(0 0 4px var(--green,#0e9f5a))}
+      .xo-sweep{opacity:1}.xo-scan{pointer-events:none;mix-blend-mode:multiply;opacity:.5}
       .xo-live .xo-dot{animation:xoFound 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
       .xo-live .xo-halo{opacity:0;animation:xoHalo 8s linear infinite backwards;animation-delay:var(--d,0s)}
       .xo-live .xo-ping{opacity:0;animation:xoPing 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
+      .xo-live .xo-lock{animation:xoLock 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
       /* an OPEN contact never fades below legible - the sweep adds the pop, it does not gate
        * visibility. Only cleared rules (dead stars) live in the dark. */
       @keyframes xoFound{0%{opacity:.82;transform:scale(1)}3%{opacity:1;transform:scale(1.45)}9%{opacity:1;transform:scale(1)}60%{opacity:.94}100%{opacity:.82;transform:scale(1)}}
-      @keyframes xoHalo{0%{opacity:0}3%{opacity:.5}26%{opacity:.12}100%{opacity:0}}
+      @keyframes xoHalo{0%{opacity:.1}3%{opacity:.5}26%{opacity:.14}100%{opacity:.1}}
       @keyframes xoPing{0%{opacity:0;transform:scale(.5)}2%{opacity:.85;transform:scale(.7)}14%{opacity:0;transform:scale(2.6)}100%{opacity:0;transform:scale(2.6)}}
+      @keyframes xoLock{0%{opacity:.45;transform:scale(1)}2%{opacity:.9;transform:scale(1.3)}8%{opacity:.8;transform:scale(1)}100%{opacity:.45;transform:scale(1)}}
       /* cleared rules are dead stars: hollow, dim, no ping - the beam only glints off them */
-      .xo-dead .xo-dot{opacity:.16;animation:xoDead 8s linear infinite backwards;animation-delay:var(--d,0s)}
-      .xo-dead .xo-core{opacity:.22}
-      .xo-dead:hover .xo-dot,.xo-dead:hover .xo-core{opacity:.85}
-      @keyframes xoDead{0%{opacity:.11}3%{opacity:.42}16%{opacity:.18}100%{opacity:.11}}
-      .xo-live .xo-lock{animation:xoLock 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
-      @keyframes xoLock{0%{opacity:.4;transform:scale(1)}2%{opacity:.85;transform:scale(1.35)}8%{opacity:.8;transform:scale(1)}100%{opacity:.4;transform:scale(1)}}
-      @media (prefers-reduced-motion:reduce){.xo-sweepg{animation:none}.xo-blip .xo-dot{animation:none;opacity:1}.xo-live .xo-lock{animation:none;opacity:.5}.xo-dead .xo-dot{opacity:.3}.xo-blip .xo-halo{animation:none;opacity:.16}.xo-blip .xo-ping{animation:none;opacity:0}}
+      .xo-dead .xo-dot{opacity:.18;animation:xoDead 8s linear infinite backwards;animation-delay:var(--d,0s)}
+      .xo-dead .xo-core{opacity:.26}
+      .xo-dead:hover .xo-dot,.xo-dead:hover .xo-core{opacity:.9}
+      @keyframes xoDead{0%{opacity:.13}3%{opacity:.48}16%{opacity:.2}100%{opacity:.13}}
+      @media (prefers-reduced-motion:reduce){.xo-sweepg{animation:none}.xo-blip .xo-dot{animation:none;opacity:1}
+        .xo-live .xo-lock{animation:none;opacity:.5}.xo-dead .xo-dot{opacity:.3}
+        .xo-blip .xo-halo{animation:none;opacity:.16}.xo-blip .xo-ping{animation:none;opacity:0}}
       .xo-radarlegend{min-width:210px;flex:1 1 210px;max-width:320px;font-size:12px}
-      .xo-rl-tot{font-size:34px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;margin-bottom:10px}
-      .xo-rl-tot.hot{color:#dc2626}.xo-rl-tot.calm{color:var(--green,#0e9f5a)}
+      .xo-rl-tot{font-size:36px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;margin-bottom:10px}
+      .xo-rl-tot.hot{color:var(--xo-p1,#dc2626);text-shadow:0 0 18px rgba(255,95,95,.35)}
+      .xo-rl-tot.calm{color:#37d39a;text-shadow:0 0 18px rgba(55,211,154,.3)}
       .xo-rl-tot span{display:block;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:3px}
       .xo-rlh2{display:flex;justify-content:space-between;font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;padding-bottom:4px;margin-bottom:2px;border-bottom:1px solid var(--line)}
-      .xo-rlb{flex:1;height:6px;border-radius:999px;background:var(--line);overflow:hidden;min-width:34px}
-      .xo-rlb u{display:block;height:100%;border-radius:999px;text-decoration:none}
-      .xo-rln{width:62px;text-align:right;color:var(--ink);font-weight:700}
-      .xo-rln em{font-style:normal;font-weight:600;color:var(--muted)}
-      .xo-lg{display:inline-flex;align-items:center;gap:5px;margin-right:10px;white-space:nowrap}
-      .xo-lg i{width:9px;height:9px;border-radius:50%;flex:none}
-      .xo-lg-live{background:var(--muted);box-shadow:0 0 0 3px color-mix(in srgb,var(--muted) 22%,transparent)}
-      .xo-lg-dead{background:transparent;border:1.5px solid var(--muted);opacity:.55}
       .xo-rl-h{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:800;margin-bottom:8px}
       .xo-rl{display:flex;align-items:center;gap:8px;padding:3px 0;font-variant-numeric:tabular-nums}
       .xo-rl i{width:10px;height:10px;border-radius:50%;flex:none}.xo-rl b{width:26px}.xo-rl>span{color:var(--muted)}
+      .xo-rlb{flex:1;height:6px;border-radius:999px;background:rgba(255,255,255,.10);overflow:hidden;min-width:34px}
+      .xo-rlb u{display:block;height:100%;border-radius:999px;text-decoration:none}
+      .xo-rln{width:62px;text-align:right;color:var(--ink);font-weight:700}
+      .xo-rln em{font-style:normal;font-weight:600;color:var(--muted)}
       .xo-rl-d{font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.5}
+      .xo-lg{display:inline-flex;align-items:center;gap:5px;margin-right:10px;white-space:nowrap}
+      .xo-lg i{width:9px;height:9px;border-radius:50%;flex:none}
+      .xo-lg-live{background:#37d39a;box-shadow:0 0 0 3px rgba(55,211,154,.22)}
+      .xo-lg-dead{background:transparent;border:1.5px solid #37d39a;opacity:.5}
+      /* business = shape, the same glyphs the scope draws */
+      .xo-rl-biz{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
+      .xo-bz{display:inline-flex;align-items:center;gap:6px;font-size:11px}
+      .xo-bz b{font-weight:800;letter-spacing:.3px}.xo-bz>span{color:var(--muted);font-variant-numeric:tabular-nums}
+      .xo-gl{width:10px;height:10px;flex:none;border:1.6px solid currentColor;color:#37d39a}
+      .xo-gl-mobile{border-radius:50%}
+      .xo-gl-fixed{transform:rotate(45deg);border-radius:2px}
       .xo-brief{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);font-weight:800}
       .xo-modal{position:fixed;inset:0;z-index:3000;background:rgba(8,12,20,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:22px;animation:xoFade .18s ease}
       @keyframes xoFade{from{opacity:0}to{opacity:1}}
