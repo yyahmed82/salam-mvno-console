@@ -267,11 +267,15 @@
     return `${Math.floor(a / 1440)} d ${Math.floor((a % 1440) / 60)} h`; };
 
   /* the script is built as typed LINES: {t: text, c: class} — the typewriter walks characters */
+  /* the rule name often already ends in its own "(P2)" — do not print the severity twice */
+  const ruleName = r => String(r.name || r.key || '').replace(/\s*\((P[1-4])\)\s*$/i, '').trim() || r.key;
   function ruleLines(r, showBiz) {
     const L = [], pad = k => (k + '          ').slice(0, 10);
-    const sev = r.severity || 'P?';
-    L.push({ t: `[${sev}] ${r.name}`, c: 'hd ' + sev.toLowerCase() });
-    L.push({ t: `       ${showBiz ? showBiz + ' · ' : ''}${(r.firedAt || '').slice(0, 10)} · open ${dur(r.openMin)}`, c: 'dim' });
+    const sev = r.severity || 'P?', open = r.status === 'open';
+    L.push({ t: `[${sev}] ${ruleName(r)}`, c: 'hd ' + sev.toLowerCase() });
+    /* status is never implied — a cleared alert that only said "open 4 h" read as still breaching */
+    L.push({ t: `       ${showBiz ? showBiz + ' · ' : ''}${(r.firedAt || '').slice(0, 10)} · `
+      + (open ? `OPEN ${dur(r.openMin)}` : `cleared after ${dur(r.openMin)}`), c: open ? 'bad' : 'dim' });
     L.push({ t: `  ${pad('OWNER')}${r.owner ? r.owner + '  (' + r.ownerFrom + ')' : '·· UNASSIGNED ··'}`, c: r.owner ? '' : 'bad' });
     L.push({ t: `  ${pad('TEAM')}${r.team || 'not recorded'}`, c: r.team ? '' : 'na' });
     if (r.ticket) L.push({ t: `  ${pad('TICKET')}${r.ticket}`, c: 'tick' });
@@ -331,20 +335,32 @@
     const lines = [];
     const days = state.range === '30d' ? 30 : 7;
     lines.push({ t: `> SALAM OPERATIONS · ALERT SCOPE`, c: 'dim' });
-    lines.push({ t: `> ${all ? `still breaching now · last ${days} d` : `contact ${scope.sev} · ${scope.day}`}`, c: 'dim' });
+    lines.push({ t: `> ${all ? `still breaching now · last ${days} d` : `contact ${scope.sev} · ${scope.day} · open first, then cleared`}`, c: 'dim' });
     lines.push({ t: '', c: '' });
-    let n = 0;
+    let nOpen = 0, nCleared = 0;
     for (const { h, d } of res) {
       if (d.error) { lines.push({ t: `! ${h.label}: ${d.error}`, c: 'bad' }, { t: '', c: '' }); continue; }
-      const rules = (d.rules || []).filter(r => all ? r.status === 'open' : true);
-      n += rules.length;
-      if (!rules.length) continue;
+      const rules = d.rules || [];
+      const openRules = rules.filter(r => r.status === 'open');
+      /* a cell also contains rules that already cleared. They are history, so they are listed as
+       * one line each under their own divider — never with a full dossier that would read as if
+       * somebody still had to act on them, and never counted as open. */
+      const clearedRules = all ? [] : rules.filter(r => r.status !== 'open');
+      nOpen += openRules.length; nCleared += clearedRules.length;
+      if (!openRules.length && !clearedRules.length) continue;
       if (multi) lines.push({ t: `── ${h.label.toUpperCase()} ${'─'.repeat(Math.max(2, 34 - h.label.length))}`, c: 'rule' });
-      rules.forEach(r => ruleLines(r, multi ? null : null).forEach(x => lines.push(x)));
+      openRules.forEach(r => ruleLines(r, null).forEach(x => lines.push(x)));
+      if (!openRules.length && !all) lines.push({ t: '  nothing here is still open.', c: 'good' }, { t: '', c: '' });
+      if (clearedRules.length) {
+        lines.push({ t: `── cleared · history ${'─'.repeat(18)}`, c: 'rule' });
+        clearedRules.forEach(r => lines.push({ t: `  [${r.severity}] ${ruleName(r)} — cleared after ${dur(r.openMin)}`
+          + (r.owner ? `, ${r.owner}` : ''), c: 'na' }));
+        lines.push({ t: '', c: '' });
+      }
       (d.missing || []).filter(m => !/no ETA/.test(m)).forEach(m => lines.push({ t: `  · ${m}`, c: 'na' }, { t: '', c: '' }));
     }
-    if (!n) lines.push({ t: all ? '  nothing is breaching right now — the scope is clear.' : '  nothing fired in this contact.', c: 'good' }, { t: '', c: '' });
-    lines.push({ t: `> ${n} contact${n === 1 ? '' : 's'} listed · ${hm(new Date())}`, c: 'dim' });
+    if (!nOpen && !nCleared) lines.push({ t: all ? '  nothing is breaching right now — the scope is clear.' : '  nothing fired in this contact.', c: 'good' }, { t: '', c: '' });
+    lines.push({ t: `> ${nOpen} still open${all ? '' : ` · ${nCleared} cleared`} · ${hm(new Date())}`, c: 'dim' });
     typeInto(out, lines);
   }
 
