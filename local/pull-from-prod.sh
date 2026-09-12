@@ -27,6 +27,7 @@ set -euo pipefail
 DAYS="${1:-30}"
 OUT="${2:-$HOME/Downloads/console-local}"
 ONLY="${ONLY:-}"                 # e.g. ONLY=ops,opsbeta to redo just those two
+SCHEMA_ONLY="${SCHEMA_ONLY:-}"   # SCHEMA_ONLY=1 refreshes only schema.sql, keeping the CSVs
 SSH_HOST="${SSH_HOST:-yosri@ruh-salam-site03}"
 CRED="${CRED:-$HOME/.salam-prod-db.env}"
 STMT_TIMEOUT_MS="${STMT_TIMEOUT_MS:-1800000}"   # 30 min: sda_ops has 17 GB tables and the role's
@@ -124,12 +125,13 @@ pull(){                          # pull <label> <prod-url-var> <schema> <tables|
   fi
   [ -n "$tables" ] || { echo "   no matching tables in schema $schema"; return 0; }
 
-  # DDL (read-only): schema + indexes + constraints for exactly these tables
-  local targs=(); for t in $tables; do targs+=(-t "$schema.$t"); done
-  # strip the SETs a newer pg_dump emits that an older target server rejects
-  pg_dump --schema-only --no-owner --no-privileges -n "$schema" "${targs[@]}" -d "$url" \
+  # DDL (read-only) — the WHOLE schema, never -t filtered: a table-filtered pg_dump omits the
+  # extensions (pgcrypto -> gen_random_uuid), the enum types (public."DealerRole"), the
+  # CREATE SCHEMA, and any index or constraint touching a table outside the filter.
+  pg_dump --schema-only --no-owner --no-privileges -n "$schema" -d "$url" \
     | sed -E '/^SET (transaction_timeout|idle_session_timeout|allow_alter_system) *=/d' > "$dir/schema.sql"
-  echo "   DDL: $(wc -l < "$dir/schema.sql" | tr -d ' ') lines"
+  echo "   DDL: $(wc -l < "$dir/schema.sql" | tr -d ' ') lines (full schema $schema)"
+  [ -n "${SCHEMA_ONLY:-}" ] && { echo "   SCHEMA_ONLY - keeping the CSVs already on disk"; return 0; }
 
   : > "$dir/manifest.txt"
   for t in $tables; do

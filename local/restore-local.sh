@@ -30,34 +30,63 @@ ensure_db(){                                  # ensure_db <db>
 }
 
 load(){                                       # load <snapshot-dir-name> <db>
-  local label="$1" db="$2" dir="$IN/$1" sql
+  local label="$1" db="$2" dir="$IN/$1"
   [ -d "$dir" ] || { echo "   ($label not in the snapshot - skipped)"; return 0; }
-  sql="$(mktemp /tmp/load-$label.XXXXXX.sql)"
+  local sch; sch="$(grep -m1 -oE 'CREATE SCHEMA[^;]*' "$dir/schema.sql" | awk '{print $NF}' || true)"
+  sch="${sch:-public}"
+  local ddl="/tmp/restore-$label-ddl.log" dat="/tmp/restore-$label-data.log"
+
+  # --- pass 1: DDL. NOT ON_ERROR_STOP - a full-schema dump legitimately trips on things the
+  # local server already has (schema public, an extension it cannot install). What matters is
+  # whether the tables exist afterwards, which pass 3 checks.
+  psql -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$PGUSER_LOCAL" -d "$db" -q \
+       -f "$dir/schema.sql" > "$ddl" 2>&1 || true
+  local ddlerr; ddlerr=$(grep -ci '^psql.*ERROR' "$ddl" || true)
+  printf '   %-9s DDL  %s tables created%s\n' "$label" \
+    "$("${PSQL[@]}" -d "$db" -Atc "SELECT count(*) FROM pg_tables WHERE schemaname='$sch'")" \
+    "$([ "$ddlerr" -gt 0 ] && echo "  ($ddlerr non-fatal notices - $ddl)")"
+
+  # --- pass 2: data, one \copy per table, in one session. session_replication_role=replica so
+  # FK order cannot matter. Failures are collected, not fatal, so one bad table cannot hide the rest.
+  local sql; sql="$(mktemp /tmp/load-$label.XXXXXX.sql)"
   {
-    echo "SET session_replication_role = replica;"   # no FK/trigger ordering worries
-    # pg_dump 17/18 writes SETs that PostgreSQL 16 does not know (transaction_timeout, ...).
-    # The Mac's client is newer than the unified-db container, so drop them.
-    sed -E '/^SET (transaction_timeout|idle_session_timeout|allow_alter_system) *=/d' "$dir/schema.sql"
+    echo "SET session_replication_role = replica;"
     while read -r t; do
       [ -f "$dir/$t.csv" ] || continue
-      # schema.sql already created the table in its own schema; search_path below picks it up
-      printf '\\copy %s FROM %s CSV HEADER\n' "\"$t\"" "'$dir/$t.csv'"
+      printf '\\echo LOADING %s\n' "$t"
+      printf '\\copy "%s" FROM %s CSV HEADER\n' "$t" "'$dir/$t.csv'"
     done < "$dir/manifest.txt"
   } > "$sql"
-  local sch; sch="$(grep -m1 -oE 'CREATE SCHEMA[^;]*' "$dir/schema.sql" | awk '{print $NF}' || true)"
-  local log="/tmp/restore-$label.log"
-  if PGOPTIONS="-c search_path=${sch:-public},public" "${PSQL[@]}" -d "$db" -q -f "$sql" > "$log" 2>&1; then
-    :
-  else
-    echo "   !! $label FAILED - first errors:"
-    grep -iE '^(psql:|ERROR|FATAL)' "$log" | head -8 | sed 's/^/      /'
-    echo "      full log: $log"
-    rm -f "$sql"; return 1
-  fi
+  PGOPTIONS="-c search_path=$sch,public" psql -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" \
+       -U "$PGUSER_LOCAL" -d "$db" -q -f "$sql" > "$dat" 2>&1 || true
+  rm -f "$sql"
   "${PSQL[@]}" -d "$db" -q -c "ANALYZE" >/dev/null 2>&1 || true
-  printf '   %-22s %-9s %s\n' "$db/${sch:-public}" \
+
+  # --- pass 3: verify every table we have a CSV for actually has its rows
+  local bad=0 t rows want
+  while read -r t; do
+    [ -f "$dir/$t.csv" ] || continue
+    want=$(( $(wc -l < "$dir/$t.csv") - 1 )); [ "$want" -lt 0 ] && want=0
+    rows=$("${PSQL[@]}" -d "$db" -Atc "SELECT count(*) FROM \"$sch\".\"$t\"" 2>/dev/null || echo MISSING)
+    # a CSV line count is only an upper bound - a quoted JSON value may contain a newline - so a
+    # real failure is "the table is not there" or "nothing loaded", not a small count difference.
+    if [ "$rows" = "MISSING" ] || { [ "$want" -gt 0 ] && [ "$rows" -eq 0 ]; }; then
+      bad=$((bad+1)); printf '     !! %-32s csv ~%-9s loaded %s\n' "$t" "$want" "$rows"
+    elif [ "$rows" != "$want" ]; then
+      printf '     .  %-32s csv ~%-9s loaded %s (multi-line values)\n' "$t" "$want" "$rows"
+    fi
+  done < "$dir/manifest.txt"
+
+  if [ "$bad" -gt 0 ]; then
+    echo "   !! $label: $bad table(s) did not load - first errors:"
+    grep -iE '^(psql:|ERROR|FATAL)' "$dat" | head -6 | sed 's/^/      /'
+    echo "      data log: $dat   ddl log: $ddl"
+    return 1
+  fi
+  printf '   %-9s DATA ok  %s  %s\n' "$label" \
     "$("${PSQL[@]}" -d "$db" -Atc "SELECT pg_size_pretty(pg_database_size('$db'))")" \
-    "$("${PSQL[@]}" -d "$db" -Atc "SELECT count(*)||' tables' FROM pg_tables WHERE schemaname='${sch:-public}'")"
+    "$(wc -l < "$dir/manifest.txt" | tr -d ' ') tables verified"
+  return 0
 }
 
 say "restoring into Postgres at $PGHOST_LOCAL:$PGPORT_LOCAL as $PGUSER_LOCAL"
