@@ -35,12 +35,28 @@ load(){                                       # load <snapshot-dir-name> <db>
   local sch; sch="$(grep -m1 -oE 'CREATE SCHEMA[^;]*' "$dir/schema.sql" | awk '{print $NF}' || true)"
   sch="${sch:-public}"
   local ddl="/tmp/restore-$label-ddl.log" dat="/tmp/restore-$label-data.log"
+  : > "$ddl"
+
+  # --- pass 0: extensions. pg_dump -n <schema> does NOT dump extensions (they belong to the
+  # database, not the schema), so gen_random_uuid() (pgcrypto) and gin_trgm_ops (pg_trgm) were
+  # missing and every CREATE TABLE using them failed - taking their indexes and FKs with them.
+  # Prefer the exact list captured from prod; otherwise create the usual suspects, tolerantly.
+  if [ -f "$dir/extensions.sql" ]; then
+    "${PSQL[@]}" -d "$db" -q -f "$dir/extensions.sql" >> "$ddl" 2>&1 || true
+  else
+    for e in pgcrypto pg_trgm citext hstore unaccent uuid-ossp btree_gin btree_gist intarray ltree tablefunc; do
+      psql -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$PGUSER_LOCAL" -d "$db" -q \
+        -c "CREATE EXTENSION IF NOT EXISTS \"$e\"" >/dev/null 2>&1 || true
+    done
+  fi
+  printf '   %-9s EXT  %s\n' "$label" \
+    "$("${PSQL[@]}" -d "$db" -Atc "SELECT string_agg(extname,' ' ORDER BY extname) FROM pg_extension")"
 
   # --- pass 1: DDL. NOT ON_ERROR_STOP - a full-schema dump legitimately trips on things the
   # local server already has (schema public, an extension it cannot install). What matters is
   # whether the tables exist afterwards, which pass 3 checks.
-  psql -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$PGUSER_LOCAL" -d "$db" -q \
-       -f "$dir/schema.sql" > "$ddl" 2>&1 || true
+  sed -E 's/^CREATE SCHEMA ([^;]+);/CREATE SCHEMA IF NOT EXISTS \1;/' "$dir/schema.sql" \
+    | psql -h "$PGHOST_LOCAL" -p "$PGPORT_LOCAL" -U "$PGUSER_LOCAL" -d "$db" -q > "$ddl" 2>&1 || true
   local ddlerr; ddlerr=$(grep -ci '^psql.*ERROR' "$ddl" || true)
   printf '   %-9s DDL  %s tables created%s\n' "$label" \
     "$("${PSQL[@]}" -d "$db" -Atc "SELECT count(*) FROM pg_tables WHERE schemaname='$sch'")" \

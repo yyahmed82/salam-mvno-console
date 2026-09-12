@@ -130,7 +130,10 @@ pull(){                          # pull <label> <prod-url-var> <schema> <tables|
   # CREATE SCHEMA, and any index or constraint touching a table outside the filter.
   pg_dump --schema-only --no-owner --no-privileges -n "$schema" -d "$url" \
     | sed -E '/^SET (transaction_timeout|idle_session_timeout|allow_alter_system) *=/d' > "$dir/schema.sql"
-  echo "   DDL: $(wc -l < "$dir/schema.sql" | tr -d ' ') lines (full schema $schema)"
+  # extensions live in the DATABASE, not the schema - pg_dump -n never emits them
+  psql "$url" -Atc "SELECT 'CREATE EXTENSION IF NOT EXISTS \"'||extname||'\";'
+                      FROM pg_extension WHERE extname <> 'plpgsql' ORDER BY extname" > "$dir/extensions.sql"
+  echo "   DDL: $(wc -l < "$dir/schema.sql" | tr -d ' ') lines (full schema $schema) · $(wc -l < "$dir/extensions.sql" | tr -d ' ') extension(s)"
   [ -n "${SCHEMA_ONLY:-}" ] && { echo "   SCHEMA_ONLY - keeping the CSVs already on disk"; return 0; }
 
   : > "$dir/manifest.txt"
