@@ -123,6 +123,23 @@ async function ingestFixed(since, now, add) {
     }
     per.push({ src, label, buckets, errorEvents: e, apiFailures: a, apiCallsRead: src === API_SRC });
   }
+  /* the app log itself (fixedAppLogCollector → unified_console.fixed_app_events): Yakeen/ELM, getYakeenAddress,
+   * Absher/Nafath/Semati DRM refusals, failed tRPC mutations and level:error lines — the only place the
+   * identity providers are visible at all. Successes are not signatures; failures are keyed by channel ·
+   * kind · path so "sda · yakeen · validateIndividualCustomer" is one signature per reason. */
+  let app = 0;
+  try {
+    const fr = (await db.console.query(
+      `SELECT ts, host, channel, kind, path, status_code, reason, reason_class, message
+         FROM fixed_app_events WHERE ok IS NOT TRUE AND ts > $1 AND ts <= $2 ORDER BY ts LIMIT 100000`, [since, now])).rows;
+    for (const r of fr) {
+      add('fixed-app', 'fixed', `${r.channel || '?'} · ${r.kind}${r.path ? ' · ' + String(r.path).replace(/^(sda|ePurchase)\.actions\./, '') : ''}`,
+        r.status_code != null ? r.status_code : (r.reason_class || null), r.reason || r.message, r.reason || r.message, r.host, r.ts);
+      if (!newest || r.ts > newest) newest = r.ts;
+    }
+    app = fr.length; rows += app;
+  } catch (err) { if (!/does not exist/.test(err.message)) log('fixed app-log events failed:', err.message); }
+  per.push({ src: 'app', label: 'unified_console.fixed_app_events', appFailures: app });
   const cursor = newest && newest < now ? newest : (rows ? now : since);
   return { rows, cursor, sources: per };
 }
@@ -164,6 +181,7 @@ Each signature carries a SEGMENT.
  - segment "mvno" = the MVNO mobile platform. Categories (use one): payment, activation, onboarding, nafath, semati, eligibility, recharge, delivery, auth, api, app, infrastructure, other.
  - segment "fixed" = the fixed FTTH / 5G platform, across four channels named in the endpoint: sda (dealer app), qr (referral e-purchase), web (Web e-purchase), salamhome (the Salam Home consumer app).
    Categories (use one): payment_not_notified, provision_no_order, payment_failed, oss_exception, landline_lock_failed, nafath_timeout, nafath_failed, semati_failed, yakeen_failed, eligibility_failed, coverage_failed, bss_exception, api, app, infrastructure, other.
+   Source fixed-app = the app's own combined.log (kind yakeen = ELM getYakeenInfo NIC check, yakeen_address, absher OTP, nafath, semati, mutation = a failed tRPC step, error = an unhandled tRPC error).
    Yakeen/ELM and Nafath are national identity providers: an identity refusal (not eligible, record not found, mismatch) is BUSINESS; a timeout, 5xx or TLS/connection failure reaching them is TECHNICAL.
 Class: "business" = the platform correctly refused something (policy, validation, duplicate, insufficient balance); "technical" = the platform or a provider failed (timeout, 5xx, exception, connection reset, TLS).
 Owner teams: Digital Ops, BSS, OSS, Payments, Identity, Platform, Sales Ops.

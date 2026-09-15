@@ -659,3 +659,29 @@ CREATE TABLE IF NOT EXISTS live_snapshots (
   taken_at timestamptz NOT NULL DEFAULT now(), ms integer, http integer, ok boolean,
   endpoint text, request jsonb, response jsonb);
 CREATE INDEX IF NOT EXISTS idx_live_snap ON live_snapshots (cust, panel, taken_at DESC);
+
+-- Fixed app log (Salam Home / SDA / Web e-purchase winston combined.log), tailed over ssh by
+-- server/src/fixedAppLogCollector.js. The only source of Yakeen/ELM (getYakeenInfo), getYakeenAddress
+-- and per-step tRPC mutation outcomes — none of them reach the sda_ops read models. PII never stored.
+CREATE TABLE IF NOT EXISTS fixed_app_events (
+  id           bigserial PRIMARY KEY,
+  ts           timestamptz NOT NULL,
+  host         text NOT NULL,
+  channel      text,            -- sda | web | salamhome (from the tRPC path prefix, source is unreliable)
+  source       text,
+  level        text,
+  path         text,            -- tRPC path, e.g. sda.actions.validateIndividualCustomer
+  kind         text NOT NULL,   -- yakeen | yakeen_address | absher | nafath | semati | manafith | drm | mutation | error
+  ok           boolean,
+  status_code  integer,
+  reason       text,            -- masked provider/app reason
+  reason_class text,            -- business | technical | client
+  message      text,
+  request_id   text,
+  state_id     text,            -- wf_st_* journey key
+  platform     text,
+  app_version  text,
+  duration_ms  integer
+);
+CREATE INDEX IF NOT EXISTS idx_fixed_app_events_ts      ON fixed_app_events (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_fixed_app_events_kind_ts ON fixed_app_events (kind, ts DESC);

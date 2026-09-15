@@ -78,10 +78,16 @@ function mount(app, { audit, requireCap, requireRoot }) {
       const reports = await q(`SELECT id, kind, period_start, period_end, mailed_to, created_at, left(narrative, 240) AS narrative FROM agent_reports ORDER BY created_at DESC LIMIT 7`);
       const state = await q(`SELECT key, value, updated_at FROM agent_state`);
       const st = await llm.status();
+      /* the Fixed app log (combined.log) is the one source the user cannot see anywhere else — say plainly
+       * whether the collector is armed and whether Yakeen lines are actually arriving */
+      let applog = { configured: false };
+      try { const col = require('./fixedAppLogCollector'); const p = await col.ping();
+        const a24 = (await q(`SELECT count(*)::int AS n, count(*) FILTER (WHERE ok IS NOT TRUE)::int AS failed, count(*) FILTER (WHERE kind='yakeen')::int AS yakeen FROM fixed_app_events WHERE ts >= now() - interval '24 hours'`))[0] || {};
+        applog = { configured: col.configured(), logPath: col.status().logPath, hosts: col.status().hosts, ...p, d1: a24 }; } catch (_) {}
       const alive = r => r && r.started_at && (Date.now() - new Date(r.started_at).getTime()) < 40 * 60000;
       res.json({ agents: { log: { last: runs.find(r => r.agent === 'log') || null, alive: alive(runs.find(r => r.agent === 'log')), d1: runs24.find(r => r.agent === 'log') || { runs: 0, ok: 0 }, state: (state.find(s => s.key === 'log') || {}).value || {} },
         incident: { last: runs.find(r => r.agent === 'incident') || null, alive: alive(runs.find(r => r.agent === 'incident')), d1: runs24.find(r => r.agent === 'incident') || { runs: 0, ok: 0 } } },
-        signatures: sig, triage: tri, reports, llm: st, policy: await require('./agentIncident').getPolicy() });
+        signatures: sig, triage: tri, reports, llm: st, applog, policy: await require('./agentIncident').getPolicy() });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

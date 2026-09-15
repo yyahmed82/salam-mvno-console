@@ -3073,6 +3073,11 @@ require('./fixedExec').mount(app, { requireView });   // Fixed › Executive + O
   require('./mvnoExec').mount(app, execDeps);
   require('./execUnified').mount(app, execDeps);
   require('./execRadar').mount(app, execDeps); }   // the case file behind one radar contact
+  /* Fixed app-log collector (combined.log → fixed_app_events): status + freshness for the Fixed pages / agents */
+  app.get('/api/fixed/applog/status', requireView('fixed'), async (req, res) => {
+    try { const col = require('./fixedAppLogCollector'); res.json({ ...col.status(), db: await col.ping() }); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
 
 /* Mobile-side alert endpoints are SEGMENT-SCOPED (8 Sep 2026): they answer for 'mvno' unless ?segment=fixed|all is
  * asked by a user whose business allows it (segment.forRequest). Fixed › Alerts has its own /api/fixed/alerts/*.
@@ -6533,6 +6538,7 @@ app.listen(PORT, async () => {
   try { require('./apigwProbe').start(); } catch (e) { console.error('APIGW connectivity probe:', e.message); }
   try { require('./apiLogCollector').start(); } catch (e) { console.error('API-log collector:', e.message); }
   try { require('./apiErrLogCollector').start(); } catch (e) { console.error('App-error-log collector:', e.message); }
+  try { require('./fixedAppLogCollector').start(); } catch (e) { console.error('Fixed app-log collector:', e.message); }
   try { require('./smsProbe').start(); } catch (e) { console.error('SMS probe:', e.message); }
   try { require('./zipkinCollector').start(); } catch (e) { console.error('APIGW trace collector:', e.message); }
   try { require('./dmsJourneys').start(); } catch (e) { console.error('DMS journey collector:', e.message); }

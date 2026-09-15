@@ -31,13 +31,14 @@ const STEPS = `SELECT oa.channel, oa.step_reached AS step, oa.outcome::text AS o
                  FROM order_attempts oa WHERE oa.started_at >= $1 AND oa.started_at < $2 AND oa.outcome <> 'COMPLETED'
                 GROUP BY 1,2,3 ORDER BY 4 DESC LIMIT 60`;
 
-/* ---- identity verification: Absher OTP (the Yakeen/ELM-backed step) ------------------------------
- * Discovery on 15 Sep 2026 (sda_ops, 14 d): there is NO endpoint named yakeen/elm — the identity step
- * is the DRM pair  sendAbsherValidateCode (send the OTP to the Absher-registered mobile = the provider
- * check)  and  checkValidateCode (the customer typing the OTP = user correctness, NOT a provider fault).
- * Every call is HTTP 200; a failure is error_class='DRM' with the reason in error_msg. That gives a real
- * success RATE (ok / calls), not just a failure count. Read from sda_ops.public ONLY: the beta read model
- * runs with api_logs ingest off (its api_calls stop on 2026-09-04), so folding it in would add stale rows. */
+/* ---- identity verification ① Absher OTP (from sda_ops api_calls) -------------------------------
+ * The DRM pair  sendAbsherValidateCode (send the OTP to the Absher-registered mobile)  and
+ * checkValidateCode (the customer typing the OTP = user correctness, NOT a provider fault). Every call is
+ * HTTP 200; a failure is error_class='DRM' with the reason in error_msg. Read from sda_ops.public ONLY: the
+ * beta read model runs with api_logs ingest off (its api_calls stop on 2026-09-04).
+ * CORRECTION 15 Sep 2026: this pair is NOT Yakeen. Yakeen is the ELM NIC-record check (getYakeenInfo under
+ * sda.actions.validateIndividualCustomer) — it never reaches api_calls, it lives only in the app's
+ * combined.log, which fixedAppLogCollector.js now tails into unified_console.fixed_app_events → ② below. */
 const IDENT_SRC = () => db.ops || db.opsBeta;
 const IDENT_FAIL = `(ac.status >= 400 OR ac.error_class IS NOT NULL)`;
 const IDENT_OP = `CASE WHEN ac.endpoint ~* 'sendAbsherValidateCode' THEN 'send' WHEN ac.endpoint ~* 'checkValidateCode' THEN 'verify' END`;
@@ -56,6 +57,29 @@ const identity = async (from, to) => {
   const q = (sql, params) => P.query(sql, params).then(r => r.rows, e => { console.error('[fixedExec] identity query failed:', e.message); return []; });
   const [days, cats, last] = await Promise.all([q(IDENT_DAY, [from, to]), q(IDENT_CAT, [from, to]), q(IDENT_LAST, [])]);
   return { days, cats, lastAt: (last[0] || {}).last_at || null, source: P === db.ops ? 'sda_ops.public' : 'sda_ops.beta' };
+};
+
+
+/* ---- identity verification ② Yakeen / ELM (from unified_console.fixed_app_events) ------------------
+ * kind='yakeen' = one getYakeenInfo response line; ok = no `error` object on the line (the success shape has
+ * not been seen in the incident thread, only failures — stated on the chart). reason_class tells a provider
+ * refusal (business: "inputs does not match NIC records", statusCode 400) from an ELM outage (technical:
+ * 504 Gateway Time-out, as on 7 Jul 2026). A day with no calls carries null, never 0. */
+const YAK_DAY = `SELECT (date_trunc('day', ts AT TIME ZONE 'Asia/Riyadh'))::date::text AS day,
+                        count(*)::int AS calls, count(*) FILTER (WHERE ok IS NOT TRUE)::int AS failed,
+                        count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class='technical')::int AS technical
+                   FROM fixed_app_events WHERE kind='yakeen' AND ts >= $1 AND ts < $2 GROUP BY 1`;
+const YAK_CAT = `SELECT coalesce(reason_class,'unknown') AS cls, coalesce(status_code::text,'') AS status,
+                        left(regexp_replace(coalesce(nullif(reason,''), message, 'no reason'), '[0-9]+', '#', 'g'), 90) AS reason,
+                        count(*)::int AS n, max(ts) AS last_at
+                   FROM fixed_app_events WHERE kind IN ('yakeen','yakeen_address') AND ok IS NOT TRUE AND ts >= $1 AND ts < $2
+                  GROUP BY 1,2,3 ORDER BY 4 DESC LIMIT 14`;
+const YAK_LAST = `SELECT max(ts) AS last_at, count(*)::bigint AS n FROM fixed_app_events WHERE kind='yakeen'`;
+const yakeen = async (from, to) => {
+  const q = (sql, params) => db.console.query(sql, params).then(r => r.rows, e => { if (!/does not exist/.test(e.message)) console.error('[fixedExec] yakeen query failed:', e.message); return []; });
+  const [days, cats, last] = await Promise.all([q(YAK_DAY, [from, to]), q(YAK_CAT, [from, to]), q(YAK_LAST, [])]);
+  let col = null; try { col = require('./fixedAppLogCollector').status(); } catch (_) {}
+  return { days, cats, lastAt: (last[0] || {}).last_at || null, total: Number((last[0] || {}).n || 0), configured: !!(col && col.configured), logPath: col ? col.logPath : null };
 };
 
 const pools = () => [...new Set([db.ops, db.opsBeta].filter(Boolean))];
@@ -119,17 +143,23 @@ async function exec(q = {}) {
     both(ERR_DAY, [from, to]), both(ERR_CAT, [from, to]), both(ERR_CAT_DAY, [from, to]), both(STEPS, [from, to]),
     errorBudget(), firedAlerts(from), both(ERR_24, [from24]),
   ]);
-  const [radarRows, radarTot, ident] = await Promise.all([alertsByDay(from), alertsTotals(from), identity(from, to)]);
+  const [radarRows, radarTot, ident, yak] = await Promise.all([alertsByDay(from), alertsTotals(from), identity(from, to), yakeen(from, to)]);
 
   // ---- day axis
   const byDay = {}; for (const r of series.byDay || []) byDay[dayKey(r.day)] = { n: n(r.n), completed: n(r.completed) };
   const errDays = {}; for (const r of errDaysRaw) { const k = errDays[r.day] || (errDays[r.day] = { n: 0, open: 0 }); k.n += n(r.n); k.open += n(r.open); }
   /* identity per day: a day with no calls carries null, never 0 — 0 would plot as a 0 % success rate */
+  const yakDay = {}; for (const r of yak.days) yakDay[r.day] = { calls: n(r.calls), failed: n(r.failed), technical: n(r.technical) };
   const idDay = {}; for (const r of ident.days) { const k = idDay[r.day] || (idDay[r.day] = {}); k[r.op] = { calls: n(r.calls), failed: n(r.failed) }; }
   const rateOf = x => x && x.calls ? Math.round(1000 * (x.calls - x.failed) / x.calls) / 10 : null;
   const daysArr = dayAxis(now, days).map(k => ({ day: k, orders: (byDay[k] || {}).n || 0, completed: (byDay[k] || {}).completed || 0, errors: (errDays[k] || {}).n || 0, openErrors: (errDays[k] || {}).open || 0,
     identSends: ((idDay[k] || {}).send || {}).calls || 0, identSendFail: ((idDay[k] || {}).send || {}).failed || 0, identSendRate: rateOf((idDay[k] || {}).send),
-    identVerifies: ((idDay[k] || {}).verify || {}).calls || 0, identVerifyFail: ((idDay[k] || {}).verify || {}).failed || 0, identVerifyRate: rateOf((idDay[k] || {}).verify) }));
+    identVerifies: ((idDay[k] || {}).verify || {}).calls || 0, identVerifyFail: ((idDay[k] || {}).verify || {}).failed || 0, identVerifyRate: rateOf((idDay[k] || {}).verify),
+    yakeenCalls: (yakDay[k] || {}).calls || 0, yakeenFail: (yakDay[k] || {}).failed || 0, yakeenTechnical: (yakDay[k] || {}).technical || 0, yakeenRate: rateOf(yakDay[k]) }));
+  const yakTot = yak.days.reduce((a, r) => ({ calls: a.calls + n(r.calls), failed: a.failed + n(r.failed), technical: a.technical + n(r.technical) }), { calls: 0, failed: 0, technical: 0 });
+  const yakNote = !yak.configured ? 'collector not armed — set FIXED_LOG_HOSTS on 152 (combined.log ssh tail)'
+    : !yak.total ? `collector armed, no getYakeenInfo line seen yet · ${yak.logPath}`
+    : `unified_console.fixed_app_events · combined.log · newest ${String(yak.lastAt).slice(0, 10)}`;
   const identTot = op => ident.days.filter(r => r.op === op).reduce((a, r) => ({ calls: a.calls + n(r.calls), failed: a.failed + n(r.failed) }), { calls: 0, failed: 0 });
   const idSend = identTot('send'), idVerify = identTot('verify');
   const identNote = ident.source ? `${ident.source} · api_calls${ident.lastAt ? ` · newest ${String(ident.lastAt).slice(0, 10)}` : ''}${db.opsBeta && ident.source === 'sda_ops.public' ? ' · beta excluded (api_logs ingest off)' : ''}` : 'no sda_ops read model';
@@ -218,14 +248,20 @@ async function exec(q = {}) {
       { key: 'errors', title: 'API errors vs budget', type: 'bar', field: 'errors', color: 'auto', threshold: budget, thresholdLabel: `budget ${budget}/day`, exec: true },
       { key: 'completed', title: 'Completed orders', type: 'line', field: 'completed', color: 'blue', exec: false },
       { key: 'openErrors', title: 'Still-open errors by day', type: 'bar', field: 'openErrors', color: 'amber', exec: false },
-      /* identity verification (Absher OTP, Yakeen/ELM-backed) — see the IDENT_* comment above */
-      { key: 'identSendRate', title: 'Identity verification success rate · Absher OTP send', type: 'line', field: 'identSendRate', color: 'green', pct: true, exec: false,
+      /* identity verification ② Yakeen / ELM — the real Yakeen, from the app log (see YAK_* above) */
+      { key: 'yakeenRate', title: 'Yakeen success rate · ELM NIC record check (getYakeenInfo)', type: 'line', field: 'yakeenRate', color: 'green', pct: true, exec: false,
+        sub: `${yakTot.calls.toLocaleString('en-US')} checks · ${yakTot.failed.toLocaleString('en-US')} failed (${yakTot.technical.toLocaleString('en-US')} technical) · ${rateOf(yakTot) == null ? '—' : rateOf(yakTot) + '%'} in ${days} d · success = response line without an error object · ${yakNote}` },
+      { key: 'yakeenCats', title: 'Yakeen failures by reason', type: 'cols', exec: false,
+        rows: yak.cats.map(c => ({ label: `${c.cls}${c.status ? ' ' + c.status : ''} · ${c.reason}`, n: n(c.n), tone: c.cls === 'technical' ? 'red' : c.cls === 'business' ? 'amber' : 'muted', last_at: c.last_at })),
+        sub: yak.cats.length ? `technical = ELM/gateway fault (504, timeout) · business = NIC record refused the inputs · digits masked · ${yakNote}` : `no Yakeen failure in this window · ${yakNote}` },
+      /* identity verification ① Absher OTP — see the IDENT_* comment above (NOT Yakeen) */
+      { key: 'identSendRate', title: 'Absher OTP send success rate · DRM sendAbsherValidateCode', type: 'line', field: 'identSendRate', color: 'green', pct: true, exec: false,
         sub: `${idSend.calls.toLocaleString('en-US')} sends · ${idSend.failed.toLocaleString('en-US')} failed · ${rateOf(idSend) == null ? '—' : rateOf(idSend) + '%'} in ${days} d · ${identNote}` },
-      { key: 'identVerifyRate', title: 'OTP verify success rate · customer enters the code', type: 'line', field: 'identVerifyRate', color: 'blue', pct: true, exec: false,
+      { key: 'identVerifyRate', title: 'Absher OTP verify success rate · customer enters the code', type: 'line', field: 'identVerifyRate', color: 'blue', pct: true, exec: false,
         sub: `${idVerify.calls.toLocaleString('en-US')} verifies · ${idVerify.failed.toLocaleString('en-US')} failed · a wrong code is the customer, not the provider` },
-      { key: 'identCats', title: 'Identity failures by reason', type: 'cols', exec: false,
+      { key: 'identCats', title: 'Absher OTP failures by reason', type: 'cols', exec: false,
         rows: ident.cats.map(c => ({ label: `${c.op === 'send' ? 'send' : 'verify'} · ${c.reason}`, n: n(c.n), tone: c.op === 'send' ? 'red' : 'amber', last_at: c.last_at })),
-        sub: ident.cats.length ? `DRM reason text from api_calls.error_msg, digits masked · ${identNote}` : 'no identity failures in this window' },
+        sub: ident.cats.length ? `DRM reason text from api_calls.error_msg, digits masked · ${identNote}` : 'no Absher OTP failures in this window' },
     ] },
     pipeline: { title: 'Order pipeline — where not-completed attempts stopped', sub: `${notDone.toLocaleString('en-US')} attempts in ${days} d did not complete`, rows: pipelineRows, href: '#fixed?tab=epurchase' },
     issues,

@@ -116,7 +116,7 @@
       if(/^restricted$/i.test(e.message||"")){ h.innerHTML=`<div class="panel" style="text-align:center;padding:34px 20px"><div style="font-size:26px">🔒</div><div style="font-weight:700;margin-top:6px">Root tier only</div><div class="sub">Agents and the LLM layer are configured by the console owners.</div></div>`; return; }
       h.innerHTML=`<div class="panel"><b>Could not load</b> — ${esc(e.message)}</div>`; return;
     }
-    const L=OV.llm||{}, hp=(L.health||{}).primary||{}, hf=(L.health||{}).fallback||{}, A=OV.agents||{}, S=OV.signatures||{}, T=OV.triage||{};
+    const L=OV.llm||{}, hp=(L.health||{}).primary||{}, hf=(L.health||{}).fallback||{}, A=OV.agents||{}, S=OV.signatures||{}, T=OV.triage||{}, AL=OV.applog||{};
     const prov=(name,p,hh)=>p?`<div class="ag-card"><h3>${name} · ${esc(p.kind)}</h3><div class="ag-big" style="font-size:18px"><span class="ag-dot ${hh.ok?"on":hh.configured===false?"":"off"}"></span>${esc(p.model)}</div>
         <div class="ag-sub ag-mono">${esc(p.url)}</div><div class="ag-sub">${hh.ok?`reachable · ${hh.ms} ms · model ${hh.modelAvailable?"installed":"<b style='color:#b91c1c'>NOT installed</b>"}`:`<b style="color:#b91c1c">${esc(hh.error||"unreachable")}</b>`}${p.keyed?" · key set":""} · timeout ${Math.round(p.timeoutMs/1000)} s</div></div>`
       :`<div class="ag-card"><h3>${name}</h3><div class="ag-sub">not configured — set it below to get automatic failover</div></div>`;
@@ -131,7 +131,12 @@
       <div class="ag-grid">
         ${agent("Agent 1 · Log intelligence",A.log||{alive:false,d1:{runs:0,ok:0}},`${n(S.total)} signatures · <b>${n(S.new24)}</b> new 24 h · ${n(S.events24)} events 24 h · ${n(S.tech24)} technical`
           + `<div class="ag-sub" style="margin-top:4px">Mobile <b>${n(S.mvno24)}</b> · Fixed <b>${n(S.fixed24)}</b> events in 24 h`
-          + (Number(S.fixed_signatures)?"":` — <span style="color:var(--amber,#d97706)">no Fixed signature yet: check that OPS_DATABASE_URL / OPS_BETA_DATABASE_URL are set for <code>salam-agent-log</code></span>`) + `</div>`)}
+          + (Number(S.fixed_signatures)?"":` — <span style="color:var(--amber,#d97706)">no Fixed signature yet: check that OPS_DATABASE_URL / OPS_BETA_DATABASE_URL are set for <code>salam-agent-log</code></span>`) + `</div>`
+          + `<div class="ag-sub" style="margin-top:4px">Fixed app log (combined.log): `
+          + (!AL.configured ? `<span style="color:var(--amber,#d97706)">not collected — set <code>FIXED_LOG_HOSTS</code> on 152; Yakeen / ELM is invisible until then</span>`
+            : !AL.ok ? `<span style="color:var(--red,#dc2626)">collector armed but the table is unreadable${AL.error?": "+esc(AL.error):""}</span>`
+            : `<b>${n((AL.d1||{}).n)}</b> lines in 24 h · <b>${n((AL.d1||{}).failed)}</b> failures · <b>${n((AL.d1||{}).yakeen)}</b> Yakeen checks · newest ${AL.newestTs?esc(String(AL.newestTs).replace("T"," ").slice(0,16))+" UTC":"—"}`
+              + ((AL.hosts||[]).some(h=>h.lastError)?` — <span style="color:var(--red,#dc2626)">ssh: ${esc((AL.hosts||[]).map(h=>h.lastError).filter(Boolean)[0])}</span>`:"")) + `</div>`)}
         <div class="ag-card"><h3>To review</h3><div class="ag-big">${n(S.to_review)}</div><div class="ag-sub">assessed signatures awaiting a human decision · ${n(S.unassessed)} not yet assessed</div></div>
         ${agent("Agent 2 · Incident operations",A.incident||{alive:false,d1:{runs:0,ok:0}},`${n(T.d1)} triaged 24 h · ${n(T.dup24)} duplicates · ${n(T.flap24)} flapping · mode <b>${esc((OV.policy||{}).mode||"advise")}</b>`)}
         <div class="ag-card"><h3>Triage quality</h3><div class="ag-big">${T.helpful+T.unhelpful?Math.round(100*T.helpful/(T.helpful+T.unhelpful))+"%":"—"}</div><div class="ag-sub">rated helpful (${n(T.helpful)} 👍 · ${n(T.unhelpful)} 👎) · avg confidence ${pct(T.avg_conf)} · ${n(T.applied)} policy actions · ${n(T.avg_ms)} ms avg</div></div>
