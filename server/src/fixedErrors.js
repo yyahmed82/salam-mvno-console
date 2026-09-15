@@ -155,7 +155,12 @@ const JOIN_OA = 'LEFT JOIN order_attempts oa ON oa.id = e.attempt_id';
 /* ---- error MESSAGE as a filter dimension (15 Sep 2026: "a select with every error message and its count in the period").
  * The message is the provider / app text of the failing call (resultDesc, error message …). Grouped after masking digit
  * runs (order numbers, plate ids, amounts) so "no available ports … odb" is ONE entry, not one per plate. ---- */
-const MSG_EXPR = `left(regexp_replace(coalesce(nullif(btrim(e.message),''),'(no message)'),'[0-9]+','#','g'),160)`;
+/* THE ERROR TEXT = what the failing call answered, not the category label. error_events.message carries the taxonomy
+ * label ("Feasibility / coverage failed"); the provider's own words (resultDesc "Accept Sync Request error! No plateID
+ * found…", message "[CC-S-SALES-01014] [Unkown error..]") sit in the masked response body. RESP_EXPR pulls the first
+ * resultDesc / message / errorMessage / … string out of res_body and falls back to the label when there is none. */
+const RESP_EXPR = `coalesce(nullif(btrim(substring(e.res_body from '"(?:resultDesc|responseMessage|errorMessage|errorDescription|errorDesc|resultMessage|message|error|desc|reason)"\\s*:\\s*"((?:[^"\\\\]|\\\\.){1,240})"')),''), nullif(btrim(e.message),''))`;
+const MSG_EXPR = `left(regexp_replace(coalesce(${RESP_EXPR},'(no message)'),'[0-9]+','#','g'),160)`;
 /* ---- BUSINESS vs TECHNICAL for Fixed — the console-wide principle of errclass.js applied in SQL so the chips,
  * the rows, the exports and the dashboards all agree (15 Sep 2026, "clear segregation everywhere, like MVNO"):
  *   TECHNICAL = the platform / provider failed to answer — timeouts, OSS/BSS exceptions, 5xx, transport, "paid but
@@ -168,8 +173,8 @@ const TECH_CATS = ['TIMEOUT', 'NAFATH_TIMEOUT', 'OSS_EXCEPTION', 'PAYMENT_NOT_NO
 const TECH_MSG_RE = `(timeout|timed[ -]?out|ETIMEDOUT|ECONN|EHOSTUNREACH|connection (reset|refused|closed)|SSL|I/O error|read timed out|broken pipe|service (is )?not available|temporarily unavailable|unavailable|OSB-382000|CRMException|SOAPFault|soap:Fault|internal server error|gateway time-?out|bad gateway|no response|empty response|null response|unreachable|circuit.?breaker|<h1>50[234]|Failed to validate customer info with Yakeen|Failed to check plate number|unkn?own error|\\[CC-[A-Z]|CRM error|system error|exception|null pointer|undefined)`;
 const CLASS_EXPR = `CASE WHEN e.category IN (${TECH_CATS.map(c => `'${c}'`).join(',')}) THEN 'technical'
   WHEN e.code ~ '^5[0-9]{2}$' THEN 'technical'
-  WHEN e.message ~* '${TECH_MSG_RE}' THEN 'technical'
-  WHEN coalesce(nullif(btrim(e.message),''),'') = '' THEN 'technical'
+  WHEN ${RESP_EXPR} ~* '${TECH_MSG_RE}' THEN 'technical'
+  WHEN coalesce(${RESP_EXPR},'') = '' THEN 'technical'
   ELSE 'business' END`;
 /* effective class = operator override (fixed_error_catalog, see fixedErrCatalog.js) ?? the auto CASE above. Always call
  * CLASS_SQL() inside a query builder, never cache it: the override lists change when someone classifies an error. */
@@ -195,6 +200,7 @@ function baseWhere(q, opts = {}) {
   const type = TYPE[String(q.type || '').toLowerCase()] ? String(q.type).toLowerCase() : null;
   if (type && opts.skip !== 'type') { P.push(type); parts.push(`${TYPE_EXPR} = $${P.length}`); }
   if ((q.cls === 'business' || q.cls === 'technical') && opts.skip !== 'cls') { P.push(q.cls); parts.push(`${CLASS_SQL()} = $${P.length}`); }
+  if (q.resp) { P.push('%' + String(q.resp).slice(0, 160) + '%'); parts.push(`(e.res_body ILIKE $${P.length} OR e.message ILIKE $${P.length})`); }
   if (q.msg && opts.skip !== 'msg') { P.push(String(q.msg).slice(0, 160)); parts.push(`${MSG_EXPR} = $${P.length}`); }
   const ident = identifierSql(q, P);
   if (ident) parts.push(ident);
@@ -354,7 +360,7 @@ function mount(app, deps) {
     P.push(lim + 1);
     const parts = await each({ ...s, P }, (pool, where, src) => pool.query(`SELECT e.id, e.attempt_id, e.order_number, e.acct_masked, e.cust_masked, e.category, e.code, e.message, e.client_side,
         e.channel, e.dealer_id, e.dealer_code, e.referral_code, e.region, e.step, e.occurred_at, e.resolved, e.resolved_at, e.signature,
-        ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_SQL()} AS cls, oa.workflow::text AS workflow, oa.plan, '${src}'::text AS src
+        ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_SQL()} AS cls, ${RESP_EXPR} AS resp_text, oa.workflow::text AS workflow, oa.plan, '${src}'::text AS src
       FROM error_events e ${JOIN_OA} ${where} ${extra.length ? 'AND ' + extra.join(' AND ') : ''} ORDER BY e.occurred_at DESC LIMIT $${P.length}`, P));
     const all = [].concat(...parts.map(p => p.r.rows)).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
     const rows = all.slice(0, lim);
@@ -502,7 +508,7 @@ function mount(app, deps) {
     const callFor = r => { if (!r.attempt_id) return null; if (r.step && callKey[r.attempt_id + '|' + r.step]) return callKey[r.attempt_id + '|' + r.step];
       const tail = r.step ? calls.find(c => c.attempt_id === r.attempt_id && (c.endpoint.endsWith(r.step) || r.step.endsWith(c.endpoint))) : null; return tail || null; };
     const flat = out.map(r => { const b = bodyById[r.id] || {}; const c = callFor(r);
-      return { when: r.occurred_at, priority: r.priority, team: r.team, cls: r.cls === 'technical' ? 'Technical' : 'Business', category: r.label || r.category, code: r.code || '', message: r.message || '',
+      return { when: r.occurred_at, priority: r.priority, team: r.team, cls: r.cls === 'technical' ? 'Technical' : 'Business', category: r.label || r.category, code: r.code || '', message: r.resp_text || r.message || '',
         endpoint: r.step || (c && c.endpoint) || '', method: (c && c.method) || '', http: c && c.status != null ? c.status : '', ms: c && c.duration_ms != null ? c.duration_ms : '',
         chan: r.chan || '', channel: r.chanLabel || r.chan || r.channel || '', type: r.typeLabel || r.type || '', journey: r.journey || '', workflow: r.workflow || '',
         dealer: r.chan === 'qr' && r.referral_code ? 'QR ' + r.referral_code : (r.dealer_code || (r.chan === 'web' ? 'consumer-direct' : r.chan === 'salamhome' ? 'app' : '')), region: r.region || '',
@@ -512,7 +518,7 @@ function mount(app, deps) {
       ['Period', `${WIN_LABEL[sum.window] || sum.window} — ${ksaStr(sum.from)} → ${ksaStr(sum.to)} KSA`],
       ['Channel', chanLabel(q.channel)], ['Type', q.type && TYPE[q.type] ? TYPE[q.type].label : 'All types'],
       ['Open only', (q.openOnly === '1' || q.openOnly === 'true') ? 'yes' : 'no (open + resolved)'],
-      ['Class', q.cls === 'technical' ? 'Technical' : q.cls === 'business' ? 'Business' : 'All (business + technical)'], ['Team', q.team || 'All teams'], ['Priority', q.priority !== undefined && q.priority !== '' ? 'P' + q.priority : 'All'],
+      ['Class', q.cls === 'technical' ? 'Technical' : q.cls === 'business' ? 'Business' : 'All (business + technical)'], ['Error message', q.msg || (q.resp ? 'contains: ' + q.resp : 'All')], ['Team', q.team || 'All teams'], ['Priority', q.priority !== undefined && q.priority !== '' ? 'P' + q.priority : 'All'],
       ['Provider', q.provider === '-' ? 'no provider' : (q.provider || 'All')], ['Category', q.category ? (meta(q.category).label || q.category) : 'All'],
       ['Access tech', q.tech && q.tech !== 'all' ? q.tech.toUpperCase() : 'All'],
       ['Search', [q.find, q.odb && 'ODB ' + q.odb, q.iccid && 'ICCID ' + q.iccid, q.cpe && 'CPE ' + q.cpe, q.msisdn && 'MSISDN ' + q.msisdn, q.serviceNo && 'service ' + q.serviceNo,
@@ -594,4 +600,4 @@ function mount(app, deps) {
   app.get('/api/fixed/errors/taxonomy', gate, (req, res) => res.json({ taxonomy: TAXONOMY, teams: TEAMS, spike: SPIKE, channels: CHANNELS, types: TYPES }));
 }
 
-module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CLASSES, CHANNEL_EXPR, TYPE_EXPR, CLASS_EXPR, CLASS_SQL, MSG_EXPR, effectiveSeverity, parseWindow };
+module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CLASSES, CHANNEL_EXPR, TYPE_EXPR, CLASS_EXPR, CLASS_SQL, MSG_EXPR, RESP_EXPR, effectiveSeverity, parseWindow };

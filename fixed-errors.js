@@ -14,7 +14,7 @@
   const TONE={red:{bg:"rgba(220,76,76,.16)",fg:"#dc2626"},amber:{bg:"rgba(210,153,34,.16)",fg:"var(--warn-fg)"},muted:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"}};
   const ID_FIELDS=[["serviceNo","Service no. (FTTH… / 5G no.)"],["odb","ODB / plate no (ODB: prefix ok)"],["iccid","SIM ICCID"],["cpe","CPE serial"],["msisdn","MSISDN / mobile"],["custCode","Customer code (custCode)"],["customerId","Customer ID"],["workflowId","Workflow ID (wf_st_…)"]];
   const LS=k=>{ try{ return localStorage.getItem(k); }catch(e){ return null; } };
-  const S={ win:LS("fixed_err_win")||"today", channel:"", type:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", msg:"", cls:"", category:"", tech:"all", find:"", ids:{}, expanded:new Set(), timer:null, tick:0 };   // expanded = ids open at once (several rows can be open — compare cases side by side)
+  const S={ win:LS("fixed_err_win")||"today", channel:"", type:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", msg:"", resp:"", cls:"", category:"", tech:"all", find:"", ids:{}, expanded:new Set(), timer:null, tick:0 };   // expanded = ids open at once (several rows can be open — compare cases side by side)
   /* channel + product type pills — same hue family in light and dark (tokens), never the violet business marker */
   const CH_STYLE={ sda:{bg:"rgba(14,159,90,.14)",fg:"var(--green,#0e9f5a)"}, qr:{bg:"rgba(13,148,136,.14)",fg:"#0d9488"}, web:{bg:"rgba(37,99,235,.13)",fg:"#2563eb"}, salamhome:{bg:"rgba(217,119,6,.14)",fg:"var(--warn-fg,#b45309)"} };
   const TY_STYLE={ ftth:{bg:"rgba(14,159,90,.12)",fg:"var(--green,#0e9f5a)"}, fttb:{bg:"rgba(5,150,105,.12)",fg:"#047857"}, "5gwl":{bg:"rgba(37,99,235,.12)",fg:"#2563eb"}, "5gfwa":{bg:"rgba(79,70,229,.12)",fg:"#4338ca"}, "5g":{bg:"rgba(37,99,235,.10)",fg:"#2563eb"}, lead:{bg:"rgba(217,119,6,.12)",fg:"var(--warn-fg,#b45309)"}, unknown:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"} };
@@ -61,6 +61,7 @@
     #fxErr .fe-clsdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:0} #fxErr .fe-chip.fe-cls-business.on{background:#3b82f6;border-color:#3b82f6} #fxErr .fe-chip.fe-cls-technical.on{background:#ef4444;border-color:#ef4444}
     #fxErr .fe-clspill{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:1px}
     #fxErr .fe-msgrow{display:flex;align-items:center;gap:8px;margin:6px 0 4px;flex-wrap:wrap} #fxErr .fe-msg{flex:1 1 320px;max-width:760px;width:auto;padding:7px 34px 7px 12px;font-size:12.5px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+    #fxErr .fe-resp{flex:1 1 260px;max-width:420px;width:auto;padding:7px 12px;font-size:12.5px}
     #fxErr .fe-msg.on{border-color:var(--green,#0e9f5a);box-shadow:0 0 0 3px rgba(14,159,90,.15);font-weight:600} #fxErr .fe-msg option{font-weight:400;color:var(--ink);background:var(--card,#fff)}
     #fxErr .fe-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin:14px 0 18px}
     #fxErr .fe-tile{text-align:left;padding:14px 16px;cursor:pointer;font:inherit;color:inherit;border:1px solid var(--line);border-radius:14px;background:var(--card,#fff);box-shadow:0 1px 3px rgba(2,6,23,.05);transition:transform .15s,box-shadow .15s,border-color .15s}
@@ -97,7 +98,7 @@
   function applyRouteQuery(){
     try{
       const raw=(location.hash.split("?")[1]||"");
-      if(!raw||raw===window.__fxErrLastQs||!/(?:^|&)(range|window|category|team|priority|provider|msg|cls|channel|type|tech|find|openOnly|serviceNo|odb|iccid|cpe|msisdn|custCode|customerId|workflowId)=/.test(raw)) return;
+      if(!raw||raw===window.__fxErrLastQs||!/(?:^|&)(range|window|category|team|priority|provider|msg|resp|cls|channel|type|tech|find|openOnly|serviceNo|odb|iccid|cpe|msisdn|custCode|customerId|workflowId)=/.test(raw)) return;
       window.__fxErrLastQs=raw; const P=new URLSearchParams(raw);
       Object.assign(S,{channel:"",type:"",team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},openOnly:true});
       const win=P.get("range")||P.get("window"); if(win&&WINDOWS.some(([k])=>k===win)){ S.win=win; try{ localStorage.setItem("fixed_err_win",win); }catch(e){} }
@@ -107,6 +108,7 @@
       if(P.has("provider")) S.provider=P.get("provider")||"";
       if(P.has("msg")) S.msg=P.get("msg")||"";
       if(P.has("cls")) S.cls=P.get("cls")||"";
+      if(P.has("resp")) S.resp=P.get("resp")||"";
       if(P.has("channel")) S.channel=P.get("channel")||"";
       if(P.has("type")) S.type=P.get("type")||"";
       if(P.has("tech")) S.tech=P.get("tech")||"all";
@@ -117,7 +119,7 @@
     }catch(e){}
   }
   function qs(){ const ch=S.channel||"";
-    let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.type?`&type=${encodeURIComponent(S.type)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}${S.msg?`&msg=${encodeURIComponent(S.msg)}`:""}${S.cls?`&cls=${S.cls}`:""}`;
+    let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.type?`&type=${encodeURIComponent(S.type)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}${S.msg?`&msg=${encodeURIComponent(S.msg)}`:""}${S.cls?`&cls=${S.cls}`:""}${S.resp?`&resp=${encodeURIComponent(S.resp)}`:""}`;
     if(S.find) q+=`&find=${encodeURIComponent(S.find)}`; for(const [k] of ID_FIELDS) if(S.ids[k]) q+=`&${k}=${encodeURIComponent(S.ids[k])}`; return q; }
 
   async function render(host,fx){
@@ -153,7 +155,7 @@
       <div id="feProv" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feChan" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feType" class="fe-chips" style="margin-bottom:4px"></div>
-      <div id="feMsgRow" class="fe-msgrow"><span class="fe-dim">Error message:</span><select id="feMsg" class="fe-in fe-msg" title="Every distinct error message in the selected period, with its count — pick one to filter the board"><option value="">Loading…</option></select><button type="button" id="feMsgOff" class="fe-btn" hidden>✕ clear</button></div>
+      <div id="feMsgRow" class="fe-msgrow"><span class="fe-dim">Error message:</span><select id="feMsg" class="fe-in fe-msg" title="Every distinct error message in the selected period, with its count — pick one to filter the board"><option value="">Loading…</option></select><button type="button" id="feMsgOff" class="fe-btn" hidden>✕ clear</button><input id="feResp" class="fe-in fe-resp" placeholder="or response contains… e.g. Accept Sync Request error" value="${esc(S.resp)}" autocomplete="off" spellcheck="false" title="Free text searched in the failing call's response body (and the message) — Enter to apply"></div>
       <div id="feTiles" class="fe-tiles"><div class="fe-tile" style="cursor:default;color:var(--muted)">${window.salamLoader?window.salamLoader("Reading error events…"):"Loading…"}</div></div>
       <div class="fe-tablecard"><div id="feRows"></div><div id="feMore" style="padding:10px;text-align:center"></div></div>
       <div id="feStamp" class="rl" style="font-size:11px;color:var(--muted);margin-top:8px"></div></div>`;
@@ -164,7 +166,8 @@
     let deb=null; const go=()=>{ clearTimeout(deb); read(); S.category=""; load(host,fx,true); };
     host.querySelectorAll("input[id^=feId-],#feFind").forEach(i=>{ i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } }; i.oninput=()=>{ clearTimeout(deb); deb=setTimeout(go,450); }; });
     host.querySelector("#feXlsx").onclick=()=>exportBoard(host,fx,"xlsx"); host.querySelector("#fePdf").onclick=()=>exportBoard(host,fx,"pdf");
-    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",type:"",openOnly:true,team:"",prio:"",provider:"",msg:"",cls:"",category:"",tech:"all",find:"",ids:{},expanded:new Set()}); render(host,fx); };
+    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",type:"",openOnly:true,team:"",prio:"",provider:"",msg:"",resp:"",cls:"",category:"",tech:"all",find:"",ids:{},expanded:new Set()}); render(host,fx); };
+    const rp=host.querySelector("#feResp"); if(rp){ let rdeb=null; const goR=()=>{ S.resp=rp.value.trim(); S.category=""; load(host,fx,true); }; rp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(rdeb); goR(); } }; rp.oninput=()=>{ clearTimeout(rdeb); rdeb=setTimeout(goR,600); }; }
     host.querySelector("#feFind").focus();
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }

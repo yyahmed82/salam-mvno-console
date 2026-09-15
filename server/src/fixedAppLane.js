@@ -135,7 +135,7 @@ async function impact(q = {}) {
   /* the error board (read models) — message text only */
   const pools = [db.ops, db.opsBeta].filter(Boolean);
   const EP = [from.toISOString(), to.toISOString()]; const econds = [];
-  for (const w of kws) { EP.push('%' + w + '%'); econds.push(`coalesce(e.message,'') ILIKE $${EP.length}`); }
+  for (const w of kws) { EP.push('%' + w + '%'); econds.push(`(coalesce(e.message,'') ILIKE $${EP.length} OR coalesce(e.res_body,'') ILIKE $${EP.length})`); }
   const ewhere = `e.occurred_at >= $1 AND e.occurred_at < $2` + (econds.length ? ` AND (${econds.join(' AND ')}${provider ? ` OR e.category ILIKE '${provider === 'yakeen' ? 'YAKEEN' : provider.toUpperCase()}%'` : ''})` : '');
   const board = { n: 0, first: null, last: null, last15: 0, prev60: 0, customers: 0, technical: 0, business: 0, buckets: [] };
   for (const pool of pools) {
