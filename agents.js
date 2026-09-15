@@ -129,7 +129,9 @@
           <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><button class="ag-btn sm o" id="agProbe">Probe</button><button class="ag-btn sm o" id="agTest">Test call</button><button class="ag-btn sm o" id="agSelf" title="Four probes of growing size — tells you whether an empty answer is the context window, the JSON grammar, or a model that is not running">Self-test</button><button class="ag-btn sm o" id="agCfgT">Configure</button></div><div id="agSelfOut" style="margin-top:8px"></div></div></div></div>
         <div id="agCfg" hidden class="ag-detail"></div></div>
       <div class="ag-grid">
-        ${agent("Agent 1 · Log intelligence",A.log||{alive:false,d1:{runs:0,ok:0}},`${n(S.total)} signatures · <b>${n(S.new24)}</b> new 24 h · ${n(S.events24)} events 24 h · ${n(S.tech24)} technical`)}
+        ${agent("Agent 1 · Log intelligence",A.log||{alive:false,d1:{runs:0,ok:0}},`${n(S.total)} signatures · <b>${n(S.new24)}</b> new 24 h · ${n(S.events24)} events 24 h · ${n(S.tech24)} technical`
+          + `<div class="ag-sub" style="margin-top:4px">Mobile <b>${n(S.mvno24)}</b> · Fixed <b>${n(S.fixed24)}</b> events in 24 h`
+          + (Number(S.fixed_signatures)?"":` — <span style="color:var(--amber,#d97706)">no Fixed signature yet: check that OPS_DATABASE_URL / OPS_BETA_DATABASE_URL are set for <code>salam-agent-log</code></span>`) + `</div>`)}
         <div class="ag-card"><h3>To review</h3><div class="ag-big">${n(S.to_review)}</div><div class="ag-sub">assessed signatures awaiting a human decision · ${n(S.unassessed)} not yet assessed</div></div>
         ${agent("Agent 2 · Incident operations",A.incident||{alive:false,d1:{runs:0,ok:0}},`${n(T.d1)} triaged 24 h · ${n(T.dup24)} duplicates · ${n(T.flap24)} flapping · mode <b>${esc((OV.policy||{}).mode||"advise")}</b>`)}
         <div class="ag-card"><h3>Triage quality</h3><div class="ag-big">${T.helpful+T.unhelpful?Math.round(100*T.helpful/(T.helpful+T.unhelpful))+"%":"—"}</div><div class="ag-sub">rated helpful (${n(T.helpful)} 👍 · ${n(T.unhelpful)} 👎) · avg confidence ${pct(T.avg_conf)} · ${n(T.applied)} policy actions · ${n(T.avg_ms)} ms avg</div></div>

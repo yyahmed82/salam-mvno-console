@@ -38,6 +38,8 @@
   const wb=menu.querySelector("[data-workbench]"); if(wb) wb.addEventListener("click", ()=>{ if(window.openWorkbench) window.openWorkbench(); closeMenu(); });
   const ag=menu.querySelector("[data-agents]"); if(ag) ag.addEventListener("click", ()=>{ if(window.openAgents){ window.openAgents(); if(location.hash!=="#agents") location.hash="#agents"; } closeMenu(); });
   const sla=menu.querySelector("[data-sla]"); if(sla) sla.addEventListener("click", ()=>{ if(window.openSla) window.openSla(); closeMenu(); });
+  const vendorContracts=menu.querySelector("[data-vendor-contracts]"); if(vendorContracts) vendorContracts.addEventListener("click", ()=>{ if(window.openVendorContracts){ window.openVendorContracts(); if(location.hash!=="#vendor-contracts") location.hash="#vendor-contracts"; } closeMenu(); });
+  const sloSettings=menu.querySelector("[data-slo-settings]"); if(sloSettings) sloSettings.addEventListener("click", ()=>{ if(window.openSloSettings){ window.openSloSettings(); if(location.hash!=="#slo-settings") location.hash="#slo-settings"; } closeMenu(); });
   document.addEventListener("click", e=>{ if(!e.target.closest(".setwrap")) closeMenu(); });
   document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeMenu(); });
   // leaving settings via a nav tab clears the gear highlight

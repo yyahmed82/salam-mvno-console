@@ -753,6 +753,40 @@
   .slo-spark{margin:8px 0 2px}
   .slo-budget{height:7px;border-radius:6px;background:var(--bg);border:1px solid var(--line);overflow:hidden;margin:3px 0}
   .slo-budget span{display:block;height:100%}
+  .slo-page-head,.slo-admin-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .slo-kicker{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--green);font-weight:900;margin-bottom:4px}
+  .slo-admin-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .slo-admin-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+  .slo-admin-summary>div{border:1px solid var(--line);background:var(--card2);border-radius:10px;padding:12px 14px}
+  .slo-admin-summary b{display:block;font-size:24px;line-height:1;color:var(--ink)}
+  .slo-admin-summary span{display:block;font-size:11px;color:var(--muted);margin-top:4px}
+  .slo-admin-tabs{display:flex;gap:8px;margin:8px 0 14px}
+  .slo-admin-tabs button{font:inherit;font-size:12px;font-weight:800;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:7px 14px;cursor:pointer}
+  .slo-admin-tabs button.on{border-color:var(--green);background:var(--green-bg);color:var(--green)}
+  .slo-admin-shell{display:grid;grid-template-columns:250px 1fr;gap:14px;align-items:start}
+  .slo-group-nav{position:sticky;top:calc(var(--hdr) + 12px);border:1px solid var(--line);border-radius:12px;background:var(--card2);padding:12px}
+  .slo-group-nav button{width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:12px;text-align:left;border-radius:8px;padding:8px;cursor:pointer}
+  .slo-group-nav button:hover{background:var(--green-bg)}
+  .slo-group-nav b{font-size:10px;color:var(--muted);font-weight:800}
+  .slo-cfg-group{margin-bottom:16px;scroll-margin-top:calc(var(--hdr) + 16px)}
+  .slo-cfg-gh{display:flex;align-items:center;justify-content:space-between;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:800;margin:0 0 8px}
+  .slo-cfg-gh b{letter-spacing:0;background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
+  .slo-def-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px}
+  .slo-def-card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:13px;box-shadow:0 8px 24px rgba(2,6,23,.04)}
+  .slo-def-head{display:grid;grid-template-columns:42px 1fr;gap:10px;align-items:start;margin-bottom:12px}
+  .slo-title-input{font-weight:800;font-size:14px}
+  .slo-switch{position:relative;display:inline-flex;width:36px;height:22px;margin-top:3px}.slo-switch input{position:absolute;opacity:0}
+  .slo-switch span{width:36px;height:22px;border-radius:999px;background:var(--line);position:relative;cursor:pointer;transition:.15s}
+  .slo-switch span::after{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(2,6,23,.25);transition:.15s}
+  .slo-switch input:checked+span{background:var(--green)}.slo-switch input:checked+span::after{transform:translateX(14px)}
+  .slo-form-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+  .slo-form-grid label,.slo-msgs label{display:flex;flex-direction:column;gap:4px;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}
+  .slo-def-card input,.slo-def-card select,.slo-def-card textarea{font:inherit;font-size:12px;letter-spacing:0;text-transform:none;font-weight:600;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);box-sizing:border-box;width:100%}
+  .slo-def-card textarea{resize:vertical;min-height:54px;line-height:1.35}
+  .slo-stack{display:flex;flex-direction:column;gap:5px}
+  .slo-msgs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+  @media(max-width:980px){.slo-admin-shell{grid-template-columns:1fr}.slo-group-nav{position:static}.slo-admin-summary{grid-template-columns:repeat(2,1fr)}.slo-msgs{grid-template-columns:1fr}.slo-form-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:620px){.slo-admin-summary{grid-template-columns:1fr}.slo-def-grid{grid-template-columns:1fr}.slo-form-grid{grid-template-columns:1fr}}
   .vend-grp{margin-bottom:16px}
   .vend-grp h5{font-size:9.5px;letter-spacing:1px;color:var(--muted);font-weight:800;margin:0 0 6px}
   .vend-row{display:grid;grid-template-columns:150px 1fr 56px 60px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px}
@@ -1222,6 +1256,8 @@
     .barrow{grid-template-columns:120px 1fr 70px}
     .sb-ev{grid-template-columns:140px 110px 1fr}
     .vend-row{grid-template-columns:120px 1fr 52px 56px}
+    .slo-admin-head{flex-direction:column}
+    .slo-admin-actions{justify-content:flex-start}
   }
   /* ---------- drawer mode (≤1140) : nav leaves the header (the full nav needs ~1125px) ---------- */
   @media (max-width:1140px){
@@ -1476,7 +1512,9 @@
       <button class="hm-tour" data-demo="1" id="demoMenuItem"><span class="hm-ic">▶</span><span>Demo mode<small>Record once · replay instantly</small></span></button>
       <button class="hm-tour" data-tickets="1" id="ticketsMenuItem" style="display:none"><span class="hm-ic">▦</span><span data-i18n-html="menu.tickets">Tickets &amp; feedback<small>User suggestions &amp; issues · status board</small></span></button>
       <button class="hm-tour" data-audit="1" id="auditMenuItem" style="display:none"><span class="hm-ic">◈</span><span data-i18n-html="menu.audit">Audit log<small>Who did what · sign-ins &amp; trace access</small></span></button>
-      <button class="hm-tour" data-sla="1" id="slaMenuItem" style="display:none"><span class="hm-ic">◎</span><span>SLA<small>Targets &amp; vendor health</small></span></button>
+      <button class="hm-tour" data-sla="1" id="slaMenuItem" style="display:none"><span class="hm-ic">◎</span><span>SLA<small>Attainment &amp; vendor health</small></span></button>
+      <button class="hm-tour" data-vendor-contracts="1" id="vendorContractsMenuItem" style="display:none"><span class="hm-ic">◇</span><span>Vendors &amp; contracts<small>SLAs · SLOs · assignments</small></span></button>
+      <button class="hm-tour" data-slo-settings="1" id="sloSettingsMenuItem" style="display:none"><span class="hm-ic">◌</span><span>SLO definitions<small>Fixed / MVNO targets &amp; messages</small></span></button>
     </div>
   </div>
   <div class="helpwrap">
@@ -1807,6 +1845,8 @@
   </section>
 
   <section id="view-slo" class="view"></section>
+  <section id="view-slo-settings" class="view"></section>
+  <section id="view-vendor-contracts" class="view"></section>
 
   <section id="view-sub360" class="view"></section>
   <section id="view-apigw" class="view">
@@ -1872,7 +1912,7 @@
 <script src="uinav.js?v=20260910c"></script>
 <script src="latencycfg.js?v=20260910c"></script>
 <script src="alertsview.js?v=20260911i"></script>
-<script src="ops.js?v=20260912c"></script>
+<script src="ops.js?v=20260914a"></script>
 <script src="opsbar.js?v=20260910c"></script>
 <script src="analytics.js?v=20260912d"></script>
 <script src="topo2data.js?v=20260910c"></script>
@@ -1885,15 +1925,15 @@
 <script src="growth.js?v=20260910c"></script>
 <script src="dmsjourney.js?v=20260910c"></script>
 <script src="dms.js?v=20260910c"></script>
-<script src="landing.js?v=20260912c"></script>
-<script src="fixed.js?v=20260912e"></script>
+<script src="landing.js?v=20260914a"></script>
+<script src="fixed.js?v=20260914b"></script>
 <script src="fixed-maps-ui.js?v=20260910c"></script>
 <script src="fixed-leaflet.js?v=20260910c"></script>
 <script src="fixed-map.js?v=20260910c"></script>
 <script src="fixed-qr.js?v=20260910c"></script>
 <script src="fixed-channel.js?v=20260910c"></script>
-<script src="fixed-dash.js?v=20260910c"></script>
-<script src="fixed-errors.js?v=20260910c"></script>
+<script src="fixed-dash.js?v=20260914a"></script>
+<script src="fixed-errors.js?v=20260914a"></script>
 <script src="fixed-alerts.js?v=20260911s"></script>
 <script src="fixed-playbook.js?v=20260910c"></script>
 <script src="fixed-diagrams.js?v=20260911x"></script>
@@ -1903,7 +1943,8 @@
 <script src="salamdocs.js?v=20260910c"></script>
 <script src="acksla.js?v=20260910c"></script>
 <script src="usersmgmt.js?v=20260910c"></script>
-<script src="slo.js?v=20260910c"></script>
+<script src="slo.js?v=20260914a"></script>
+<script src="vendor-contracts.js?v=20260914f"></script>
 <script src="audit.js?v=20260912a"></script>
 <script src="notifycfg.js?v=20260910c"></script>
 <script src="notifyclone.js?v=20260910c"></script>
@@ -1911,17 +1952,17 @@
 <script src="sub360.js?v=20260910c"></script>
 <script src="rolesmatrix.js?v=20260910c"></script>
 <script src="i18n.js?v=20260910c"></script>
-<script src="settingsmenu.js?v=20260910c"></script>
+<script src="settingsmenu.js?v=20260914a"></script>
 <script src="tour.js?v=20260910c"></script>
 <script src="helpmenu.js?v=20260910c"></script>
 <script src="assist.js?v=20260911a"></script>
 <script src="assistcfg.js?v=20260910c"></script>
 <script src="assistclone.js?v=20260910c"></script>
-<script src="agents.js?v=20260911f"></script>
+<script src="agents.js?v=20260915a"></script>
 <script src="navcfg.js?v=20260910c"></script>
 <script src="tickets.js?v=20260911p"></script>
 <script src="theme.js?v=20260911v"></script>
-<script src="router.js?v=20260912c"></script>
+<script src="router.js?v=20260914b"></script>
 <script src="live.js?v=20260910c"></script>
 <script src="oncall.js?v=20260910c"></script>
 </body>

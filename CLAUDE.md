@@ -26,7 +26,7 @@ The plan is `docs/UNIFIED-CONSOLE-CONVERGENCE-PLAN.md` — read §0, §2.1 and t
 `tools/local/tunnel-152.sh` (keep open) → `docker compose -f docker-compose.unified.yml up -d` →
 `tools/local/env-from-152.sh` (once) → `tools/local/dev.sh` → http://localhost:4700/ · check `/api/version`, `/api/fixed/ping`.
 
-**Deploy.** `DEPLOY_TARGET=unified bash deploy152/deploy.sh` (→ /apps/unified, PM2 `salam-unified`, :4700).
+**Deploy.** `DEPLOY_TARGET=unified bash deploy152/deploy.sh` (→ /apps/unified, PM2 `salam-unified`, :4701).
 `DEPLOY_TARGET=digital` deploys the frozen line — only from branch `release/digital-console`.
 
 **Versioning.** Bump `VERSION` + `server/package.json`, add a `CHANGELOG.md` entry, commit as `vX.Y.Z: …` (VERSIONING.md).

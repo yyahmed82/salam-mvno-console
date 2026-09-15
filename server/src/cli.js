@@ -6,6 +6,8 @@
  *   bounds                 print source data time bounds
  *   testmail <rule-key> <email>   simulate ONE rule firing (Mobile or Fixed) and mail the digest + PDF
  *                          to that address only — the way to verify the alert mail on a server
+ *   vendor-sla-mail-test --to <email> [--contract <id>] [--matrix] [--all-items]
+ *                          send TEST-ONLY vendor contract SLA escalation mail samples to that address only
  */
 const db = require('./db');
 const { init } = require('./init');
@@ -73,8 +75,10 @@ async function main() {
       const out = await notify.sendAlertDigest(when, evals, { to, segment: require('./segment').segOf(ev) });   // only the side the rule belongs to
       console.log(JSON.stringify({ sent: out.sent, dev: out.dev, error: out.error, reason: out.reason, subject: out.subject,
         recipients: out.recipients, attachments: out.attachments, reportNotes: out.reportNotes, segment: ev.segment }, null, 1));
+    } else if (cmd === 'vendor-sla-mail-test' || cmd === 'vendor-contract-mail-test') {
+      await require('./vendorContractMail').cli(args);
     } else {
-      console.log('commands: init [--reset] | admin <email> | index | sync [iso] | simulate [stepH] [steps] | bounds | healthcheck [--always|--print] | synchealth [email] | testmail <rule-key> <email>');
+      console.log('commands: init [--reset] | admin <email> | index | sync [iso] | simulate [stepH] [steps] | bounds | healthcheck [--always|--print] | synchealth [email] | testmail <rule-key> <email> | vendor-sla-mail-test --to <email> [--contract <id>] [--matrix] [--all-items] [--dry-run]');
     }
   } finally {
     await db.source.end().catch(() => {});

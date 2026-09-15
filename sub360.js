@@ -276,7 +276,7 @@
       }catch(e){ out().innerHTML=`<div class="albanner">${esc(e.message)}</div>`; }
     });
     const tlB=box.querySelector('#sbLogTl');
-    if(tlB) tlB.addEventListener('click', ()=>{ if(window.opsOpenTimeline) window.opsOpenTimeline(curKey, null, null); });
+    if(tlB) tlB.addEventListener('click', ()=>{ if(window.opsOpenTimeline) window.opsOpenTimeline(curKey, null, null, null, { lineRef:_lvLine }); });
   }
 
   /* ---- LIVE CUSTOMER VIEW (2 Sep 2026) --------------------------------------------------------
@@ -551,7 +551,29 @@
         const acc={}; for(const a of (d.access||[])) (acc[a.ecid]=acc[a.ecid]||[]).push(a);
         const pipe=d.pipeline||[], qs=d.access_by_msisdn||[];
         const win=`${String((d.archive_window||{}).lo||'').slice(0,10)} → ${String((d.archive_window||{}).hi||'').slice(0,10)}`;
-        if(!pipe.length&&!qs.length) return `<div class="rl" style="color:var(--muted)">No OSB records for this customer in the archive window (<b>${esc(win)}</b>). The BSS bus only logs payload records for flows that carry the MSISDN — routine balance reads correlate via the timeline instead.</div>`;
+        const sm=d.summary||{};
+        const comps=(sm.components||[]).slice(0,5).map(c=>`${esc(c.component)} ${Number(c.records||0).toLocaleString()}${c.faults?` / ✖${Number(c.faults).toLocaleString()}`:''}`).join(' · ');
+        const stories=(sm.journey_stories||[]).slice(0,6);
+        const storyLine=stories.map(s=>`${s.label} ${Number(s.records||0).toLocaleString()}${s.faults?` faults ${Number(s.faults).toLocaleString()}`:''}`).join(' · ');
+        const dm={}; qs.forEach(a=>{ const k=a.uri||'unknown'; const x=dm[k]||(dm[k]={uri:k,n:0,max_ms:0}); x.n++; x.max_ms=Math.max(x.max_ms,Number(a.ms||0)); });
+        const directLine=Object.values(dm).sort((a,b)=>b.n-a.n).slice(0,3).map(x=>`${x.uri.split('/').filter(Boolean).slice(-1)[0]||x.uri} ${x.n}x${x.max_ms?`, max ${x.max_ms}ms`:''}`).join(' · ');
+        const corr=sm.correlation||{};
+        const seen=!!(pipe.length||qs.length);
+        const matchLabel=({ 'payload-identifier':'payload identifier match', 'access-query-msisdn':'direct access-log MSISDN match', 'ecid-from-payload':'ECID joined from payload', none:'no customer match' })[sm.match||corr.bss_customer_match] || (sm.match||corr.bss_customer_match||'customer match');
+        const storyChips=stories.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:7px 0">${stories.map(s=>`<span class="pill" title="${esc(s.value||'')}" style="padding:2px 8px;font-size:10.5px;border-left-color:${s.faults?'#dc2626':'#2563eb'}">${esc(s.label)} <b>${Number(s.records||0).toLocaleString()}</b>${s.faults?` · ✖${Number(s.faults).toLocaleString()}`:''}</span>`).join('')}</div>`:'';
+        const verdict=`<div style="border:1px solid ${seen?'#bbf7d0':'var(--line)'};border-left:3px solid ${seen?'#16a34a':'#94a3b8'};border-radius:8px;padding:8px 10px;margin-bottom:8px;background:${seen?'#f0fdf4':'var(--card)'}">
+          <div style="font-weight:800;color:var(--ink)">${seen?'BSS/OSB saw this subscriber in the archive.':'No subscriber-specific OSB evidence in this archive window.'}</div>
+          <div class="rl" style="margin-top:3px;color:var(--ink-soft)">Evidence: ${esc(matchLabel)}${storyLine?` · stories: ${esc(storyLine)}`:''}${directLine?` · top direct reads: ${esc(directLine)}`:''}</div>
+          <div class="rl" style="margin-top:3px;color:var(--muted)">Digital/APIGW to OSB exact trace is not available in the current OSB archive; use selected subscriber + timestamp as probable correlation. OSB payload/access joins are exact only when ECID is present.</div>
+        </div>`;
+        const sbar=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+          <span class="pill" style="padding:2px 8px;font-size:10.5px;border-left-color:#2563eb">pipeline <b>${Number(sm.pipeline_records||0).toLocaleString()}</b></span>
+          <span class="pill" style="padding:2px 8px;font-size:10.5px;border-left-color:#2563eb">backend hops <b>${Number(sm.backend_hops||0).toLocaleString()}</b></span>
+          <span class="pill" style="padding:2px 8px;font-size:10.5px;border-left-color:#2563eb">direct hits <b>${Number(sm.direct_backend_hits||0).toLocaleString()}</b></span>
+          <span class="pill" style="padding:2px 8px;font-size:10.5px;border-left-color:${sm.faults?'#dc2626':'#16a34a'}">faults <b>${Number(sm.faults||0).toLocaleString()}</b></span>
+          <span class="rl" style="color:var(--muted);font-size:10.5px">${esc(comps||'no component hits')}</span>
+        </div>`;
+        if(!pipe.length&&!qs.length) return verdict+sbar+`<div class="rl" style="color:var(--muted)">Archive window: <b>${esc(win)}</b>. Absence here means either the selected journey is outside the imported window, the OSB payload did not carry this identifier, or the call did not reach OSB. It is not enough alone to say BSS was never called.</div>`;
         const rows=pipe.slice(0,25).map(p=>{
           const hops=(p.ecid&&acc[p.ecid])||[];
           return `<tr><td class="rl mono" style="white-space:nowrap">${esc(KSA(p.ts))}</td>
@@ -562,10 +584,13 @@
         const qsRows=qs.slice(0,10).map(a=>`<tr><td class="rl mono" style="white-space:nowrap">${esc(KSA(a.ts))}</td>
           <td colspan="2" class="mono" style="font-size:10.5px">${esc(a.method)} ${esc(a.uri)}</td>
           <td class="rl">${a.ms}ms · HTTP ${esc(String(a.status))}</td><td>—</td></tr>`).join('');
-        return `<div style="overflow-x:auto;max-height:340px;overflow-y:auto;border:1px solid var(--line,#e2e8f0);border-radius:8px"><table class="sb-tbl" style="min-width:760px;font-size:11.5px"><thead><tr>
-          <th style="white-space:nowrap">When (KSA)</th><th>Pipeline / flow</th><th>Result</th><th>Backend hops (via ECID)</th><th>Detail</th></tr></thead>
-          <tbody>${rows}${qsRows}</tbody></table></div>
-          <div class="rl" style="color:var(--muted);margin-top:4px">archive window ${esc(win)} · msisdn + ECID correlation · day-1-lag live once the OSB SFTP feed is daily</div>`;
+        return verdict+storyChips+sbar+`<details open style="border:1px solid var(--line,#e2e8f0);border-radius:8px;padding:6px 8px">
+          <summary class="rl" style="cursor:pointer;font-weight:800;color:var(--ink)">Raw OSB evidence rows</summary>
+          <div style="overflow-x:auto;max-height:340px;overflow-y:auto;margin-top:6px"><table class="sb-tbl" style="min-width:760px;font-size:11.5px"><thead><tr>
+            <th style="white-space:nowrap">When (KSA)</th><th>Pipeline / flow</th><th>Result</th><th>OSB same-ECID rows</th><th>Detail</th></tr></thead>
+            <tbody>${rows}${qsRows}</tbody></table></div>
+        </details>
+          <div class="rl" style="color:var(--muted);margin-top:4px">archive window ${esc(win)} · customer match: ${esc(matchLabel)} · day-1 lag once the OSB SFTP feed is daily</div>`;
       }
       if(k==='vas'){
         const Y=v=>v===true||v==='t'||v==='true'||v===1||v==='1'||String(v).toLowerCase()==='yes';

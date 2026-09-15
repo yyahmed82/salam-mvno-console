@@ -21,6 +21,23 @@
   const tile=(label,value,sub,href,accent)=>`<a href="${href}" class="ld-tile${accent?" ld-"+accent:""}"><div class="ld-v">${value}</div><div class="ld-l">${esc(label)}</div>${sub?`<div class="ld-s">${sub}</div>`:""}</a>`;
   const rate=(r,t)=>{ if(r==null) return "—"; const c=r>=(t||.95)?"#16a34a":r>=(t||.95)-.02?"#d97706":"#dc2626"; return `<span style="color:${c}">${pct(r)}</span>`; };
   const bucket=(arr,n)=>{ if(!arr||!arr.length) return []; const size=Math.max(1,Math.ceil(arr.length/n)); const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size).reduce((a,b)=>a+b,0)); return out; };
+  const fixedLink=(tab,params)=>{ const p=new URLSearchParams(); if(tab&&tab!=="overview") p.set("tab",tab); Object.entries(params||{}).forEach(([k,v])=>{ if(v!=null&&v!=="") p.set(k,String(v)); }); const q=p.toString(); return "#fixed"+(q?"?"+q:""); };
+  const fixedMap=params=>fixedLink("map",params);
+  const fixedErr=(category,range)=>fixedLink("errors",{range:range||"24h",category:category||"",openOnly:"1"});
+  function goHash(h){
+    const clean=String(h||"").replace(/^#/,""); if(!clean) return;
+    if(location.hash==="#"+clean){
+      if(clean.startsWith("fixed")&&window.openFixed){ const qs=(clean.split("?")[1]||""); const tab=(new URLSearchParams(qs).get("tab"))||"overview"; window.openFixed(tab); }
+      else window.dispatchEvent(new HashChangeEvent("hashchange"));
+      if(window.navdropSync) setTimeout(window.navdropSync,0);
+      return;
+    }
+    if(window.setConsoleHash) window.setConsoleHash(clean); else location.hash="#"+clean;
+  }
+  function wireHomeLinks(){
+    if(window.__landingCtaWired) return; window.__landingCtaWired=1;
+    document.addEventListener("click",e=>{ const a=e.target.closest("#view-landing a[href^='#']"); if(!a) return; e.preventDefault(); goHash(a.getAttribute("href")); });
+  }
 
   function shell(){
     const host=$("#view-landing"); if(!host) return;
@@ -35,15 +52,15 @@
       <div class="ld-sec"><h3>Growth <span>7 days vs the 7 before · 30-day trend</span></h3><div id="ldGrowth" class="ld-growth"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-cols">
         <section class="ld-col" id="ldMobile"><div class="ld-colh"><span class="ld-ic">📱</span><div><h2>Mobile</h2><div class="ld-colsub">MVNO · selfcare app, DMS dealers, payments, activation · last 24 h</div></div><a href="#dashboard" class="ld-open">Dashboard →</a></div><div class="ld-body"><div class="ld-loading">Loading…</div></div></section>
-        <section class="ld-col" id="ldFixed"><div class="ld-colh"><span class="ld-ic">🏠</span><div><h2>Fixed</h2><div class="ld-colsub">FTTH · 5G home · SDA dealers · e-purchase / QR · Salam Home app · last 24 h</div></div><a href="#fixed" class="ld-open">Overview →</a></div><div class="ld-body"><div class="ld-loading">Loading…</div></div></section>
+        <section class="ld-col" id="ldFixed"><div class="ld-colh"><span class="ld-ic">🏠</span><div><h2>Fixed</h2><div class="ld-colsub">FTTH · 5G home · SDA dealers · e-purchase / QR · Salam Home app · last 24 h</div></div><a href="#fixed?range=24h" class="ld-open">Overview →</a></div><div class="ld-body"><div class="ld-loading">Loading…</div></div></section>
       </div>
       <div class="ld-sec" id="ldMineSec"><h3>My incidents <span>what I acknowledged or was handed — age, time in my hands, SLA</span></h3><div id="ldMine" class="ld-mine"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-sec"><h3>Needs attention <span>open incidents and open Fixed error categories</span></h3><div id="ldAttention" class="ld-att"><div class="ld-loading">Loading…</div></div></div>
       <div class="ld-quick">
-        <a href="#exec" class="ld-q">📈 Executive Dashboard</a><a href="#subscriber" class="ld-q">◉ Customer 360</a><a href="#alerts" class="ld-q" data-biz="mobile">🔔 Alerts</a><a href="#troubleshoot" class="ld-q" data-biz="mobile">⚡ Troubleshoot</a><a href="#fixed?tab=map" class="ld-q" data-biz="fixed">🗺 SDA map</a><a href="#fixed?tab=errors" class="ld-q" data-biz="fixed">⚠ Fixed errors</a><a href="#fixed?tab=alerts" class="ld-q" data-biz="fixed">🔔 Fixed alerts</a><a href="#analytics" class="ld-q" data-biz="mobile">📈 Analytics</a>
+        <a href="#exec" class="ld-q">📈 Executive Dashboard</a><a href="#subscriber" class="ld-q">◉ Customer 360</a><a href="#alerts" class="ld-q" data-biz="mobile">🔔 Alerts</a><a href="#troubleshoot" class="ld-q" data-biz="mobile">⚡ Troubleshoot</a><a href="#fixed?tab=map&range=24h" class="ld-q" data-biz="fixed">🗺 SDA map</a><a href="#fixed?tab=errors&range=24h&openOnly=1" class="ld-q" data-biz="fixed">⚠ Fixed errors</a><a href="#fixed?tab=alerts" class="ld-q" data-biz="fixed">🔔 Fixed alerts</a><a href="#analytics" class="ld-q" data-biz="mobile">📈 Analytics</a>
       </div>
     </div>`;
-    ensureCss(); load();
+    ensureCss(); wireHomeLinks(); load();
   }
 
   async function load(){
@@ -81,9 +98,9 @@
     if(m24){ const t=(m24.targets||{}); S.push(["Payments", m24.payRate==null?"na":m24.payRate>=(t.pay||.95)?"ok":m24.payRate>=(t.pay||.95)-.02?"warn":"bad", `success ${pct(m24.payRate)} · ${num(m24.paidFail)} failed`, "#troubleshoot?cat=payment"]);
       S.push(["Activation", m24.actRate==null?"na":m24.actRate>=(t.act||.95)?"ok":"warn", `BSS ${pct(m24.actRate)}`, "#troubleshoot?cat=activation"]); }
     if(f24){ const k=f24.kpis||{}, naf=(f24.integrations||{}).nafath||{}, fr=f24.freshness||{}; const openErr=(f24.errors||[]).reduce((a,e)=>a+Number(e.open||0),0);
-      S.push(["Fixed journeys", fr.stale?"warn":openErr>2000?"warn":"ok", `${num(k.attempts)} attempts · ${k.conversion||0}% completed`, "#fixed"]);
-      S.push(["Identity (Nafath)", naf.total?(naf.failRate>25?"bad":naf.failRate>12?"warn":"ok"):"na", naf.total?`fail ${naf.failRate}% on ${num(naf.total)} checks`:"no 5G checks", "#fixed?tab=dash"]);
-      S.push(["Fixed data", fr.stale?"bad":"ok", fr.stale?`watcher ${fr.lag_min} min behind`:`live · ${fr.lag_min==null?"—":fr.lag_min+" min"}`, "#fixed"]); }
+      S.push(["Fixed journeys", fr.stale?"warn":openErr>2000?"warn":"ok", `${num(k.attempts)} attempts · ${k.conversion||0}% completed`, fixedLink("overview",{range:"24h"})]);
+      S.push(["Identity (Nafath)", naf.total?(naf.failRate>25?"bad":naf.failRate>12?"warn":"ok"):"na", naf.total?`fail ${naf.failRate}% on ${num(naf.total)} checks`:"no 5G checks", fixedMap({range:"24h",plans:"fiveGWhiteLabel,fiveGFWA",nafath:"not_completed"})]);
+      S.push(["Fixed data", fr.stale?"bad":"ok", fr.stale?`watcher ${fr.lag_min} min behind`:`live · ${fr.lag_min==null?"—":fr.lag_min+" min"}`, fixedLink("overview",{range:"24h"})]); }
     S.push(["Incidents", p1?"bad":open.length?"warn":"ok", `${open.length} open${p1?` · ${p1} P1`:""}`, "#alerts"]);
     const col={ok:"#16a34a",warn:"#d97706",bad:"#dc2626",na:"#94a3b8"};
     $("#ldStatus").innerHTML=S.map(([l,s,t,h])=>`<a href="${h}" class="ld-pill" data-tip="${esc(t)}" style="--c:${col[s]}"><span class="ld-pd"></span>${esc(l)}</a>`).join("");
@@ -99,10 +116,10 @@
     // Fixed — today's open error categories first (what the operator must act on), then the weekly trends
     const fe=((f24&&f24.errors)||[]).filter(e=>e.open>0).sort((a,b)=>b.open-a.open);
     if(fe.length){ const tot=fe.reduce((a,e)=>a+Number(e.open||0),0); const top=fe[0];
-      F.push({sev:top.open>1000?"P1":top.open>100?"P2":"P3", text:`${num(tot)} open Fixed errors in 24 h across ${fe.length} categories — top ${top.category} ${num(top.open)}${fe[1]?`, then ${fe[1].category} ${num(fe[1].open)}`:""}`, href:"#fixed?tab=errors", tag:"Fixed"}); }
-    if(f7&&f7p){ const c=f7.kpis||{}, p=f7p.kpis||{}; if(p.completed){ const d=(c.completed-p.completed)/p.completed; F.push({sev:Math.abs(d)>.15?"P2":"info", text:`Fixed completed orders ${d>=0?"up":"down"} ${Math.abs(d*100).toFixed(0)}% week-on-week (${num(c.completed)} vs ${num(p.completed)}) · conversion ${c.conversion}% vs ${p.conversion}%`, href:"#fixed?tab=dash", tag:"Fixed"}); }
-      const naf=(f7.integrations||{}).nafath||{}; if(naf.total&&naf.failRate>12) F.push({sev:naf.failRate>25?"P2":"P3", text:`Nafath failing on ${naf.failRate}% of ${num(naf.total)} 5G identity checks (7 d)`, href:"#fixed?tab=dash", tag:"Fixed"}); }
-    else if(f24){ const k=f24.kpis||{}; if(k.attempts) F.push({sev:"info", text:`Fixed today: ${num(k.attempts)} attempts, ${num(k.completed)} completed (${k.conversion}%)`, href:"#fixed", tag:"Fixed"}); }
+      F.push({sev:top.open>1000?"P1":top.open>100?"P2":"P3", text:`${num(tot)} open Fixed errors in 24 h across ${fe.length} categories — top ${top.category} ${num(top.open)}${fe[1]?`, then ${fe[1].category} ${num(fe[1].open)}`:""}`, href:fixedErr(top.category,"24h"), tag:"Fixed"}); }
+    if(f7&&f7p){ const c=f7.kpis||{}, p=f7p.kpis||{}; if(p.completed){ const d=(c.completed-p.completed)/p.completed; F.push({sev:Math.abs(d)>.15?"P2":"info", text:`Fixed completed orders ${d>=0?"up":"down"} ${Math.abs(d*100).toFixed(0)}% week-on-week (${num(c.completed)} vs ${num(p.completed)}) · conversion ${c.conversion}% vs ${p.conversion}%`, href:fixedLink("overview",{range:"7d",outcome:"COMPLETED"}), tag:"Fixed"}); }
+      const naf=(f7.integrations||{}).nafath||{}; if(naf.total&&naf.failRate>12) F.push({sev:naf.failRate>25?"P2":"P3", text:`Nafath failing on ${naf.failRate}% of ${num(naf.total)} 5G identity checks (7 d)`, href:fixedMap({range:"7d",plans:"fiveGWhiteLabel,fiveGFWA",nafath:"not_completed"}), tag:"Fixed"}); }
+    else if(f24){ const k=f24.kpis||{}; if(k.attempts) F.push({sev:"info", text:`Fixed today: ${num(k.attempts)} attempts, ${num(k.completed)} completed (${k.conversion}%)`, href:fixedLink("overview",{range:"24h"}), tag:"Fixed"}); }
     const rank={P1:0,P2:1,P3:2,info:3}; const bySev=(a,b)=>rank[a.sev]-rank[b.sev];
     const out=M.sort(bySev).slice(0,3).concat(F.sort(bySev).slice(0,3));
     if(!out.length){ box.style.display="none"; return; }
@@ -116,8 +133,8 @@
       cards.push(gcard("Mobile activations","7 d",num(m7.actOk),delta(m7.actOk,p.actOk),spark(bucket(sp.actOk,30),"#0e9f5a"),"#dashboard"));
       cards.push(gcard("Mobile orders","7 d",num(m7.orders),delta(m7.orders,p.orders),spark(bucket(sp.orders,30),"#2563eb"),"#dashboard")); }
     if(f7){ const c=f7.kpis||{}, p=(f7p&&f7p.kpis)||{}; const days=(f30&&f30.byDay)||[];
-      cards.push(gcard("Fixed completed","7 d",num(c.completed),delta(c.completed,p.completed),spark(days.map(x=>Number(x.completed||0)),"#0e9f5a"),"#fixed?tab=dash"));
-      cards.push(gcard("Fixed attempts","7 d",num(c.attempts),delta(c.attempts,p.attempts),spark(days.map(x=>Number(x.n||0)),"#2563eb"),"#fixed?tab=dash")); }
+      cards.push(gcard("Fixed completed","7 d",num(c.completed),delta(c.completed,p.completed),spark(days.map(x=>Number(x.completed||0)),"#0e9f5a"),fixedLink("overview",{range:"7d",outcome:"COMPLETED"})));
+      cards.push(gcard("Fixed attempts","7 d",num(c.attempts),delta(c.attempts,p.attempts),spark(days.map(x=>Number(x.n||0)),"#2563eb"),fixedLink("overview",{range:"7d"}))); }
     box.innerHTML=cards.join("")||`<div class="ld-loading">No growth data for your role.</div>`;
   }
   const gcard=(l,w,v,d,sp,href)=>`<a href="${href}" class="ld-g"><div class="ld-g-l">${esc(l)} <span>${esc(w)}</span></div><div class="ld-g-v">${v} ${d}</div>${sp}</a>`;
@@ -146,14 +163,14 @@
     const openErr=(d.errors||[]).reduce((a,e)=>a+Number(e.open||0),0); const stale=!!f.stale;
     body.innerHTML=`<div class="ld-noc ld-${stale?"degraded":"ok"}"><span class="ld-dot"></span><b>${stale?"Data may be stale":"Live"}</b><span class="ld-nocsub">${esc(String(d.source||""))}</span><span class="ld-nocr">watcher ${f.lag_min==null?"—":f.lag_min+" min ago"} · newest attempt ${f.newest_attempt?new Date(new Date(f.newest_attempt).getTime()+3*3600e3).toISOString().slice(11,16)+" KSA":"—"}</span></div>
       <div class="ld-grid">
-        ${tile("Attempts",num(k.attempts),"FTTH · 5G · QR · app","#fixed","green")}
-        ${tile("Completed",num(k.completed),`${k.conversion||0}% conversion`,"#fixed?tab=dash")}
-        ${tile("BSS orders",num(k.withOrder),`${k.attempts?Math.round(100*k.withOrder/k.attempts):0}% of attempts`,"#fixed?tab=dash")}
-        ${tile("Active dealers",num(k.activeDealers),"SDA staff · map","#fixed?tab=map")}
-        ${tile("Nafath fail",naf.total?naf.failRate+"%":"—",`${num(naf.total)} 5G checks`,"#fixed?tab=dash",naf.failRate>25?"red":"")}
-        ${tile("Manafith denied",man.total?man.deniedRate+"%":"—",`${num(man.denied)} of ${num(man.total)}`,"#fixed?tab=dash",man.deniedRate>10?"amber":"")}
-        ${tile("Avg time to complete",k.avgDurationS?Math.round(k.avgDurationS/60)+" min":"—","completed attempts","#fixed?tab=dash")}
-        ${tile("Open errors",num(openErr),(d.errors||[]).slice(0,2).map(e=>esc(e.category)).join(" · ")||"error control board","#fixed?tab=errors",openErr?"red":"")}
+        ${tile("Attempts",num(k.attempts),"FTTH · 5G · QR · app",fixedLink("overview",{range:"24h"}),"green")}
+        ${tile("Completed",num(k.completed),`${k.conversion||0}% conversion`,fixedLink("overview",{range:"24h",outcome:"COMPLETED"}))}
+        ${tile("BSS orders",num(k.withOrder),`${k.attempts?Math.round(100*k.withOrder/k.attempts):0}% of attempts`,fixedLink("overview",{range:"24h"}))}
+        ${tile("Active dealers",num(k.activeDealers),"SDA staff · map",fixedMap({range:"24h"}))}
+        ${tile("Nafath fail",naf.total?naf.failRate+"%":"—",`${num(naf.total)} 5G checks`,fixedMap({range:"24h",plans:"fiveGWhiteLabel,fiveGFWA",nafath:"not_completed"}),naf.failRate>25?"red":"")}
+        ${tile("Manafith denied",man.total?man.deniedRate+"%":"—",`${num(man.denied)} of ${num(man.total)}`,fixedLink("overview",{range:"24h"}),man.deniedRate>10?"amber":"")}
+        ${tile("Avg time to complete",k.avgDurationS?Math.round(k.avgDurationS/60)+" min":"—","completed attempts",fixedLink("overview",{range:"24h"}))}
+        ${tile("Open errors",num(openErr),(d.errors||[]).slice(0,2).map(e=>esc(e.category)).join(" · ")||"error control board",fixedErr(((d.errors||[])[0]||{}).category,"24h"),openErr?"red":"")}
       </div>`;
   }
 
@@ -195,7 +212,7 @@
     cats.forEach(c=>rows.push(`<a href="#troubleshoot?cat=${encodeURIComponent(c.category)}" class="ld-row"><span class="ld-sev" style="background:${c.technical>50?"#dc2626":c.technical>0?"#d97706":"#2563eb"}">${num(c.total)}</span><span class="ld-row-t">${esc(c.label||c.category)}</span><span class="ld-row-s">${num(c.business)} business · ${num(c.technical)} technical · ${esc(c.team||"")}</span></a>`));
     const left=rows.length?rows.join(""):`<div class="ld-loading">Nothing open on Mobile ✅</div>`;
     const errs=((f24&&f24.errors)||[]).filter(e=>e.open>0).slice(0,6);
-    const right=errs.length?errs.map(e=>`<a href="#fixed?tab=errors" class="ld-row"><span class="ld-sev" style="background:${e.open>1000?"#dc2626":e.open>100?"#d97706":"#2563eb"}">${num(e.open)}</span><span class="ld-row-t">${esc(e.category)}</span><span class="ld-row-s">${num(e.n)} events · last ${ksa(e.last_at)}</span></a>`).join("")
+    const right=errs.length?errs.map(e=>`<a href="${fixedErr(e.category,"24h")}" class="ld-row"><span class="ld-sev" style="background:${e.open>1000?"#dc2626":e.open>100?"#d97706":"#2563eb"}">${num(e.open)}</span><span class="ld-row-t">${esc(e.category)}</span><span class="ld-row-s">${num(e.n)} events · last ${ksa(e.last_at)}</span></a>`).join("")
       :`<div class="ld-loading">No open Fixed error categories ✅</div>`;
     const bz=(sess().me||{}).business||"both";
     const colM=`<div class="ld-att-col"><div class="ld-att-h">📱 Mobile · incidents, anomalies, error categories (24 h)</div>${left}</div>`;

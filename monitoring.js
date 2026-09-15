@@ -1199,32 +1199,94 @@
     if(!box.firstChild) box.innerHTML=`<div class="sub">Loading OSB…</div>`;
     const to=monTo||new Date().toISOString();
     const from=monFrom||new Date(Date.now()-winH*3600e3).toISOString();
-    let topo,fl;
+    let topo,fl,st,story;
     try{
+      st=await api(`/api/osb/archive/status`);
       topo=await api(`/api/osb/archive/topology?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
       fl=await api(`/api/osb/archive/faults?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=25`);
+      story=await api(`/api/osb/archive/stories?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
     }catch(e){ box.innerHTML=""; return; }   // old build / no perms → hide
     const head=`<div style="font-weight:800;font-size:13px;color:var(--ink);margin:4px 0 8px">⑤ OSB · ORACLE BUS
       <span class="rl" style="font-weight:600">· from the OSB log archive (SFTP) · window-filtered · day-1 lag once the feed is daily</span></div>`;
+    const aw=(st&&st.archive)||{};
+    const win=`${String(aw.lo||'').slice(0,10)||'—'} → ${String(aw.hi||'').slice(0,10)||'—'}`;
+    const latest=aw.latest_batch?` · latest batch ${esc(aw.latest_batch.archive||'—')}${aw.latest_batch.sha256_ok===true?' · SHA OK':aw.latest_batch.sha256_ok===false?' · SHA missing/mismatch':''}`:'';
+    const days=((st&&st.daily)||[]).slice().reverse();
+    const maxD=Math.max(1,...days.map(d=>Number(d.access||0)+Number(d.pipeline||0)));
+    const bars=days.length?`<div style="display:flex;gap:4px;align-items:end;height:42px;margin:3px 0 8px" title="Imported archive coverage by day">`
+      +days.map(d=>{const h=Math.max(3,Math.round(38*(Number(d.access||0)+Number(d.pipeline||0))/maxD));return `<div style="width:16px;height:${h}px;background:${Number(d.faults||0)?'#dc2626':'#3b82f6'};border-radius:3px 3px 0 0" title="${esc(d.day)} · access ${Number(d.access||0).toLocaleString()} · pipeline ${Number(d.pipeline||0).toLocaleString()} · faults ${Number(d.faults||0).toLocaleString()}"></div>`;}).join('')
+      +`<span class="rl" style="font-size:10px;color:var(--muted);align-self:center;margin-left:4px">archive ${esc(win)} · ${(aw.batches||0)} batch(es)${latest}</span></div>`:'';
     if(!Array.isArray(topo)||!topo.length){
       box.innerHTML=head+`<div style="border:1px dashed var(--line);border-radius:10px;padding:12px;background:var(--card)" class="rl">
-        No OSB data in this window — the imported archive covers 31 Aug → 2 Sep. Set the Dates filter to those days, or import a newer archive.</div>`;
+        No OSB data in this window — the imported archive covers <b>${esc(win)}</b>. Set the Dates filter to covered days, or import the newer server-152 archive batch.</div>${bars}`;
       return;
     }
-    const rows=topo.slice(0,20).map(t=>`<tr><td class="mono" style="font-size:10.5px;max-width:330px;overflow:hidden">${esc(t.uri)}</td>
+    const rows=topo.slice(0,20).map(t=>`<tr data-osburi="${encodeURIComponent(t.uri||'')}" style="cursor:pointer" title="Click for sampled transactions, ECID hops and payload records"><td class="mono" style="font-size:10.5px;max-width:330px;overflow:hidden">${esc(t.uri)}</td>
       <td style="font-weight:700">${Number(t.calls).toLocaleString()}</td><td class="mono">${esc(String(t.avg_ms))}ms</td>
       <td class="mono" style="color:${t.p95_ms>5000?"#dc2626":t.p95_ms>1500?"#d97706":"inherit"}">${esc(String(t.p95_ms))}ms</td>
       <td class="mono">${Number(t.max_ms).toLocaleString()}ms</td></tr>`).join("");
     const fk=(fl&&fl.byKind||[]).map(k=>`<span class="pill" style="padding:3px 10px;font-size:11px;border-left-color:#dc2626">${esc(k.fault_kind||"?")} <b>${Number(k.n).toLocaleString()}</b></span>`).join(" ");
+    const storyCards=((story&&story.stories)||[]).filter(s=>Number(s.calls||0)||Number(s.pipeline_records||0)||Number(s.faults||0)).slice(0,10).map(s=>{
+      const u=(s.top_uris||[])[0], p=(s.top_pipeline||[]).find(x=>x.faults)||(s.top_pipeline||[])[0];
+      const ex=u?u.uri:(p?(p.label||p.pipeline||p.stage):'');
+      const col=s.faults?'#dc2626':s.pipeline_records?'#2563eb':'#64748b';
+      return `<div style="border:1px solid var(--line);border-left:3px solid ${col};border-radius:8px;padding:8px;background:var(--card)" title="${esc(s.value||'')}">
+        <div style="font-weight:800;font-size:12px;color:var(--ink)">${esc(s.label)}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;font-size:11px">
+          <span><b>${Number(s.calls||0).toLocaleString()}</b> access</span>
+          <span><b>${Number(s.pipeline_records||0).toLocaleString()}</b> payload</span>
+          <span style="color:${s.faults?'#dc2626':'var(--good)'}"><b>${Number(s.faults||0).toLocaleString()}</b> faults</span>
+          ${s.avg_ms!=null?`<span>avg <b>${Number(s.avg_ms).toLocaleString()}ms</b></span>`:''}
+        </div>
+        <div class="rl mono" style="margin-top:4px;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(ex||s.evidence||'OSB evidence')}</div>
+      </div>`;
+    }).join("");
+    const storyHtml=storyCards?`<div style="margin:8px 0 10px">
+      <div class="rl" style="font-weight:800;margin-bottom:5px;color:var(--good)">Business stories in OSB</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px">${storyCards}</div>
+    </div>`:'';
+    const corrHtml=`<div class="rl" style="border:1px dashed var(--line);border-radius:10px;padding:8px 10px;margin:8px 0;color:var(--muted)">
+      <b>Correlation truth:</b> OSB access ↔ payload is exact when ECID exists. Digital/APIGW ↔ OSB is not exact in the current archive because UIL transaction id / APIGW trace id is missing; use subscriber + timestamp as probable correlation.</div>`;
     const fRows=((fl&&fl.list)||[]).slice(0,12).map(f=>`<div style="border-bottom:1px solid var(--line);padding:5px 0">
       <div class="rl"><b style="color:#dc2626">✖ ${esc(f.fault_kind||"fault")}</b> · ${esc(KT.dt(f.ts))}Z · ${esc(f.server||"")} · ${esc(f.pipeline||"")}${f.stage?" · "+esc(f.stage):""}${(f.msisdns||[]).length?` · ${esc(f.msisdns.join(", "))}`:""}</div>
       <details><summary class="rl" style="cursor:pointer;font-size:10.5px;color:var(--muted)">payload</summary>
       <pre style="font-size:10px;max-height:200px;overflow:auto;white-space:pre-wrap">${esc(f.payload||"")}</pre></details></div>`).join("");
-    box.innerHTML=head
+    box.innerHTML=head+bars+corrHtml+storyHtml
       +`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><span class="rl" style="font-weight:700">FAULTS:</span> ${fk||'<span class="rl" style="color:var(--good)">none in window</span>'}</div>`
       +`<div style="border:1px solid var(--line);border-radius:10px;max-height:320px;overflow:auto"><table class="alerts" style="font-size:11.5px">
         <tr><th>OSB SERVICE / BACKEND</th><th>CALLS</th><th>AVG</th><th>P95</th><th>MAX</th></tr>${rows}</table></div>`
+      +`<div id="monOsbUriDrill" class="rl" style="margin-top:8px;border:1px dashed var(--line);border-radius:10px;padding:8px 10px;color:var(--muted)">Click any raw OSB endpoint row to see sampled access rows, same-ECID OSB hops, joined payload records and top MSISDN query hits.</div>`
       +(fRows?`<div class="rl" style="margin-top:8px"><b>Fault feed (payload forensics)</b></div><div style="border:1px solid var(--line);border-radius:10px;padding:4px 10px;max-height:300px;overflow:auto">${fRows}</div>`:"");
+    const drill=box.querySelector("#monOsbUriDrill");
+    const renderDetail=d=>{
+      const top=(d.top_msisdns||[]).map(x=>`<span class="pill" style="padding:2px 8px;font-size:10px;border-left-color:#2563eb">${esc(x.qs_msisdn||'—')} <b>${Number(x.n||0).toLocaleString()}</b></span>`).join(" ");
+      const tx=(d.transactions||[]).slice(0,12).map((x,i)=>{
+        const a=x.access||{}, hops=x.hops||[], pipe=x.pipeline||[];
+        const hopTxt=hops.length?hops.map(h=>`${esc(h.method||'')} <span class="mono">${esc(h.uri||'')}</span> · HTTP ${esc(String(h.status||'—'))} · <b>${Number(h.ms||0).toLocaleString()}ms</b>${h.qs_msisdn?` · ${esc(h.qs_msisdn)}`:''}`).join("<br>"):'no same-ECID access hops recorded';
+        const pTxt=pipe.length?pipe.map(p=>`<details style="margin-top:4px"><summary style="cursor:pointer"><b style="color:${p.fault?'#dc2626':'var(--ink)'}">${esc(p.pipeline||'osb')}</b>${p.stage?' · '+esc(p.stage):''}${p.direction?' · '+esc(p.direction):''}${p.fault?' · '+esc(p.fault_kind||'FAULT'):''}</summary><pre style="font-size:10px;max-height:180px;overflow:auto;white-space:pre-wrap">${esc(p.payload||'')}</pre></details>`).join(""):'no pipeline payload joined by ECID';
+        return `<div style="border-top:${i?'1px solid var(--line)':'0'};padding:${i?'8px 0':'0 0 8px'}">
+          <div><b>${esc(KT.dt(a.ts))}Z</b> · ${esc(a.server||'—')} · <span class="mono">${esc(a.method||'')} ${esc(a.uri||'')}</span> · HTTP ${esc(String(a.status||'—'))} · <b>${Number(a.ms||0).toLocaleString()}ms</b></div>
+          <div style="font-size:10.5px;color:var(--muted)">ECID <span class="mono">${esc(a.ecid||'—')}</span>${a.qs_msisdn?` · query MSISDN ${esc(a.qs_msisdn)}`:''} · batch ${esc(a.batch||'—')}</div>
+          <div style="margin-top:5px"><b>OSB same-ECID rows</b><div style="margin-top:2px">${hopTxt}</div></div>
+          <div style="margin-top:5px"><b>Pipeline payloads</b>${pTxt}</div>
+        </div>`;
+      }).join("");
+      return `<div><b>URI drill-down</b> · <span class="mono">${esc(d.uri||'')}</span> · sampled ${Number(d.sampled||0).toLocaleString()} transaction(s)
+        ${(d.story&&d.story.label)?`<div style="margin-top:3px"><b>${esc(d.story.label)}</b> · ${esc((d.story&&d.story.value)||'OSB evidence')}</div>`:''}
+        <div style="margin-top:3px;color:var(--muted)">OSB-only detail: same-ECID rows are exact inside OSB. This view does not prove the UIL/APIGW request id unless a matching trace id is present in logs.</div>
+        ${top?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0"><span style="font-weight:700">Top query MSISDNs:</span> ${top}</div>`:''}
+        <div style="margin-top:6px;max-height:420px;overflow:auto">${tx||'<span style="color:var(--muted)">No transactions sampled for this URI in the selected window.</span>'}</div></div>`;
+    };
+    box.querySelectorAll("[data-osburi]").forEach(tr=>tr.addEventListener("click",async ()=>{
+      const uri=decodeURIComponent(tr.getAttribute("data-osburi")||"");
+      box.querySelectorAll("[data-osburi]").forEach(r=>r.style.background="");
+      tr.style.background="var(--tint-blue,#eff6ff)";
+      if(drill) drill.innerHTML=`Loading <span class="mono">${esc(uri)}</span>…`;
+      try{
+        const d=await api(`/api/osb/archive/uri?uri=${encodeURIComponent(uri)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=40`);
+        if(drill) drill.innerHTML=renderDetail(d);
+      }catch(e){ if(drill) drill.innerHTML=`<span style="color:#dc2626">${esc(e.message)}</span>`; }
+    }));
   }
 
   async function renderApigw(){

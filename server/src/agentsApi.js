@@ -69,7 +69,9 @@ function mount(app, { audit, requireCap, requireRoot }) {
       const runs = await q(`SELECT DISTINCT ON (agent) agent, started_at, finished_at, ok, stats, error FROM agent_runs ORDER BY agent, started_at DESC`);
       const runs24 = await q(`SELECT agent, count(*)::int AS runs, count(*) FILTER (WHERE ok)::int AS ok FROM agent_runs WHERE started_at >= now() - interval '24 hours' GROUP BY 1`);
       const sig = (await q(`SELECT count(*)::int AS total, count(*) FILTER (WHERE first_seen >= now() - interval '24 hours')::int AS new24, count(*) FILTER (WHERE assessed_at IS NULL)::int AS unassessed,
-          count(*) FILTER (WHERE status='new' AND assessed_at IS NOT NULL)::int AS to_review, count(*) FILTER (WHERE class='technical' AND last_seen >= now() - interval '24 hours')::int AS tech24, coalesce(sum(last_24h),0)::bigint AS events24 FROM agent_signatures`))[0] || {};
+          count(*) FILTER (WHERE status='new' AND assessed_at IS NOT NULL)::int AS to_review, count(*) FILTER (WHERE class='technical' AND last_seen >= now() - interval '24 hours')::int AS tech24, coalesce(sum(last_24h),0)::bigint AS events24,
+          coalesce(sum(last_24h) FILTER (WHERE segment='mvno'),0)::bigint AS mvno24, coalesce(sum(last_24h) FILTER (WHERE segment='fixed'),0)::bigint AS fixed24,
+          count(*) FILTER (WHERE segment='fixed')::int AS fixed_signatures FROM agent_signatures`))[0] || {};
       const tri = (await q(`SELECT count(*)::int AS total, count(*) FILTER (WHERE created_at >= now() - interval '24 hours')::int AS d1, count(*) FILTER (WHERE kind='duplicate' AND created_at >= now() - interval '24 hours')::int AS dup24,
           count(*) FILTER (WHERE kind='flapping' AND created_at >= now() - interval '24 hours')::int AS flap24, count(*) FILTER (WHERE helpful)::int AS helpful, count(*) FILTER (WHERE helpful=false)::int AS unhelpful,
           count(*) FILTER (WHERE applied <> '{}'::jsonb)::int AS applied, round(avg(ms))::int AS avg_ms, round(avg(confidence)*100)::int AS avg_conf FROM agent_triage`))[0] || {};

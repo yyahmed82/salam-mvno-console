@@ -17,6 +17,7 @@
  * Read-only; nothing here writes. */
 const db = require('./db');
 const K = require('./execContract');
+const slo = require('./slo');
 const { n, pct, delta, dayKey, dayAxis, trendOf, sevOf } = K;
 const C = () => db.console;
 
@@ -41,6 +42,11 @@ const SNAP = `SELECT DISTINCT ON (metric_key) metric_key, value, sample, sim_now
 
 const safe = (p, fb) => p.then(r => r.rows, () => fb);
 async function budget() {
+  try {
+    const cfg = await slo.getConfig();
+    const t = slo.targetNumber(slo.findDef(cfg, 'mobile_technical_error_budget'), {}, null);
+    if (n(t) > 0) return n(t);
+  } catch (_) {}
   try { const r = await C().query(`SELECT threshold FROM alert_rules WHERE key='app_backend_err_count' AND enabled LIMIT 1`); const t = n((r.rows[0] || {}).threshold); return t > 0 ? t : 100; }
   catch (_) { return 100; }
 }
@@ -91,10 +97,16 @@ async function exec(q, { homeKpis, boardNow, segment }) {
 
   // ---- 24 h KPIs = the Dashboard's numbers
   const p = h.prev || {}, t = h.targets || { payment: 0.95, activation: 0.98 };
+  const sloCfg = await slo.getConfig().catch(() => null);
+  const def = key => slo.findDef(sloCfg, key);
   const errors24 = n((err24[0] || {}).n);
   const dOrders = delta(n(h.orders), n(p.orders)), dAct = delta(n(h.actOk), n(p.actOk)), dPay = delta(n(h.paidOk), n(p.paidOk));
-  const payOk = h.payRate == null || h.payRate >= t.payment, actOk = h.actRate == null || h.actRate >= t.activation;
   const nafTotal = n(h.nafOk) + n(h.nafFailed), nafRate = nafTotal ? n(h.nafOk) / nafTotal : null;
+  const payS = slo.assess(def('mobile_payment_success'), h.payRate, {}, t.payment);
+  const actS = slo.assess(def('mobile_activation_success'), h.actRate, {}, t.activation);
+  const nafS = slo.assess(def('mobile_nafath_completion'), nafRate, {}, 0.9);
+  const errS = slo.assess(def('mobile_technical_error_budget'), errors24, {}, bud);
+  const payOk = payS.status !== 'breached', actOk = actS.status !== 'breached';
 
   // ---- pipeline = onboarding funnel (24 h)
   const funnel = [['Orders', n(h.orders)], ['Checkouts', n(h.checkouts)], ['Paid', n(h.paidOk)], ['Activated (BSS)', n(h.actOk)], ['Nafath completed', n(h.nafOk)], ['Deliveries', n(h.deliveries)]];
@@ -116,35 +128,37 @@ async function exec(q, { homeKpis, boardNow, segment }) {
   const sn = Object.fromEntries(snaps.map(s => [s.metric_key, s]));
   const snapVal = k => sn[k] ? n(sn[k].value) : null;
   const elig = snapVal('eligibility_deny_rate'), sem = snapVal('semati_provider_error_rate'), otp = snapVal('otp_verify_rate');
+  const semS = slo.assess(def('mobile_semati_provider_errors'), sem, {}, 0.05);
+  const eligS = slo.assess(def('mobile_citc_eligibility_denials'), elig, {}, 0.5);
   const slos = [
-    { key: 'payment', name: 'Payment success', actual: fmtRate(h.payRate), target: `≥ ${Math.round(t.payment * 100)}%`, ok: payOk, measured: h.payRate != null, href: '#troubleshoot?cat=payment' },
-    { key: 'activation', name: 'Activation success', actual: fmtRate(h.actRate), target: `≥ ${Math.round(t.activation * 100)}%`, ok: actOk, measured: h.actRate != null, href: '#troubleshoot?cat=activation' },
-    { key: 'nafath', name: 'Nafath completion', actual: fmtRate(nafRate), target: '≥ 90%', ok: nafRate == null || nafRate >= 0.9, measured: nafRate != null, href: '#troubleshoot?cat=nafath' },
-    { key: 'error_budget', name: 'Technical error budget', actual: `${errors24} / 24 h`, target: `≤ ${bud} / day`, ok: errors24 <= bud, measured: true, href: '#troubleshoot?cls=technical' },
-    { key: 'semati', name: 'Semati provider errors', actual: sem == null ? '—' : `${Math.round(sem * 1000) / 10}%`, target: '≤ 5%', ok: sem == null || sem <= 0.05, measured: sem != null, href: '#alerts' },
-    { key: 'eligibility', name: 'CITC eligibility denials', actual: elig == null ? '—' : `${Math.round(elig * 1000) / 10}%`, target: '≤ 50% (business, not a fault)', ok: elig == null || elig <= 0.5, measured: elig != null, href: '#alerts' },
+    { key: 'payment', name: 'Payment success', actual: fmtRate(h.payRate), target: payS.targetText, ok: payS.ok, status: payS.status, message: payS.message, measured: h.payRate != null, href: '#troubleshoot?cat=payment' },
+    { key: 'activation', name: 'Activation success', actual: fmtRate(h.actRate), target: actS.targetText, ok: actS.ok, status: actS.status, message: actS.message, measured: h.actRate != null, href: '#troubleshoot?cat=activation' },
+    { key: 'nafath', name: 'Nafath completion', actual: fmtRate(nafRate), target: nafS.targetText, ok: nafS.ok, status: nafS.status, message: nafS.message, measured: nafRate != null, href: '#troubleshoot?cat=nafath' },
+    { key: 'error_budget', name: 'Technical error budget', actual: `${errors24} / 24 h`, target: errS.targetText, ok: errS.ok, status: errS.status, message: errS.message, measured: true, href: '#troubleshoot?cls=technical' },
+    { key: 'semati', name: 'Semati provider errors', actual: sem == null ? '—' : `${Math.round(sem * 1000) / 10}%`, target: semS.targetText, ok: semS.ok, status: semS.status, message: semS.message, measured: sem != null, href: '#alerts' },
+    { key: 'eligibility', name: 'CITC eligibility denials', actual: elig == null ? '—' : `${Math.round(elig * 1000) / 10}%`, target: `${eligS.targetText}${def('mobile_citc_eligibility_denials') && def('mobile_citc_eligibility_denials').note ? ' (' + def('mobile_citc_eligibility_denials').note + ')' : ''}`, ok: eligS.ok, status: eligS.status, message: eligS.message, measured: elig != null, href: '#alerts' },
   ];
 
   // ---- status + summary
-  const critical = sev.P1 + (errors24 > bud ? 1 : 0) + (!payOk ? 1 : 0) + (!actOk ? 1 : 0);
-  const warnings = open.filter(a => a.severity === 'P2').length + slos.filter(s => s.measured && s.ok === false && !['error_budget', 'payment', 'activation'].includes(s.key)).length;
+  const critical = sev.P1 + (errS.status === 'breached' ? 1 : 0) + (payS.status === 'breached' ? 1 : 0) + (actS.status === 'breached' ? 1 : 0);
+  const warnings = open.filter(a => a.severity === 'P2').length + slos.filter(s => s.measured && (s.status === 'at_risk' || (s.status === 'breached' && !['error_budget', 'payment', 'activation'].includes(s.key)))).length;
   const status = K.statusOf(critical, warnings);
   const summary = [];
-  if (critical) summary.push(`${critical} critical signal(s): ${[sev.P1 ? `${sev.P1} P1 alert(s)` : null, errors24 > bud ? `technical errors ${errors24} above the ${bud}/day budget` : null, !payOk ? `payment success ${fmtRate(h.payRate)} below target` : null, !actOk ? `activation success ${fmtRate(h.actRate)} below target` : null].filter(Boolean).join(', ')}.`);
+  if (critical) summary.push(`${critical} critical signal(s): ${[sev.P1 ? `${sev.P1} P1 alert(s)` : null, errS.status === 'breached' ? `technical errors ${errors24} above ${errS.targetText}` : null, payS.status === 'breached' ? `payment success ${fmtRate(h.payRate)} below ${payS.targetText}` : null, actS.status === 'breached' ? `activation success ${fmtRate(h.actRate)} below ${actS.targetText}` : null].filter(Boolean).join(', ')}.`);
   else summary.push(`No critical signal in the last 24 h${warnings ? `; ${warnings} warning(s) to watch` : ''}.`);
   summary.push(`${n(h.orders).toLocaleString('en-US')} orders in 24 h (${dOrders >= 0 ? '+' : ''}${dOrders}% vs the previous 24 h), ${n(h.paidOk).toLocaleString('en-US')} paid at ${fmtRate(h.payRate)}, ${n(h.actOk).toLocaleString('en-US')} activated at ${fmtRate(h.actRate)}.`);
   const worst = issues[0]; summary.push(worst ? `Busiest technical error: ${worst.label} (${worst.total} in ${days} d, ${worst.trend}).` : 'No technical error in the app error log for the window.');
 
   return {
-    configured: true, biz: 'mobile', label: 'Mobile', generatedAt: nowIso, range, days, window: { from, to },
+    configured: true, biz: 'mobile', label: 'MVNO', generatedAt: nowIso, range, days, window: { from, to },
     source: h.source === 'raw' ? 'salam_replica + console rollups' : h.source, freshness: { text: `dashboard clock ${dayKey(now)}`, stale: false },
     provisional: 'Revenue is not measured by this console — shown as not wired',
     status, summary, counts: { critical, warnings, alerts24, bySeverity: sev },
     kpis: [
       { key: 'orders', title: 'Orders', value: n(h.orders), sub: `${n(h.checkouts).toLocaleString('en-US')} checkouts · new SIM + MNP`, tone: 'green', delta: { pct: dOrders, good: dOrders >= 0 }, href: '#dashboard', exec: true, window: '24 h' },
-      { key: 'payments', title: 'Payment success', value: fmtRate(h.payRate), sub: `${n(h.paidOk).toLocaleString('en-US')} paid · ${n(h.paidFail).toLocaleString('en-US')} failed`, tone: payOk ? 'green' : 'red', delta: { pct: dPay, good: dPay >= 0 }, href: '#troubleshoot?cat=payment', exec: true, window: '24 h' },
-      { key: 'activations', title: 'Activation success', value: fmtRate(h.actRate), sub: `${n(h.actOk).toLocaleString('en-US')} activated · ${n(h.actFail).toLocaleString('en-US')} failed`, tone: actOk ? 'green' : 'red', delta: { pct: dAct, good: dAct >= 0 }, href: '#troubleshoot?cat=activation', exec: true, window: '24 h' },
-      { key: 'errors', title: 'Technical errors', value: errors24, sub: `budget ${bud}/day — ${errors24 > bud ? 'exceeded' : 'within budget'} · ${n(h.errorsBusiness).toLocaleString('en-US')} business refusals`, tone: errors24 > bud ? 'red' : 'green', delta: null, href: '#troubleshoot?cls=technical', exec: true, window: '24 h' },
+      { key: 'payments', title: 'Payment success', value: fmtRate(h.payRate), sub: `${n(h.paidOk).toLocaleString('en-US')} paid · ${n(h.paidFail).toLocaleString('en-US')} failed · target ${payS.targetText}`, tone: payS.status === 'breached' ? 'red' : payS.status === 'at_risk' ? 'amber' : 'green', delta: { pct: dPay, good: dPay >= 0 }, href: '#troubleshoot?cat=payment', exec: true, window: '24 h' },
+      { key: 'activations', title: 'Activation success', value: fmtRate(h.actRate), sub: `${n(h.actOk).toLocaleString('en-US')} activated · ${n(h.actFail).toLocaleString('en-US')} failed · target ${actS.targetText}`, tone: actS.status === 'breached' ? 'red' : actS.status === 'at_risk' ? 'amber' : 'green', delta: { pct: dAct, good: dAct >= 0 }, href: '#troubleshoot?cat=activation', exec: true, window: '24 h' },
+      { key: 'errors', title: 'Technical errors', value: errors24, sub: `budget ${errS.targetText} — ${errS.status === 'breached' ? 'exceeded' : errS.status === 'at_risk' ? 'near limit' : 'within budget'} · ${n(h.errorsBusiness).toLocaleString('en-US')} business refusals`, tone: errS.status === 'breached' ? 'red' : errS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#troubleshoot?cls=technical', exec: true, window: '24 h' },
       { key: 'critical', title: 'Active critical signals', value: critical, sub: `${open.length} open alert(s) · ${sev.P1} P1 · ${sev.P2} P2 · ${sev.P3} P3`, tone: critical ? 'red' : 'green', delta: null, href: '#alerts', exec: true, window: `${days} d` },
       { key: 'revenue', title: 'Daily revenue', value: '—', sub: 'connect the billing feed to activate', tone: 'muted', delta: null, href: null, exec: true, window: '24 h' },
       { key: 'nafath', title: 'Nafath completed', value: n(h.nafOk), sub: `${n(h.nafFailed).toLocaleString('en-US')} failed · ${n(h.nafPending).toLocaleString('en-US')} pending`, tone: null, delta: null, href: '#troubleshoot?cat=nafath', exec: false, window: '24 h' },
@@ -152,10 +166,10 @@ async function exec(q, { homeKpis, boardNow, segment }) {
     ],
     slos,
     health: [
-      { label: 'Payments', value: fmtRate(h.payRate), state: h.payRate == null ? 'nowire' : payOk ? 'up' : 'down', sub: `target ${Math.round(t.payment * 100)}%`, href: '#troubleshoot?cat=payment' },
-      { label: 'Activations (BSS)', value: fmtRate(h.actRate), state: h.actRate == null ? 'nowire' : actOk ? 'up' : 'down', sub: `target ${Math.round(t.activation * 100)}%`, href: '#troubleshoot?cat=activation' },
-      { label: 'Nafath', value: fmtRate(nafRate), state: nafRate == null ? 'nowire' : nafRate >= 0.9 ? 'up' : 'warn', sub: `${nafTotal.toLocaleString('en-US')} checks`, href: '#troubleshoot?cat=nafath' },
-      { label: 'Semati provider', value: sem == null ? '—' : `${Math.round(sem * 1000) / 10}% errors`, state: sem == null ? 'nowire' : sem <= 0.05 ? 'up' : 'down', sub: sn.semati_provider_error_rate ? `snapshot ${dayKey(sn.semati_provider_error_rate.sim_now)}` : 'no snapshot', href: '#monitoring' },
+      { label: 'Payments', value: fmtRate(h.payRate), state: h.payRate == null ? 'nowire' : payS.status === 'met' ? 'up' : payS.status === 'at_risk' ? 'warn' : 'down', sub: `target ${payS.targetText}`, href: '#troubleshoot?cat=payment' },
+      { label: 'Activations (BSS)', value: fmtRate(h.actRate), state: h.actRate == null ? 'nowire' : actS.status === 'met' ? 'up' : actS.status === 'at_risk' ? 'warn' : 'down', sub: `target ${actS.targetText}`, href: '#troubleshoot?cat=activation' },
+      { label: 'Nafath', value: fmtRate(nafRate), state: nafRate == null ? 'nowire' : nafS.status === 'met' ? 'up' : nafS.status === 'at_risk' ? 'warn' : 'down', sub: `${nafTotal.toLocaleString('en-US')} checks · target ${nafS.targetText}`, href: '#troubleshoot?cat=nafath' },
+      { label: 'Semati provider', value: sem == null ? '—' : `${Math.round(sem * 1000) / 10}% errors`, state: sem == null ? 'nowire' : semS.status === 'met' ? 'up' : semS.status === 'at_risk' ? 'warn' : 'down', sub: sn.semati_provider_error_rate ? `target ${semS.targetText} · snapshot ${dayKey(sn.semati_provider_error_rate.sim_now)}` : 'no snapshot', href: '#monitoring' },
       { label: 'OTP verification', value: otp == null ? '—' : `${Math.round(otp * 1000) / 10}%`, state: otp == null ? 'nowire' : otp >= 0.7 ? 'up' : 'warn', sub: 'SMS OTPs verified', href: '#monitoring' },
       { label: 'Change plan', value: `${n(h.planOk).toLocaleString('en-US')} ok · ${n(h.planFail).toLocaleString('en-US')} fail`, state: n(h.planFail) > n(h.planOk) ? 'down' : 'up', sub: '24 h', href: '#troubleshoot?cat=change_plan' },
     ],

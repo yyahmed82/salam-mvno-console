@@ -3,6 +3,138 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.37] — 2026-09-14 — Vendor penalty candidate model
+### Added
+- **Vendors & contracts** now has a **Penalty model** tab per vendor/contract for candidate-only penalty estimates:
+  eligible monthly fee, monthly cap, SLA item weights, severity weights, required evidence, exclusions, approval status,
+  and capped exposure.
+- Penalty rules are stored with the vendor reference catalog and remain explicitly informational until evidence,
+  exclusions, commercial/legal approval, and vendor-owner sign-off are complete.
+
+## [2.0.0-alpha.36] — 2026-09-14 — Vendor phases 4 and 5 rollout matrices
+### Added
+- **Vendors & contracts** now treats phases 4 and 5 as ready informational governance layers: phase 4 maps each
+  contractual SLA/SLO to evidence connectors, readiness, confidence, controls, and next source-wiring steps.
+- **Operational rollout** tab shows where vendor SLA evidence will surface across SLA dashboard, Yusr, incident details,
+  Customer 360, Monitoring, monthly governance, and test-mail preview, with explicit gates that keep enforcement disabled
+  until UAT and vendor-owner sign-off.
+
+## [2.0.0-alpha.35] — 2026-09-14 — Vendor SLA test mail previews
+### Added
+- **Vendor contract SLA** now has a safe CLI mail-preview command for R1/R2/R3/repeat/management escalation formats.
+  The command requires one explicit `--to` address and ignores configured team/management recipients, so tests can be
+  sent only to the requester.
+
+## [2.0.0-alpha.34] — 2026-09-14 — Vendor management escalation clarity
+### Changed
+- **Vendors & contracts** now labels the management recipient field as the target used by each SLA row's
+  **Inform management** switch and warns when a contract has no management list configured.
+
+## [2.0.0-alpha.33] — 2026-09-14 — Contract SLA escalation flows
+### Added
+- **Vendors & contracts** now has a contract-level **Escalation flow** editor for Sigma/TCS SLA items: enablement,
+  reminder 1/2/3 timings, repeat cadence, management notification flags, allowed channels, and per-SLA breach messages.
+- Vendor contract defaults now seed escalation flows per contract and persist edits in `console_settings.vendor_contracts`
+  through the existing audited `/api/vendor-contracts` API.
+
+### Changed
+- Removed the visible **Tests / rollback** tab from **Vendors & contracts** so the page focuses on vendor reference data,
+  SLA obligations, escalation configuration, assignments, and evidence mapping.
+
+## [2.0.0-alpha.32] — 2026-09-14 — Vendor contracts dark-mode polish
+### Fixed
+- **Vendors & contracts** now cache-busts the page script and uses explicit theme-aware dark-mode overrides, so cards,
+  phase boxes, tabs, tables, and the JSON editor stay readable in dark mode.
+
+## [2.0.0-alpha.31] — 2026-09-14 — Vendor contracts and SLA rollout phases
+### Added
+- **Vendors & contracts**: new Super Admin-only page (`#vendor-contracts`) for Sigma/TCS reference details, contract
+  scope, global SLA/SLO obligations, Fixed / MVNO assignments, evidence-source mapping, and the five rollout phases.
+- **Vendor contract API** (`/api/vendor-contracts`) stores the reference catalog in `console_settings`, with audited save
+  and reset-to-defaults operations and no schema migration.
+- **Operational rollout pack** is now visible in the console with deployment checks, post-deployment test scenarios, and
+  a safe rollback plan for the new vendor/SLA governance layer.
+
+## [2.0.0-alpha.30] — 2026-09-14 — Home CTA drill-down accuracy
+### Fixed
+- **Home Fixed CTAs** now open the page that owns the KPI with the matching window/filter: aggregate journey KPIs go to
+  Fixed Operations Dashboard, Nafath identity issues go to SDA map with 5G + failed-Nafath filters, and open error
+  categories go to Fixed Troubleshoot with the exact category and 24 h open window.
+- **Fixed deep links** now consume Home CTA filters on Overview, Reports, and Troubleshoot without inheriting stale local
+  filters from a previous visit.
+- **Hash routing** now explicitly activates the destination view even when the Fixed dropdown already marked the requested
+  sub-page active, fixing `#fixed?...` URLs that updated the nav chip but left Home visible.
+- **Fixed Operations Dashboard** now renders the `Recent attempts` table after the lower operations/SLO/trend content, so
+  the noisy newest-100 table stays at the end of the page.
+
+## [2.0.0-alpha.29] — 2026-09-14 — Dedicated SLO definitions page
+### Changed
+- **SLA** now stays focused on live attainment, vendor health, anomalies, and acknowledgement SLA.
+- **SLO definitions** moved to a separate Super Admin-only page (`#slo-settings`) with a card-based Fixed / MVNO editor,
+  summary counters, business tabs, and group navigation.
+
+## [2.0.0-alpha.28] — 2026-09-14 — SLO business labels: Fixed / MVNO
+### Changed
+- **SLA → SLO definitions & target messages** now presents the configurable businesses as **MVNO** and **Fixed**
+  instead of exposing the internal `mobile` key.
+- **Executive SLO badges** now show **MVNO** for the MVNO business while preserving the existing `mobile` route/API key
+  for compatibility.
+
+## [2.0.0-alpha.27] — 2026-09-14 — Super Admin SLO target builder
+### Added
+- **SLA → SLO definitions & target messages**: Super Admins can now edit SLO defaults, enable/disable targets,
+  tune warning bands, and define operator messages for met / near-target / breached states.
+- **Shared SLO config** in `console_settings.slo_config`, mirrored back to legacy `slo_targets` for existing journey
+  rollups so the old SLA calculations keep working.
+
+### Changed
+- **Executive SLO cards** for Mobile and Fixed now read their thresholds from the shared SLO config instead of hardcoded
+  values; payment, activation, Nafath, error budgets, conversion, Manafith, Semati and eligibility cards now support
+  green / amber / red states from the configured target and warning band.
+- **SLO editing authorization** is Super Admin only and audited, including reset-to-defaults.
+
+## [2.0.0-alpha.26] — 2026-09-13 — OSB business stories and honest correlation
+### Added
+- **OSB business stories** classify archive evidence into recharge/voucher, MNP, onboarding/inventory, Remedy tickets,
+  billing/invoices, SADAD/payment notices, Nafath, balance/bundle reads, plan options and profile reads.
+- **Monitoring → OSB** now shows business-story cards before the raw URI table, plus an explicit correlation note:
+  OSB access ↔ payload can be exact by ECID, while Digital/APIGW ↔ OSB is only subscriber+time unless a shared trace id
+  appears in future logs.
+- **Customer 360 / Yusr** now receive OSB story summaries and a support-facing verdict, so repeated profile reads are
+  explained as direct BSS evidence rather than confused with a full end-to-end journey.
+### Changed
+- **OSB drill-down wording** now says "OSB same-ECID rows" instead of "end-to-end hops" when the archive lacks a
+  Digital/APIGW request id.
+
+## [2.0.0-alpha.25] — 2026-09-13 — OSB drill-down and selected-line correlation
+### Fixed
+- **Customer 360 / Journey / Yusr OSB correlation** now resolves the searched key to the selected Salam service line
+  before querying the OSB archive, so National ID searches no longer miss direct MSISDN access-log hits.
+- **Yusr OSB summaries** now count direct backend hits separately from ECID-joined backend hops, avoiding the false
+  “0 OSB details” wording when the archive has Siebel/UIM access rows but no pipeline payload for that call.
+### Added
+- **Monitoring → OSB · ORACLE BUS drill-down**: each URI row is clickable and shows sampled transactions, ECID,
+  same-transaction backend hops, joined pipeline payload snippets, archive batch, and top query-string MSISDN hits.
+
+## [2.0.0-alpha.24] — 2026-09-13 — OSB/BSS archive correlation across Yusr, Subscriber 360, timelines and dashboard
+### Added
+- **OSB archive batch tracking** (`osbArchive.js`): server-152 CLI can now scan SFTP upload roots, verify `.sha256`
+  sidecars, safely inspect/extract `.tar.gz` archives, import unprocessed OSB batches, and record archive window,
+  row counts, checksum status and import errors in `osb_archive_batches`.
+- **Safer OSB parser/correlation keys**: pipeline imports now carry a stable `event_hash` so re-imports skip duplicate
+  payload rows; parsers normalize `05…`, `5…` and `9665…` MSISDNs, capture ECIDs in more formats, record component,
+  transaction ids and bounded identifier metadata.
+- **Customer OSB summary**: one backend helper now powers Subscriber 360, Yusr and the transaction timeline with the
+  same exact matching rules: payload identifier match first, ECID-joined backend hops second.
+### Changed
+- **Yusr AI** now receives compact OSB/BSS archive evidence for customer lookups, including archive coverage,
+  pipeline/backend counts, fault kinds and recent component hits, without sending full raw payloads into the prompt.
+- **Subscriber 360** OSB panel shows quick KPIs for the selected line before the raw payload/ECID table.
+- **Monitoring** OSB panel now uses the real imported archive window and latest batch metadata instead of a hardcoded
+  coverage note.
+- **Mobile dashboard** Oracle-stack card is now labelled as BSS/OSB findings and includes fault-kind KPIs plus a small
+  imported-archive daily trend.
+
 ## [2.0.0-alpha.23] — 2026-09-11 — AI budgets per user & per agent · the agents get answers again · runbook steps · activity diff
 ### Fixed
 - **The agents never got an answer from the model** ("Agent triage (evidence only — model unavailable)" on every

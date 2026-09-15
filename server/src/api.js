@@ -19,6 +19,7 @@ const syncHealth = require('./syncHealth');
 const prodSync = require('./prodSync');
 const rollups = require('./rollups');
 const slo = require('./slo');
+const vendorContracts = require('./vendorContracts');
 const chatops = require('./chatops');
 const assist = require('./assist');
 const servicenow = require('./servicenow');
@@ -166,6 +167,9 @@ function requireAnyCap(...caps) {
   return (req, res, next) => (req.caps && caps.some(c => req.caps[c])) ? next()
     : res.status(403).json({ error: `role ${req.roleName} lacks ${caps.join(' or ')}` });
 }
+function requireSuper(req, res, next) {
+  return (req.isRoot || IS_SUPER(req.realRole, req.realRoles)) ? next() : res.status(403).json({ error: 'super admin only' });
+}
 /* ---- hidden "root" tier (platform owner) --------------------------------------------------
  * Membership comes ONLY from the ROOT_ADMINS env var (comma-separated emails, case-insensitive)
  * — it is NOT a role: it never appears in the roles table, the permissions matrix, or any user
@@ -175,7 +179,7 @@ function requireAnyCap(...caps) {
  * FAILSAFE / graceful rollout: while ROOT_ADMINS is unset/empty, requireRoot is a no-op and every
  * gated endpoint keeps today's behavior (super_admin / manageSync). Enforcement flips on only
  * when the env var exists — so a bad deploy can never lock the console owner out. */
-const ROOT_ONLY = ['audit', 'assist_config', 'sla'];   // ← future root-only features append here
+const ROOT_ONLY = ['audit', 'assist_config'];   // ← future root-only features append here
 const ROOT_SET = new Set((process.env.ROOT_ADMINS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
 function requireRoot(feature) {
   return (req, res, next) => {
@@ -534,7 +538,7 @@ app.get('/api/errors/bss-breakdown', async (req, res) => {
 // LIVE ping, not just "is a URL present". Config with an unreachable host or a placeholder password
 // is WORSE than no config: osbProbe starts, fails silently every 5 min, and the console looks wired
 // up when it is blind. `ok` is the field that means "we can actually read the OSB log right now".
-/* ORACLE STACK FLOW (dashboard POC) — aggregate counts only, no PII; lives under /api/home so
+/* ORACLE STACK FLOW (dashboard) — aggregate counts only, no PII; lives under /api/home so
  * dashboard-only roles can render the section (the /api/osb tree is monitoring-gated). */
 app.get('/api/home/oracle-stack', async (req, res) => {
   try {
@@ -700,12 +704,25 @@ app.get('/api/osb/archive/faults', async (req, res) => {
   try { res.json(await respCache.wrap(req, () => require('./osbArchive').faults({ from: req.query.from, to: req.query.to, limit: Number(req.query.limit) || 60 }))); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
+app.get('/api/osb/archive/stories', async (req, res) => {
+  try { res.json(await respCache.wrap(req, () => require('./osbArchive').stories({ from: req.query.from, to: req.query.to }))); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/osb/archive/uri', async (req, res) => {
+  try {
+    const uri = String(req.query.uri || '').trim();
+    if (!uri) return res.status(400).json({ error: 'uri required' });
+    res.json(await respCache.wrap(req, () => require('./osbArchive').uriDetails({
+      uri, from: req.query.from, to: req.query.to, limit: Number(req.query.limit) || 40
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/api/osb/archive/msisdn/:m', async (req, res) => {
   try {
     await audit(req, 'osb.archive.msisdn', String(req.params.m).slice(0, 20), {});
     const to = req.query.to || new Date().toISOString();
     const from = req.query.from || new Date(Date.now() - 7 * 864e5).toISOString();
-    res.json(await require('./osbArchive').eventsFor(req.params.m, from, to));
+    res.json(await require('./osbArchive').customerSummary(req.params.m, from, to));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2871,39 +2888,21 @@ app.get('/api/transaction', async (req, res) => {
         /* OSB TIER (3 Sep 2026): if the SFTP-delivered OSB archive covers this window, merge the
          * BSS-bus story too — pipeline payloads (Siebel/Redknee/ZATCA/SADAD hops, OSB-382000 /
          * 1500 faults with detail) keyed by the customer's msisdn, plus the access rows joined
-         * via ECID (uri + latency of every backend hop). Completes app → gateway → UIL → OSB → BSS. */
+         * via ECID. The OSB archive has no UIL/APIGW request id today, so this is BSS evidence
+         * and probable journey correlation by customer+time, not a proven app trace continuation. */
         try {
-          const osb = require('./osbArchive');
-          if (await osb.available()) {
-            const oe = await osb.eventsFor(digits, new Date(lo).toISOString(), new Date(hi).toISOString());
-            const accByEcid = {};
-            for (const a2 of (oe.access || [])) (accByEcid[a2.ecid] = accByEcid[a2.ecid] || []).push(a2);
+          const osb = require('./osbResolve');
+          if (await require('./osbArchive').available()) {
+            const orderKey = tl.order && (tl.order.nationality_id_number || tl.order.mnp_number || tl.order.mobile_number);
+            const oe = await osb.timelineEvents(orderKey || rr.identifier || digits, {
+              lineRef: String(req.query.line || '').trim() || null,
+              from: new Date(lo).toISOString(), to: new Date(hi).toISOString()
+            });
             let oAdded = 0;
-            for (const p2 of (oe.pipeline || [])) {
-              const hops = p2.ecid ? (accByEcid[p2.ecid] || []) : [];
-              tl.events.push({ at: p2.ts, source: 'OSB · BSS bus', kind: `${p2.pipeline}${p2.stage ? ' · ' + p2.stage : ''}`,
-                ok: !p2.fault,
-                detail: `${p2.label || p2.pipeline}${p2.direction ? ' (' + p2.direction + ')' : ''}`
-                  + (p2.fault ? ` · ✖ ${p2.fault_kind}` : '')
-                  + (hops.length ? ` · ${hops.map(h3 => `${h3.uri.split('/').filter(Boolean).slice(-1)[0]} ${h3.ms}ms`).join(' · ').slice(0, 120)}` : ''),
-                endpoint: hops[0] ? hops[0].uri : null, request: null,
-                response: { server: p2.server, ecid: p2.ecid, fault_kind: p2.fault_kind,
-                  backend_hops: hops.map(h3 => ({ uri: h3.uri, ms: h3.ms, status: h3.status })),
-                  payload: p2.payload },
-                ms: hops[0] ? hops[0].ms : null, status: p2.fault ? (p2.fault_kind || 'FAULT') : 'OK',
-                rr: { req: null, res: 'OSB PIPELINE RECORD' } });
-              oAdded++;
-            }
-            for (const a2 of (oe.access_by_msisdn || [])) {   // Siebel bridges carry ?msisdn=
-              tl.events.push({ at: a2.ts, source: 'OSB · BSS bus', kind: 'backend call',
-                ok: String(a2.status)[0] === '2',
-                detail: `${a2.method} ${a2.uri} · ${a2.ms}ms · HTTP ${a2.status}`,
-                endpoint: a2.uri, request: null, response: { ecid: a2.ecid }, ms: a2.ms,
-                status: a2.status, rr: { req: null, res: 'OSB ACCESS ROW' } });
-              oAdded++;
-            }
+            for (const e2 of (oe.events || [])) { tl.events.push(e2); oAdded++; }
             if (oAdded) tl.events.sort((a, z) => new Date(a.at) - new Date(z.at));
             tl.osb_merged = oAdded;
+            tl.osb_summary = oe.summary || null;
           }
         } catch (e) { tl.osb_error = String(e.message || '').slice(0, 120); }
       }
@@ -3026,14 +3025,15 @@ app.get('/api/subscriber/live', async (req, res) => {
         const live = require('./liveBss');
         const c = await live.resolveCustomer(key, line);
         const ms = c.msisdn || key.replace(/\D/g, '');
-        const st = await osb.status();
-        const ev = await osb.eventsFor(ms, st.pipeline.lo || st.access.lo, new Date().toISOString());
-        out = { panel: 'osb', label: 'OSB · Oracle bus (archive)', ok: true, cached: false,
+        const ev = await require('./osbResolve').customerSummary(key, { lineRef: line });
+        out = ev ? { panel: 'osb', label: 'OSB · Oracle bus (archive)', ok: true, cached: false,
           taken_at: new Date().toISOString(),
           endpoint: 'imported OSB log archive (SFTP) · msisdn + ECID correlation',
-          archive_window: { lo: st.access.lo, hi: st.access.hi }, msisdn_used: ms, ...ev,
+          archive_window: ev.archive_window, msisdn_used: (ev.summary && ev.summary.key_used) || ms, ...ev,
           note: 'Every BSS-bus record for this customer in the archive window — pipeline payloads ' +
-                '(Siebel/ZATCA/…) with faults, plus the backend hops joined by ECID. Day-1-lag live once the SFTP feed is daily.' };
+                '(Siebel/ZATCA/…) with faults, plus the backend hops joined by ECID. Day-1-lag live once the SFTP feed is daily.' }
+          : { panel: 'osb', label: 'OSB · Oracle bus (archive)', ok: true, cached: false, empty: true,
+            taken_at: new Date().toISOString(), msisdn_used: ms, note: 'No OSB archive rows resolved for this customer key.' };
       }
     } else {
       out = await require('./liveBss').panel(key, name, { refresh, line });
@@ -4336,8 +4336,14 @@ async function homeKpisFromSource(now, winFrom, winTo) {
     }
   } catch (e) {}
   const rate = (ok, fail) => (ok != null && fail != null && (ok + fail) > 0) ? ok / (ok + fail) : null;
-  const targets = { payment: 0.95, activation: 0.98 };   // SLA thresholds for KPI coloring (fall back to defaults)
-  try { (await C.query(`SELECT journey, target FROM slo_targets WHERE journey IN ('payment','activation')`)).rows.forEach(r => { targets[r.journey] = Number(r.target); }); } catch (e) {}
+  const targets = { payment: 0.95, activation: 0.98 };   // SLO thresholds for KPI coloring (fall back to defaults)
+  try {
+    const cfg = await slo.getConfig();
+    targets.payment = slo.targetNumber(slo.findDef(cfg, 'mobile_payment_success'), {}, targets.payment);
+    targets.activation = slo.targetNumber(slo.findDef(cfg, 'mobile_activation_success'), {}, targets.activation);
+  } catch (e) {
+    try { (await C.query(`SELECT journey, target FROM slo_targets WHERE journey IN ('payment','activation')`)).rows.forEach(r => { targets[r.journey] = Number(r.target); }); } catch (_) {}
+  }
   // ksaDay must be a plain ISO date (YYYY-MM-DD) — computed arithmetically, NOT via
   // toLocaleDateString('en-CA'): Node on 152 has limited ICU and silently falls back to US
   // format ("8/5/2026"), which never equals the browser's ISO string → the "no data yet for
@@ -5726,7 +5732,7 @@ app.get('/api/kpi/series', async (req, res) => {
 });
 
 // SLA/SLO board — attainment + error budgets per journey
-app.get('/api/slo', requireRoot('sla'), async (req, res) => {
+app.get('/api/slo', requireSuper, async (req, res) => {
   try { res.json(await slo.evaluate(await boardNow(req.query.sim))); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -6148,17 +6154,71 @@ app.delete('/api/events/:id', requireCap('manageSync'), async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 // SLO targets CRUD (editRules)
-app.get('/api/slo/targets', requireRoot('sla'), async (req, res) => {
+app.get('/api/slo/targets', requireSuper, async (req, res) => {
   try { res.json({ targets: (await C.query(`SELECT * FROM slo_targets ORDER BY journey`)).rows }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.put('/api/slo/targets/:journey', requireCap('editRules'), requireRoot('sla'), async (req, res) => {
+app.get('/api/slo/config', requireSuper, async (req, res) => {
+  try { res.json({ ...(await slo.getConfig()), canEdit: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/slo/config', requireSuper, async (req, res) => {
+  try {
+    const cfg = await slo.saveConfig(req.body || {});
+    await audit(req, 'slo.config.update', null, { count: (cfg.slos || []).length });
+    res.json({ ...cfg, canEdit: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.post('/api/slo/config/reset', requireSuper, async (req, res) => {
+  try {
+    const cfg = await slo.resetConfig();
+    await audit(req, 'slo.config.reset', null, { count: (cfg.slos || []).length });
+    res.json({ ...cfg, canEdit: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/slo/targets/:journey', requireSuper, async (req, res) => {
   try {
     const b = req.body || {};
-    await C.query(`UPDATE slo_targets SET target=COALESCE($1,target), window_days=COALESCE($2,window_days), enabled=COALESCE($3,enabled), updated_at=now() WHERE journey=$4`,
-      [b.target ?? null, b.window_days ?? null, b.enabled ?? null, req.params.journey]);
+    await slo.updateJourneyTarget(req.params.journey, b);
     await audit(req, 'slo.update', req.params.journey, b);
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Vendor/contracts reference catalog (Super Admin only). This extends SLA governance without
+// changing the existing ACK-SLA or dashboard SLO config.
+app.get('/api/vendor-contracts', requireSuper, async (req, res) => {
+  try { res.json(await vendorContracts.getConfig()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put('/api/vendor-contracts', requireSuper, async (req, res) => {
+  try {
+    const cfg = await vendorContracts.saveConfig(req.body || {});
+    await audit(req, 'vendor-contracts.update', null, {
+      vendors: (cfg.vendors || []).length,
+      contracts: (cfg.contracts || []).length,
+      obligations: (cfg.obligations || []).length,
+      escalationFlows: (cfg.escalationFlows || []).length,
+      evidenceMappings: (cfg.evidenceMappings || []).length,
+      rolloutSurfaces: (cfg.rolloutSurfaces || []).length,
+      penaltyRules: (cfg.penaltyRules || []).length
+    });
+    res.json(cfg);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.post('/api/vendor-contracts/reset', requireSuper, async (req, res) => {
+  try {
+    const cfg = await vendorContracts.resetConfig();
+    await audit(req, 'vendor-contracts.reset', null, {
+      vendors: (cfg.vendors || []).length,
+      contracts: (cfg.contracts || []).length,
+      obligations: (cfg.obligations || []).length,
+      escalationFlows: (cfg.escalationFlows || []).length,
+      evidenceMappings: (cfg.evidenceMappings || []).length,
+      rolloutSurfaces: (cfg.rolloutSurfaces || []).length,
+      penaltyRules: (cfg.penaltyRules || []).length
+    });
+    res.json(cfg);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -6222,7 +6282,6 @@ app.post('/api/sync-health/send', requireCap('manageSync'), async (req, res) => 
 });
 
 // prod → local replica incremental sync (Super Admin only; runs where the console can reach prod on VPN)
-function requireSuper(req, res, next) { return req.realRole === 'super_admin' ? next() : res.status(403).json({ error: 'super admin only' }); }
 app.get('/api/prod-sync/status', requireSuper, async (req, res) => {
   try {
     const st = (await C.query(`SELECT * FROM prod_sync_state ORDER BY table_name`)).rows;

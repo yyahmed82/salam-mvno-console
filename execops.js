@@ -82,11 +82,13 @@
       <div class="xo-kv">${num(k.value)}</div>
       <div class="xo-ks">${esc(k.sub || '')}</div>
       ${k.delta ? `<div class="xo-kd" style="color:${k.delta.pct === 0 ? TOK.muted : k.delta.good ? TOK.green : TOK.red}">${k.delta.pct > 0 ? '+' : ''}${k.delta.pct}% vs previous 24 h</div>` : ''}`, k.href ? 'open ' + k.title : '');
-  const sloTile = (s, h, unified) => wrapA(s.href, `xo-slo ${s.measured ? (s.ok ? 'ok' : 'breach') : 'nowire'}`, `
-      <div class="xo-si">${s.measured ? (s.ok ? '✓' : '✕') : '○'}</div>
+  const sloState = s => !s.measured ? 'nowire' : s.status === 'at_risk' ? 'warn' : s.ok ? 'ok' : 'breach';
+  const sloMark = s => !s.measured ? '○' : s.status === 'at_risk' ? '!' : s.ok ? '✓' : '✕';
+  const sloTile = (s, h, unified) => wrapA(s.href, `xo-slo ${sloState(s)}`, `
+      <div class="xo-si">${sloMark(s)}</div>
       <div class="xo-sn">${badge(h, unified)}${esc(s.name)}</div>
       <div class="xo-sa">${esc(s.actual)}</div>
-      <div class="xo-st">${s.measured ? 'target ' + esc(s.target) : esc(s.note || 'not wired')}</div>`);
+      <div class="xo-st">${s.measured ? 'target ' + esc(s.target) : esc(s.note || 'not wired')}</div>`, s.message || (s.measured ? `target ${s.target}` : s.note || 'not wired'));
   const healthTile = (x, h, unified) => wrapA(x.href, `xo-hi xo-h-${x.state}`, `<div class="xo-hl">${badge(h, unified)}${esc(x.label)}</div><div class="xo-hv"><i></i>${esc(x.value)}</div><div class="xo-hs">${esc(x.sub || '')}</div>`);
   const chartCard = (ch, h, unified) => `<div class="topo-card xo-chart"><div class="xo-ct">${badge(h, unified)}${esc(ch.title)}<span class="xo-dim"> · ${h.days} d</span></div>${chart(ch, h.series.days)}</div>`;
   const issuesRows = (h, unified) => h.issues.map(i => `<tr><td><span class="xo-sev ${i.sev}">${i.sev}</span></td><td>${badge(h, unified)}<b>${esc(i.label)}</b></td><td class="xo-num">${num(i.open)} / ${num(i.total)}</td><td>${ts(i.first_seen).slice(0, 10)}<div class="xo-dim">${i.daysOngoing} d ongoing</div></td><td>${trend(i.trend)}${spark(i.spark, i.sev === 'critical' ? TOK.red : i.sev === 'warning' ? TOK.amber : TOK.blue)}</td><td><a href="${esc(i.href)}" class="xo-link">act →</a></td></tr>`).join('');
@@ -594,8 +596,8 @@
       .xo-slos>*{min-width:0}
       .xo-slo{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:12px;text-align:center;transition:box-shadow .2s,transform .2s}
       a.xo-slo:hover{transform:translateY(-1px);box-shadow:var(--shadow,0 10px 26px rgba(15,23,42,.10))}
-      .xo-slo.ok{border-left-color:var(--green,#0e9f5a)}.xo-slo.breach{border-left-color:#dc2626}.xo-slo.nowire{opacity:.7;border-left-style:dashed}
-      .xo-si{font-size:18px;font-weight:800}.xo-slo.ok .xo-si{color:var(--green,#0e9f5a)}.xo-slo.breach .xo-si{color:#dc2626}.xo-slo.nowire .xo-si{color:var(--muted)}
+      .xo-slo.ok{border-left-color:var(--green,#0e9f5a)}.xo-slo.warn{border-left-color:#d97706}.xo-slo.breach{border-left-color:#dc2626}.xo-slo.nowire{opacity:.7;border-left-style:dashed}
+      .xo-si{font-size:18px;font-weight:800}.xo-slo.ok .xo-si{color:var(--green,#0e9f5a)}.xo-slo.warn .xo-si{color:#d97706}.xo-slo.breach .xo-si{color:#dc2626}.xo-slo.nowire .xo-si{color:var(--muted)}
       .xo-sn{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:800;margin:4px 0}
       .xo-sa{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}.xo-st{font-size:10.5px;color:var(--muted);margin-top:3px}
       /* a contact is a control: pointer, a visible focus ring for the keyboard, and a hit target

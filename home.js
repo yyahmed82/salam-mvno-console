@@ -35,7 +35,7 @@
     {key:'growth_campaigns',name:'Campaigns',builtin:true,_growth:'campaigns'},
     {key:'mnp_donors',name:'Port-ins by donor operator',builtin:true,_mnp:true},
     {key:'servicing',name:'Servicing · existing customers',builtin:true,_servicing:true},
-    {key:'oracle_stack',name:'Oracle stack · OSB transactions (archive POC)',builtin:true,_oracle:true},
+    {key:'oracle_stack',name:'BSS findings · OSB / Oracle Bus archive',builtin:true,_oracle:true},
     {key:'hyperpay',name:'HyperPay · customer payments (STC Pay watch)',builtin:true,_hyperpay:true},
     // dealers_dms lives on the dedicated DMS tab now — keep it off the home dashboard list
     ...a.filter(d=>d.key!=='dealers_dms')]; }
@@ -493,7 +493,7 @@
             +_flowChans.map(c=>`<option value="${esc(c.channel)}" ${_flowChan===c.channel?'selected':''}>${esc(c.channel)} · ${c.n.toLocaleString()}</option>`).join('')+`</select>`):'')
       +`</div>`;
   }
-  /* ORACLE STACK FLOW (POC, 3 Sep 2026) — the DMS HLD's Oracle block, live: transaction counts,
+  /* ORACLE STACK FLOW (3 Sep 2026) — the DMS HLD's Oracle block, live: transaction counts,
    * p95 latency and fault badges per component, computed from the imported OSB log archive
    * (osbArchive.js). Sample window is the archive's own span — the header says so honestly. */
   async function renderOracleStack(host, R){
@@ -507,7 +507,7 @@
     if(!d||!d.ok){ host.innerHTML=`<div class="rl" style="color:var(--muted);padding:8px 2px">${esc((d&&d.note)||'Oracle stack: no OSB archive imported yet.')}</div>`; return; }
     const n=v=>Number(v||0).toLocaleString();
     const win=`${String(d.window.lo||'').slice(0,10)} → ${String(d.window.hi||'').slice(0,10)}`;
-    if(!Number(d.totals.access)){
+    if(!Number(d.totals.access)&&!Number(d.totals.pipeline)){
       host.innerHTML=`<div class="rl" style="color:var(--muted);padding:8px 2px">No OSB data in the selected range — the imported archive covers <b>${esc(win)}</b>. Pick those dates (Dates → Apply), or import a newer archive. Once the daily SFTP feed is live this follows the range automatically (day-1 lag).</div>`;
       return;
     }
@@ -518,13 +518,23 @@
         <div class="rl" style="font-size:10.5px;color:var(--muted)">${c.avg_ms!=null&&c.calls?`avg ${n(c.avg_ms)}ms · max ${n(c.max_ms)}ms`:(c.pipeline_records?`${n(c.pipeline_records)} pipeline record(s)`:'—')}</div>
         ${c.faults?`<div style="margin-top:4px"><span style="background:var(--tint-red);color:var(--bad-fg);border-radius:5px;padding:0 6px;font-weight:700;font-size:10.5px">✖ ${n(c.faults)} fault(s)</span></div>`:''}
         ${extra||''}</div>`;};
+    const days=(d.daily||[]).slice(-10);
+    const maxD=Math.max(1,...days.map(x=>Number(x.access||0)+Number(x.pipeline||0)));
+    const bars=days.length?`<div style="display:flex;gap:5px;align-items:end;height:48px;min-width:190px">`
+      +days.map(x=>{const total=Number(x.access||0)+Number(x.pipeline||0),h=Math.max(4,Math.round(42*total/maxD));return `<div style="width:18px;height:${h}px;border-radius:3px 3px 0 0;background:${Number(x.faults||0)?'#dc2626':'#2563eb'}" title="${esc(x.day)} · ${n(total)} records · ${n(x.faults)} faults"></div>`;}).join('')
+      +`</div>`:'';
+    const fk=(d.fault_kinds||[]).slice(0,4).map(x=>`<span class="pill" style="padding:2px 8px;font-size:10.5px;border-left-color:#dc2626">${esc(x.fault_kind||'fault')} <b>${n(x.n)}</b></span>`).join(' ');
     host.innerHTML=`
-      <div class="rl" style="margin:2px 0 8px;color:var(--muted)">POC · <b>selected range</b> ${esc(String(d.from||'').slice(0,10))} → ${esc(String(d.to||'').slice(0,10))} · archive covers ${esc(win)} (both OSB nodes) · faults = OSB-382000 / SOAP faults in pipeline payloads · goes live day-1-lagged once the daily SFTP feed lands</div>
+      <div class="rl" style="margin:2px 0 8px;color:var(--muted)"><b>selected range</b> ${esc(String(d.from||'').slice(0,10))} → ${esc(String(d.to||'').slice(0,10))} · archive covers ${esc(win)} (both OSB nodes) · faults = OSB-382000 / SOAP faults in pipeline payloads · goes live day-1-lagged once the daily SFTP feed lands</div>
       <div style="background:var(--tint-green,#dcfce7);border:1.5px solid var(--green-line);border-radius:8px;padding:8px 14px;display:flex;align-items:center;gap:14px;margin-bottom:6px">
         <b style="font-size:12.5px">App / Web / DMS → API GW → UIL</b>
         <span class="rl">→</span>
         <b style="font-size:14px">OSB entry: ${n(d.entry.calls)} transactions</b>
         <span class="rl" style="color:var(--muted)">avg ${d.entry.avg_ms!=null?n(d.entry.avg_ms)+'ms':'—'} · ${n(d.entry.faults)} fault(s)</span>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+        <div style="border:1px dashed #d9a7a7;border-radius:8px;padding:6px 12px" class="rl">BSS calls: <b>${n(d.totals.access)}</b> · payload records: <b>${n(d.totals.pipeline)}</b> · faults: <b style="color:var(--bad-fg)">${n(d.totals.faults)}</b></div>
+        ${bars}<div style="display:flex;gap:4px;flex-wrap:wrap">${fk||'<span class="rl" style="color:var(--good)">no OSB faults in range</span>'}</div>
       </div>
       <div style="border:2px solid #c0392b;border-radius:10px;padding:12px;position:relative">
         <span style="position:absolute;top:-9px;left:14px;background:var(--bg,#fff);padding:0 8px;color:#c0392b;font-weight:800;font-size:11px;letter-spacing:1px">ORACLE</span>

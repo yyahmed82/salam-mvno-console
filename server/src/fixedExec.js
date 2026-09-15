@@ -15,6 +15,7 @@
 const db = require('./db');
 const f360 = require('./fixed360');
 const K = require('./execContract');
+const slo = require('./slo');
 const { n, pct, delta, dayKey, dayAxis, trendOf, sevOf, humanStep } = K;
 
 const ERR_DAY = `SELECT (date_trunc('day', occurred_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day,
@@ -33,6 +34,11 @@ const STEPS = `SELECT oa.channel, oa.step_reached AS step, oa.outcome::text AS o
 const pools = () => [...new Set([db.ops, db.opsBeta].filter(Boolean))];
 const both = async (sql, params) => (await Promise.all(pools().map(p => p.query(sql, params).then(r => r.rows, () => [])))).flat();
 async function errorBudget() {
+  try {
+    const cfg = await slo.getConfig();
+    const t = slo.targetNumber(slo.findDef(cfg, 'fixed_api_error_budget'), {}, null);
+    if (n(t) > 0) return n(t);
+  } catch (_) {}
   try { const r = await db.ops.query(`SELECT threshold FROM alert_rules WHERE key='fixed_error_spike' AND enabled LIMIT 1`); const t = n((r.rows[0] || {}).threshold); return t > 0 ? t : 50; }
   catch (_) { return 50; }
 }
@@ -99,6 +105,8 @@ async function exec(q = {}) {
   const errors24 = err24rows.reduce((a, r) => a + n(r.n), 0);
   const conv7 = pct(n((series.kpis || {}).completed), n((series.kpis || {}).attempts));
   const convFloor = Math.max(0, conv7 - 5);
+  const sloCfg = await slo.getConfig().catch(() => null);
+  const def = key => slo.findDef(sloCfg, key);
 
   // ---- pipeline
   const stepMap = {}; for (const s of steps) { const key = s.step || '(no step)'; const x = stepMap[key] || (stepMap[key] = { step: key, n: 0 }); x.n += n(s.n); }
@@ -120,21 +128,26 @@ async function exec(q = {}) {
 
   // ---- SLOs (measured ones from data; unmeasured ones honestly marked)
   const naf = (today.integrations || {}).nafath || {}, man = (today.integrations || {}).manafith || {};
+  const errS = slo.assess(def('fixed_api_error_budget'), errors24, {}, budget);
+  const convS = slo.assess(def('fixed_order_conversion'), n(k.conversion) / 100, { baseline: conv7 / 100 }, convFloor / 100);
+  const nafS = slo.assess(def('fixed_nafath_failure_rate'), naf.total ? naf.failRate / 100 : null, {}, 0.25);
+  const manS = slo.assess(def('fixed_manafith_denials'), man.total ? man.deniedRate / 100 : null, {}, 0.10);
+  const sadadDef = def('fixed_sadad_availability'), sftpDef = def('fixed_sftp_odb_sync');
   const slos = [
-    { key: 'error_budget', name: 'API error budget', actual: `${errors24} / 24 h`, target: `≤ ${budget} / day`, ok: errors24 <= budget, measured: true, href: '#fixed?tab=errors' },
-    { key: 'conversion', name: 'Order conversion', actual: `${n(k.conversion)}%`, target: `≥ ${convFloor}% (${days}-day avg − 5 pp)`, ok: n(k.conversion) >= convFloor, measured: n(k.attempts) > 0, href: '#fixed?tab=dash' },
-    { key: 'nafath', name: 'Nafath failure rate', actual: naf.total ? `${naf.failRate}%` : '—', target: '≤ 25%', ok: !naf.total || naf.failRate <= 25, measured: !!naf.total, href: '#fixed?tab=dash' },
-    { key: 'manafith', name: 'Manafith denials', actual: man.total ? `${man.deniedRate}%` : '—', target: '≤ 10%', ok: !man.total || man.deniedRate <= 10, measured: !!man.total, href: '#fixed?tab=dash' },
-    { key: 'sadad', name: 'SADAD availability', actual: '—', target: 'UP · ≤ 500 ms', ok: null, measured: false, note: 'no SADAD probe is wired into this console' },
-    { key: 'sftp', name: 'SFTP ODB sync', actual: '—', target: 'SUCCESS daily', ok: null, measured: false, note: 'no SFTP job feed is wired into this console' },
+    { key: 'error_budget', name: 'API error budget', actual: `${errors24} / 24 h`, target: errS.targetText, ok: errS.ok, status: errS.status, message: errS.message, measured: true, href: '#fixed?tab=errors' },
+    { key: 'conversion', name: 'Order conversion', actual: `${n(k.conversion)}%`, target: convS.targetText, ok: convS.ok, status: convS.status, message: convS.message, measured: n(k.attempts) > 0, href: '#fixed?tab=dash' },
+    { key: 'nafath', name: 'Nafath failure rate', actual: naf.total ? `${naf.failRate}%` : '—', target: nafS.targetText, ok: nafS.ok, status: nafS.status, message: nafS.message, measured: !!naf.total, href: '#fixed?tab=dash' },
+    { key: 'manafith', name: 'Manafith denials', actual: man.total ? `${man.deniedRate}%` : '—', target: manS.targetText, ok: manS.ok, status: manS.status, message: manS.message, measured: !!man.total, href: '#fixed?tab=dash' },
+    { key: 'sadad', name: 'SADAD availability', actual: '—', target: slo.targetText(sadadDef, {}, 'UP · ≤ 500 ms'), ok: null, status: 'nodata', measured: false, note: sadadDef && sadadDef.note || 'no SADAD probe is wired into this console' },
+    { key: 'sftp', name: 'SFTP ODB sync', actual: '—', target: slo.targetText(sftpDef, {}, 'SUCCESS daily'), ok: null, status: 'nodata', measured: false, note: sftpDef && sftpDef.note || 'no SFTP job feed is wired into this console' },
   ];
 
   // ---- status + summary
-  const critical = sev.P1 + (errors24 > budget ? 1 : 0) + (pileup && pileup.n >= 1000 ? 1 : 0);
-  const warnings = sev.P2 + slos.filter(s => s.measured && s.ok === false && s.key !== 'error_budget').length;
+  const critical = sev.P1 + (errS.status === 'breached' ? 1 : 0) + (pileup && pileup.n >= 1000 ? 1 : 0);
+  const warnings = sev.P2 + slos.filter(s => s.measured && (s.status === 'at_risk' || (s.status === 'breached' && s.key !== 'error_budget'))).length;
   const status = K.statusOf(critical, warnings);
   const summary = [];
-  if (critical) summary.push(`${critical} critical signal(s): ${[sev.P1 ? `${sev.P1} P1 alert(s) fired` : null, errors24 > budget ? `API errors ${errors24} above the ${budget}/day budget` : null, pileup && pileup.n >= 1000 ? `${pileup.n} attempts sitting at ${pileup.label}` : null].filter(Boolean).join(', ')}.`);
+  if (critical) summary.push(`${critical} critical signal(s): ${[sev.P1 ? `${sev.P1} P1 alert(s) fired` : null, errS.status === 'breached' ? `API errors ${errors24} above ${errS.targetText}` : null, pileup && pileup.n >= 1000 ? `${pileup.n} attempts sitting at ${pileup.label}` : null].filter(Boolean).join(', ')}.`);
   else summary.push(`No critical signal in the last 24 h${warnings ? `; ${warnings} warning(s) to watch` : ''}.`);
   const dA = delta(n(k.attempts), n(kp.attempts));
   summary.push(`${n(k.attempts).toLocaleString('en-US')} order attempts in 24 h (${dA >= 0 ? '+' : ''}${dA}% vs the previous 24 h), ${n(k.completed).toLocaleString('en-US')} completed — ${n(k.conversion)}% conversion against a ${conv7}% ${days}-day average.`);
@@ -149,8 +162,8 @@ async function exec(q = {}) {
     kpis: [
       { key: 'availability', title: 'Service availability', value: '—', sub: 'SADAD / SFTP probes not wired — not measured', tone: 'muted', delta: null, href: null, exec: true, window: '24 h' },
       { key: 'attempts', title: 'Order attempts', value: n(k.attempts), sub: `${n(k.completed).toLocaleString('en-US')} completed · ${n(k.withOrder).toLocaleString('en-US')} with a BSS order`, tone: 'green', delta: { pct: dA, good: dA >= 0 }, href: '#fixed?tab=dash', exec: true, window: '24 h' },
-      { key: 'conversion', title: 'Order funnel health', value: `${n(k.conversion)}%`, sub: `${(n(outcomes.STALLED) + n(outcomes.IN_PROGRESS)).toLocaleString('en-US')} stalled / in progress · ${conv7}% ${days}-day avg`, tone: n(k.conversion) < convFloor ? 'red' : 'green', delta: null, href: '#fixed?tab=dash', exec: true, window: '24 h' },
-      { key: 'errors', title: 'API errors', value: errors24, sub: `budget ${budget}/day — ${errors24 > budget ? 'exceeded' : 'within budget'}`, tone: errors24 > budget ? 'red' : 'green', delta: null, href: '#fixed?tab=errors', exec: true, window: '24 h' },
+      { key: 'conversion', title: 'Order funnel health', value: `${n(k.conversion)}%`, sub: `${(n(outcomes.STALLED) + n(outcomes.IN_PROGRESS)).toLocaleString('en-US')} stalled / in progress · target ${convS.targetText}`, tone: convS.status === 'breached' ? 'red' : convS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#fixed?tab=dash', exec: true, window: '24 h' },
+      { key: 'errors', title: 'API errors', value: errors24, sub: `budget ${errS.targetText} — ${errS.status === 'breached' ? 'exceeded' : errS.status === 'at_risk' ? 'near limit' : 'within budget'}`, tone: errS.status === 'breached' ? 'red' : errS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#fixed?tab=errors', exec: true, window: '24 h' },
       { key: 'critical', title: 'Active critical signals', value: critical, sub: `${sev.P1} P1 · ${sev.P2} P2 · ${sev.P3} P3 fired in ${days} d`, tone: critical ? 'red' : 'green', delta: null, href: '#fixed?tab=alerts', exec: true, window: `${days} d` },
       { key: 'revenue', title: 'Daily revenue', value: '—', sub: 'connect the billing feed to activate', tone: 'muted', delta: null, href: null, exec: true, window: '24 h' },
       { key: 'pileup', title: 'Order pileup', value: pileup ? pileup.n : 0, sub: pileup ? `${pileup.label} · ${pileup.share}% of not-completed` : 'no step is accumulating', tone: pileup && pileup.n >= 1000 ? 'red' : pileup && pileup.n >= 500 ? 'amber' : null, delta: null, href: '#fixed?tab=epurchase', exec: false, window: `${days} d` },
@@ -159,8 +172,8 @@ async function exec(q = {}) {
     slos,
     health: [
       { label: 'Read model', value: fr.newest_attempt ? dayKey(fr.newest_attempt) : '—', state: fr.stale ? 'warn' : 'up', sub: fr.lag_min == null ? 'watcher lag unknown' : `watcher lag ${fr.lag_min} min`, href: '#fixed?tab=overview' },
-      { label: 'Nafath', value: naf.total ? `${naf.failRate}% fail` : '—', state: !naf.total ? 'nowire' : naf.failRate <= 25 ? 'up' : 'down', sub: `${n(naf.total).toLocaleString('en-US')} 5G checks`, href: '#fixed?tab=dash' },
-      { label: 'Manafith', value: man.total ? `${man.deniedRate}% denied` : '—', state: !man.total ? 'nowire' : man.deniedRate <= 10 ? 'up' : 'down', sub: `${n(man.denied).toLocaleString('en-US')} of ${n(man.total).toLocaleString('en-US')}`, href: '#fixed?tab=dash' },
+      { label: 'Nafath', value: naf.total ? `${naf.failRate}% fail` : '—', state: !naf.total ? 'nowire' : nafS.status === 'met' ? 'up' : nafS.status === 'at_risk' ? 'warn' : 'down', sub: `${n(naf.total).toLocaleString('en-US')} 5G checks · target ${nafS.targetText}`, href: '#fixed?tab=dash' },
+      { label: 'Manafith', value: man.total ? `${man.deniedRate}% denied` : '—', state: !man.total ? 'nowire' : manS.status === 'met' ? 'up' : manS.status === 'at_risk' ? 'warn' : 'down', sub: `${n(man.denied).toLocaleString('en-US')} of ${n(man.total).toLocaleString('en-US')} · target ${manS.targetText}`, href: '#fixed?tab=dash' },
       ...(series.byChannel || []).map(c => ({ label: `Channel · ${c.channel}`, value: `${n(c.n).toLocaleString('en-US')} · ${c.conversion}%`, state: 'up', sub: `attempts · conversion, ${days} d`, href: `#fixed?tab=${c.channel === 'sda' ? 'map' : c.channel === 'epurchase' ? 'epurchase' : 'salamhome'}` })),
       { label: 'SADAD', value: 'not wired', state: 'nowire', sub: 'no probe in this console' },
       { label: 'SFTP ODB sync', value: 'not wired', state: 'nowire', sub: 'no job feed in this console' },

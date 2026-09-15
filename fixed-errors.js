@@ -88,11 +88,32 @@
       #fxErr .fe-x td{padding:12px 10px 14px} #fxErr .fe-x .fe-xgrid{position:sticky;left:0;width:calc(100vw - 62px);max-width:calc(100vw - 62px)} #fxErr .fe-what{white-space:normal;word-break:break-word} #fxErr .fe-io pre{font-size:11px} #fxErr .fe-sim .f{gap:10px 14px}}
     #fxErr .fe-btn.fe-exp{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);font-weight:700} #fxErr .fe-btn.fe-exp:hover{background:var(--green,#0e9f5a);color:#fff} #fxErr .fe-btn.fe-exp:disabled{opacity:.6;cursor:progress}
   `;
+  function applyRouteQuery(){
+    try{
+      const raw=(location.hash.split("?")[1]||"");
+      if(!raw||raw===window.__fxErrLastQs||!/(?:^|&)(range|window|category|team|priority|provider|channel|type|tech|find|openOnly|serviceNo|odb|iccid|cpe|msisdn|custCode|customerId|workflowId)=/.test(raw)) return;
+      window.__fxErrLastQs=raw; const P=new URLSearchParams(raw);
+      Object.assign(S,{channel:"",type:"",team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},openOnly:true});
+      const win=P.get("range")||P.get("window"); if(win&&WINDOWS.some(([k])=>k===win)){ S.win=win; try{ localStorage.setItem("fixed_err_win",win); }catch(e){} }
+      if(P.has("category")) S.category=P.get("category")||"";
+      if(P.has("team")) S.team=P.get("team")||"";
+      if(P.has("priority")) S.prio=P.get("priority")||"";
+      if(P.has("provider")) S.provider=P.get("provider")||"";
+      if(P.has("channel")) S.channel=P.get("channel")||"";
+      if(P.has("type")) S.type=P.get("type")||"";
+      if(P.has("tech")) S.tech=P.get("tech")||"all";
+      if(P.has("find")) S.find=P.get("find")||"";
+      if(P.has("openOnly")) S.openOnly=P.get("openOnly")!=="0";
+      for(const [k] of ID_FIELDS) if(P.has(k)) S.ids[k]=P.get(k)||"";
+      S.expanded.clear();
+    }catch(e){}
+  }
   function qs(){ const ch=S.channel||"";
     let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.type?`&type=${encodeURIComponent(S.type)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}`;
     if(S.find) q+=`&find=${encodeURIComponent(S.find)}`; for(const [k] of ID_FIELDS) if(S.ids[k]) q+=`&${k}=${encodeURIComponent(S.ids[k])}`; return q; }
 
   async function render(host,fx){
+    applyRouteQuery();
     const esc=fx.esc;
     if(S.timer){ clearInterval(S.timer); S.timer=null; }
     if(S.hubSeen===undefined) S.hubSeen=fx.state.channel||"";                      // first paint: board starts on All channels (prod default)

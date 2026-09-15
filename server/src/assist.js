@@ -200,7 +200,7 @@ const SMALL_TALK = /^\s*(hi|hello|hey|salam|salaam|assalam.*|thanks?|thank you|s
 // integration/system names shown on the Integrations page (its own "Ask Yusr" chip sends
 // "Explain the integration …" — 'integration' being absent here made the page's own button get
 // refused as out-of-scope), plus common Arabic terms so call-center agents can ask in Arabic.
-const CUSTOMER_TOPICS = /\b(subscriber|customer|msisdn|journey|order|onboarding|activat|esim|e-sim|sim|iccid|mnp|port|payment|upg|tap|refund|charge|bill|otp|nafath|semati|citc|eligib|kyc|error|fail|stuck|pending|timeout|retry|troubleshoot|apollo|posa|checkout|plan|line|number|delivery|webhook|callback|request|response|trace|api|integrations?|oracle|bss|absher|tcc|hyperpay|tamara|merchalink|salampay|worker|queue|sidekiq|courier|oto|smsa|barq|imile|saleor|zatca|unifonic)\b/i
+const CUSTOMER_TOPICS = /\b(subscriber|customer|msisdn|journey|order|onboarding|activat|esim|e-sim|sim|iccid|mnp|port|payment|upg|tap|refund|charge|bill|otp|nafath|semati|citc|eligib|kyc|error|fail|stuck|pending|timeout|retry|troubleshoot|apollo|posa|checkout|plan|line|number|delivery|webhook|callback|request|response|trace|api|integrations?|oracle|osb|oss|moss|bss|absher|tcc|hyperpay|tamara|merchalink|salampay|worker|queue|sidekiq|courier|oto|smsa|barq|imile|saleor|zatca|unifonic)\b/i
   , CUSTOMER_TOPICS_AR = /(مشترك|عميل|رقم|طلب|تفعيل|شريحة|دفع|فاتورة|مبلغ|استرجاع|خطأ|فشل|معلق|مشكلة|توصيل|نفاذ|أهلية|باقة|تكامل)/;
 
 /* PAYMENT IDENTIFIERS — an agent pastes one of these and expects the whole story:
@@ -477,6 +477,31 @@ async function customerContext(q, allowUnmask) {
   return pack;   // already masked above
 }
 
+async function osbCustomerContext(key) {
+  try {
+    const osb = require('./osbResolve');
+    if (!(await require('./osbArchive').available())) return null;
+    const r = await osb.customerSummary(key, { limit: 40 });
+    if (!r) return null;
+    const s = { ...(r.summary || {}) };
+    const pipeline = (r.pipeline || []).slice(-8).map(x => ({
+      at: x.ts, server: x.server, component: x.component, pipeline: x.pipeline, stage: x.stage,
+      direction: x.direction, label: x.label, fault: x.fault, fault_kind: x.fault_kind,
+      ecid: x.ecid, txn_ids: x.txn_ids
+    }));
+    const backend = (r.access || []).slice(-8).map(x => ({
+      at: x.ts, server: x.server, component: x.component, uri: x.uri, status: x.status, ms: x.ms, ecid: x.ecid
+    }));
+    const direct = (r.access_by_msisdn || []).slice(-5).map(x => ({
+      at: x.ts, server: x.server, component: x.component, uri: x.uri, status: x.status, ms: x.ms, ecid: x.ecid
+    }));
+    return roles.maskDeep({ archive_window: r.archive_window, from: r.from, to: r.to,
+      summary: s, business_stories: (s.journey_stories || []).slice(0, 6), correlation: s.correlation || null,
+      pipeline, backend, direct_backend_hits: direct,
+      note: 'Imported OSB archive only; day-1 lag once daily SFTP feed is live. Match is by resolved service MSISDN/NID, payload identifiers, direct access-log MSISDN, then ECID to access rows. The current OSB archive does not carry UIL transaction id or APIGW trace id, so Digital/APIGW to OSB is probable by customer + time unless future logs add a shared header.' }, false);
+  } catch (e) { return { error: e.message }; }
+}
+
 async function alertsContext() {
   try {
     // trigger_codes joined in so Yusr can answer "why did <rule> fire?" with the exact codes
@@ -554,6 +579,7 @@ Your users are L1 support and call-center agents. Be concise, factual and action
 SCOPE — you ONLY handle:
 1. Customer journeys: onboarding orders, activation, eSIM/physical SIM, MNP port-in, eligibility (Semati + Nafath/CITC), payments (UPG/Tap), OTP, delivery.
 2. Troubleshooting a specific subscriber: failed steps, errors, stuck orders, and the request/response details of each integration call.
+2b. BSS/OSB evidence: CONTEXT.osb_customer contains imported Oracle Service Bus archive facts for a subscriber (resolved service MSISDN/NID, payload identifier matches, direct access-log MSISDN hits, business stories such as recharge/MNP/onboarding/Remedy/invoice, and ECID-joined OSB hops). Use it to explain which BSS/Oracle calls happened, faults, latency, and whether the archive window covers the case. Do not call it exact Digital/APIGW to OSB correlation unless the context explicitly provides a shared request id; normally the OSB archive lacks UIL transaction id / APIGW trace id, so say it is OSB evidence or probable by subscriber + time.
 3. Live incidents from the alerts data ONLY.
 4. Explaining the platform's external integrations, webhooks and workers (Oracle BSS, Nafath, Semati, payments gateways, couriers …) FROM the INTEGRATIONS runbook sections in the context.
 5. Error-case analysis: when the user gives a trace id / request id (the "Device ID" shown in the app's error dialog), CONTEXT contains case_analysis with the matching backend error events.
@@ -577,6 +603,7 @@ Rules:
 - ACTIVE vs ATTEMPTED: customer.service_lines lists the lines the customer actually HOLDS (app account / activation / MNP / BSS). customer.lines are onboarding ATTEMPTS (many are abandoned checkouts in state "payment"). NEVER say a customer has "no active line" or "none activated" when service_lines.count > 0 — say which line(s) are active and, separately, that N attempts exist. If service_lines is empty AND live_bss is "not configured", say the live inventory is unavailable rather than concluding the customer has nothing. For Fixed: fixed_customer.inventory.services is what the customer HAS in the fixed BSS (account e.g. FTTH09071297, plan, state active/suspended, since, owed amount) — answer "does he have FTTH / is it active / which plan / what does he owe" from it, quoting tier (live vs recorded as_of date). fixed_customer.services are journey records (orders attempted through the app/dealers) — a different thing; a customer can have an active FTTH with zero journeys, or 20 journeys and no service. When inventory.available is false, say the BSS inventory is unavailable and why — never conclude "no Fixed service" from the journeys alone.
 - The customer pack includes 'recent_failures' — a scan of THIS subscriber's failed / stuck payments, activation, eligibility, delivery, etc. over recent months. If it is non-empty, ALWAYS surface it (category · date · reason, most recent first) and explain the likely cause. NEVER answer "no incidents" / "all clear" for a subscriber whose recent_failures is non-empty. A subscriber's recent_failures are SEPARATE from open metric incidents (open_alerts) — a subscriber can have real failures while there are zero open incidents; state both correctly and don't conflate them.
 - The customer pack may include 'cst_tickets' — CST / ServiceNow incidents that name THIS subscriber (number, priority, state, title). If present, ALWAYS cite them prominently by number + state (e.g. "Open CST ticket INC0014074 (P2) — login issue"). These are authoritative support tickets; they, recent_failures, and open metric incidents are three different things — report each accurately.
+- The context may include 'osb_customer' — imported OSB/BSS archive evidence for THIS subscriber. If summary.journey_stories exists, name the useful story first (recharge, MNP, onboarding/inventory, Remedy, invoice, balance/profile). If summary.faults > 0, mention the OSB fault kind and component. If only direct_backend_hits exist, say BSS saw direct access-log reads but no payload record was joined. If the archive window does not cover the customer journey, say so. Always state the Digital/APIGW trace limitation when asked about correlation.
 - If the pack has existing_no_onboarding=true, this is an EXISTING subscriber (recharge / plan upgrade / etc.) with no onboarding order in the console's data. Say so briefly, then report recent_failures and cst_tickets. Do NOT reply "subscriber not found".
 - Eligibility means Semati + Nafath (CITC) checks. Payments use UPG/Tap; payment status 'fail' means failed.
 - TWO DIFFERENT CODE SPACES SHARE THE SAME NUMBERS — never mix them:
@@ -626,6 +653,13 @@ function identityFacts(ctx) {
     } else L.push(`🏠 Fixed — BSS inventory unavailable${f.inventory && f.inventory.reason ? ' (' + f.inventory.reason + ')' : ''}; ${f.customer ? f.customer.attempts + ' journey attempt(s) in the Fixed console' : ''}`);
     if (inv && f.customer && f.customer.attempts) L.push(`   ${f.customer.attempts} Fixed journey attempt(s) (${f.customer.orders || 0} order(s)) — journeys, not the inventory`);
   } else if (f && f.found === false && ctx.customer && ctx.customer.found) L.push(`🏠 Fixed — no Fixed journey or BSS record linked to this identity${f.hint ? ' (' + f.hint + ')' : ''}`);
+  const os = ctx.osb_customer && ctx.osb_customer.summary;
+  if (os && (os.pipeline_records || os.backend_hops || os.direct_backend_hits)) {
+    const stories = (os.journey_stories || []).slice(0, 3).map(s => `${s.label} ${s.records}${s.faults ? ' faults ' + s.faults : ''}`).join(', ');
+    L.push(`OSB/BSS archive — ${os.pipeline_records || 0} pipeline record(s), ${os.backend_hops || 0} ECID backend hop(s), ${os.direct_backend_hits || 0} direct backend hit(s), ${os.faults || 0} fault(s)${os.first_seen ? ' · ' + String(os.first_seen).slice(0, 10) + ' → ' + String(os.last_seen || os.first_seen).slice(0, 10) : ''}`);
+    if (stories) L.push(`   OSB stories: ${stories}`);
+    L.push('   Correlation note: OSB-internal ECID joins are exact when present; Digital/APIGW trace id is not present in the current OSB archive.');
+  }
   return L.join('\n');
 }
 function fallbackAnswer(intent, ctx, hint) {
@@ -633,6 +667,14 @@ function fallbackAnswer(intent, ctx, hint) {
   if (intent === 'customer') {
     const fx = fixedLines(ctx.fixed_customer);
     if (!ctx.customer || ctx.customer.found === false) {
+      const os = ctx.osb_customer && ctx.osb_customer.summary;
+      if (os && (os.pipeline_records || os.direct_backend_hits)) {
+        const osDate = os.first_seen ? ` · ${String(os.first_seen).slice(0, 10)} → ${String(os.last_seen || os.first_seen).slice(0, 10)}` : '';
+        const osStory = (os.journey_stories || []).length ? `\n• Stories: ${(os.journey_stories || []).slice(0, 3).map(s => `${s.label} ${s.records}`).join(', ')}` : '';
+        return `No Mobile onboarding profile for ${ctx.customerKey || 'that number/ID'}, but the OSB/BSS archive has evidence:\n` +
+          `• ${os.pipeline_records || 0} pipeline record(s), ${os.backend_hops || 0} ECID backend hop(s), ${os.direct_backend_hits || 0} direct backend hit(s), ${os.faults || 0} fault(s)${osDate}` +
+          `${osStory}\n(LLM offline — open Customer 360 → Live BSS → OSB for details. Digital/APIGW trace is not exact in the current archive.)`;
+      }
       if (fx) return `No Mobile subscriber for ${ctx.customerKey || 'that number/ID'}, but the same person has Fixed services:\n${fx}\n(LLM offline — open Customer 360 → Fixed services for the full picture.)`;
       return 'I could not find a customer for that number/ID on Mobile or Fixed. Double-check the MSISDN (05xxxxxxxx), National ID, FTTH account or order number and try again.';
     }
@@ -653,9 +695,13 @@ function fallbackAnswer(intent, ctx, hint) {
     const tixTxt = tix.length
       ? `\nCST tickets:\n` + tix.slice(0, 4).map(t => `• ${t.number}${t.priority ? ` (${t.priority})` : ''} — ${t.title || ''} [${t.state || ''}]`).join('\n')
       : (c.cst_configured === false ? '' : '\nNo linked CST tickets.');
+    const os = ctx.osb_customer && ctx.osb_customer.summary;
+    const osStories = os && (os.journey_stories || []).length ? ` Stories: ${(os.journey_stories || []).slice(0, 3).map(s => `${s.label} ${s.records}${s.faults ? ' faults ' + s.faults : ''}`).join(', ')}.` : '';
+    const osbTxt = os ? `\nOSB/BSS archive: ${os.pipeline_records || 0} pipeline record(s), ${os.backend_hops || 0} ECID backend hop(s), ${os.direct_backend_hits || 0} direct backend hit(s), ${os.faults || 0} fault(s)` +
+      (os.first_seen ? ` · ${String(os.first_seen).slice(0, 10)} → ${String(os.last_seen || os.first_seen).slice(0, 10)}` : '') + `.${osStories} Digital/APIGW trace is not exact in the current OSB archive.` : '';
     const note = c.existing_no_onboarding ? ' (existing subscriber — no onboarding order in the console)' : '';
     const fxTxt = fx ? `\n🏠 Fixed services for the same person:\n${fx}` : (db.opsConfigured ? '\n🏠 No Fixed services found for this person.' : '');
-    return `Mobile subscriber found${note}.\n${active}\n${lines}${failTxt}${tixTxt}${fxTxt}\n(LLM offline — showing raw profile. Open Customer 360 for the full timeline.)`;
+    return `Mobile subscriber found${note}.\n${active}\n${lines}${failTxt}${tixTxt}${osbTxt}${fxTxt}\n(LLM offline — showing raw profile. Open Customer 360 for the full timeline.)`;
   }
   /* SMS answers must survive the LLM being offline — this is a support question asked under
    * time pressure, and the facts are already assembled. */
@@ -732,6 +778,7 @@ function actionsFor(intent, ctx) {
   if (intent === 'customer' && ctx.customer && ctx.customer.found && ctx.customerKey) {
     acts.push({ label: 'Open Customer 360', href: '#sub360?key=' + encodeURIComponent(ctx.customerKey) });
     if (ctx.fixed_customer && ctx.fixed_customer.found) acts.push({ label: '🏠 Fixed services', href: '#sub360?key=' + encodeURIComponent(ctx.customerKey) + '&tab=fixed' });
+    if (ctx.osb_customer && ctx.osb_customer.summary) acts.push({ label: 'OSB/BSS archive', href: '#sub360?key=' + encodeURIComponent(ctx.customerKey) + '&tab=diag' });
   }
   if (intent === 'fixed_customer' && ctx.fixed_customer && ctx.fixed_customer.found && ctx.fixedKey) {
     acts.push({ label: 'Open Customer 360 → Fixed', href: '#sub360?key=' + encodeURIComponent(ctx.fixedKey) + '&tab=fixed' });
@@ -1102,6 +1149,7 @@ async function chat({ message, history, allowUnmask, business, actor }) {
   if (intent === 'customer') {
     if (!ctx.customerKey) ctx.customerKey = extractIdentifier(q);
     { const __tc=Date.now(); ctx.customer = await customerContext(ctx.followup ? ctx.customerKey : q, allowUnmask); ctx.__packMs = Date.now()-__tc; }
+    ctx.osb_customer = await osbCustomerContext(ctx.customerKey);
     // the same person may hold Fixed services — resolved through the nexus bridge (NID / mobile) when configured
     if (db.opsConfigured && biz !== 'mobile') { ctx.fixed_customer = await fixedCustomerContext(ctx.customerKey, allowUnmask); if (!ctx.fixed_customer.found) delete ctx.fixed_customer; }
     ctx.kb = searchKb(q, 2);
@@ -1119,6 +1167,7 @@ async function chat({ message, history, allowUnmask, business, actor }) {
     .concat(ctx.payment && ctx.payment.found ? [{ type: 'payment', ref: ctx.payment.payment ? ctx.payment.payment.payment_reference_id : ctx.payment.key }] : [])
     .concat((ctx.kb || []).map(k => ({ type: 'runbook', doc: k.doc, section: k.title })))
     .concat(ctx.customer && ctx.customer.found ? [{ type: 'subscriber', key: ctx.customerKey }] : [])
+    .concat(ctx.osb_customer && ctx.osb_customer.summary ? [{ type: 'osb_archive', key: ctx.customerKey }] : [])
     .concat(ctx.alerts ? [{ type: 'alerts', open: ctx.alerts.open_count }] : [])
     .concat(ctx.fixed_customer && ctx.fixed_customer.found ? [{ type: 'fixed_customer', key: ctx.fixedKey || ctx.customerKey }] : [])
     .concat(ctx.fixed_issues && !ctx.fixed_issues.error ? [{ type: 'fixed_issues', window: ctx.fixed_issues.window }] : [])
@@ -1140,6 +1189,7 @@ async function chat({ message, history, allowUnmask, business, actor }) {
     payment: ctx.payment || undefined,
     sms: ctx.sms || undefined,
     customer: ctx.customer || undefined,
+    osb_customer: ctx.osb_customer || undefined,
     fixed_customer: ctx.fixed_customer || undefined,
     fixed_issues: ctx.fixed_issues || undefined,
     open_alerts: ctx.alerts || undefined,

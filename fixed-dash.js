@@ -15,6 +15,19 @@
   // page state survives re-renders (hub range/channel changes) but is not persisted
   const st={ view:"dealers", outcome:new Set(), plan:new Set(), role:new Set(), region:new Set(), consent:"all", busy:null };
 
+  function applyRouteQuery(fx){
+    try{
+      const raw=(location.hash.split("?")[1]||"");
+      if(!raw||raw===window.__fxDashLastQs||!/(?:^|&)(range|view|outcome|plan|role|region|consent)=/.test(raw)) return;
+      window.__fxDashLastQs=raw; const P=new URLSearchParams(raw);
+      st.view="dealers"; st.outcome.clear(); st.plan.clear(); st.role.clear(); st.region.clear(); st.consent="all";
+      const range=P.get("range"); if(range&&fx&&fx.state){ fx.state.range=range; try{ localStorage.setItem("fixed_range",range); }catch(e){} }
+      if(P.has("view")) st.view=P.get("view")==="qr"?"qr":"dealers";
+      const list=(set,k)=>{ if(!P.has(k)) return; set.clear(); String(P.get(k)||"").split(",").map(s=>s.trim()).filter(Boolean).forEach(v=>set.add(v)); };
+      list(st.outcome,"outcome"); list(st.plan,"plan"); list(st.role,"role"); list(st.region,"region");
+      if(P.has("consent")) st.consent=P.get("consent")||"all";
+    }catch(e){}
+  }
   const qsDims=()=>{ const p=[];
     if(st.outcome.size) p.push("outcome="+[...st.outcome].join(","));
     if(st.plan.size) p.push("plan="+[...st.plan].join(","));
@@ -100,6 +113,7 @@
   /* ---- render ---- */
   let lastData=null, lastKey="";
   async function render(host, fx, keep){
+    applyRouteQuery(fx);
     const {esc,fmt,card,tbl}=fx;
     const key=st.view+"|"+fx.qs()+qsDims();
     if(!(keep&&lastData&&lastKey===key)){

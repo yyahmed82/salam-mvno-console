@@ -9,7 +9,7 @@
     workbench:{workbench:true},
     // Growth was absorbed into Monitoring → Resellers. Old links keep working.
     analytics:{view:"analytics"}, growth:{view:"monitoring",monTab:"resellers"}, resellers:{view:"monitoring",monTab:"resellers"},
-    dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, sla:{sla:true}, slo:{sla:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
+    dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, sla:{sla:true}, slo:{sla:true}, "slo-settings":{sloSettings:true}, "sla-targets":{sloSettings:true}, "vendor-contracts":{vendorContracts:true}, vendors:{vendorContracts:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
     alerts:{view:"alerts"}, "fixed-alerts":{view:"alerts",seg:"fixed"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"}, mvnohld:{view:"topology2",t2:"hld"}, "bss-atlas":{view:"topology2",t2:"hld"}, journeys:{view:"explorer"}, integrations:{view:"integrations"},
     subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true}, "fixed-oncall":{oncall:true,seg:"fixed"},
     settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
@@ -102,7 +102,7 @@
     // hidden root tier: #audit + #settings-assist deep links bounce home for excluded sessions
     // (me.root===false only when ROOT_ADMINS is configured server-side; the API 403s regardless)
     const notRoot=()=>{ const s=(window.opsSession&&window.opsSession())||{}; return s.me && s.me.root===false; };
-    if((r.audit||r.assistClone||r.sla||r.agents) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash("dashboard"); return; }
+    if((r.audit||r.assistClone||r.sla||r.sloSettings||r.agents) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash("dashboard"); return; }
     // role guard — before any renderer runs (the API 403s regardless; this makes it CLEAR)
     hideDenied();
     const need=neededFor(r);
@@ -114,6 +114,8 @@
     if(r.home){ window.opsGoHome && window.opsGoHome(); }
     else if(r.workbench){ window.openWorkbench && window.openWorkbench(); }
     else if(r.sla){ window.openSla && window.openSla(); }
+    else if(r.sloSettings){ window.openSloSettings && window.openSloSettings(); }
+    else if(r.vendorContracts){ window.openVendorContracts && window.openVendorContracts(); }
     else if(r.notifyClone){ window.openNotifyClone && window.openNotifyClone(); }
     else if(r.assistClone){ window.openAssistClone && window.openAssistClone(); }
     else if(r.agents){ window.openAgents && window.openAgents(); }
@@ -141,10 +143,14 @@
         const fb=document.querySelector('.navtab[data-fxtab="alerts"]'); if(fb) fb.classList.add("active");
         if(typeof window.openAlerts==="function") { try{ window.openAlerts("fixed"); }catch(e){} }
         window.audit && window.audit("VIEW_PAGE", "#fixed-alerts"); return;
-      }
-      clickNav(r.view);
-      /* clickNav is a no-op when the tab is already active, so any view that only renders on a
-       * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
+	      }
+	      clickNav(r.view);
+	      // A Fixed deep link can make navdrop mark a Fixed child active before clickNav runs; in that
+	      // case clickNav intentionally no-ops, so make the destination view visible here as well.
+	      document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active", x.id==="view-"+r.view));
+	      const gear=document.getElementById("settingsBtn"); if(gear) gear.classList.remove("on");
+	      /* clickNav is a no-op when the tab is already active, so any view that only renders on a
+	       * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
       const OPENER={ landing:"openLanding", execops:"openExecOps", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2" };
       const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{
@@ -179,6 +185,8 @@
   const ticketsItem=document.querySelector("#settingsMenu [data-tickets]"); if(ticketsItem) ticketsItem.addEventListener("click",()=>setHash("tickets"));
   const wbItem=document.querySelector("#settingsMenu [data-workbench]"); if(wbItem) wbItem.addEventListener("click",()=>setHash("workbench"));
   const slaItem=document.querySelector("#settingsMenu [data-sla]"); if(slaItem) slaItem.addEventListener("click",()=>setHash("sla"));
+  const vendorContractsItem=document.querySelector("#settingsMenu [data-vendor-contracts]"); if(vendorContractsItem) vendorContractsItem.addEventListener("click",()=>setHash("vendor-contracts"));
+  const sloSettingsItem=document.querySelector("#settingsMenu [data-slo-settings]"); if(sloSettingsItem) sloSettingsItem.addEventListener("click",()=>setHash("slo-settings"));
 
   window.addEventListener("hashchange",apply);
   // Apply the initial URL once the session is ready (so a shared/deep link opens the right page).

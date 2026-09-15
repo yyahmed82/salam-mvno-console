@@ -37,6 +37,17 @@
   const rangeChips=(label="Range")=>`<span class="fx-range" style="display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap">${label?`<span class="rl" style="font-size:10.5px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase">${label}</span>`:""}${RANGES.map(([m,l])=>`<button type="button" class="fx-r${state.range===m?" on":""}" data-m="${m}" style="cursor:pointer;font:inherit;font-size:11.5px;font-weight:700;padding:5px 12px;border:1px solid ${state.range===m?"var(--green,#0e9f5a)":"var(--line)"};border-radius:999px;background:${state.range===m?"var(--green,#0e9f5a)":"var(--card,#fff)"};color:${state.range===m?"#fff":"inherit"};transition:transform .14s,box-shadow .14s,border-color .14s">${l}</button>`).join("")}</span>`;
   const bindRange=(root,onChange)=>{ (root||document).querySelectorAll(".fx-r").forEach(b=>b.onclick=()=>{ state.range=b.dataset.m; localStorage.setItem("fixed_range",state.range); if(onChange) onChange(state.range); else render(curTab); }); };
   const qs=()=>`range=${state.range}${state.channel?`&channel=${state.channel}`:""}`;
+  function applyRouteQuery(){
+    try{
+      const raw=(location.hash.split("?")[1]||""); if(!raw) return;
+      const P=new URLSearchParams(raw), range=P.get("range");
+      if(/(?:^|&)(range|find|outcome|channel)=/.test(raw)){ state.find=""; state.outcome=""; state.channel=""; }
+      if(range&&RANGES.some(([k])=>k===range)){ state.range=range; try{ localStorage.setItem("fixed_range",range); }catch(e){} }
+      if(P.has("find")) state.find=P.get("find")||"";
+      if(P.has("outcome")) state.outcome=P.get("outcome")||"";
+      if(P.has("channel")) state.channel=P.get("channel")||"";
+    }catch(e){}
+  }
 
   const OUT_COLOR={COMPLETED:"var(--green,#0e9f5a)",STALLED:"#d97706",CANCELLED:"#dc2626",EXPIRED:"#64748b",IN_PROGRESS:"#2563eb"};
   const chip=(l,v,c,sub)=>`<div class="stat" style="min-width:130px"><b style="${c?`color:${c}`:""}">${v}</b><span>${esc(l)}</span>${sub?`<div class="rl" style="font-size:10.5px;color:var(--muted);margin-top:3px">${sub}</div>`:""}</div>`;
@@ -53,9 +64,10 @@
       const [d,b2c]=await Promise.all([api("/api/fixed/summary?"+qs()), api("/api/fixed/b2c?range="+state.range).catch(()=>null)]);
       drawFresh(d.freshness,d.source);
       drawBody(d,b2c);
-      await loadAttempts();
+      return true;
     }catch(e){
       $("#fxBody").innerHTML=`<div class="albanner" style="border-left:4px solid #dc2626;padding:14px 16px"><b>Fixed data unavailable</b> — ${esc(e.message)}<div class="rl" style="font-size:11px;color:var(--muted);margin-top:4px">Set OPS_DATABASE_URL (sda_ops) and restart. /api/fixed/ping shows each source.</div></div>`;
+      return false;
     }
   }
   /* Operations Dashboard (12 Sep 2026): the old Overview plus the ops half that used to be its own
@@ -69,13 +81,17 @@
        * first await), so the status header + SLOs load in parallel with the Fixed summary instead
        * of waiting for it. */
       const top=$("#fxOps"); if(top && window.execopsFixedTop) window.execopsFixedTop(top);
-      await p;
-      if(window.execopsFixedBottom){ const b=document.createElement("div"); b.className="xo-block"; host.appendChild(b); window.execopsFixedBottom(b); } } };
+      const ok=await p;
+      if(window.execopsFixedBottom){ const b=document.createElement("div"); b.className="xo-block"; host.appendChild(b); window.execopsFixedBottom(b); }
+      if(ok){ appendAttemptsCard(host); await loadAttempts(); }
+    }
+  };
 
   /* ---- HUB ---- */
   let curTab="overview";
   async function render(tab){
     const host=$("#view-fixed"); if(!host) return;
+    applyRouteQuery();
     if(tab && window.FIXED_PAGES[tab]) curTab=tab; else if(tab && !window.FIXED_PAGES[tab]) curTab="overview";
     // page-level scope: a deep link to a Fixed page the role lacks falls back to the first page the role holds
     const held=window.FIXED_VIEWS_HELD, ftv=window.FIXED_TAB_VIEWS||{};
@@ -135,13 +151,18 @@
         ${card("Top dealers",tbl(["DEALER","STAFF","REGION","ATTEMPTS","CONV.","LAST SEEN"],d.topDealers.map(r=>[`<b>${esc(r.dealer_name||r.dealer_code||"—")}</b><div class="rl" style="color:var(--muted);font-size:10px">${esc(r.dealer_code||"")}</div>`,`${esc(r.staff_name||"")}<div class="rl" style="color:var(--muted);font-size:10px">${esc(r.staff_code)} · ${esc(r.role||"")}</div>`,esc(r.region||"—"),fmt(r.n),`${r.conversion}%`,ts(r.last_seen)])),"by attempts in window")}
         ${card("Error categories",tbl(["CATEGORY","EVENTS","OPEN","LAST"],d.errors.map(e=>[`<span class="pill" style="font-size:10.5px">${esc(e.category)}</span>`,fmt(e.n),e.open?`<b style="color:#dc2626">${fmt(e.open)}</b>`:"0",ts(e.last_at)])),"error_events · taxonomy from the Error Control Board")}
         ${b2c?card("Salam Home app (B2C)",tbl(["JOURNEY","ATTEMPTS","COMPLETED","STALLED","IN PROGRESS","BSS ORDER"],b2c.byWorkflow.map(w=>[esc(w.label),fmt(w.n),`${fmt(w.completed)} <span style="color:var(--muted)">· ${w.conversion}%</span>`,fmt(w.stalled),fmt(w.in_progress),fmt(w.with_order)]))+`<div class="rl" style="font-size:10.5px;color:#d97706;margin-top:8px">${esc(b2c.provisional)}</div>`,"channel salamhome · "+state.range):""}
-      </div>
-      ${card("Recent attempts",`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-          <input id="fxFind" placeholder="ODB · order # · service # · ICCID · mobile · cust code" value="${esc(state.find)}" style="font:inherit;font-size:12px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit;min-width:320px">
-          <select id="fxOut" style="font:inherit;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit"><option value="">any outcome</option>${["COMPLETED","STALLED","CANCELLED","EXPIRED","IN_PROGRESS"].map(o=>`<option ${state.outcome===o?"selected":""}>${o}</option>`).join("")}</select>
-          <button id="fxGo" class="btn" style="font-size:11.5px;padding:6px 13px">Find</button>
-          <span class="rl" style="font-size:10.5px;color:var(--muted)">identifiers shown as last digits only · full values: Phase 2 (unmask, audited)</span></div>
-        <div id="fxAttempts"></div>`,"newest 100 in window")}`;
+      </div>`;
+  }
+
+  function appendAttemptsCard(host){
+    const wrap=document.createElement("div");
+    wrap.innerHTML=card("Recent attempts",`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <input id="fxFind" placeholder="ODB · order # · service # · ICCID · mobile · cust code" value="${esc(state.find)}" style="font:inherit;font-size:12px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit;min-width:320px">
+        <select id="fxOut" style="font:inherit;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:inherit"><option value="">any outcome</option>${["COMPLETED","STALLED","CANCELLED","EXPIRED","IN_PROGRESS"].map(o=>`<option ${state.outcome===o?"selected":""}>${o}</option>`).join("")}</select>
+        <button id="fxGo" class="btn" style="font-size:11.5px;padding:6px 13px">Find</button>
+        <span class="rl" style="font-size:10.5px;color:var(--muted)">identifiers shown as last digits only · full values: Phase 2 (unmask, audited)</span></div>
+      <div id="fxAttempts"></div>`,"newest 100 in window");
+    host.appendChild(wrap.firstElementChild);
     $("#fxGo").onclick=()=>{ state.find=$("#fxFind").value.trim(); state.outcome=$("#fxOut").value; loadAttempts(); };
     $("#fxFind").onkeydown=e=>{ if(e.key==="Enter") $("#fxGo").click(); };
   }

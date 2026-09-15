@@ -14,7 +14,7 @@ curl -s localhost:4700/api/version | jq              # pools: upg/ops/nexus/paym
 Sign in with your @salam.sa e-mail; with SMTP unset the OTP code is printed in terminal B.
 
 ## Deploy
-`DEPLOY_TARGET=unified bash deploy152/deploy.sh` → https://salam.sa/unified-console/ (152 :4700, PM2 `salam-unified`).
+`DEPLOY_TARGET=unified bash deploy152/deploy.sh` → https://salam.sa/unified-console/ (152 :4701, PM2 `salam-unified`).
 
 ---
 ## Original Digital Console notes (still valid for the MVNO side)

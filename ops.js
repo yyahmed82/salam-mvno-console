@@ -232,9 +232,11 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     document.querySelectorAll('.navdrop[data-drop="mobile"] .navtab').forEach(b=>{ if(biz==="fixed") b.classList.add("hidden"); });
     document.querySelectorAll('.navdrop[data-drop="home"] .navtab[data-fxtab]').forEach(b=>{ if(biz==="mobile") b.classList.add("hidden"); });
     document.documentElement.setAttribute("data-business", biz);
-    // SLA (SLO) page now lives in the Settings gear menu — root-tier only once ROOT_ADMINS is set
-    // (root stays true for all when unset — matches the server failsafe).
-    const slaMi = document.getElementById("slaMenuItem"); if(slaMi) slaMi.style.display = (SES.me && SES.me.root!==false)?"":"none";
+    // SLA / SLO surfaces are Super Admin surfaces. The API also allows hidden root owners.
+    const isSuper = SES.me && (SES.me.realRole==="super_admin" || (SES.me.realRoles||[]).includes("super_admin"));
+    const slaMi = document.getElementById("slaMenuItem"); if(slaMi) slaMi.style.display = isSuper?"":"none";
+    const sloMi = document.getElementById("sloSettingsMenuItem"); if(sloMi) sloMi.style.display = isSuper?"":"none";
+    const vcMi = document.getElementById("vendorContractsMenuItem"); if(vcMi) vcMi.style.display = isSuper?"":"none";
     const agMi = document.getElementById("agentsMenuItem"); if(agMi) agMi.style.display = (SES.me && SES.me.root!==false && SES.me.realRole==="super_admin")?"":"none";
     // if current active tab is hidden, jump to first visible
     const active = document.querySelector(".navtab.active");
@@ -810,7 +812,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   }
 
   // ================= TRANSACTION TIMELINE DRAWER =================
-  async function openTimeline(id, unmask=false, row=null, onBack=null, nav=null){
+  async function openTimeline(id, unmask=false, row=null, onBack=null, nav=null, opts=null){
     if(window.audit) window.audit(unmask?"VIEW_TRACE_UNMASKED":"VIEW_TRACE", String(row||id||"").slice(0,60));
     const ov=$("#txnDrawer"); ov.classList.add("open");
     const key = row ? `row=${encodeURIComponent(row)}`
@@ -821,7 +823,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     $("#txnDrawerBody").innerHTML=`<div class="drawer-hd">${backBtn}<b>Transaction timeline</b><span class="x" id="dwX">×</span></div><div class="tl">${salamLoader("Assembling the end-to-end timeline…<br><b>scanning payments · activation · Nafath · delivery · change plans</b>")}</div>`;
     $("#dwX").onclick=()=>ov.classList.remove("open"); wireBack();
     let tl;
-    try { tl=await api(`/api/transaction?${key}${unmask?'&unmask=1':''}`); }
+    const extra = opts && opts.lineRef ? `&line=${encodeURIComponent(opts.lineRef)}` : "";
+    try { tl=await api(`/api/transaction?${key}${unmask?'&unmask=1':''}${extra}`); }
     catch(e){ $("#txnDrawerBody").querySelector(".tl").innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
     const o=tl.order;
     const events = Array.isArray(tl.events) ? tl.events : [];
@@ -919,7 +922,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     // ⇄ APIGW window: gateway picture for this order's exact lifetime (±2 min padding)
     const dp=$("#dwPii"); if(dp) dp.addEventListener("click",()=>{
       window.opsSetPiiUnmask(!window.opsPiiUnmask());
-      openTimeline(id, false, row, onBack, nav);         // refetch — wrapper appends unmask=1 when ON
+      openTimeline(id, false, row, onBack, nav, opts);         // refetch — wrapper appends unmask=1 when ON
     });
     if(nav){ const pv=$("#dwPrev"), nx=$("#dwNext");
       if(pv&&nav.onPrev) pv.onclick=()=>nav.onPrev();
@@ -1005,7 +1008,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         obs.observe(pm,{attributes:true,attributeFilter:["class"]}); }
       if(window.opsAnalyzeTrace) window.opsAnalyzeTrace(b.dataset.gwtxn);
     }));
-    const ub=$("#dwUnmask"); if(ub) ub.onclick=()=>openTimeline(id, !unmask, row, onBack);   // preserve row + back so unmask re-resolves the same txn
+    const ub=$("#dwUnmask"); if(ub) ub.onclick=()=>openTimeline(id, !unmask, row, onBack, nav, opts);   // preserve row + back so unmask re-resolves the same txn
   }
   /* Courier wire trace — the REAL exchange with the delivery partner (OTO/SMSA/Barq/…), fetched
    * on demand from sidekiq.log on the API hosts. Every courier client logs its full HTTP
@@ -1097,7 +1100,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     }));
   }
   $("#txnDrawer").addEventListener("click",e=>{ if(e.target.id==="txnDrawer") e.currentTarget.classList.remove("open"); });
-  window.opsOpenTimeline = (id, row, onBack, nav)=>openTimeline(id||null, false, row||null, onBack||null, nav||null);   // let other views open the txn timeline (with optional ‹Back)
+  window.opsOpenTimeline = (id, row, onBack, nav, opts)=>openTimeline(id||null, false, row||null, onBack||null, nav||null, opts||null);   // let other views open the txn timeline (with optional ‹Back)
 
   // ================= SETTINGS: SYNC ENGINE =================
   async function loadSyncSettings(){
