@@ -88,7 +88,7 @@ async function ingestFixed(since, now, add) {
     let e = 0, a = 0;
     try {
       const er = (await pool.query(
-        `SELECT e.occurred_at, e.category, e.code, e.message, e.reason, e.step, e.client_side, ${CHANNEL_SQL} AS channel
+        `SELECT e.occurred_at, e.category, e.code, e.message, e.step, e.client_side, ${CHANNEL_SQL} AS channel
            FROM error_events e
           WHERE e.occurred_at > $1 AND e.occurred_at <= $2 ${bucketWhere}
           ORDER BY e.occurred_at LIMIT 100000`, [since, now])).rows;
@@ -96,8 +96,8 @@ async function ingestFixed(since, now, add) {
         /* the endpoint slot carries channel + the journey step, which is what makes a Fixed signature
          * actionable — "salamhome · ePurchaseSubmitOrder" rather than a bare category */
         add('fixed-error', 'fixed', `${r.channel} · ${r.step || r.category || '?'}`,
-          r.code != null ? r.code : r.category, r.message || r.reason || r.category,
-          r.message || r.reason, label, r.occurred_at);
+          r.code != null ? r.code : r.category, r.message || r.category,
+          r.message, label, r.occurred_at);
         if (!newest || r.occurred_at > newest) newest = r.occurred_at;
       }
       e = er.length; rows += e;

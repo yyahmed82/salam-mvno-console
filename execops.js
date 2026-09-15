@@ -52,12 +52,36 @@
   const grid = max => [0, .5, 1].map(f => { const y = yS(max)(max * f); return `<line x1="${PL}" x2="${W - PR}" y1="${y}" y2="${y}" stroke="${TOK.line}"/><text x="${PL - 6}" y="${y + 4}" font-size="10" fill="${TOK.muted}" text-anchor="end">${fmtTick(max * f)}</text>`; }).join('');
   const xLab = days => { const step = days.length > 12 ? Math.ceil(days.length / 8) : 1; const xs = xS(days.length); return days.map((d, i) => (i % step === 0 || i === days.length - 1) ? `<text x="${xs(i)}" y="${H - 8}" font-size="10" fill="${TOK.muted}" text-anchor="middle">${d.day.slice(5)}</text>` : '').join(''); };
   const svg = (inner, label, h) => `<svg viewBox="0 0 ${W} ${h || H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}" class="xo-svg">${inner}</svg>`;
+  /* vertical columns by CATEGORY (not by day): rows [{label, n, tone}] — used for failure reasons */
+  function cbars(rows, label) {
+    if (!rows || !rows.length) return `<div class="xo-empty">Nothing to show.</div>`;
+    const r = rows.slice(0, 12), max = niceMax(Math.max(...r.map(x => x.n), 1)), ys = yS(max), n = r.length;
+    const slot = (W - PL - PR) / n, bw = Math.min(46, slot * 0.66);
+    const cols = r.map((x, i) => { const cx = PL + slot * (i + 0.5), h = Math.max(0, ys(0) - ys(x.n));
+      const lab = String(x.label || ''), short = lab.length > 18 ? lab.slice(0, 17) + '…' : lab;
+      return `<rect x="${cx - bw / 2}" y="${ys(x.n)}" width="${bw}" height="${h}" rx="3" fill="${color(x.tone || 'blue')}"><title>${esc(lab)}: ${num(x.n)}</title></rect>`
+        + `<text x="${cx}" y="${ys(x.n) - 4}" font-size="10" fill="${TOK.ink}" text-anchor="middle" font-weight="700">${num(x.n)}</text>`
+        + `<text x="${cx}" y="${H - 8}" font-size="9" fill="${TOK.muted}" text-anchor="middle"><title>${esc(lab)}</title>${esc(short)}</text>`; }).join('');
+    return svg(`${grid(max)}${cols}`, label);
+  }
   function chart(ch, days) {
-    const vals = days.map(d => Number(d[ch.field] || 0)), max = niceMax(Math.max(...vals, ch.threshold || 0, 1)), ys = yS(max), xs = xS(days.length);
+    if (ch.type === 'cols') return cbars(ch.rows, ch.title);
+    /* a percentage series has a fixed 0-100 axis, and a day with no calls (null) BREAKS the line
+     * instead of being drawn as 0 %, which would read as a total outage */
+    const isPct = !!ch.pct;
+    const raw = days.map(d => d[ch.field]), vals = raw.map(v => v == null ? null : Number(v));
+    const present = vals.filter(v => v != null);
+    const max = isPct ? 100 : niceMax(Math.max(...present, ch.threshold || 0, 1)), ys = yS(max), xs = xS(days.length);
     if (ch.type === 'line') {
-      const col = color(ch.color), pts = vals.map((v, i) => `${xs(i)},${ys(v)}`).join(' ');
-      return svg(`${grid(max)}<polygon points="${PL},${ys(0)} ${pts} ${xs(days.length - 1)},${ys(0)}" fill="${col}" opacity=".10"/><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round"/>${vals.map((v, i) => `<circle cx="${xs(i)}" cy="${ys(v)}" r="3.5" fill="${col}"><title>${days[i].day}: ${num(v)}</title></circle>`).join('')}${xLab(days)}`, ch.title);
+      const col = color(ch.color);
+      const segs = []; let cur = [];
+      vals.forEach((v, i) => { if (v == null) { if (cur.length) segs.push(cur); cur = []; } else cur.push(`${xs(i)},${ys(v)}`); }); if (cur.length) segs.push(cur);
+      const gridP = isPct ? [0, .5, 1].map(f => { const y = ys(100 * f); return `<line x1="${PL}" x2="${W - PR}" y1="${y}" y2="${y}" stroke="${TOK.line}"/><text x="${PL - 6}" y="${y + 4}" font-size="10" fill="${TOK.muted}" text-anchor="end">${Math.round(100 * f)}%</text>`; }).join('') : grid(max);
+      const thr = isPct && ch.threshold ? `<line x1="${PL}" x2="${W - PR}" y1="${ys(ch.threshold)}" y2="${ys(ch.threshold)}" stroke="${TOK.red}" stroke-width="2" stroke-dasharray="6 5"/><text x="${W - PR - 4}" y="${ys(ch.threshold) - 5}" font-size="10" fill="${TOK.red}" text-anchor="end" font-weight="700">${esc(ch.thresholdLabel || '')}</text>` : '';
+      return svg(`${gridP}${segs.map(pts => pts.length > 1 ? `<polyline points="${pts.join(' ')}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round"/>` : '').join('')}${thr}`
+        + vals.map((v, i) => v == null ? '' : `<circle cx="${xs(i)}" cy="${ys(v)}" r="3.5" fill="${col}"><title>${days[i].day}: ${isPct ? v + '%' : num(v)}${isPct && days[i][ch.field.replace('Rate', 's')] != null ? ` · ${num(days[i][ch.field.replace('Rate', 's')])} calls` : ''}</title></circle>`).join('') + xLab(days), ch.title);
     }
+    vals.forEach((v, i) => { if (v == null) vals[i] = 0; });
     const bw = Math.max(6, (W - PL - PR) / days.length * 0.6), thr = ch.threshold || 0;
     const colOf = v => ch.color === 'auto' ? (thr && v >= thr ? TOK.red : thr && v >= thr * 0.6 ? TOK.amber : TOK.green) : color(ch.color);
     const bars = vals.map((v, i) => `<rect x="${xs(i) - bw / 2}" y="${ys(v)}" width="${bw}" height="${Math.max(0, ys(0) - ys(v))}" rx="3" fill="${colOf(v)}"><title>${days[i].day}: ${num(v)}</title></rect>`).join('');
@@ -90,7 +114,7 @@
       <div class="xo-sa">${esc(s.actual)}</div>
       <div class="xo-st">${s.measured ? 'target ' + esc(s.target) : esc(s.note || 'not wired')}</div>`, s.message || (s.measured ? `target ${s.target}` : s.note || 'not wired'));
   const healthTile = (x, h, unified) => wrapA(x.href, `xo-hi xo-h-${x.state}`, `<div class="xo-hl">${badge(h, unified)}${esc(x.label)}</div><div class="xo-hv"><i></i>${esc(x.value)}</div><div class="xo-hs">${esc(x.sub || '')}</div>`);
-  const chartCard = (ch, h, unified) => `<div class="topo-card xo-chart"><div class="xo-ct">${badge(h, unified)}${esc(ch.title)}<span class="xo-dim"> · ${h.days} d</span></div>${chart(ch, h.series.days)}</div>`;
+  const chartCard = (ch, h, unified) => `<div class="topo-card xo-chart"><div class="xo-ct">${badge(h, unified)}${esc(ch.title)}<span class="xo-dim"> · ${h.days} d</span></div>${ch.sub ? `<div class="xo-csub">${esc(ch.sub)}</div>` : ''}${chart(ch, h.series.days)}</div>`;
   const issuesRows = (h, unified) => h.issues.map(i => `<tr><td><span class="xo-sev ${i.sev}">${i.sev}</span></td><td>${badge(h, unified)}<b>${esc(i.label)}</b></td><td class="xo-num">${num(i.open)} / ${num(i.total)}</td><td>${ts(i.first_seen).slice(0, 10)}<div class="xo-dim">${i.daysOngoing} d ongoing</div></td><td>${trend(i.trend)}${spark(i.spark, i.sev === 'critical' ? TOK.red : i.sev === 'warning' ? TOK.amber : TOK.blue)}</td><td><a href="${esc(i.href)}" class="xo-link">act →</a></td></tr>`).join('');
   const alertRows = (h, unified) => h.alerts.map(a => { const cls = a.severity === 'P1' ? 'critical' : a.severity === 'P2' ? 'warning' : 'info';
     return `<a href="${esc(a.href)}" class="xo-al ${cls}"><span class="xo-sev ${cls}">${esc(a.severity)}</span><div class="xo-at">${badge(h, unified)}<b>${esc(a.name)}</b>${a.text ? ` — ${esc(a.text)}` : ''}${a.team ? `<span class="xo-dim"> · ${esc(a.team)}</span>` : ''}</div><span class="xo-dim">${a.status === 'open' ? 'open · ' : ''}${ts(a.at)}</span></a>`; }).join('');
@@ -644,7 +668,8 @@
       @media (min-width:1480px){.xo-charts:has(>*:nth-child(3):last-child),.xo-charts:has(>*:nth-child(5)){grid-template-columns:repeat(3,minmax(0,1fr))}}
       @media (min-width:820px) and (max-width:1479px){.xo-charts:has(>*:nth-child(odd):last-child)>*:last-child{grid-column:1/-1}}
       @media (min-width:1480px){.xo-charts:has(>*:nth-child(5):last-child){grid-template-columns:repeat(6,minmax(0,1fr))}.xo-charts:has(>*:nth-child(5):last-child)>*{grid-column:span 2}.xo-charts:has(>*:nth-child(5):last-child)>*:nth-child(n+4){grid-column:span 3}.xo-charts:has(>*:nth-child(7):last-child)>*:last-child{grid-column:1/-1}}
-      .xo-chart{padding:12px 14px;display:flex;flex-direction:column}.xo-ct{font-size:12.5px;font-weight:800;margin-bottom:6px}.xo-svg{width:100%;height:auto;display:block;font-family:inherit}
+      .xo-chart{padding:12px 14px;display:flex;flex-direction:column}
+      .xo-csub{font-size:10.5px;color:var(--muted);margin:-3px 0 6px;line-height:1.4}.xo-ct{font-size:12.5px;font-weight:800;margin-bottom:6px}.xo-svg{width:100%;height:auto;display:block;font-family:inherit}
       .xo-health{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;align-items:stretch}
       .xo-health>*{min-width:0}
       .xo-hi{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;transition:box-shadow .2s,transform .2s}

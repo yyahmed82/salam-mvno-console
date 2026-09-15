@@ -31,6 +31,33 @@ const STEPS = `SELECT oa.channel, oa.step_reached AS step, oa.outcome::text AS o
                  FROM order_attempts oa WHERE oa.started_at >= $1 AND oa.started_at < $2 AND oa.outcome <> 'COMPLETED'
                 GROUP BY 1,2,3 ORDER BY 4 DESC LIMIT 60`;
 
+/* ---- identity verification: Absher OTP (the Yakeen/ELM-backed step) ------------------------------
+ * Discovery on 15 Sep 2026 (sda_ops, 14 d): there is NO endpoint named yakeen/elm — the identity step
+ * is the DRM pair  sendAbsherValidateCode (send the OTP to the Absher-registered mobile = the provider
+ * check)  and  checkValidateCode (the customer typing the OTP = user correctness, NOT a provider fault).
+ * Every call is HTTP 200; a failure is error_class='DRM' with the reason in error_msg. That gives a real
+ * success RATE (ok / calls), not just a failure count. Read from sda_ops.public ONLY: the beta read model
+ * runs with api_logs ingest off (its api_calls stop on 2026-09-04), so folding it in would add stale rows. */
+const IDENT_SRC = () => db.ops || db.opsBeta;
+const IDENT_FAIL = `(ac.status >= 400 OR ac.error_class IS NOT NULL)`;
+const IDENT_OP = `CASE WHEN ac.endpoint ~* 'sendAbsherValidateCode' THEN 'send' WHEN ac.endpoint ~* 'checkValidateCode' THEN 'verify' END`;
+const IDENT_DAY = `SELECT (date_trunc('day', ac.created_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, ${IDENT_OP} AS op,
+                          count(*)::int AS calls, count(*) FILTER (WHERE ${IDENT_FAIL})::int AS failed
+                     FROM api_calls ac WHERE ac.created_at >= $1 AND ac.created_at < $2
+                      AND ac.endpoint ~* '(sendAbsherValidateCode|checkValidateCode)' GROUP BY 1,2`;
+const IDENT_CAT = `SELECT ${IDENT_OP} AS op,
+                          left(regexp_replace(coalesce(nullif(ac.error_msg,''), ac.error_class, 'HTTP '||ac.status::text), '[0-9]+', '#', 'g'), 90) AS reason,
+                          count(*)::int AS n, max(ac.created_at) AS last_at
+                     FROM api_calls ac WHERE ac.created_at >= $1 AND ac.created_at < $2 AND ${IDENT_FAIL}
+                      AND ac.endpoint ~* '(sendAbsherValidateCode|checkValidateCode)' GROUP BY 1,2 ORDER BY 3 DESC LIMIT 14`;
+const IDENT_LAST = `SELECT max(ac.created_at) AS last_at FROM api_calls ac WHERE ac.endpoint ~* 'sendAbsherValidateCode'`;
+const identity = async (from, to) => {
+  const P = IDENT_SRC(); if (!P) return { days: [], cats: [], lastAt: null, source: null };
+  const q = (sql, params) => P.query(sql, params).then(r => r.rows, e => { console.error('[fixedExec] identity query failed:', e.message); return []; });
+  const [days, cats, last] = await Promise.all([q(IDENT_DAY, [from, to]), q(IDENT_CAT, [from, to]), q(IDENT_LAST, [])]);
+  return { days, cats, lastAt: (last[0] || {}).last_at || null, source: P === db.ops ? 'sda_ops.public' : 'sda_ops.beta' };
+};
+
 const pools = () => [...new Set([db.ops, db.opsBeta].filter(Boolean))];
 const both = async (sql, params) => (await Promise.all(pools().map(p => p.query(sql, params).then(r => r.rows, () => [])))).flat();
 async function errorBudget() {
@@ -92,12 +119,20 @@ async function exec(q = {}) {
     both(ERR_DAY, [from, to]), both(ERR_CAT, [from, to]), both(ERR_CAT_DAY, [from, to]), both(STEPS, [from, to]),
     errorBudget(), firedAlerts(from), both(ERR_24, [from24]),
   ]);
-  const [radarRows, radarTot] = await Promise.all([alertsByDay(from), alertsTotals(from)]);
+  const [radarRows, radarTot, ident] = await Promise.all([alertsByDay(from), alertsTotals(from), identity(from, to)]);
 
   // ---- day axis
   const byDay = {}; for (const r of series.byDay || []) byDay[dayKey(r.day)] = { n: n(r.n), completed: n(r.completed) };
   const errDays = {}; for (const r of errDaysRaw) { const k = errDays[r.day] || (errDays[r.day] = { n: 0, open: 0 }); k.n += n(r.n); k.open += n(r.open); }
-  const daysArr = dayAxis(now, days).map(k => ({ day: k, orders: (byDay[k] || {}).n || 0, completed: (byDay[k] || {}).completed || 0, errors: (errDays[k] || {}).n || 0, openErrors: (errDays[k] || {}).open || 0 }));
+  /* identity per day: a day with no calls carries null, never 0 — 0 would plot as a 0 % success rate */
+  const idDay = {}; for (const r of ident.days) { const k = idDay[r.day] || (idDay[r.day] = {}); k[r.op] = { calls: n(r.calls), failed: n(r.failed) }; }
+  const rateOf = x => x && x.calls ? Math.round(1000 * (x.calls - x.failed) / x.calls) / 10 : null;
+  const daysArr = dayAxis(now, days).map(k => ({ day: k, orders: (byDay[k] || {}).n || 0, completed: (byDay[k] || {}).completed || 0, errors: (errDays[k] || {}).n || 0, openErrors: (errDays[k] || {}).open || 0,
+    identSends: ((idDay[k] || {}).send || {}).calls || 0, identSendFail: ((idDay[k] || {}).send || {}).failed || 0, identSendRate: rateOf((idDay[k] || {}).send),
+    identVerifies: ((idDay[k] || {}).verify || {}).calls || 0, identVerifyFail: ((idDay[k] || {}).verify || {}).failed || 0, identVerifyRate: rateOf((idDay[k] || {}).verify) }));
+  const identTot = op => ident.days.filter(r => r.op === op).reduce((a, r) => ({ calls: a.calls + n(r.calls), failed: a.failed + n(r.failed) }), { calls: 0, failed: 0 });
+  const idSend = identTot('send'), idVerify = identTot('verify');
+  const identNote = ident.source ? `${ident.source} · api_calls${ident.lastAt ? ` · newest ${String(ident.lastAt).slice(0, 10)}` : ''}${db.opsBeta && ident.source === 'sda_ops.public' ? ' · beta excluded (api_logs ingest off)' : ''}` : 'no sda_ops read model';
 
   // ---- 24 h KPIs
   const k = today.kpis || {}, kp = prev.kpis || {};
@@ -183,6 +218,14 @@ async function exec(q = {}) {
       { key: 'errors', title: 'API errors vs budget', type: 'bar', field: 'errors', color: 'auto', threshold: budget, thresholdLabel: `budget ${budget}/day`, exec: true },
       { key: 'completed', title: 'Completed orders', type: 'line', field: 'completed', color: 'blue', exec: false },
       { key: 'openErrors', title: 'Still-open errors by day', type: 'bar', field: 'openErrors', color: 'amber', exec: false },
+      /* identity verification (Absher OTP, Yakeen/ELM-backed) — see the IDENT_* comment above */
+      { key: 'identSendRate', title: 'Identity verification success rate · Absher OTP send', type: 'line', field: 'identSendRate', color: 'green', pct: true, exec: false,
+        sub: `${idSend.calls.toLocaleString('en-US')} sends · ${idSend.failed.toLocaleString('en-US')} failed · ${rateOf(idSend) == null ? '—' : rateOf(idSend) + '%'} in ${days} d · ${identNote}` },
+      { key: 'identVerifyRate', title: 'OTP verify success rate · customer enters the code', type: 'line', field: 'identVerifyRate', color: 'blue', pct: true, exec: false,
+        sub: `${idVerify.calls.toLocaleString('en-US')} verifies · ${idVerify.failed.toLocaleString('en-US')} failed · a wrong code is the customer, not the provider` },
+      { key: 'identCats', title: 'Identity failures by reason', type: 'cols', exec: false,
+        rows: ident.cats.map(c => ({ label: `${c.op === 'send' ? 'send' : 'verify'} · ${c.reason}`, n: n(c.n), tone: c.op === 'send' ? 'red' : 'amber', last_at: c.last_at })),
+        sub: ident.cats.length ? `DRM reason text from api_calls.error_msg, digits masked · ${identNote}` : 'no identity failures in this window' },
     ] },
     pipeline: { title: 'Order pipeline — where not-completed attempts stopped', sub: `${notDone.toLocaleString('en-US')} attempts in ${days} d did not complete`, rows: pipelineRows, href: '#fixed?tab=epurchase' },
     issues,
