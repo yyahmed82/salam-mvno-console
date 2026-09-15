@@ -3066,7 +3066,8 @@ app.get('/api/health', async (req, res) => {
 
 // Fixed / Salam Home routes — all under /api/fixed/* (see fixed.js)
 require('./fixed').mount(app, { requireView, audit, requireCap });
-require('./fixedExec').mount(app, { requireView });   // Fixed › Executive + Operations (one endpoint, read models only)
+require('./fixedExec').mount(app, { requireView });
+require('./fixedAppLane').mount(app, { requireView });   // Troubleshoot › from-the-app-log lane (fixed_app_events)   // Fixed › Executive + Operations (one endpoint, read models only)
 // Mobile › Executive + Operations and Home › Executive + Operations (both businesses). mvnoExec gets the Dashboard's
 // own KPI function so the 24 h numbers are the Dashboard's numbers, not a second implementation of them.
 { const execDeps = { requireView, homeKpis: homeKpisFromSource, boardNow, segment };

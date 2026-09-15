@@ -137,6 +137,7 @@
           <div class="fe-hint">searches apply as you type (Enter to apply now) · identifiers are shown as last digits only · full values via Unmask (audited)</div>
         </div>
       </div>
+      <div id="feApp"></div>
       <div id="feTeams" class="fe-chips" style="margin-bottom:8px"></div>
       <div id="fePrio" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feProv" class="fe-chips" style="margin-bottom:4px"></div>
@@ -178,6 +179,7 @@
   async function load(host,fx,first){
     const esc=fx.esc, fmt=fx.fmt; const my=++S.tick;
     try{
+      if(window.fixedAppLane) window.fixedAppLane.render(host.querySelector("#feApp"),fx,S.win).catch(()=>{});   // app-log lane: own fetch, never blocks the board
       const sum=await fx.api("/api/fixed/errors/summary?"+qs());
       if(my!==S.tick||!host.isConnected) return;
       // a category tile selected earlier may not exist under the new window / search — drop it instead of filtering invisibly
