@@ -160,7 +160,10 @@ const JOIN_OA = 'LEFT JOIN order_attempts oa ON oa.id = e.attempt_id';
  * found…", message "[CC-S-SALES-01014] [Unkown error..]") sit in the masked response body. RESP_EXPR pulls the first
  * resultDesc / message / errorMessage / … string out of res_body and falls back to the label when there is none. */
 const RESP_EXPR = `coalesce(nullif(btrim(substring(left(e.res_body,1500) from '"(?:resultDesc|responseMessage|errorMessage|errorDescription|errorDesc|resultMessage|message|error|desc|reason)"\\s*:\\s*"((?:[^"\\\\]|\\\\.){1,240})"')),''), nullif(btrim(e.message),''))`;
-const MSG_EXPR = `left(regexp_replace(coalesce(${RESP_EXPR},'(no message)'),'[0-9]+','#','g'),160)`;
+/* msgOf(r) / classOf(r, cat, code): the same expressions over an already-computed response column, so the one-pass
+ * summary evaluates the res_body regex ONCE per row instead of five times (15 Sep 2026: the board took 15 s+). */
+const msgOf = r => `left(regexp_replace(coalesce(${r},'(no message)'),'[0-9]+','#','g'),160)`;
+const MSG_EXPR = msgOf(RESP_EXPR);
 /* ---- BUSINESS vs TECHNICAL for Fixed — the console-wide principle of errclass.js applied in SQL so the chips,
  * the rows, the exports and the dashboards all agree (15 Sep 2026, "clear segregation everywhere, like MVNO"):
  *   TECHNICAL = the platform / provider failed to answer — timeouts, OSS/BSS exceptions, 5xx, transport, "paid but
@@ -171,14 +174,15 @@ const MSG_EXPR = `left(regexp_replace(coalesce(${RESP_EXPR},'(no message)'),'[0-
  * answered), any readable answer is business. Colours follow errclass.COLORS: business blue, technical red. ---- */
 const TECH_CATS = ['TIMEOUT', 'NAFATH_TIMEOUT', 'OSS_EXCEPTION', 'PAYMENT_NOT_NOTIFIED', 'PROVISION_NO_ORDER', 'LANDLINE_LOCK_FAILED'];
 const TECH_MSG_RE = `(timeout|timed[ -]?out|ETIMEDOUT|ECONN|EHOSTUNREACH|connection (reset|refused|closed)|SSL|I/O error|read timed out|broken pipe|service (is )?not available|temporarily unavailable|unavailable|OSB-382000|CRMException|SOAPFault|soap:Fault|internal server error|gateway time-?out|bad gateway|no response|empty response|null response|unreachable|circuit.?breaker|<h1>50[234]|Failed to validate customer info with Yakeen|Failed to check plate number|unkn?own error|\\[CC-[A-Z]|CRM error|system error|exception|null pointer|undefined)`;
-const CLASS_EXPR = `CASE WHEN e.category IN (${TECH_CATS.map(c => `'${c}'`).join(',')}) THEN 'technical'
-  WHEN e.code ~ '^5[0-9]{2}$' THEN 'technical'
-  WHEN ${RESP_EXPR} ~* '${TECH_MSG_RE}' THEN 'technical'
-  WHEN coalesce(${RESP_EXPR},'') = '' THEN 'technical'
+const classOf = (r, cat = 'e.category', code = 'e.code') => `CASE WHEN ${cat} IN (${TECH_CATS.map(c => `'${c}'`).join(',')}) THEN 'technical'
+  WHEN ${code} ~ '^5[0-9]{2}$' THEN 'technical'
+  WHEN ${r} ~* '${TECH_MSG_RE}' THEN 'technical'
+  WHEN coalesce(${r},'') = '' THEN 'technical'
   ELSE 'business' END`;
+const CLASS_EXPR = classOf(RESP_EXPR);
 /* effective class = operator override (fixed_error_catalog, see fixedErrCatalog.js) ?? the auto CASE above. Always call
  * CLASS_SQL() inside a query builder, never cache it: the override lists change when someone classifies an error. */
-const CLASS_SQL = () => { try { return require('./fixedErrCatalog').wrapBoard(MSG_EXPR, CLASS_EXPR); } catch (_) { return CLASS_EXPR; } };
+const CLASS_SQL = (sig = MSG_EXPR, auto = CLASS_EXPR) => { try { return require('./fixedErrCatalog').wrapBoard(sig, auto); } catch (_) { return auto; } };
 const CLASSES = [
   { key: 'business',  label: 'Business',  color: '#3b82f6', desc: 'the API answered with a NO — no coverage / no ports, blacklist, wrong OTP, NIC mismatch, refused; the platform worked' },
   { key: 'technical', label: 'Technical', color: '#ef4444', desc: 'the platform or a provider failed to answer — timeout, 5xx, OSS/BSS exception, transport; money stuck by a failure' },
@@ -304,23 +308,38 @@ function mount(app, deps) {
     const openOnly = q.openOnly === '1' || q.openOnly === 'true';
     await refreshSplit();
     const warnings = [];
+    const t0 = Date.now();
     const soft = (name, pr) => pr.catch(e => { warnings.push({ part: name, error: e.message }); console.error(`[FIXED-ERRORS] ${name} breakdown failed (${s.window}): ${e.message}`); return []; });
-    const [catParts, provs, chans, types, msgs, clss, fresh] = await Promise.all([
-      each(s, (pool, where) => pool.query(`SELECT e.category, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open,
-          count(*) FILTER (WHERE e.occurred_at >= now() - interval '3 hours')::int AS last3h
-        FROM error_events e ${JOIN_OA} ${where} GROUP BY 1 ORDER BY 2 DESC LIMIT 100`, s.P)),
-      soft('provider', grouped(q, PROVIDER_EXPR, 'provider', 20)),
-      soft('channel', grouped(q, CHANNEL_EXPR, 'channel', 10)),
-      soft('type', grouped(q, TYPE_EXPR, 'type', 10)),
-      soft('message', grouped(q, MSG_EXPR, 'msg', 80)),
-      soft('class', grouped(q, CLASS_SQL(), 'cls', 4)),
+    /* ONE scan per source: the response text is extracted once per row, then every breakdown (category, provider,
+     * channel, type, message, class) is a GROUPING SET over that. A dimension whose own filter is active is re-counted
+     * without it (so its chips keep their numbers while selected) — that is the only extra query. */
+    const onePass = each(s, (pool, where) => pool.query(`WITH r AS (
+        SELECT e.category, e.code, e.resolved, e.occurred_at, ${PROVIDER_EXPR} AS provider, ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${RESP_EXPR} AS resp
+        FROM error_events e ${JOIN_OA} ${where}),
+      x AS (SELECT category, resolved, occurred_at, provider, chan, type, ${msgOf('resp')} AS msg, ${CLASS_SQL(msgOf('resp'), classOf('resp', 'category', 'code'))} AS cls FROM r)
+      SELECT grouping(category, provider, chan, type, msg, cls) AS g, category, provider, chan, type, msg, cls,
+        count(*)::int AS total, count(*) FILTER (WHERE NOT resolved)::int AS open, count(*) FILTER (WHERE occurred_at >= now() - interval '3 hours')::int AS last3h
+      FROM x GROUP BY GROUPING SETS ((category), (provider), (chan), (type), (msg), (cls))`, s.P));
+    const G = { category: 31, provider: 47, chan: 55, type: 59, msg: 61, cls: 62 };
+    const pick = (parts, dim, limit) => { const acc = {};
+      for (const p of parts) for (const row of p.r.rows) { if (Number(row.g) !== G[dim]) continue; const k = row[dim] == null ? '-' : String(row[dim]);
+        (acc[k] = acc[k] || { key: k, total: 0, open: 0, last3h: 0 }); acc[k].total += n(row.total); acc[k].open += n(row.open); acc[k].last3h += n(row.last3h); }
+      return Object.values(acc).sort((a, b) => b.total - a.total).slice(0, limit); };
+    const facet = (active, dim, expr, skip, limit) => active ? soft(dim, grouped(q, expr, skip, limit)) : onePass.then(parts => pick(parts, dim, limit));
+    const [allParts, provs, chans, types, msgs, clss, fresh] = await Promise.all([
+      onePass,
+      facet(!!q.provider, 'provider', PROVIDER_EXPR, 'provider', 20),
+      facet(!!(q.channel && s.buckets.length < CHANNELS.length), 'chan', CHANNEL_EXPR, 'channel', 10),
+      facet(!!s.type, 'type', TYPE_EXPR, 'type', 10),
+      facet(!!q.msg, 'msg', MSG_EXPR, 'msg', 80),
+      facet(q.cls === 'business' || q.cls === 'technical', 'cls', CLASS_SQL(), 'cls', 4),
       Promise.all(sources().map(async x => { try { const r = await x.pool.query(`SELECT max(occurred_at) AS latest FROM error_events e WHERE e.occurred_at >= now() - interval '30 days' ${sliceOnly(x.src)}`);
         const served = split() ? SRC_BUCKETS[x.src] : (x.src === 'ops' ? CHANNELS.map(c => c.key) : []);
         return { src: x.src, buckets: served, latest: r.rows[0] && r.rows[0].latest || null, stale: x.src === 'beta' && both() && !split(), reason: x.src === 'beta' ? splitState.reason : undefined }; } catch (e) { return { src: x.src, error: e.message }; } })),
     ]);
-    const cat = {};
-    for (const p of catParts) for (const x of p.r.rows) { const c = cat[x.category] = cat[x.category] || { category: x.category, total: 0, open: 0, last3h: 0 }; c.total += n(x.total); c.open += n(x.open); c.last3h += n(x.last3h); }
-    const byCategory = Object.values(cat).sort((a, b) => b.total - a.total).map(x => { const m = meta(x.category);
+    const catRows = pick(allParts, 'category', 100).map(x => ({ category: x.key, total: x.total, open: x.open, last3h: x.last3h }));
+    if (Date.now() - t0 > 3000 || warnings.length) console.log(`[FIXED-ERRORS] summary ${s.window} took ${Date.now() - t0} ms (${allParts.map(p => p.src + ':' + p.r.rows.length + ' rows').join(', ')})${warnings.length ? ' warnings ' + warnings.map(w => w.part).join(',') : ''}`);
+    const byCategory = catRows.sort((a, b) => b.total - a.total).map(x => { const m = meta(x.category);
       return { category: x.category, label: m.label, team: m.team, tone: m.tone, clientSide: m.clientSide, moneyAtRisk: m.moneyAtRisk,
         basePriority: m.severity, priority: effectiveSeverity(m.severity, x.last3h, m.moneyAtRisk), open: x.open, total: x.total, last3h: x.last3h }; });
     const byTeam = Object.fromEntries(TEAMS.map(t => [t, { open: 0, total: 0 }]));
@@ -602,4 +621,4 @@ function mount(app, deps) {
   app.get('/api/fixed/errors/taxonomy', gate, (req, res) => res.json({ taxonomy: TAXONOMY, teams: TEAMS, spike: SPIKE, channels: CHANNELS, types: TYPES }));
 }
 
-module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CLASSES, CHANNEL_EXPR, TYPE_EXPR, CLASS_EXPR, CLASS_SQL, MSG_EXPR, RESP_EXPR, effectiveSeverity, parseWindow };
+module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CLASSES, CHANNEL_EXPR, TYPE_EXPR, CLASS_EXPR, CLASS_SQL, MSG_EXPR, RESP_EXPR, PROVIDER_EXPR, msgOf, classOf, effectiveSeverity, parseWindow };
