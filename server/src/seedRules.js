@@ -214,7 +214,7 @@ const RULES = [
   { key: 'payment_web_fail', name: 'Web checkout failure spike (P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'business',  // web decline-rate — gateway answered \"no\"
     metric_key: 'payment_fail_rate', operator: 'gte', threshold: 0.35, window_hours: 3, min_sample: 50,
-    dim: { platform: 'web' }, description: 'Web e-purchase payment failures elevated — isolate from app.',
+    dim: { platform: 'web' }, description: 'Epurchase payment failures elevated — isolate from app.',
     runbook: '1) Web checkout failures elevated (isolated from app). 2) Troubleshoot → Payment, filter platform=web: check the web gateway / 3DS redirect flow. 3) Compare with the app failure rate — if app is healthy, it is a web-checkout/redirect issue. 4) Engage the web/checkout owner.' },
   { key: 'nafath_fail_spike', name: 'Nafath failure spike (P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'business',  // Nafath refusal outcomes (expired/rejected)

@@ -1,7 +1,7 @@
 /* fixedAppLane.js — Troubleshoot › "From the app log" lane (15 Sep 2026).
  *
  * Reads unified_console.fixed_app_events (filled by fixedAppLogCollector.js from the Fixed app's combined.log on
- * 146) and answers ONE call for the Troubleshoot board: per channel (SDA · Salam Home app · Web e-purchase ·
+ * 146) and answers ONE call for the Troubleshoot board: per channel (SDA · Salam Home app · Epurchase ·
  * payments worker) the failing steps with their reason text and an hourly failure series; the identity /
  * eligibility providers (Yakeen/ELM, getYakeenAddress, Absher OTP, Nafath, Semati, Manafith) with a real
  * success rate; and "retry loops" — one reason repeating on a flat cadence with no customer behind it (the
@@ -18,7 +18,7 @@ const { parseWindow } = require('./fixedErrors');
 const CH = [
   { key: 'sda', label: 'SDA dealer app', desc: 'sda.* tRPC paths' },
   { key: 'salamhome', label: 'Salam Home app', desc: 'salamApp.* tRPC paths — read from the app log, the beta read model has no error_events' },
-  { key: 'web', label: 'Web e-purchase', desc: 'ePurchase.* and paymentOptimization.* paths' },
+  { key: 'web', label: 'Epurchase', desc: 'ePurchase.* and paymentOptimization.* paths' },
   { key: 'payments', label: 'Payments worker', desc: 'payment-service lines without a customer request' },
 ];
 const PROV = [
@@ -58,13 +58,14 @@ async function lane(q = {}) {
     Q(`SELECT DISTINCT ON (kind) kind, ts, reason_class, status_code, left(reason,140) AS reason
          FROM fixed_app_events WHERE ts >= $1 AND ts < $2 AND ok IS NOT TRUE AND kind IN ('yakeen','yakeen_address','absher','nafath','semati','manafith')
         ORDER BY kind, ts DESC`, P),
-    /* a retry loop = the same path+reason ≥ 30 times, spread over ≥ 20 min, present in most 5-minute buckets of its span */
+    /* a retry loop = the same path+reason ≥ 30 times, spread over ≥ 20 min, present in most 5-minute buckets of its span,
+     * and WITHOUT distinct request ids — a worker, not customers (635 phones failing the same way is a channel problem, not a loop) */
     Q(`WITH g AS (SELECT coalesce(path,'-') AS path, left(reason,120) AS reason, coalesce(channel,'other') AS channel,
                          count(*)::int AS n, min(ts) AS first, max(ts) AS last,
                          count(DISTINCT date_trunc('hour', ts) + (floor(extract(minute FROM ts)/5)*5) * interval '1 minute')::int AS buckets,
                          count(DISTINCT request_id)::int AS requests
                     FROM fixed_app_events WHERE ts >= $1 AND ts < $2 AND ok IS NOT TRUE AND reason IS NOT NULL GROUP BY 1,2,3)
-       SELECT * FROM g WHERE n >= 30 AND last - first >= interval '20 minutes'
+       SELECT * FROM g WHERE n >= 30 AND last - first >= interval '20 minutes' AND requests <= 1
           AND buckets >= 0.6 * ceil(extract(epoch FROM (last - first)) / 300.0) ORDER BY n DESC LIMIT 6`, P),
     (async () => { try { const c = require('./fixedAppLogCollector'); return { ...c.status(), db: await c.ping() }; } catch (e) { return { configured: false, error: e.message }; } })(),
   ]);
@@ -90,7 +91,7 @@ async function lane(q = {}) {
       error: col && col.hosts && col.hosts.map(h => h.lastError).filter(Boolean)[0] || (col && col.error) || null },
     channels, providers,
     loops: loops.map(l => ({ ...l, step: stepOf(l.path), perRun: l.buckets ? Math.round(l.n / l.buckets) : null, spanMin: Math.round((new Date(l.last) - new Date(l.first)) / 60000) })),
-    note: 'Salam Home app errors come from the app log (salamApp.* paths). The beta read model (sda_ops.beta) has no error_events while opsb-ingest-watch crash-loops, so the board below shows Salam Home folded into Web — this lane is the source of truth for the app until that is fixed.',
+    note: 'Salam Home app errors come from the app log (salamApp.* paths). The beta read model (sda_ops.beta) has no error_events while opsb-ingest-watch crash-loops, so the board below shows Salam Home folded into Epurchase — this lane is the source of truth for the app until that is fixed.',
   };
 }
 

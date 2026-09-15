@@ -14,11 +14,11 @@
   const TONE={red:{bg:"rgba(220,76,76,.16)",fg:"#dc2626"},amber:{bg:"rgba(210,153,34,.16)",fg:"var(--warn-fg)"},muted:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"}};
   const ID_FIELDS=[["serviceNo","Service no. (FTTH… / 5G no.)"],["odb","ODB / plate no (ODB: prefix ok)"],["iccid","SIM ICCID"],["cpe","CPE serial"],["msisdn","MSISDN / mobile"],["custCode","Customer code (custCode)"],["customerId","Customer ID"],["workflowId","Workflow ID (wf_st_…)"]];
   const LS=k=>{ try{ return localStorage.getItem(k); }catch(e){ return null; } };
-  const S={ win:LS("fixed_err_win")||"today", channel:"", type:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", category:"", tech:"all", find:"", ids:{}, expanded:new Set(), timer:null, tick:0 };   // expanded = ids open at once (several rows can be open — compare cases side by side)
+  const S={ win:LS("fixed_err_win")||"today", channel:"", type:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", msg:"", category:"", tech:"all", find:"", ids:{}, expanded:new Set(), timer:null, tick:0 };   // expanded = ids open at once (several rows can be open — compare cases side by side)
   /* channel + product type pills — same hue family in light and dark (tokens), never the violet business marker */
   const CH_STYLE={ sda:{bg:"rgba(14,159,90,.14)",fg:"var(--green,#0e9f5a)"}, qr:{bg:"rgba(13,148,136,.14)",fg:"#0d9488"}, web:{bg:"rgba(37,99,235,.13)",fg:"#2563eb"}, salamhome:{bg:"rgba(217,119,6,.14)",fg:"var(--warn-fg,#b45309)"} };
   const TY_STYLE={ ftth:{bg:"rgba(14,159,90,.12)",fg:"var(--green,#0e9f5a)"}, fttb:{bg:"rgba(5,150,105,.12)",fg:"#047857"}, "5gwl":{bg:"rgba(37,99,235,.12)",fg:"#2563eb"}, "5gfwa":{bg:"rgba(79,70,229,.12)",fg:"#4338ca"}, "5g":{bg:"rgba(37,99,235,.10)",fg:"#2563eb"}, lead:{bg:"rgba(217,119,6,.12)",fg:"var(--warn-fg,#b45309)"}, unknown:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"} };
-  const CH_LABEL={ sda:"SDA", qr:"QR code", web:"Web e-purchase", salamhome:"Salam Home app" };
+  const CH_LABEL={ sda:"SDA", qr:"QR code", web:"Epurchase", salamhome:"Salam Home app" };
   const chanPill=r=>{ const esc=FX().esc; const k=r.chan||"", st=CH_STYLE[k]||TY_STYLE.unknown; return `<span class="fe-pill" style="background:${st.bg};color:${st.fg}" title="${esc(r.chanLabel||"")}">${esc(CH_LABEL[k]||r.chanLabel||k||"—")}</span>`; };
   const typePill=r=>{ const esc=FX().esc; const k=r.type||"unknown", st=TY_STYLE[k]||TY_STYLE.unknown; return `<span class="fe-pill" style="background:${st.bg};color:${st.fg}" title="${esc(r.workflow||"")}">${esc(r.typeLabel||k)}</span>${r.journey?`<span class="fe-jr">${esc(r.journey)}</span>`:""}`; };
   const caps=()=>{ try{ const s=window.opsSession&&window.opsSession(); return (s&&s.me&&s.me.caps)||{}; }catch(e){ return {}; } };
@@ -56,6 +56,8 @@
     #fxErr .fe-counts{margin-left:auto;font-size:12.5px;color:var(--muted)}
     #fxErr .fe-btn{cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:var(--ink);transition:border-color .14s,color .14s,transform .14s} #fxErr .fe-btn:hover{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);transform:translateY(-1px)}
     #fxErr .fe-hint{font-size:11px;color:var(--muted)}
+    #fxErr .fe-msgrow{display:flex;align-items:center;gap:8px;margin:6px 0 4px;flex-wrap:wrap} #fxErr .fe-msg{flex:1 1 320px;max-width:760px;width:auto;padding:7px 34px 7px 12px;font-size:12.5px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+    #fxErr .fe-msg.on{border-color:var(--green,#0e9f5a);box-shadow:0 0 0 3px rgba(14,159,90,.15);font-weight:600} #fxErr .fe-msg option{font-weight:400;color:var(--ink);background:var(--card,#fff)}
     #fxErr .fe-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin:14px 0 18px}
     #fxErr .fe-tile{text-align:left;padding:14px 16px;cursor:pointer;font:inherit;color:inherit;border:1px solid var(--line);border-radius:14px;background:var(--card,#fff);box-shadow:0 1px 3px rgba(2,6,23,.05);transition:transform .15s,box-shadow .15s,border-color .15s}
     #fxErr .fe-tile:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(2,6,23,.10);border-color:var(--green,#0e9f5a)} #fxErr .fe-tile.on{border-color:var(--green,#0e9f5a);box-shadow:0 0 0 3px rgba(14,159,90,.15)}
@@ -91,7 +93,7 @@
   function applyRouteQuery(){
     try{
       const raw=(location.hash.split("?")[1]||"");
-      if(!raw||raw===window.__fxErrLastQs||!/(?:^|&)(range|window|category|team|priority|provider|channel|type|tech|find|openOnly|serviceNo|odb|iccid|cpe|msisdn|custCode|customerId|workflowId)=/.test(raw)) return;
+      if(!raw||raw===window.__fxErrLastQs||!/(?:^|&)(range|window|category|team|priority|provider|msg|channel|type|tech|find|openOnly|serviceNo|odb|iccid|cpe|msisdn|custCode|customerId|workflowId)=/.test(raw)) return;
       window.__fxErrLastQs=raw; const P=new URLSearchParams(raw);
       Object.assign(S,{channel:"",type:"",team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},openOnly:true});
       const win=P.get("range")||P.get("window"); if(win&&WINDOWS.some(([k])=>k===win)){ S.win=win; try{ localStorage.setItem("fixed_err_win",win); }catch(e){} }
@@ -99,6 +101,7 @@
       if(P.has("team")) S.team=P.get("team")||"";
       if(P.has("priority")) S.prio=P.get("priority")||"";
       if(P.has("provider")) S.provider=P.get("provider")||"";
+      if(P.has("msg")) S.msg=P.get("msg")||"";
       if(P.has("channel")) S.channel=P.get("channel")||"";
       if(P.has("type")) S.type=P.get("type")||"";
       if(P.has("tech")) S.tech=P.get("tech")||"all";
@@ -109,7 +112,7 @@
     }catch(e){}
   }
   function qs(){ const ch=S.channel||"";
-    let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.type?`&type=${encodeURIComponent(S.type)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}`;
+    let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.type?`&type=${encodeURIComponent(S.type)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}${S.msg?`&msg=${encodeURIComponent(S.msg)}`:""}`;
     if(S.find) q+=`&find=${encodeURIComponent(S.find)}`; for(const [k] of ID_FIELDS) if(S.ids[k]) q+=`&${k}=${encodeURIComponent(S.ids[k])}`; return q; }
 
   async function render(host,fx){
@@ -121,11 +124,11 @@
     const ch=S.channel||"";
     host.innerHTML=`<div id="fxErr"><style>${STYLE}</style>
       <h1>Live error control board</h1>
-      <div class="fe-sub">Every Fixed sales &amp; service channel — SDA dealer app, QR codes, Web e-purchase and the Salam Home app — as errors happen. Filter by team / priority / provider / channel / product type and time window; open a row for the failed step, the request / response and how often it has happened before.</div>
+      <div class="fe-sub">Every Fixed sales &amp; service channel — SDA dealer app, QR codes, Epurchase and the Salam Home app — as errors happen. Filter by team / priority / provider / channel / product type and time window; open a row for the failed step, the request / response and how often it has happened before.</div>
       <div class="fe-cards">
         <div class="fe-card">
           <div class="fe-chips">${WINDOWS.map(([k,l])=>chip(S.win===k,l,`class="fe-win" data-w="${k}"`)).join("")}</div>
-          <div id="feSrc" class="fe-src">Channels: SDA · QR codes · Web e-purchase · Salam Home app — pick one in the <b>Channel</b> row below; product <b>Type</b> (FTTH / FTTB / 5G HomeFi …) next to it.</div>
+          <div id="feSrc" class="fe-src">Channels: SDA · QR codes · Epurchase · Salam Home app — pick one in the <b>Channel</b> row below; product <b>Type</b> (FTTH / FTTB / 5G HomeFi …) next to it.</div>
           <div class="fe-foot"><label><input id="feOpen" type="checkbox" ${S.openOnly?"checked":""}> Open only</label><span id="feCounts" class="fe-counts"></span><button id="feClear" class="fe-btn">Clear</button><button id="feXlsx" class="fe-btn fe-exp" title="Excel: filters, period, summary and every error row (endpoint, request, response, response time) — up to 5 000 rows">⬇ XLSX</button><button id="fePdf" class="fe-btn fe-exp" title="PDF: same content, up to 400 rows">⬇ PDF</button></div>
         </div>
         <div class="fe-card">
@@ -143,6 +146,7 @@
       <div id="feProv" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feChan" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feType" class="fe-chips" style="margin-bottom:4px"></div>
+      <div id="feMsgRow" class="fe-msgrow"><span class="fe-dim">Error message:</span><select id="feMsg" class="fe-in fe-msg" title="Every distinct error message in the selected period, with its count — pick one to filter the board"><option value="">Loading…</option></select><button type="button" id="feMsgOff" class="fe-btn" hidden>✕ clear</button></div>
       <div id="feTiles" class="fe-tiles"><div class="fe-tile" style="cursor:default;color:var(--muted)">${window.salamLoader?window.salamLoader("Reading error events…"):"Loading…"}</div></div>
       <div class="fe-tablecard"><div id="feRows"></div><div id="feMore" style="padding:10px;text-align:center"></div></div>
       <div id="feStamp" class="rl" style="font-size:11px;color:var(--muted);margin-top:8px"></div></div>`;
@@ -153,7 +157,7 @@
     let deb=null; const go=()=>{ clearTimeout(deb); read(); S.category=""; load(host,fx,true); };
     host.querySelectorAll("input[id^=feId-],#feFind").forEach(i=>{ i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } }; i.oninput=()=>{ clearTimeout(deb); deb=setTimeout(go,450); }; });
     host.querySelector("#feXlsx").onclick=()=>exportBoard(host,fx,"xlsx"); host.querySelector("#fePdf").onclick=()=>exportBoard(host,fx,"pdf");
-    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",type:"",openOnly:true,team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},expanded:new Set()}); render(host,fx); };
+    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",type:"",openOnly:true,team:"",prio:"",provider:"",msg:"",category:"",tech:"all",find:"",ids:{},expanded:new Set()}); render(host,fx); };
     host.querySelector("#feFind").focus();
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }
@@ -213,10 +217,17 @@
       $("#feType").innerHTML=(types.length||S.type)?`<span class="fe-dim">Type:</span>`+chip(!S.type,"All",`class="fe-type" data-v=""`)
         +types.map(t=>chip(S.type===t.type,`${esc(t.label)} · ${chN(t)}`,`class="fe-type" data-v="${esc(t.type)}" title="${esc(t.desc||"")}"`)).join(""):"";
       host.querySelectorAll(".fe-type").forEach(b=>b.onclick=()=>{ S.type=(S.type===b.dataset.v)?"":b.dataset.v; load(host,fx,true); });
+      /* error-message select — every distinct message in the window with its count (counted without its own filter) */
+      const msgs=(sum.byMessage||[]).filter(m=>(S.openOnly?m.open:m.total)>0||S.msg===m.msg); const msgN=m=>fmt(S.openOnly?m.open:m.total);
+      const msgTot=msgs.reduce((a,m)=>a+(S.openOnly?m.open:m.total),0);
+      const sel=$("#feMsg"); if(sel){ const cur=S.msg; sel.innerHTML=`<option value="">All messages · ${fmt(msgTot)} (${msgs.length} distinct)</option>`+msgs.map(m=>`<option value="${esc(m.msg)}"${m.msg===cur?" selected":""}>${esc(m.msg.length>110?m.msg.slice(0,108)+"…":m.msg)} · ${msgN(m)}</option>`).join("");
+        if(cur&&!msgs.some(m=>m.msg===cur)) sel.insertAdjacentHTML("beforeend",`<option value="${esc(cur)}" selected>${esc(cur)} · 0</option>`);
+        sel.onchange=()=>{ S.msg=sel.value; load(host,fx,true); }; sel.classList.toggle("on",!!cur);
+        const off=$("#feMsgOff"); if(off){ off.hidden=!cur; off.onclick=()=>{ S.msg=""; load(host,fx,true); }; } }
       /* which read model answers which channel, and how fresh each is */
       const srcEl=$("#feSrc"); if(srcEl&&sum.sources&&sum.sources.length){ const SRC={ops:"sda_ops",beta:"sda_ops_beta"};
         srcEl.innerHTML=sum.sources.map(x=>{ const bk=(x.buckets||[]).map(k=>CH_LABEL[k]||k).join(" · "); if(x.error) return `<span><b>${esc(bk||SRC[x.src]||x.src)}</b> — <span class="stale">source unavailable</span> (${esc(SRC[x.src]||x.src)})</span>`;
-          if(x.stale) return `<span><span class="stale">${esc(SRC[x.src]||x.src)} stale</span> — last event ${esc(rel(x.latest))}; Web e-purchase + Salam Home app are read from sda_ops instead (app journeys appear under Web until opsb-ingest-watch is back)</span>`;
+          if(x.stale) return `<span><span class="stale">${esc(SRC[x.src]||x.src)} stale</span> — last event ${esc(rel(x.latest))}; Epurchase + Salam Home app are read from sda_ops instead (app journeys appear under Epurchase until opsb-ingest-watch is back)</span>`;
           const age=x.latest?Date.now()-new Date(x.latest).getTime():null; const stale=age==null||age>2*3600e3; return `<span><b>${esc(bk)}</b> ← ${esc(SRC[x.src]||x.src)} · last event <span class="${stale?"stale":""}">${esc(rel(x.latest))}</span></span>`; }).join(" &nbsp;·&nbsp; "); }
       const tiles=sum.byCategory.filter(c=>(!S.team||c.team===S.team)&&(S.prio===""||String(c.priority)===S.prio));
       $("#feTiles").innerHTML=tiles.length?tiles.map(c=>{ const on=S.category===c.category; const t=TONE[c.tone]||TONE.muted;
@@ -228,7 +239,7 @@
       drawRows(host,fx,live.rows,first);
       $("#feMore").innerHTML=live.nextCursor?`<button id="feMoreBtn" class="btn" style="font-size:11px;padding:5px 12px">Load more</button>`:"";
       const mb=$("#feMoreBtn"); if(mb) mb.onclick=async()=>{ mb.disabled=true; try{ const more=await fx.api("/api/fixed/errors/live?"+lq+"&limit=100&cursor="+encodeURIComponent(live.nextCursor)); live.rows=live.rows.concat(more.rows); live.nextCursor=more.nextCursor; drawRows(host,fx,live.rows,true); $("#feMore").innerHTML=more.nextCursor?`<span class="rl" style="color:var(--muted);font-size:11px">more available — narrow the window</span>`:""; }catch(e){ mb.disabled=false; } };
-      $("#feStamp").textContent=`window ${fx.ts(sum.from)} → ${fx.ts(sum.to)} KSA · all channels (SDA · QR · Web · Salam Home app) · refreshed ${fx.ts(new Date().toISOString(),true)} · auto-refresh 60 s`;
+      $("#feStamp").textContent=`window ${fx.ts(sum.from)} → ${fx.ts(sum.to)} KSA · all channels (SDA · QR · Epurchase · Salam Home app) · refreshed ${fx.ts(new Date().toISOString(),true)} · auto-refresh 60 s`;
     }catch(e){ if(my!==S.tick) return; const t=host.querySelector("#feTiles"); if(t) t.innerHTML=`<div class="albanner" style="grid-column:1/-1;border-left:4px solid #dc2626;padding:12px 14px"><b>Error board unavailable</b> — ${esc(e.message)}</div>`; }
   }
 

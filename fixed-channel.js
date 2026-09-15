@@ -107,7 +107,7 @@
         </div>
         ${spark(days,SEGC[sg.segment],44)}<div class="rl" style="font-size:10px;color:var(--muted)">attempts per KSA day · coloured share = completed</div></div>`; };
     const tot=k.total.now, tp=k.total.prev||{};
-    const chMax=Math.max(1,...(k.by_channel||[]).map(c=>c.n)); const CHL={sda:"SDA dealers",epurchase:"E-purchase",salamhome:"Salam Home app"};
+    const chMax=Math.max(1,...(k.by_channel||[]).map(c=>c.n)); const CHL={sda:"SDA dealers",epurchase:"Epurchase",salamhome:"Salam Home app"};
     const chans=(k.by_channel||[]).length?`<div class="fxc-segcard" style="--c:#94a3b8;margin-bottom:10px"><div class="fxc-segh"><b>All channels in this window</b><span class="rl" style="color:var(--muted);font-size:11px">Grafana "orders by source" — where this channel sits</span></div><div class="fxc-chans">${k.by_channel.map(c=>`<div class="fxc-chan ${c.current?"cur":""}"><div class="fxc-chan-l">${esc(CHL[c.channel]||c.channel)}${c.current?" ◀":""}</div><div class="fxc-chan-v">${num(c.n)} <span>${c.conversion}%</span></div>${hbar(c.n,chMax,c.current?"var(--green,#0e9f5a)":"#cbd5e1")}</div>`).join("")}</div></div>`:"";
     const naf=(k.nafath||[]).length?`<div class="fxc-segcard" style="--c:#2563eb;margin-top:10px"><div class="fxc-segh"><b>Identity checks (Nafath / Semati) — outcomes</b><span class="rl" style="color:var(--muted);font-size:11px">eligible vs non-eligible, per product</span></div><div class="fxc-kpis">${k.nafath.slice(0,8).map(x=>`<div class="fxc-kpi" style="min-width:120px"><div class="fxc-kpi-l">${esc(x.outcome)}</div><div class="fxc-kpi-v" style="font-size:16px;color:${/COMPLETED|SUCCESS|APPROVED|ELIGIBLE/i.test(x.outcome)?"#0e9f5a":"#dc2626"}">${num(x.n)}</div><div class="fxc-kpi-s">${segTag(x.segment,x.seg_label)}</div></div>`).join("")}</div></div>`:"";
     const miss=view?[]:absent(k.segments); const LBL={ftth:"FTTH",fttb:"FTTB","5g":"5G home"};
@@ -274,6 +274,6 @@
     document.head.appendChild(st);
   }
 
-  window.FIXED_PAGES.epurchase = makePage("epurchase","E-purchase");
+  window.FIXED_PAGES.epurchase = makePage("epurchase","Epurchase");
   window.FIXED_PAGES.salamhome = makePage("salamhome","Salam Home");
 })();

@@ -4,7 +4,7 @@
  * the console DB — api_error_events (app errors from 17/18), api_traffic_events technical failures, alerts —
  * AND, since 15 Sep 2026, the FIXED side straight from the two sda_ops read models (see ingestFixed): the
  * error board's error_events and the integration calls in api_calls, for all four channels — SDA and QR from
- * sda_ops.public, Web e-purchase and the Salam Home app from sda_ops.beta. Until then the agent had only ever
+ * sda_ops.public, Epurchase and the Salam Home app from sda_ops.beta. Until then the agent had only ever
  * seen MVNO rows, so nothing on Fixed was being triaged at all; signatures carry segment 'mvno' or 'fixed'.
  * fold it into SIGNATURES (a signature = source + endpoint/controller + code + the message with digits, ids
  * and hex masked out), keep first/last seen, counts, hosts and one sample per signature in agent_signatures,
@@ -59,7 +59,7 @@ const hashOf = (...parts) => crypto.createHash('sha1').update(parts.map(x => Str
 
 /* ---- FIXED sources: the two sda_ops read models ----------------------------------------------
  * sda_ops.public (db.ops)   → channels sda + qr        · the dealer world
- * sda_ops.beta   (db.opsBeta) → channels web + salamhome · Web e-purchase + the Salam Home app
+ * sda_ops.beta   (db.opsBeta) → channels web + salamhome · Epurchase + the Salam Home app
  * Partitioned exactly like the Fixed error board (fixedErrors.js SRC_BUCKETS) so nothing is counted twice.
  * Read-only: this agent never writes to sda_ops, only to unified_console.
  *
@@ -179,7 +179,7 @@ const SYSTEM = `You are the log-intelligence agent of the Salam Operations Conso
 You receive NEW error signatures observed in production logs, from either platform. For each, answer as an operations engineer would, briefly and concretely.
 Each signature carries a SEGMENT.
  - segment "mvno" = the MVNO mobile platform. Categories (use one): payment, activation, onboarding, nafath, semati, eligibility, recharge, delivery, auth, api, app, infrastructure, other.
- - segment "fixed" = the fixed FTTH / 5G platform, across four channels named in the endpoint: sda (dealer app), qr (referral e-purchase), web (Web e-purchase), salamhome (the Salam Home consumer app).
+ - segment "fixed" = the fixed FTTH / 5G platform, across four channels named in the endpoint: sda (dealer app), qr (referral e-purchase), web (Epurchase), salamhome (the Salam Home consumer app).
    Categories (use one): payment_not_notified, provision_no_order, payment_failed, oss_exception, landline_lock_failed, nafath_timeout, nafath_failed, semati_failed, yakeen_failed, eligibility_failed, coverage_failed, bss_exception, api, app, infrastructure, other.
    Source fixed-app = the app's own combined.log (kind yakeen = ELM getYakeenInfo NIC check, yakeen_address, absher OTP, nafath, semati, mutation = a failed tRPC step, error = an unhandled tRPC error).
    Yakeen/ELM and Nafath are national identity providers: an identity refusal (not eligible, record not found, mismatch) is BUSINESS; a timeout, 5xx or TLS/connection failure reaching them is TECHNICAL.

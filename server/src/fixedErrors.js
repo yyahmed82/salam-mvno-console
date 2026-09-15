@@ -9,7 +9,7 @@
  *     e-purchase STORED, salamHome* workflows mapped. Coverage from 2026-01-01 (backfilled).
  * The board covers all four channels by PARTITIONING the two sources — each channel bucket comes from exactly one:
  *   sda, qr  ← db.ops      (channel 'sda' · channel 'epurchase' WITH referral code)
- *   web, app ← db.opsBeta  (channel 'epurchase' WITHOUT referral code = Web e-purchase · channel 'salamhome' = Salam Home app)
+ *   web, app ← db.opsBeta  (channel 'epurchase' WITHOUT referral code = Epurchase · channel 'salamhome' = Salam Home app)
  * so nothing is counted twice and nothing is hidden. Without OPS_BETA_DATABASE_URL every bucket is read from db.ops.
  * Channel and product TYPE are derived in SQL (CHANNEL_EXPR / TYPE_EXPR — the type from the attempt's workflow, then
  * its plan text) so the board can show, filter, count and export them.
@@ -108,7 +108,7 @@ const PROVIDER_EXPR = `upper(substring(e.req_body from '"provider"\\s*:\\s*"([^"
 const CHANNELS = [
   { key: 'sda',       label: 'SDA (dealer)',    short: 'SDA',  src: 'ops',  desc: 'dealer app journeys' },
   { key: 'qr',        label: 'QR codes',        short: 'QR',   src: 'ops',  desc: 'e-purchase web flow opened from a dealer / campaign QR (referral code)' },
-  { key: 'web',       label: 'Web e-purchase',  short: 'Web',  src: 'beta', desc: 'public e-purchase web flow, consumer-direct (no referral code)' },
+  { key: 'web',       label: 'Epurchase',  short: 'Epurchase',  src: 'beta', desc: 'public e-purchase web flow, consumer-direct (no referral code)' },
   { key: 'salamhome', label: 'Salam Home app',  short: 'App',  src: 'beta', desc: 'Salam Home (Pulse) app — buy FTTH + manage-line journeys' },
 ];
 const CHAN = Object.fromEntries(CHANNELS.map(c => [c.key, c]));
@@ -152,6 +152,10 @@ const WF_LABEL = { ftth: 'New line', fttb: 'New line', fiveGWhiteLabel: 'New lin
   salamHomeFreeze: 'Freeze', salamHomeUnFreeze: 'Unfreeze', salamHomeRelocationFTTH: 'Relocation', salamHomeRelocationWL: 'Relocation', salamHomeRelocationOwn: 'Relocation',
   salamHomeChangePlan: 'Change plan', salamHomeChangePlanPre2Post: 'Pre → post', salamHomeRenew: 'Renew', unknown: '' };
 const JOIN_OA = 'LEFT JOIN order_attempts oa ON oa.id = e.attempt_id';
+/* ---- error MESSAGE as a filter dimension (15 Sep 2026: "a select with every error message and its count in the period").
+ * The message is the provider / app text of the failing call (resultDesc, error message …). Grouped after masking digit
+ * runs (order numbers, plate ids, amounts) so "no available ports … odb" is ONE entry, not one per plate. ---- */
+const MSG_EXPR = `left(regexp_replace(coalesce(nullif(btrim(e.message),''),'(no message)'),'[0-9]+','#','g'),160)`;
 
 /* ---- shared WHERE for summary/live (alias e = error_events, oa = order_attempts) ----
  * opts.skip = a dimension ('provider' | 'channel' | 'type') to leave OUT so its chips keep their counts while selected. */
@@ -168,6 +172,7 @@ function baseWhere(q, opts = {}) {
   }
   const type = TYPE[String(q.type || '').toLowerCase()] ? String(q.type).toLowerCase() : null;
   if (type && opts.skip !== 'type') { P.push(type); parts.push(`${TYPE_EXPR} = $${P.length}`); }
+  if (q.msg && opts.skip !== 'msg') { P.push(String(q.msg).slice(0, 160)); parts.push(`${MSG_EXPR} = $${P.length}`); }
   const ident = identifierSql(q, P);
   if (ident) parts.push(ident);
   return { ...w, channel: q.channel || null, buckets, type, P, parts };
@@ -188,7 +193,7 @@ function mount(app, deps) {
   /* ---- the read models. split = both configured, different AND the beta model is FRESH → partition (header);
    * otherwise one pool (prod) serves every bucket. Freshness is decided from data, not config: the beta watcher
    * (opsb-ingest-watch) stopped writing on 22 Aug 2026 without anyone noticing, and a partition that trusts a dead
-   * model would show "Web e-purchase · 0" while prod holds a thousand rows. Rule: beta is used only while its newest
+   * model would show "Epurchase · 0" while prod holds a thousand rows. Rule: beta is used only while its newest
    * event is within BETA_STALE_MIN (default 120) of prod's newest event; re-checked every 60 s. ---- */
   const BETA_STALE_MIN = Number(process.env.OPS_BETA_STALE_MIN) || 120;
   const both = () => !!(db.ops && db.opsBeta && db.opsBeta !== db.ops);
@@ -269,13 +274,14 @@ function mount(app, deps) {
     const s = baseWhere(q);
     const openOnly = q.openOnly === '1' || q.openOnly === 'true';
     await refreshSplit();
-    const [catParts, provs, chans, types, fresh] = await Promise.all([
+    const [catParts, provs, chans, types, msgs, fresh] = await Promise.all([
       each(s, (pool, where) => pool.query(`SELECT e.category, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open,
           count(*) FILTER (WHERE e.occurred_at >= now() - interval '3 hours')::int AS last3h
         FROM error_events e ${JOIN_OA} ${where} GROUP BY 1 ORDER BY 2 DESC LIMIT 100`, s.P)),
       grouped(q, PROVIDER_EXPR, 'provider', 20).catch(() => []),
       grouped(q, CHANNEL_EXPR, 'channel', 10).catch(() => []),
       grouped(q, TYPE_EXPR, 'type', 10).catch(() => []),
+      grouped(q, MSG_EXPR, 'msg', 80).catch(() => []),
       Promise.all(sources().map(async x => { try { const r = await x.pool.query(`SELECT max(occurred_at) AS latest FROM error_events e WHERE e.occurred_at >= now() - interval '30 days' ${sliceOnly(x.src)}`);
         const served = split() ? SRC_BUCKETS[x.src] : (x.src === 'ops' ? CHANNELS.map(c => c.key) : []);
         return { src: x.src, buckets: served, latest: r.rows[0] && r.rows[0].latest || null, stale: x.src === 'beta' && both() && !split(), reason: x.src === 'beta' ? splitState.reason : undefined }; } catch (e) { return { src: x.src, error: e.message }; } })),
@@ -292,8 +298,10 @@ function mount(app, deps) {
     const byProvider = provs.map(x => ({ provider: x.key, label: x.key === '-' ? 'no provider' : x.key, open: x.open, total: x.total }));
     const byChannel = CHANNELS.map(c => { const x = chans.find(y => y.key === c.key) || { open: 0, total: 0 }; return { channel: c.key, label: c.label, short: c.short, desc: c.desc, open: x.open, total: x.total }; });
     const byType = TYPES.map(t => { const x = types.find(y => y.key === t.key) || { open: 0, total: 0 }; return { type: t.key, label: t.label, desc: t.desc, open: x.open, total: x.total }; });
-    return { window: s.window, from: s.from, to: s.to, channel: q.channel || '', type: s.type || '', openOnly, provider: q.provider || '',
-      byProvider, byChannel, byType, sources: fresh, split: split(), splitReason: splitState.reason,
+    /* every distinct message in the window with its count — the select on the board; masked digits, newest-heavy first */
+    const byMessage = msgs.map(x => ({ msg: x.key, open: x.open, total: x.total }));
+    return { window: s.window, from: s.from, to: s.to, channel: q.channel || '', type: s.type || '', openOnly, provider: q.provider || '', msg: q.msg || '',
+      byProvider, byChannel, byType, byMessage, sources: fresh, split: split(), splitReason: splitState.reason,
       total: byCategory.reduce((a, c) => a + c.total, 0), open: byCategory.reduce((a, c) => a + c.open, 0),
       byCategory: openOnly ? byCategory.filter(c => c.open > 0) : byCategory, byTeam, byPriority, taxonomy: TAXONOMY, spike: SPIKE, channels: CHANNELS, types: TYPES };
   }
@@ -440,7 +448,7 @@ function mount(app, deps) {
   const provOf = body => { const m = /"provider"\s*:\s*"([^"]+)"/.exec(String(body || '')); return m ? m[1].toUpperCase() : ''; };
   const oneLine = (v, max) => { const t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); return t.length > max ? t.slice(0, max - 1) + '…' : t; };
   const WIN_LABEL = { '1h': 'Last 1h', '3h': 'Last 3h', '6h': 'Last 6h', '24h': 'Last 24h', '32h': 'Last 32h', '48h': 'Last 48h', '72h': 'Last 72h', today: 'Today (KSA)', '7d': 'Last 7d', '30d': '1 month', '90d': '3 months', '365d': '1 year' };
-  const CHAN_LABEL = { '': 'All channels (SDA · QR · Web · Salam Home app)', epurchase: 'QR + Web e-purchase', app: 'Salam Home app' };
+  const CHAN_LABEL = { '': 'All channels (SDA · QR · Epurchase · Salam Home app)', epurchase: 'QR + Epurchase', app: 'Salam Home app' };
   const chanLabel = c => CHAN_LABEL[c || ''] || (CHAN[c] ? CHAN[c].label : c);
 
   async function exportData(q, req, cap) {
@@ -503,6 +511,7 @@ function mount(app, deps) {
     sumRows.push([], ['By provider', 'Open', 'Total']); (S.byProvider || []).forEach(p => sumRows.push([p.label, p.open, p.total]));
     sumRows.push([], ['By channel', 'Open', 'Total']); (S.byChannel || []).forEach(c => sumRows.push([c.label, c.open, c.total]));
     sumRows.push([], ['By type', 'Open', 'Total']); (S.byType || []).filter(t => t.total > 0).forEach(t => sumRows.push([t.label, t.open, t.total]));
+    sumRows.push([], ['By error message (digits masked)', 'Open', 'Total']); (S.byMessage || []).forEach(m => sumRows.push([m.msg, m.open, m.total]));
     return xlsx.build([
       { name: 'Errors', rows: [HEAD, ...body], numericCols: [8, 9], widths: [19, 8, 10, 26, 14, 40, 44, 8, 7, 12, 10, 16, 11, 11, 20, 14, 10, 14, 22, 9, 22, 60, 60] },
       { name: 'Summary', rows: sumRows, numericCols: [1, 2, 3], widths: [34, 30, 12, 10, 10, 12] },

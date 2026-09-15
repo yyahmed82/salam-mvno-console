@@ -24,7 +24,7 @@
 const db = require('./db');
 const f360 = require('./fixed360');
 
-const CHANNELS = { epurchase: { label: 'E-purchase', desc: 'public web / QR flow · consumer-direct included' },
+const CHANNELS = { epurchase: { label: 'Epurchase', desc: 'public web / QR flow · consumer-direct included' },
                    salamhome: { label: 'Salam Home app', desc: 'Pulse app · buy FTTH + manage-line journeys' } };
 const SECTIONS = ['kpis', 'journeys', 'flows', 'plans', 'campaigns', 'payments', 'errors', 'integrations', 'regions', 'findings'];
 /* FTTX = the fixed-line family (FTTH consumer fiber + FTTB business fiber); the two are ALWAYS reported apart. */

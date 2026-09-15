@@ -1,5 +1,5 @@
 /* FIXED APP-LOG COLLECTOR — tails the Fixed platform's winston combined.log (the Salam Home / SDA /
- * Web e-purchase Node app) over SSH and lands the lines that matter in unified_console.fixed_app_events.
+ * Epurchase Node app) over SSH and lands the lines that matter in unified_console.fixed_app_events.
  *
  * WHY (15 Sep 2026): identity-provider outcomes never reach the sda_ops read models. Yakeen (ELM NIC check,
  * `getYakeenInfo` under tRPC path sda.actions.validateIndividualCustomer) is called inside the app process
@@ -86,7 +86,7 @@ function reasonClass(ok, status, reason, dflt) {
 /* channel from the tRPC path prefix (the `source` field is unreliable — the ops console parser proved it):
  *   sda.*                 SDA dealer app            → sda
  *   salamApp.*            Salam Home consumer app   → salamhome   (15 Sep: was wrongly 'web')
- *   ePurchase.*           Web e-purchase storefront → web
+ *   ePurchase.*           Epurchase storefront → web
  *   paymentOptimization.* the payment-link / e-purchase payment flow → web
  *   no path               fall back to `source` (payments, pulse, epurchase, sda, salamhome) */
 const channelOf = (o) => {
