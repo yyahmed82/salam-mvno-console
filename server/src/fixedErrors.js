@@ -303,15 +303,17 @@ function mount(app, deps) {
     const s = baseWhere(q);
     const openOnly = q.openOnly === '1' || q.openOnly === 'true';
     await refreshSplit();
+    const warnings = [];
+    const soft = (name, pr) => pr.catch(e => { warnings.push({ part: name, error: e.message }); console.error(`[FIXED-ERRORS] ${name} breakdown failed (${s.window}): ${e.message}`); return []; });
     const [catParts, provs, chans, types, msgs, clss, fresh] = await Promise.all([
       each(s, (pool, where) => pool.query(`SELECT e.category, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open,
           count(*) FILTER (WHERE e.occurred_at >= now() - interval '3 hours')::int AS last3h
         FROM error_events e ${JOIN_OA} ${where} GROUP BY 1 ORDER BY 2 DESC LIMIT 100`, s.P)),
-      grouped(q, PROVIDER_EXPR, 'provider', 20).catch(() => []),
-      grouped(q, CHANNEL_EXPR, 'channel', 10).catch(() => []),
-      grouped(q, TYPE_EXPR, 'type', 10).catch(() => []),
-      grouped(q, MSG_EXPR, 'msg', 80).catch(() => []),
-      grouped(q, CLASS_SQL(), 'cls', 4).catch(() => []),
+      soft('provider', grouped(q, PROVIDER_EXPR, 'provider', 20)),
+      soft('channel', grouped(q, CHANNEL_EXPR, 'channel', 10)),
+      soft('type', grouped(q, TYPE_EXPR, 'type', 10)),
+      soft('message', grouped(q, MSG_EXPR, 'msg', 80)),
+      soft('class', grouped(q, CLASS_SQL(), 'cls', 4)),
       Promise.all(sources().map(async x => { try { const r = await x.pool.query(`SELECT max(occurred_at) AS latest FROM error_events e WHERE e.occurred_at >= now() - interval '30 days' ${sliceOnly(x.src)}`);
         const served = split() ? SRC_BUCKETS[x.src] : (x.src === 'ops' ? CHANNELS.map(c => c.key) : []);
         return { src: x.src, buckets: served, latest: r.rows[0] && r.rows[0].latest || null, stale: x.src === 'beta' && both() && !split(), reason: x.src === 'beta' ? splitState.reason : undefined }; } catch (e) { return { src: x.src, error: e.message }; } })),
@@ -332,7 +334,7 @@ function mount(app, deps) {
     const byMessage = msgs.map(x => ({ msg: x.key, open: x.open, total: x.total }));
     const byClass = CLASSES.map(c => { const x = clss.find(y => y.key === c.key) || { open: 0, total: 0 }; return { cls: c.key, label: c.label, color: c.color, desc: c.desc, open: x.open, total: x.total }; });
     return { window: s.window, from: s.from, to: s.to, channel: q.channel || '', type: s.type || '', openOnly, provider: q.provider || '', msg: q.msg || '', cls: q.cls || '',
-      byProvider, byChannel, byType, byMessage, byClass, classes: CLASSES, sources: fresh, split: split(), splitReason: splitState.reason,
+      byProvider, byChannel, byType, byMessage, byClass, classes: CLASSES, sources: fresh, split: split(), splitReason: splitState.reason, warnings, resp: q.resp || '',
       total: byCategory.reduce((a, c) => a + c.total, 0), open: byCategory.reduce((a, c) => a + c.open, 0),
       byCategory: openOnly ? byCategory.filter(c => c.open > 0) : byCategory, byTeam, byPriority, taxonomy: TAXONOMY, spike: SPIKE, channels: CHANNELS, types: TYPES };
   }

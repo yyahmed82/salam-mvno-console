@@ -246,7 +246,8 @@
       const srcEl=$("#feSrc"); if(srcEl&&sum.sources&&sum.sources.length){ const SRC={ops:"sda_ops",beta:"sda_ops_beta"};
         srcEl.innerHTML=sum.sources.map(x=>{ const bk=(x.buckets||[]).map(k=>CH_LABEL[k]||k).join(" · "); if(x.error) return `<span><b>${esc(bk||SRC[x.src]||x.src)}</b> — <span class="stale">source unavailable</span> (${esc(SRC[x.src]||x.src)})</span>`;
           if(x.stale) return `<span><span class="stale">${esc(SRC[x.src]||x.src)} stale</span> — last event ${esc(rel(x.latest))}; Epurchase + Salam Home app are read from sda_ops instead (app journeys appear under Epurchase until opsb-ingest-watch is back)</span>`;
-          const age=x.latest?Date.now()-new Date(x.latest).getTime():null; const stale=age==null||age>2*3600e3; return `<span><b>${esc(bk)}</b> ← ${esc(SRC[x.src]||x.src)} · last event <span class="${stale?"stale":""}">${esc(rel(x.latest))}</span></span>`; }).join(" &nbsp;·&nbsp; "); }
+          const age=x.latest?Date.now()-new Date(x.latest).getTime():null; const stale=age==null||age>2*3600e3; return `<span><b>${esc(bk)}</b> ← ${esc(SRC[x.src]||x.src)} · last event <span class="${stale?"stale":""}">${esc(rel(x.latest))}</span></span>`; }).join(" &nbsp;·&nbsp; ");
+        if(sum.warnings&&sum.warnings.length) srcEl.insertAdjacentHTML("beforeend",` &nbsp;·&nbsp; <span class="stale">${esc(sum.warnings.map(w=>w.part).join(", "))} breakdown not computed (${esc(sum.warnings[0].error.replace(/canceling statement due to statement timeout/i,"query too slow on the read model"))}) — narrow the period or the filters</span>`); }
       const tiles=sum.byCategory.filter(c=>(!S.team||c.team===S.team)&&(S.prio===""||String(c.priority)===S.prio));
       $("#feTiles").innerHTML=tiles.length?tiles.map(c=>{ const on=S.category===c.category; const t=TONE[c.tone]||TONE.muted;
         return `<button class="fe-tile${on?" on":""}" data-c="${esc(c.category)}">
