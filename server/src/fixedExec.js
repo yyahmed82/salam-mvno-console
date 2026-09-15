@@ -27,8 +27,8 @@ const ERR_CAT = `SELECT category, count(*)::int AS total, count(*) FILTER (WHERE
 const ERR_CAT_DAY = `SELECT category, (date_trunc('day', occurred_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, count(*)::int AS n
                        FROM error_events WHERE occurred_at >= $1 AND occurred_at < $2 GROUP BY 1,2`;
 /* business / technical split — the same CLASS_EXPR as the Troubleshoot board (fixedErrors.js), so the KPI and the board agree */
-const CLASS_EXPR = require('./fixedErrors').CLASS_EXPR;
-const ERR_24 = `SELECT count(*)::int AS n, count(*) FILTER (WHERE ${CLASS_EXPR} = 'technical')::int AS tech FROM error_events e WHERE e.occurred_at >= $1`;
+const CLASS_SQL = () => require('./fixedErrors').CLASS_SQL();
+const ERR_24 = () => `SELECT count(*)::int AS n, count(*) FILTER (WHERE ${CLASS_SQL()} = 'technical')::int AS tech FROM error_events e WHERE e.occurred_at >= $1`;
 const STEPS = `SELECT oa.channel, oa.step_reached AS step, oa.outcome::text AS outcome, count(*)::int AS n
                  FROM order_attempts oa WHERE oa.started_at >= $1 AND oa.started_at < $2 AND oa.outcome <> 'COMPLETED'
                 GROUP BY 1,2,3 ORDER BY 4 DESC LIMIT 60`;
@@ -143,7 +143,7 @@ async function exec(q = {}) {
   const [today, prev, series, errDaysRaw, errCats, errCatDays, steps, budget, alerts, err24rows] = await Promise.all([
     f360.summary({ range: '24h' }), f360.summary({ from: from48, to: from24 }), f360.summary({ range }),
     both(ERR_DAY, [from, to]), both(ERR_CAT, [from, to]), both(ERR_CAT_DAY, [from, to]), both(STEPS, [from, to]),
-    errorBudget(), firedAlerts(from), both(ERR_24, [from24]),
+    errorBudget(), firedAlerts(from), both(ERR_24(), [from24]),
   ]);
   const [radarRows, radarTot, ident, yak] = await Promise.all([alertsByDay(from), alertsTotals(from), identity(from, to), yakeen(from, to)]);
 

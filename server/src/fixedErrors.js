@@ -165,12 +165,15 @@ const MSG_EXPR = `left(regexp_replace(coalesce(nullif(btrim(e.message),''),'(no 
  * Category decides first, then an HTTP 5xx code, then the message text; an empty message is technical (nothing
  * answered), any readable answer is business. Colours follow errclass.COLORS: business blue, technical red. ---- */
 const TECH_CATS = ['TIMEOUT', 'NAFATH_TIMEOUT', 'OSS_EXCEPTION', 'PAYMENT_NOT_NOTIFIED', 'PROVISION_NO_ORDER', 'LANDLINE_LOCK_FAILED'];
-const TECH_MSG_RE = `(timeout|timed[ -]?out|ETIMEDOUT|ECONN|EHOSTUNREACH|connection (reset|refused|closed)|SSL|I/O error|read timed out|broken pipe|service (is )?not available|temporarily unavailable|unavailable|OSB-382000|CRMException|SOAPFault|soap:Fault|internal server error|gateway time-?out|bad gateway|no response|empty response|null response|unreachable|circuit.?breaker|<h1>50[234]|Failed to validate customer info with Yakeen|Failed to check plate number)`;
+const TECH_MSG_RE = `(timeout|timed[ -]?out|ETIMEDOUT|ECONN|EHOSTUNREACH|connection (reset|refused|closed)|SSL|I/O error|read timed out|broken pipe|service (is )?not available|temporarily unavailable|unavailable|OSB-382000|CRMException|SOAPFault|soap:Fault|internal server error|gateway time-?out|bad gateway|no response|empty response|null response|unreachable|circuit.?breaker|<h1>50[234]|Failed to validate customer info with Yakeen|Failed to check plate number|unkn?own error|\\[CC-[A-Z]|CRM error|system error|exception|null pointer|undefined)`;
 const CLASS_EXPR = `CASE WHEN e.category IN (${TECH_CATS.map(c => `'${c}'`).join(',')}) THEN 'technical'
   WHEN e.code ~ '^5[0-9]{2}$' THEN 'technical'
   WHEN e.message ~* '${TECH_MSG_RE}' THEN 'technical'
   WHEN coalesce(nullif(btrim(e.message),''),'') = '' THEN 'technical'
   ELSE 'business' END`;
+/* effective class = operator override (fixed_error_catalog, see fixedErrCatalog.js) ?? the auto CASE above. Always call
+ * CLASS_SQL() inside a query builder, never cache it: the override lists change when someone classifies an error. */
+const CLASS_SQL = () => { try { return require('./fixedErrCatalog').wrapBoard(MSG_EXPR, CLASS_EXPR); } catch (_) { return CLASS_EXPR; } };
 const CLASSES = [
   { key: 'business',  label: 'Business',  color: '#3b82f6', desc: 'the API answered with a NO — no coverage / no ports, blacklist, wrong OTP, NIC mismatch, refused; the platform worked' },
   { key: 'technical', label: 'Technical', color: '#ef4444', desc: 'the platform or a provider failed to answer — timeout, 5xx, OSS/BSS exception, transport; money stuck by a failure' },
@@ -191,7 +194,7 @@ function baseWhere(q, opts = {}) {
   }
   const type = TYPE[String(q.type || '').toLowerCase()] ? String(q.type).toLowerCase() : null;
   if (type && opts.skip !== 'type') { P.push(type); parts.push(`${TYPE_EXPR} = $${P.length}`); }
-  if ((q.cls === 'business' || q.cls === 'technical') && opts.skip !== 'cls') { P.push(q.cls); parts.push(`${CLASS_EXPR} = $${P.length}`); }
+  if ((q.cls === 'business' || q.cls === 'technical') && opts.skip !== 'cls') { P.push(q.cls); parts.push(`${CLASS_SQL()} = $${P.length}`); }
   if (q.msg && opts.skip !== 'msg') { P.push(String(q.msg).slice(0, 160)); parts.push(`${MSG_EXPR} = $${P.length}`); }
   const ident = identifierSql(q, P);
   if (ident) parts.push(ident);
@@ -302,7 +305,7 @@ function mount(app, deps) {
       grouped(q, CHANNEL_EXPR, 'channel', 10).catch(() => []),
       grouped(q, TYPE_EXPR, 'type', 10).catch(() => []),
       grouped(q, MSG_EXPR, 'msg', 80).catch(() => []),
-      grouped(q, CLASS_EXPR, 'cls', 4).catch(() => []),
+      grouped(q, CLASS_SQL(), 'cls', 4).catch(() => []),
       Promise.all(sources().map(async x => { try { const r = await x.pool.query(`SELECT max(occurred_at) AS latest FROM error_events e WHERE e.occurred_at >= now() - interval '30 days' ${sliceOnly(x.src)}`);
         const served = split() ? SRC_BUCKETS[x.src] : (x.src === 'ops' ? CHANNELS.map(c => c.key) : []);
         return { src: x.src, buckets: served, latest: r.rows[0] && r.rows[0].latest || null, stale: x.src === 'beta' && both() && !split(), reason: x.src === 'beta' ? splitState.reason : undefined }; } catch (e) { return { src: x.src, error: e.message }; } })),
@@ -351,7 +354,7 @@ function mount(app, deps) {
     P.push(lim + 1);
     const parts = await each({ ...s, P }, (pool, where, src) => pool.query(`SELECT e.id, e.attempt_id, e.order_number, e.acct_masked, e.cust_masked, e.category, e.code, e.message, e.client_side,
         e.channel, e.dealer_id, e.dealer_code, e.referral_code, e.region, e.step, e.occurred_at, e.resolved, e.resolved_at, e.signature,
-        ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_EXPR} AS cls, oa.workflow::text AS workflow, oa.plan, '${src}'::text AS src
+        ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_SQL()} AS cls, oa.workflow::text AS workflow, oa.plan, '${src}'::text AS src
       FROM error_events e ${JOIN_OA} ${where} ${extra.length ? 'AND ' + extra.join(' AND ') : ''} ORDER BY e.occurred_at DESC LIMIT $${P.length}`, P));
     const all = [].concat(...parts.map(p => p.r.rows)).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
     const rows = all.slice(0, lim);
@@ -409,7 +412,7 @@ function mount(app, deps) {
   // ---- GET /api/fixed/errors/detail ----
   async function detail(q, req) {
     const id = String(q.id || '').slice(0, 80); if (!id) { const e = new Error('id required'); e.status = 400; throw e; }
-    const DSQL = `SELECT e.*, d.dealer_name, d.staff_name, d.staff_code, ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_EXPR} AS cls, oa.workflow::text AS workflow, oa.plan
+    const DSQL = `SELECT e.*, d.dealer_name, d.staff_name, d.staff_code, ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_SQL()} AS cls, oa.workflow::text AS workflow, oa.plan
       FROM error_events e LEFT JOIN dealers d ON d.id = e.dealer_id ${JOIN_OA} WHERE e.id = $1 LIMIT 1`;
     // the row's own source first (the board passes src=); the same id may exist in both read models with a different channel label
     const order = sources().sort((a, b) => (a.src === q.src ? -1 : 0) - (b.src === q.src ? -1 : 0));
@@ -591,4 +594,4 @@ function mount(app, deps) {
   app.get('/api/fixed/errors/taxonomy', gate, (req, res) => res.json({ taxonomy: TAXONOMY, teams: TEAMS, spike: SPIKE, channels: CHANNELS, types: TYPES }));
 }
 
-module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CLASSES, CHANNEL_EXPR, TYPE_EXPR, CLASS_EXPR, effectiveSeverity, parseWindow };
+module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CLASSES, CHANNEL_EXPR, TYPE_EXPR, CLASS_EXPR, CLASS_SQL, MSG_EXPR, effectiveSeverity, parseWindow };

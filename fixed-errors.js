@@ -147,6 +147,7 @@
       </div>
       <div id="feApp"></div>
       <div id="feClass" class="fe-chips" style="margin-bottom:8px"></div>
+      <div id="feCat"></div>
       <div id="feTeams" class="fe-chips" style="margin-bottom:8px"></div>
       <div id="fePrio" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feProv" class="fe-chips" style="margin-bottom:4px"></div>
@@ -204,6 +205,10 @@
       /* business / technical — the console-wide split (errclass principle): blue = the API said no, red = the platform failed */
       const clsN=x=>fmt(S.openOnly?x.open:x.total);
       $("#feClass").innerHTML=`<span class="fe-dim">Class:</span>`+chip(S.cls==="","All",`class="fe-cls" data-v=""`)+(sum.byClass||[]).map(c=>`<button type="button" class="fe-chip fe-cls fe-cls-${c.cls}${S.cls===c.cls?" on":""}" data-v="${c.cls}" title="${esc(c.desc)}"><i class="fe-clsdot" style="background:${c.color}"></i>${esc(c.label)} · ${clsN(c)}</button>`).join("");
+      $("#feClass").insertAdjacentHTML("beforeend",`<button type="button" class="fe-btn" id="feCatBtn" style="margin-left:auto" title="Every distinct error message, auto class and your override — Technical / Business">${window.fixedErrCat&&window.fixedErrCat.isOpen()?"Close catalogue":"Classify errors…"}</button>`);
+      const cb=$("#feCatBtn"); if(cb) cb.onclick=()=>{ if(window.fixedErrCat) window.fixedErrCat.toggle($("#feCat"),fx); cb.textContent=window.fixedErrCat&&window.fixedErrCat.isOpen()?"Close catalogue":"Classify errors…"; };
+      window.__feReload=()=>load(host,fx,true);
+      if(window.fixedErrCat&&window.fixedErrCat.isOpen()&&$("#feCat")&&!$("#feCat").firstChild) window.fixedErrCat.render($("#feCat"),fx);
       host.querySelectorAll(".fe-cls").forEach(b=>b.onclick=()=>{ S.cls=(S.cls===b.dataset.v)?"":b.dataset.v; load(host,fx,true); });
       $("#feTeams").innerHTML=chip(S.team==="","All teams",`class="fe-team" data-t=""`)+TEAMS.map(t=>chip(S.team===t,`${t} · ${fmt(S.openOnly?sum.byTeam[t].open:sum.byTeam[t].total)}`,`class="fe-team" data-t="${t}"`)).join("");
       $("#fePrio").innerHTML=`<span style="font-size:12px;color:var(--muted);margin-right:2px">Priority:</span>`+chip(S.prio==="","All",`class="fe-prio" data-p=""`)+[0,1,2,3,4].map(p=>chip(S.prio===String(p),`P${p} · ${fmt(S.openOnly?sum.byPriority[p].open:sum.byPriority[p].total)}`,`class="fe-prio" data-p="${p}"`)).join("");

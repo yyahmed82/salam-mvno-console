@@ -13,7 +13,7 @@
  * outcomes). Same window semantics as the board (fixedErrors.parseWindow). Read-only. */
 'use strict';
 const db = require('./db');
-const { parseWindow, CLASS_EXPR } = require('./fixedErrors');
+const { parseWindow, CLASS_SQL } = require('./fixedErrors');
 
 const CH = [
   { key: 'sda', label: 'SDA dealer app', desc: 'sda.* tRPC paths' },
@@ -140,7 +140,7 @@ async function impact(q = {}) {
   const board = { n: 0, first: null, last: null, last15: 0, prev60: 0, customers: 0, technical: 0, business: 0, buckets: [] };
   for (const pool of pools) {
     const t = await Q(pool, `SELECT count(*)::int AS n, min(e.occurred_at) AS first, max(e.occurred_at) AS last, count(DISTINCT e.cust_masked)::int AS customers,
-        count(*) FILTER (WHERE ${CLASS_EXPR} = 'technical')::int AS technical, count(*) FILTER (WHERE ${CLASS_EXPR} = 'business')::int AS business,
+        count(*) FILTER (WHERE ${CLASS_SQL()} = 'technical')::int AS technical, count(*) FILTER (WHERE ${CLASS_SQL()} = 'business')::int AS business,
         count(*) FILTER (WHERE e.occurred_at >= $2::timestamptz - interval '15 minutes')::int AS last15,
         count(*) FILTER (WHERE e.occurred_at >= $2::timestamptz - interval '75 minutes' AND e.occurred_at < $2::timestamptz - interval '15 minutes')::int AS prev60
       FROM error_events e WHERE ${ewhere}`, EP);

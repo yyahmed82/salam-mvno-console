@@ -71,7 +71,7 @@ const PROVIDER_RE = [
   [/nafath/i, 'nafath'], [/semati|IssueNewMobileIndividual/i, 'semati'], [/dealerValidation|manafith/i, 'manafith'],
 ];
 const MUT_RE = /^mutation\s+(\S+)\s+(success|succeeded|fail|failed|error)\b(?:.*?(\d+)\s*ms)?/i;
-const TECH_RE = /timed? ?out|timeout|gateway|\b5\d\d\b|ECONN|ETIMEDOUT|EAI_AGAIN|socket hang up|TLS|certificate|unavailable|internal (server )?error|system error|<h1>|exception/i;
+const TECH_RE = /timed? ?out|timeout|gateway|\b5\d\d\b|ECONN|ETIMEDOUT|EAI_AGAIN|socket hang up|TLS|certificate|unavailable|internal (server )?error|system error|unkn?own error|\[CC-[A-Z]|CRM error|null pointer|<h1>|exception/i;
 const CLIENT_RE = /is not a valid|ZodError|invalid_type|Required|too_small|too_big|validation/i;
 /* dflt = what an unclassifiable failure defaults to: a provider/DRM result-code refusal is business (the
  * provider answered and said no); a bare mutation failure or level:error line is technical (something broke) */
@@ -107,6 +107,8 @@ const tsOf = (o) => {
   const d = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(t) ? new Date(t.replace(' ', 'T') + '+03:00') : new Date(t);
   return isNaN(d.getTime()) ? null : d.toISOString();
 };
+/* an operator's decision in the error catalogue beats the regex (fixedErrCatalog.classifyApp, cached) */
+const catalogClass = t => { try { return require('./fixedErrCatalog').classifyApp(t); } catch (_) { return null; } };
 const short = (s, n) => s == null ? null : maskText(String(s)).replace(/\s+/g, ' ').trim().slice(0, n);
 
 function parseLine(line) {
@@ -141,7 +143,7 @@ function parseLine(line) {
   return {
     ts, channel: channelOf(o), source: o.source ? String(o.source).slice(0, 40) : null, level: level || null,
     path: path ? String(path).slice(0, 160) : null, kind, ok, status_code: status != null && Number.isFinite(Number(status)) ? Number(status) : null,
-    reason, reason_class: reasonClass(ok, status, reason, dflt), message: short(msg, 200),
+    reason, reason_class: (ok ? null : (catalogClass(reason || short(msg, 300)) || reasonClass(ok, status, reason, dflt))), message: short(msg, 200),
     request_id: o.requestId ? String(o.requestId).slice(0, 64) : null,
     state_id: (o.rawInput && o.rawInput.stateId) || (o.input && o.input.stateId) || null,
     platform: o.platform ? String(o.platform).slice(0, 20) : null, app_version: o.version ? String(o.version).slice(0, 20) : null,
