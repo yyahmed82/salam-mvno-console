@@ -50,6 +50,13 @@ const CFG = () => ({
   timeoutMs: Math.max(3000, Number(process.env.YAKEEN_PROBE_TIMEOUT_MS) || 15000),
   mailTo: String(process.env.YAKEEN_PROBE_MAIL_TO || '').split(',').map(s => s.trim()).filter(Boolean),
   mail: process.env.YAKEEN_PROBE_MAIL !== '0',
+  /* TRANSPORT — 152 has no internet egress, so by default the calls are made FROM the Fixed app server (146, which
+   * reaches ELM for the app itself) over the collector's ssh channel: `curl -K -` with the headers on STDIN (never
+   * on a command line / in `ps`). YAKEEN_PROBE_VIA=direct forces fetch from this box (a lab with egress). */
+  via: (process.env.YAKEEN_PROBE_VIA || (process.env.FIXED_LOG_HOSTS ? 'ssh' : 'direct')).toLowerCase(),
+  sshHost: process.env.YAKEEN_PROBE_SSH_HOST || String(process.env.FIXED_LOG_HOSTS || '').split(',')[0].trim(),
+  sshUser: process.env.FIXED_LOG_USER || process.env.API_LOG_USER || '', sshKey: process.env.FIXED_LOG_KEY || process.env.API_LOG_KEY || '',
+  proxy: process.env.YAKEEN_PROBE_PROXY || '',   // optional http(s) proxy for curl on the ssh host
 });
 function configured() { const c = CFG(); return !!(c.appId && c.appKey && c.user && c.pass && (c.nin || c.iqama)); }
 function missing() { const c = CFG(); const m = [];
@@ -78,6 +85,29 @@ async function hit(url, headers, timeoutMs) {
     return { status: 0, ms: Date.now() - t0, text: '', body: null, error: e.name === 'AbortError' ? `timeout ${timeoutMs} ms` : (e.message || 'connection error') };
   } finally { clearTimeout(to); }
 }
+/* the same request executed on the ssh host with curl; config (url + headers) goes through stdin */
+function hitSsh(url, headers, timeoutMs) {
+  const c = CFG(); const t0 = Date.now();
+  const cfg = [`url = ${JSON.stringify(url)}`, `max-time = ${Math.ceil(timeoutMs / 1000)}`, 'silent', 'show-error', `write-out = "\\n__YK__ %{http_code} %{time_total}"`]
+    .concat(c.proxy ? [`proxy = ${JSON.stringify(c.proxy)}`] : [])
+    .concat(Object.entries(headers).map(([k, v]) => `header = ${JSON.stringify(k + ': ' + v)}`)).join('\n') + '\n';
+  const args = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new'];
+  if (c.sshKey) args.push('-i', c.sshKey);
+  args.push(c.sshUser ? `${c.sshUser}@${c.sshHost}` : c.sshHost, 'curl -K -');
+  return new Promise(resolve => {
+    const { execFile } = require('child_process');
+    const child = execFile('ssh', args, { timeout: timeoutMs + 10000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const out = String(stdout || ''); const m = out.match(/\n__YK__ (\d{3}) ([\d.]+)\s*$/);
+      const text = m ? out.slice(0, m.index) : out;
+      const status = m ? Number(m[1]) : 0; const ms = m ? Math.round(Number(m[2]) * 1000) : Date.now() - t0;
+      let body = null; try { body = JSON.parse(text); } catch (_) {}
+      if (!m || !status) return resolve({ status: 0, ms, text: '', body: null, error: (String(stderr || '').trim() || (err && err.message) || 'curl failed on ' + c.sshHost).slice(0, 200) });
+      resolve({ status, ms, text, body });
+    });
+    child.stdin.on('error', () => {}); child.stdin.end(cfg);
+  });
+}
+const doHit = (url, headers, timeoutMs) => CFG().via === 'ssh' ? hitSsh(url, headers, timeoutMs) : hit(url, headers, timeoutMs);
 const deepFind = (o, keys, depth = 0) => { if (!o || typeof o !== 'object' || depth > 4) return null;
   for (const k of Object.keys(o)) { if (keys.includes(k.toLowerCase()) && typeof o[k] === 'string' && o[k].length > 20) return o[k]; }
   for (const k of Object.keys(o)) { const v = deepFind(o[k], keys, depth + 1); if (v) return v; } return null; };
@@ -95,14 +125,14 @@ function classify(r) {
 let _tok = { token: null, exp: 0 };
 async function login(c, force) {
   if (!force && _tok.token && Date.now() < _tok.exp - 60000) return { ok: true, cached: true, ms: 0, status: 200 };
-  const r = await hit(`${c.base}/api/v2/yakeen/login`, { 'app-id': c.appId, 'app-key': c.appKey, 'username': c.user, 'password': c.pass, 'accept-language': 'EN', ...(c.svcLogin ? { 'service-identifier': c.svcLogin } : {}) }, c.timeoutMs);
+  const r = await doHit(`${c.base}/api/v2/yakeen/login`, { 'app-id': c.appId, 'app-key': c.appKey, 'username': c.user, 'password': c.pass, 'accept-language': 'EN', ...(c.svcLogin ? { 'service-identifier': c.svcLogin } : {}) }, c.timeoutMs);
   const token = deepFind(r.body, ['token', 'accesstoken', 'access_token', 'jwt', 'bearer', 'authorization']) || (r.body == null && /^eyJ/.test(r.text.trim()) ? r.text.trim() : null);
   if (r.status === 200 && token) { const exp = jwtExp(token); _tok = { token: token.replace(/^Bearer\s+/i, ''), exp: exp || (Date.now() + 20 * 60000) }; return { ok: true, cached: false, ms: r.ms, status: r.status, exp: new Date(_tok.exp).toISOString() }; }
   _tok = { token: null, exp: 0 };
   return { ok: false, cached: false, ms: r.ms, status: r.status, cls: classify(r), message: short(msgOf(r), 200) };
 }
 
-async function runOnce({ trigger = 'scheduled', actor = null } = {}) {
+async function runOnce({ trigger = 'scheduled', actor = null, mailTo = null } = {}) {
   const c = CFG(); const startedAt = new Date();
   if (!configured()) throw Object.assign(new Error('Yakeen probe not configured: set ' + missing().join(', ') + ' in /apps/unified/.env'), { status: 409 });
   const lg = await login(c, false);
@@ -114,39 +144,40 @@ async function runOnce({ trigger = 'scheduled', actor = null } = {}) {
     const q = p.subject === 'nin' ? (c.nin ? `nin=${encodeURIComponent(c.nin)}&dateString=${encodeURIComponent(c.ninDob)}` : null)
                                   : (c.iqama ? `iqama=${encodeURIComponent(c.iqama)}&birthDateG=${encodeURIComponent(c.iqamaDob)}` : null);
     if (!q) { results.push({ key: p.key, label: p.label, skipped: true, cls: 'skipped', message: `no probe subject for ${p.subject}`, status: null, ms: null }); continue; }
-    let r = await hit(`${c.base}/api/v1/yakeen/data?${q}`, { 'app-id': c.appId, 'app-key': c.appKey, 'usage-code': c.usage, 'operator-id': c.operator, 'Authorization': `Bearer ${_tok.token}`, 'accept-language': 'EN', 'service-identifier': sid }, c.timeoutMs);
-    if (r.status === 401 && lg.cached) { const again = await login(c, true); if (again.ok) r = await hit(`${c.base}/api/v1/yakeen/data?${q}`, { 'app-id': c.appId, 'app-key': c.appKey, 'usage-code': c.usage, 'operator-id': c.operator, 'Authorization': `Bearer ${_tok.token}`, 'accept-language': 'EN', 'service-identifier': sid }, c.timeoutMs); }
+    let r = await doHit(`${c.base}/api/v1/yakeen/data?${q}`, { 'app-id': c.appId, 'app-key': c.appKey, 'usage-code': c.usage, 'operator-id': c.operator, 'Authorization': `Bearer ${_tok.token}`, 'accept-language': 'EN', 'service-identifier': sid }, c.timeoutMs);
+    if (r.status === 401 && lg.cached) { const again = await login(c, true); if (again.ok) r = await doHit(`${c.base}/api/v1/yakeen/data?${q}`, { 'app-id': c.appId, 'app-key': c.appKey, 'usage-code': c.usage, 'operator-id': c.operator, 'Authorization': `Bearer ${_tok.token}`, 'accept-language': 'EN', 'service-identifier': sid }, c.timeoutMs); }
     const cls = classify(r);
     results.push({ key: p.key, label: p.label, cls, status: r.status, ms: r.ms, message: cls === 'ok' ? 'answered' : short(msgOf(r), 200),
       keys: r.body && typeof r.body === 'object' ? Object.keys(r.body).slice(0, 12) : [] });
   }
   const okCount = results.filter(x => x.cls === 'ok').length, total = results.filter(x => !x.skipped).length;
-  const verdict = !lg.ok ? 'down' : okCount === total ? 'up' : results.some(x => x.cls === 'technical') ? 'degraded' : 'answering';
-  const row = { run_at: startedAt.toISOString(), trigger, actor, verdict, ok_count: okCount, total, login: { ok: lg.ok, ms: lg.ms, status: lg.status, cached: lg.cached, message: lg.message || null }, results };
+  const transportDown = !lg.ok && (lg.status === 0);
+  const verdict = !lg.ok ? (transportDown ? 'unreachable' : 'down') : okCount === total ? 'up' : results.some(x => x.cls === 'technical') ? 'degraded' : 'answering';
+  const row = { run_at: startedAt.toISOString(), trigger, actor, verdict, ok_count: okCount, total, via: c.via === 'ssh' ? `ssh ${c.sshHost}` : 'direct', login: { ok: lg.ok, ms: lg.ms, status: lg.status, cached: lg.cached, message: lg.message || null, via: c.via === 'ssh' ? `ssh ${c.sshHost}` : 'direct' }, results };
   await ensureTable();
   const ins = await db.console.query(`INSERT INTO yakeen_probe_runs (run_at, trigger_kind, actor, verdict, ok_count, total, login, results) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
     [row.run_at, trigger, actor, verdict, okCount, total, JSON.stringify(row.login), JSON.stringify(results)]);
   row.id = ins.rows[0].id;
-  if (c.mail) { try { row.mailed_to = await mailRun(row); await db.console.query(`UPDATE yakeen_probe_runs SET mailed_to=$2 WHERE id=$1`, [row.id, row.mailed_to]); } catch (e) { row.mail_error = e.message; } }
+  if (c.mail) { try { row.mailed_to = await mailRun(row, mailTo); await db.console.query(`UPDATE yakeen_probe_runs SET mailed_to=$2 WHERE id=$1`, [row.id, row.mailed_to]); } catch (e) { row.mail_error = e.message; } }
   console.log(`[YAKEEN-PROBE] ${trigger}${actor ? ' by ' + actor : ''}: ${verdict} · ${okCount}/${total} ok · login ${lg.ok ? 'ok' : 'FAILED'}`);
   return row;
 }
 
-async function mailRun(row) {
+async function mailRun(row, override) {
   const notify = require('./notify');
   const c = CFG();
-  let to = c.mailTo;
+  let to = Array.isArray(override) && override.length ? override : c.mailTo;
   if (!to.length) { try { const r = await db.console.query(`SELECT email FROM console_users WHERE enabled = true AND (role = 'super_admin' OR 'super_admin' = ANY(roles)) ORDER BY email`); to = r.rows.map(x => x.email); } catch (_) {} }
   if (!to.length) return [];
   const esc = notify.esc; const ksa = new Date(new Date(row.run_at).getTime() + KSA).toISOString().replace('T', ' ').slice(0, 16) + ' KSA';
-  const color = row.verdict === 'up' ? '#1e5c44' : row.verdict === 'answering' ? '#2563eb' : '#b91c1c';
+  const color = row.verdict === 'up' ? '#1e5c44' : row.verdict === 'answering' ? '#2563eb' : row.verdict === 'unreachable' ? '#6b7280' : '#b91c1c';
   const rows = row.results.map(r => `<tr><td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-family:Arial,sans-serif;font-size:12px">${esc(r.label)}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-family:Arial,sans-serif;font-size:12px;font-weight:700;color:${r.cls === 'ok' ? '#1e5c44' : r.cls === 'business' ? '#2563eb' : r.cls === 'skipped' ? '#6b7280' : '#b91c1c'}">${esc(r.cls.toUpperCase())}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-family:Arial,sans-serif;font-size:12px">${r.status == null ? '—' : esc(String(r.status))}${r.ms != null ? ` · ${r.ms} ms` : ''}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-family:Arial,sans-serif;font-size:12px;color:#374151">${esc(r.message || '')}</td></tr>`).join('');
-  const body = `<p style="font-family:Arial,sans-serif;font-size:13px;color:#111827;margin:0 0 12px">Run <b>${esc(ksa)}</b> · ${esc(row.trigger)}${row.actor ? ' by ' + esc(row.actor) : ''} · login ${row.login.ok ? `ok (${row.login.cached ? 'cached token' : row.login.ms + ' ms'})` : `<b style="color:#b91c1c">FAILED</b> ${esc(row.login.message || '')}`}</p>
+  const body = `<p style="font-family:Arial,sans-serif;font-size:13px;color:#111827;margin:0 0 12px">Run <b>${esc(ksa)}</b> · ${esc(row.trigger)}${row.actor ? ' by ' + esc(row.actor) : ''} · via ${esc(row.via || 'direct')} · login ${row.login.ok ? `ok (${row.login.cached ? 'cached token' : row.login.ms + ' ms'})` : `<b style="color:#b91c1c">FAILED</b> ${esc(row.login.message || '')}`}</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr>${['API', 'Result', 'HTTP · time', 'Detail'].map(h => `<th align="left" style="padding:6px 8px;border-bottom:2px solid #d1d5db;font-family:Arial,sans-serif;font-size:11px;color:#6b7280;text-transform:uppercase">${h}</th>`).join('')}</tr>${rows}</table>
-    <p style="font-family:Arial,sans-serif;font-size:11px;color:#6b7280;margin:14px 0 0">OK = ELM answered the record · BUSINESS = ELM answered with a refusal (inputs / record) — the service is reachable · TECHNICAL = timeout, 5xx or transport — the service is not answering. Every call is billed by ELM; scheduled ${esc(c.times.join(' / '))} KSA, manual runs capped at ${c.manualCap}/day. History: ${esc(notify.CONSOLE_URL || '')}#fixed?tab=errors</p>`;
+    ${row.verdict === 'unreachable' ? `<p style="font-family:Arial,sans-serif;font-size:12px;color:#b91c1c;margin:0 0 12px"><b>UNREACHABLE = the probe could not reach ELM from ${esc(row.via || 'the console')} — a transport / egress problem on our side, not an ELM answer.</b> ${esc(row.login.message || '')}</p>` : ''}<p style="font-family:Arial,sans-serif;font-size:11px;color:#6b7280;margin:14px 0 0">OK = ELM answered the record · BUSINESS = ELM answered with a refusal (inputs / record) — the service is reachable · TECHNICAL = timeout, 5xx or transport — the service is not answering. Every call is billed by ELM; scheduled ${esc(c.times.join(' / '))} KSA, manual runs capped at ${c.manualCap}/day. History: ${esc(notify.CONSOLE_URL || '')}#fixed?tab=errors</p>`;
   const html = notify.shell({ title: `Yakeen / ELM probe — ${row.verdict.toUpperCase()} · ${row.ok_count}/${row.total} ok`, pill: row.verdict.toUpperCase(), pillColor: color, bodyHtml: body });
   const subj = `[Salam Ops] Yakeen / ELM probe ${row.verdict.toUpperCase()} — ${row.ok_count}/${row.total} ok · ${ksa}`;
   await notify.sendHtml(to, subj, html);
@@ -176,7 +207,7 @@ async function history(limit = 30) {
 async function status() {
   const c = CFG(); let last = null, used = 0;
   try { last = (await history(1))[0] || null; used = await manualUsedToday(); } catch (_) {}
-  return { configured: configured(), missing: configured() ? [] : missing(), times: c.times, manualCap: c.manualCap, manualUsedToday: used, manualLeft: Math.max(0, c.manualCap - used),
+  return { configured: configured(), missing: configured() ? [] : missing(), via: c.via === 'ssh' ? `ssh ${c.sshUser}@${c.sshHost}` : 'direct', times: c.times, manualCap: c.manualCap, manualUsedToday: used, manualLeft: Math.max(0, c.manualCap - used),
     mailTo: c.mailTo.length ? c.mailTo : 'super admins', mail: c.mail, probes: PROBES.map(p => ({ key: p.key, label: p.label, ready: !!c.svc[p.svc] && !!(p.subject === 'nin' ? c.nin : c.iqama) })), last };
 }
 
@@ -220,6 +251,7 @@ module.exports = { mount, start, runOnce, status, history, configured, PROBES };
 
 // CLI: node src/yakeenProbe.js --once   (manual run from the box; counts as a manual run)
 if (require.main === module) {
-  runOnce({ trigger: 'manual', actor: 'cli' }).then(r => { console.log(JSON.stringify(r, null, 2)); return db.console.end(); })
+  const ti = process.argv.indexOf('--to'); const mailTo = ti > 0 ? String(process.argv[ti + 1] || '').split(',').map(x => x.trim()).filter(Boolean) : null;
+  runOnce({ trigger: 'manual', actor: 'cli', mailTo }).then(r => { console.log(JSON.stringify(r, null, 2)); return db.console.end(); })
     .catch(e => { console.error('probe failed:', e.message); process.exit(1); });
 }
