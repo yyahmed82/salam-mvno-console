@@ -79,6 +79,8 @@ async function evaluate(simNow) {
     const minC = Number(rule.min_customers || 0);
     let severity = rule.severity, downgraded = false;
     if (fired && minC > 0 && customers != null && customers < minC) { severity = rule.single_customer_severity || 'P4'; downgraded = true; }
+    /* a metric may name WHAT it found in dim.note (e.g. the worst app-log signature) — carried into the incident text */
+    const note = snap && snap.dim && typeof snap.dim.note === 'string' && snap.dim.note ? ` · ${snap.dim.note.slice(0, 220)}` : '';
     const who = customers != null ? ` · ${customers} customer${customers === 1 ? '' : 's'}${counted != null && cb === 'events' && customers > 0 && counted > customers ? ` (${counted} attempts)` : ''}` : '';
     let counts;
     if (paused) counts = paused;
@@ -87,7 +89,7 @@ async function evaluate(simNow) {
     else if (!snap || value == null) counts = 'no data in window';
     else if (!enoughSample) counts = `observed ${fmt(value, rule)} (sample ${sample} < min ${rule.min_sample})${who}`;
     else counts = `observed ${fmt(value, rule)} (${cb === 'events' ? 'sample' : cb === 'customers' ? 'customers' : 'services'} ${sample}, ${rule.window_hours}h)${who}${downgraded ? ` → ${severity} (below ${minC} customers)` : ''}`;
-    evals.push({
+    evals.push({ note,
       id: rule.id, key: rule.key, name: rule.name, severity, rule_severity: rule.severity, downgraded, team: rule.team,
       metric_key: rule.metric_key, operator: rule.operator, threshold: Number(rule.threshold),
       min_sample: rule.min_sample, unit: rule.unit, window_hours: Number(rule.window_hours), count_by: cb, min_customers: minC,
@@ -115,7 +117,7 @@ async function runAlerts(simNow) {
 
     if (ev.fired) {
       const who = ev.customers != null ? ` · ${ev.customers} customer${ev.customers === 1 ? '' : 's'}${ev.counted != null && ev.count_by === 'events' && ev.counted > ev.customers ? `, ${ev.counted} attempts` : ''}` : '';
-      const msg = `${rule.metric_key} ${opLabel[rule.operator]} ${rule.threshold} — observed ${fmt(ev.value, rule)} (n=${ev.sample}, ${rule.window_hours}h)${who}`;
+      const msg = `${rule.metric_key} ${opLabel[rule.operator]} ${rule.threshold} — observed ${fmt(ev.value, rule)} (n=${ev.sample}, ${rule.window_hours}h)${who}${ev.note || ''}`;
       if (openRow) {
         await c.query(
           `UPDATE alerts SET last_seen_at=$2, observed_value=$3, sample=$4,

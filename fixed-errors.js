@@ -14,7 +14,7 @@
   const TONE={red:{bg:"rgba(220,76,76,.16)",fg:"#dc2626"},amber:{bg:"rgba(210,153,34,.16)",fg:"var(--warn-fg)"},muted:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"}};
   const ID_FIELDS=[["serviceNo","Service no. (FTTH… / 5G no.)"],["odb","ODB / plate no (ODB: prefix ok)"],["iccid","SIM ICCID"],["cpe","CPE serial"],["msisdn","MSISDN / mobile"],["custCode","Customer code (custCode)"],["customerId","Customer ID"],["workflowId","Workflow ID (wf_st_…)"]];
   const LS=k=>{ try{ return localStorage.getItem(k); }catch(e){ return null; } };
-  const S={ win:LS("fixed_err_win")||"today", channel:"", type:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", msg:"", category:"", tech:"all", find:"", ids:{}, expanded:new Set(), timer:null, tick:0 };   // expanded = ids open at once (several rows can be open — compare cases side by side)
+  const S={ win:LS("fixed_err_win")||"today", channel:"", type:"", hubSeen:undefined, openOnly:true, team:"", prio:"", provider:"", msg:"", cls:"", category:"", tech:"all", find:"", ids:{}, expanded:new Set(), timer:null, tick:0 };   // expanded = ids open at once (several rows can be open — compare cases side by side)
   /* channel + product type pills — same hue family in light and dark (tokens), never the violet business marker */
   const CH_STYLE={ sda:{bg:"rgba(14,159,90,.14)",fg:"var(--green,#0e9f5a)"}, qr:{bg:"rgba(13,148,136,.14)",fg:"#0d9488"}, web:{bg:"rgba(37,99,235,.13)",fg:"#2563eb"}, salamhome:{bg:"rgba(217,119,6,.14)",fg:"var(--warn-fg,#b45309)"} };
   const TY_STYLE={ ftth:{bg:"rgba(14,159,90,.12)",fg:"var(--green,#0e9f5a)"}, fttb:{bg:"rgba(5,150,105,.12)",fg:"#047857"}, "5gwl":{bg:"rgba(37,99,235,.12)",fg:"#2563eb"}, "5gfwa":{bg:"rgba(79,70,229,.12)",fg:"#4338ca"}, "5g":{bg:"rgba(37,99,235,.10)",fg:"#2563eb"}, lead:{bg:"rgba(217,119,6,.12)",fg:"var(--warn-fg,#b45309)"}, unknown:{bg:"rgba(125,133,144,.14)",fg:"var(--muted)"} };
@@ -34,6 +34,8 @@
     if(!empty) return esc(JSON.stringify(body,null,2)); return esc(pretty(p)); }
   /* one class attribute only — a second class="" is ignored by the browser and the chip falls back to the grey default */
   const chip=(on,label,attrs)=>{ const m=attrs.match(/\s*class="([^"]*)"/); const rest=m?attrs.replace(m[0],""):attrs; return `<button type="button" class="fe-chip${on?" on":""}${m?" "+m[1]:""}" ${rest}>${label}</button>`; };
+  const CLS={ business:{label:"Business",color:"#3b82f6",bg:"rgba(59,130,246,.14)"}, technical:{label:"Technical",color:"#ef4444",bg:"rgba(239,68,68,.14)"} };
+  const clsPill=r=>{ const k=r&&r.cls; const c=CLS[k]; if(!c) return ""; return `<span class="fe-clspill" style="background:${c.bg};color:${c.color}" title="${k==="technical"?"the platform or a provider failed to answer":"the API answered with a NO — the platform worked"}">${c.label}</span>`; };
   const prioBadge=p=>`<span class="fe-pri" style="background:${PRIO_COLOR[p]||"#7d8590"}">P${p}</span>`;
   const catBadge=(r)=>{ const esc=FX().esc; const t=TONE[r.tone]||TONE.muted; return `<span class="fe-cat"><span class="fe-catpill" style="background:${t.bg};color:${t.fg}">${esc(r.label||r.category)}</span><span class="fe-team" style="color:${TEAM_COLOR[r.team]||"var(--muted)"}">${esc(r.team||"")}</span></span>`; };
   const inp=(id,ph,val,extra)=>`<input id="${id}" class="fe-in" placeholder="${FX().esc(ph)}" value="${FX().esc(val||"")}" autocomplete="off" spellcheck="false" style="${extra||""}">`;
@@ -56,6 +58,8 @@
     #fxErr .fe-counts{margin-left:auto;font-size:12.5px;color:var(--muted)}
     #fxErr .fe-btn{cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:var(--ink);transition:border-color .14s,color .14s,transform .14s} #fxErr .fe-btn:hover{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);transform:translateY(-1px)}
     #fxErr .fe-hint{font-size:11px;color:var(--muted)}
+    #fxErr .fe-clsdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:0} #fxErr .fe-chip.fe-cls-business.on{background:#3b82f6;border-color:#3b82f6} #fxErr .fe-chip.fe-cls-technical.on{background:#ef4444;border-color:#ef4444}
+    #fxErr .fe-clspill{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:1px}
     #fxErr .fe-msgrow{display:flex;align-items:center;gap:8px;margin:6px 0 4px;flex-wrap:wrap} #fxErr .fe-msg{flex:1 1 320px;max-width:760px;width:auto;padding:7px 34px 7px 12px;font-size:12.5px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
     #fxErr .fe-msg.on{border-color:var(--green,#0e9f5a);box-shadow:0 0 0 3px rgba(14,159,90,.15);font-weight:600} #fxErr .fe-msg option{font-weight:400;color:var(--ink);background:var(--card,#fff)}
     #fxErr .fe-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin:14px 0 18px}
@@ -93,7 +97,7 @@
   function applyRouteQuery(){
     try{
       const raw=(location.hash.split("?")[1]||"");
-      if(!raw||raw===window.__fxErrLastQs||!/(?:^|&)(range|window|category|team|priority|provider|msg|channel|type|tech|find|openOnly|serviceNo|odb|iccid|cpe|msisdn|custCode|customerId|workflowId)=/.test(raw)) return;
+      if(!raw||raw===window.__fxErrLastQs||!/(?:^|&)(range|window|category|team|priority|provider|msg|cls|channel|type|tech|find|openOnly|serviceNo|odb|iccid|cpe|msisdn|custCode|customerId|workflowId)=/.test(raw)) return;
       window.__fxErrLastQs=raw; const P=new URLSearchParams(raw);
       Object.assign(S,{channel:"",type:"",team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},openOnly:true});
       const win=P.get("range")||P.get("window"); if(win&&WINDOWS.some(([k])=>k===win)){ S.win=win; try{ localStorage.setItem("fixed_err_win",win); }catch(e){} }
@@ -102,6 +106,7 @@
       if(P.has("priority")) S.prio=P.get("priority")||"";
       if(P.has("provider")) S.provider=P.get("provider")||"";
       if(P.has("msg")) S.msg=P.get("msg")||"";
+      if(P.has("cls")) S.cls=P.get("cls")||"";
       if(P.has("channel")) S.channel=P.get("channel")||"";
       if(P.has("type")) S.type=P.get("type")||"";
       if(P.has("tech")) S.tech=P.get("tech")||"all";
@@ -112,7 +117,7 @@
     }catch(e){}
   }
   function qs(){ const ch=S.channel||"";
-    let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.type?`&type=${encodeURIComponent(S.type)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}${S.msg?`&msg=${encodeURIComponent(S.msg)}`:""}`;
+    let q=`range=${encodeURIComponent(S.win)}${ch?`&channel=${encodeURIComponent(ch)}`:""}${S.type?`&type=${encodeURIComponent(S.type)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}${S.msg?`&msg=${encodeURIComponent(S.msg)}`:""}${S.cls?`&cls=${S.cls}`:""}`;
     if(S.find) q+=`&find=${encodeURIComponent(S.find)}`; for(const [k] of ID_FIELDS) if(S.ids[k]) q+=`&${k}=${encodeURIComponent(S.ids[k])}`; return q; }
 
   async function render(host,fx){
@@ -141,6 +146,7 @@
         </div>
       </div>
       <div id="feApp"></div>
+      <div id="feClass" class="fe-chips" style="margin-bottom:8px"></div>
       <div id="feTeams" class="fe-chips" style="margin-bottom:8px"></div>
       <div id="fePrio" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feProv" class="fe-chips" style="margin-bottom:4px"></div>
@@ -157,7 +163,7 @@
     let deb=null; const go=()=>{ clearTimeout(deb); read(); S.category=""; load(host,fx,true); };
     host.querySelectorAll("input[id^=feId-],#feFind").forEach(i=>{ i.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); } }; i.oninput=()=>{ clearTimeout(deb); deb=setTimeout(go,450); }; });
     host.querySelector("#feXlsx").onclick=()=>exportBoard(host,fx,"xlsx"); host.querySelector("#fePdf").onclick=()=>exportBoard(host,fx,"pdf");
-    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",type:"",openOnly:true,team:"",prio:"",provider:"",msg:"",category:"",tech:"all",find:"",ids:{},expanded:new Set()}); render(host,fx); };
+    host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",type:"",openOnly:true,team:"",prio:"",provider:"",msg:"",cls:"",category:"",tech:"all",find:"",ids:{},expanded:new Set()}); render(host,fx); };
     host.querySelector("#feFind").focus();
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }
@@ -195,6 +201,10 @@
       const catOn=S.category?sum.byCategory.find(c=>c.category===S.category):null;
       $("#feCounts").innerHTML=`${fmt(sum.open)} open · ${fmt(sum.total)} total`+(catOn?` <button type="button" class="fe-chip on" id="feCatOff" title="Remove the category filter" style="margin-left:8px">category: ${esc(catOn.label)} ✕</button>`:"");
       const co=$("#feCatOff"); if(co) co.onclick=()=>{ S.category=""; load(host,fx,true); };
+      /* business / technical — the console-wide split (errclass principle): blue = the API said no, red = the platform failed */
+      const clsN=x=>fmt(S.openOnly?x.open:x.total);
+      $("#feClass").innerHTML=`<span class="fe-dim">Class:</span>`+chip(S.cls==="","All",`class="fe-cls" data-v=""`)+(sum.byClass||[]).map(c=>`<button type="button" class="fe-chip fe-cls fe-cls-${c.cls}${S.cls===c.cls?" on":""}" data-v="${c.cls}" title="${esc(c.desc)}"><i class="fe-clsdot" style="background:${c.color}"></i>${esc(c.label)} · ${clsN(c)}</button>`).join("");
+      host.querySelectorAll(".fe-cls").forEach(b=>b.onclick=()=>{ S.cls=(S.cls===b.dataset.v)?"":b.dataset.v; load(host,fx,true); });
       $("#feTeams").innerHTML=chip(S.team==="","All teams",`class="fe-team" data-t=""`)+TEAMS.map(t=>chip(S.team===t,`${t} · ${fmt(S.openOnly?sum.byTeam[t].open:sum.byTeam[t].total)}`,`class="fe-team" data-t="${t}"`)).join("");
       $("#fePrio").innerHTML=`<span style="font-size:12px;color:var(--muted);margin-right:2px">Priority:</span>`+chip(S.prio==="","All",`class="fe-prio" data-p=""`)+[0,1,2,3,4].map(p=>chip(S.prio===String(p),`P${p} · ${fmt(S.openOnly?sum.byPriority[p].open:sum.byPriority[p].total)}`,`class="fe-prio" data-p="${p}"`)).join("");
       host.querySelectorAll(".fe-team").forEach(b=>b.onclick=()=>{ S.team=(S.team===b.dataset.t)?"":b.dataset.t; load(host,fx,true); });
@@ -253,7 +263,7 @@
     const status=r=>r.resolved?`<span class="fe-st resolved">resolved</span>`:r.acked?`<span class="fe-st acked" title="acked by ${esc(r.acked_by||"")}">acked</span>`:`<span class="fe-st open">open</span>`;
     el.innerHTML=`<table class="fe-tbl"><thead><tr>${[["PRI"],["TIME"],["CATEGORY"],["CHANNEL"],["TYPE"],["DEALER / QR"],["REGION","c-region"],["STATUS"]].map(([h,c])=>`<th class="${c||""}">${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row${S.expanded.has(r.id)?" open":""}" data-id="${esc(r.id)}" tabindex="0" title="Open / close this row — several rows can stay open at once">
         <td>${prioBadge(r.priority)}</td><td style="white-space:nowrap">${fmtT(r.occurred_at)}</td>
-        <td>${catBadge(r)}${r.code?`<span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:8px">${esc(r.code)}</span>`:""}</td>
+        <td>${catBadge(r)}${clsPill(r)}${r.code?`<span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:8px">${esc(r.code)}</span>`:""}</td>
         <td>${chanPill(r)}</td><td>${typePill(r)}</td>
         <td class="fe-nostop">${dealer(r)}</td><td class="c-region">${esc(r.region||"—")}</td><td style="white-space:nowrap">${status(r)}<span class="fe-caret" aria-hidden="true">›</span></td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="8"></td></tr>`).join("")
       :`<tr><td colspan="8" class="fe-empty">No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""||S.provider||S.channel||S.type?` (team / priority / provider / channel / type filter active)`:""}.</td></tr>`}</tbody></table>`;
@@ -281,7 +291,7 @@
     const sim=d.similar||{};
     const tl=(d.timeline||[]);
     cell.innerHTML=`<div class="fe-xgrid">
-      <div class="fe-what"><span class="k">What happened: </span><b style="font-weight:600">${esc(d.event.message||d.event.label)}</b>${d.event.step?` <span class="k">· step ${esc(d.event.step)}</span>`:""}
+      <div class="fe-what"><span class="k">What happened: </span><b style="font-weight:600">${esc(d.event.message||d.event.label)}</b>${clsPill(d.event)}${d.event.step?` <span class="k">· step ${esc(d.event.step)}</span>`:""}
         <span class="rl" style="color:var(--muted);font-size:11px;margin-left:10px">${esc(d.event.chanLabel||row.chanLabel||"")}${d.event.typeLabel?` · ${esc(d.event.typeLabel)}`:""}${d.event.journey?` · ${esc(d.event.journey)}`:""}${d.event.workflow?` (${esc(d.event.workflow)})`:""} · ${esc(d.event.label)} · ${esc(d.event.team)} · base P${d.event.basePriority}${d.event.order_number?` · order ${esc(d.event.order_number)}`:""}${d.event.acct_masked?` · acct ${esc(d.event.acct_masked)}`:""}${d.event.cust_masked?` · cust …${esc(d.event.cust_masked)}`:""}${d.event.dealer_name?` · ${esc(d.event.dealer_name)}`:""}</span></div>
       <div id="feBodies">${(d.request!=null||d.response!=null)?draw(d.request,d.response,false):`<div style="color:var(--muted);font-size:12px">No captured request/response for this error (older event — re-ingest or backfill to populate).</div>`}</div>
       <div class="fe-sim"><b class="t">Similar cases <span class="rl" style="font-weight:400;color:var(--muted);font-size:10.5px">signature ${esc(d.event.signature||d.event.category)}</span></b>

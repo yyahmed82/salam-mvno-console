@@ -26,7 +26,9 @@ const ERR_CAT = `SELECT category, count(*)::int AS total, count(*) FILTER (WHERE
                    FROM error_events WHERE occurred_at >= $1 AND occurred_at < $2 GROUP BY 1 ORDER BY open DESC, total DESC LIMIT 10`;
 const ERR_CAT_DAY = `SELECT category, (date_trunc('day', occurred_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, count(*)::int AS n
                        FROM error_events WHERE occurred_at >= $1 AND occurred_at < $2 GROUP BY 1,2`;
-const ERR_24 = `SELECT count(*)::int AS n FROM error_events WHERE occurred_at >= $1`;
+/* business / technical split — the same CLASS_EXPR as the Troubleshoot board (fixedErrors.js), so the KPI and the board agree */
+const CLASS_EXPR = require('./fixedErrors').CLASS_EXPR;
+const ERR_24 = `SELECT count(*)::int AS n, count(*) FILTER (WHERE ${CLASS_EXPR} = 'technical')::int AS tech FROM error_events e WHERE e.occurred_at >= $1`;
 const STEPS = `SELECT oa.channel, oa.step_reached AS step, oa.outcome::text AS outcome, count(*)::int AS n
                  FROM order_attempts oa WHERE oa.started_at >= $1 AND oa.started_at < $2 AND oa.outcome <> 'COMPLETED'
                 GROUP BY 1,2,3 ORDER BY 4 DESC LIMIT 60`;
@@ -168,6 +170,7 @@ async function exec(q = {}) {
   const k = today.kpis || {}, kp = prev.kpis || {};
   const outcomes = Object.fromEntries((today.outcomes || []).map(o => [o.outcome, n(o.n)]));
   const errors24 = err24rows.reduce((a, r) => a + n(r.n), 0);
+  const errTech24 = err24rows.reduce((a, r) => a + n(r.tech), 0), errBiz24 = errors24 - errTech24;
   const conv7 = pct(n((series.kpis || {}).completed), n((series.kpis || {}).attempts));
   const convFloor = Math.max(0, conv7 - 5);
   const sloCfg = await slo.getConfig().catch(() => null);
@@ -228,7 +231,7 @@ async function exec(q = {}) {
       { key: 'availability', title: 'Service availability', value: '—', sub: 'SADAD / SFTP probes not wired — not measured', tone: 'muted', delta: null, href: null, exec: true, window: '24 h' },
       { key: 'attempts', title: 'Order attempts', value: n(k.attempts), sub: `${n(k.completed).toLocaleString('en-US')} completed · ${n(k.withOrder).toLocaleString('en-US')} with a BSS order`, tone: 'green', delta: { pct: dA, good: dA >= 0 }, href: '#fixed?tab=dash', exec: true, window: '24 h' },
       { key: 'conversion', title: 'Order funnel health', value: `${n(k.conversion)}%`, sub: `${(n(outcomes.STALLED) + n(outcomes.IN_PROGRESS)).toLocaleString('en-US')} stalled / in progress · target ${convS.targetText}`, tone: convS.status === 'breached' ? 'red' : convS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#fixed?tab=dash', exec: true, window: '24 h' },
-      { key: 'errors', title: 'API errors', value: errors24, sub: `budget ${errS.targetText} — ${errS.status === 'breached' ? 'exceeded' : errS.status === 'at_risk' ? 'near limit' : 'within budget'}`, tone: errS.status === 'breached' ? 'red' : errS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#fixed?tab=errors', exec: true, window: '24 h' },
+      { key: 'errors', title: 'API errors', value: errors24, sub: `${errTech24.toLocaleString('en-US')} technical · ${errBiz24.toLocaleString('en-US')} business · budget ${errS.targetText} — ${errS.status === 'breached' ? 'exceeded' : errS.status === 'at_risk' ? 'near limit' : 'within budget'}`, tone: errS.status === 'breached' ? 'red' : errS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#fixed?tab=errors', exec: true, window: '24 h' },
       { key: 'critical', title: 'Active critical signals', value: critical, sub: `${sev.P1} P1 · ${sev.P2} P2 · ${sev.P3} P3 fired in ${days} d`, tone: critical ? 'red' : 'green', delta: null, href: '#fixed?tab=alerts', exec: true, window: `${days} d` },
       { key: 'revenue', title: 'Daily revenue', value: '—', sub: 'connect the billing feed to activate', tone: 'muted', delta: null, href: null, exec: true, window: '24 h' },
       { key: 'pileup', title: 'Order pileup', value: pileup ? pileup.n : 0, sub: pileup ? `${pileup.label} · ${pileup.share}% of not-completed` : 'no step is accumulating', tone: pileup && pileup.n >= 1000 ? 'red' : pileup && pileup.n >= 500 ? 'amber' : null, delta: null, href: '#fixed?tab=epurchase', exec: false, window: `${days} d` },

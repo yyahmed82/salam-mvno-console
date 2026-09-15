@@ -13,7 +13,7 @@
  * outcomes). Same window semantics as the board (fixedErrors.parseWindow). Read-only. */
 'use strict';
 const db = require('./db');
-const { parseWindow } = require('./fixedErrors');
+const { parseWindow, CLASS_EXPR } = require('./fixedErrors');
 
 const CH = [
   { key: 'sda', label: 'SDA dealer app', desc: 'sda.* tRPC paths' },
@@ -95,8 +95,84 @@ async function lane(q = {}) {
   };
 }
 
+/* ---- IMPACT CHECK (15 Sep 2026) — "sales send a screenshot of an error: is it happening, since when, how many, is it
+ * over?" One call: free text (the message on the screenshot, or a provider name) → matched against the app log
+ * (fixed_app_events.reason/message) AND the error board (error_events.message on both read models), 15-minute
+ * buckets over the last N hours, a verdict (ongoing / recovering / cleared since …), channels, class, affected
+ * requests/customers and the matching provider so the Yakeen probe can be run from the same panel. ---- */
+const STOP = new Set(['the', 'and', 'for', 'with', 'this', 'that', 'from', 'issue', 'problem', 'error', 'system', 'please', 'urgent', 'facing', 'getting', 'have', 'has', 'are', 'not', 'is', 'in', 'on', 'of', 'to', 'we', 'an', 'a']);
+const PROVIDER_WORDS = { yakeen: 'yakeen', elm: 'yakeen', absher: 'absher', nafath: 'nafath', semati: 'semati', manafith: 'manafith', citc: 'semati' };
+function keywords(q) {
+  const words = String(q || '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').split(/\s+/).filter(w => w.length >= 3 && !STOP.has(w));
+  return [...new Set(words)].slice(0, 8);
+}
+async function impact(q = {}) {
+  const text = String(q.q || '').trim().slice(0, 300);
+  const hours = Math.min(168, Math.max(1, Number(q.hours) || 24));
+  const to = new Date(), from = new Date(to.getTime() - hours * 3600e3);
+  const kws = keywords(text);
+  const provider = kws.map(w => PROVIDER_WORDS[w]).find(Boolean) || null;
+  if (!kws.length && !provider) return { q: text, hours, error: 'give at least one word of the error message' };
+  const C = db.console;
+  const Q = async (pool, sql, p) => { try { return (await pool.query(sql, p)).rows; } catch (e) { if (/does not exist/.test(e.message)) return []; throw e; } };
+  /* app log: every keyword must appear in reason or message (phrase order does not matter); a provider word also
+   * matches by kind so "Yakeen" finds getYakeenInfo failures whose reason never says the word */
+  const P = [from.toISOString(), to.toISOString()]; const conds = [];
+  for (const w of kws) { P.push('%' + w + '%'); conds.push(`(coalesce(reason,'') ILIKE $${P.length} OR coalesce(message,'') ILIKE $${P.length} OR coalesce(path,'') ILIKE $${P.length})`); }
+  let where = `ts >= $1 AND ts < $2 AND ok IS NOT TRUE AND (${conds.join(' AND ')}`;
+  if (provider) { P.push(provider); where += ` OR kind = $${P.length}`; }
+  where += ')';
+  const [appTot, appBuckets, appChan, appReasons] = await Promise.all([
+    Q(C, `SELECT count(*)::int AS n, min(ts) AS first, max(ts) AS last, count(DISTINCT request_id)::int AS requests, count(DISTINCT state_id)::int AS journeys,
+                 count(*) FILTER (WHERE reason_class='technical')::int AS technical, count(*) FILTER (WHERE reason_class='business')::int AS business,
+                 count(*) FILTER (WHERE ts >= $2::timestamptz - interval '15 minutes')::int AS last15,
+                 count(*) FILTER (WHERE ts >= $2::timestamptz - interval '75 minutes' AND ts < $2::timestamptz - interval '15 minutes')::int AS prev60
+            FROM fixed_app_events WHERE ${where}`, P),
+    Q(C, `SELECT to_timestamp(floor(extract(epoch FROM ts) / 900) * 900) AS b, count(*)::int AS n FROM fixed_app_events WHERE ${where} GROUP BY 1 ORDER BY 1`, P),
+    Q(C, `SELECT coalesce(channel,'other') AS channel, count(*)::int AS n FROM fixed_app_events WHERE ${where} GROUP BY 1 ORDER BY 2 DESC`, P),
+    Q(C, `SELECT coalesce(reason_class,'?') AS cls, left(coalesce(reason,message,'-'),120) AS reason, coalesce(path,'-') AS path, count(*)::int AS n, max(ts) AS last FROM fixed_app_events WHERE ${where} GROUP BY 1,2,3 ORDER BY 4 DESC LIMIT 8`, P),
+  ]);
+  /* the error board (read models) — message text only */
+  const pools = [db.ops, db.opsBeta].filter(Boolean);
+  const EP = [from.toISOString(), to.toISOString()]; const econds = [];
+  for (const w of kws) { EP.push('%' + w + '%'); econds.push(`coalesce(e.message,'') ILIKE $${EP.length}`); }
+  const ewhere = `e.occurred_at >= $1 AND e.occurred_at < $2` + (econds.length ? ` AND (${econds.join(' AND ')}${provider ? ` OR e.category ILIKE '${provider === 'yakeen' ? 'YAKEEN' : provider.toUpperCase()}%'` : ''})` : '');
+  const board = { n: 0, first: null, last: null, last15: 0, prev60: 0, customers: 0, technical: 0, business: 0, buckets: [] };
+  for (const pool of pools) {
+    const t = await Q(pool, `SELECT count(*)::int AS n, min(e.occurred_at) AS first, max(e.occurred_at) AS last, count(DISTINCT e.cust_masked)::int AS customers,
+        count(*) FILTER (WHERE ${CLASS_EXPR} = 'technical')::int AS technical, count(*) FILTER (WHERE ${CLASS_EXPR} = 'business')::int AS business,
+        count(*) FILTER (WHERE e.occurred_at >= $2::timestamptz - interval '15 minutes')::int AS last15,
+        count(*) FILTER (WHERE e.occurred_at >= $2::timestamptz - interval '75 minutes' AND e.occurred_at < $2::timestamptz - interval '15 minutes')::int AS prev60
+      FROM error_events e WHERE ${ewhere}`, EP);
+    const b = await Q(pool, `SELECT to_timestamp(floor(extract(epoch FROM e.occurred_at) / 900) * 900) AS b, count(*)::int AS n FROM error_events e WHERE ${ewhere} GROUP BY 1 ORDER BY 1`, EP);
+    const r = t[0] || {}; board.n += Number(r.n || 0); board.customers += Number(r.customers || 0); board.technical += Number(r.technical || 0); board.business += Number(r.business || 0);
+    board.last15 += Number(r.last15 || 0); board.prev60 += Number(r.prev60 || 0);
+    if (r.first && (!board.first || r.first < board.first)) board.first = r.first; if (r.last && (!board.last || r.last > board.last)) board.last = r.last;
+    for (const x of b) { const k = new Date(x.b).toISOString(); const cur = board.buckets.find(y => y.b === k); if (cur) cur.n += x.n; else board.buckets.push({ b: k, n: x.n }); }
+  }
+  board.buckets.sort((a, b) => a.b < b.b ? -1 : 1);
+  const app = appTot[0] || {};
+  const total = Number(app.n || 0) + board.n;
+  const last15 = Number(app.last15 || 0) + board.last15, prev60 = Number(app.prev60 || 0) + board.prev60;
+  const lastSeen = [app.last, board.last].filter(Boolean).sort().pop() || null;
+  const firstSeen = [app.first, board.first].filter(Boolean).sort()[0] || null;
+  const sinceMin = lastSeen ? Math.round((to - new Date(lastSeen)) / 60000) : null;
+  const prevRate = prev60 / 4;   // per 15 min
+  const verdict = !total ? 'none' : last15 > 0 && last15 >= Math.max(3, prevRate) ? 'ongoing' : last15 > 0 ? 'recovering' : sinceMin != null && sinceMin >= 30 ? 'cleared' : 'quiet';
+  /* the 15-minute axis, zero-filled */
+  const axis = []; const start = Math.floor(from.getTime() / 900000) * 900000;
+  for (let t = start; t <= to.getTime(); t += 900000) { const k = new Date(t).toISOString(); axis.push({ b: k, app: (appBuckets.find(x => new Date(x.b).toISOString() === k) || {}).n || 0, board: (board.buckets.find(x => x.b === k) || {}).n || 0 }); }
+  return { q: text, keywords: kws, provider, hours, from: from.toISOString(), to: to.toISOString(), verdict, total, last15, prev60, prevRate: Math.round(prevRate * 10) / 10,
+    firstSeen, lastSeen, sinceMin,
+    app: { n: Number(app.n || 0), requests: Number(app.requests || 0), journeys: Number(app.journeys || 0), technical: Number(app.technical || 0), business: Number(app.business || 0), channels: appChan, reasons: appReasons },
+    board: { n: board.n, customers: board.customers, technical: board.technical, business: board.business },
+    series: axis,
+    note: 'app = the Fixed app combined.log (fixed_app_events) · board = error_events on the sda_ops read models · ongoing = still failing in the last 15 min at or above the previous hour’s rate · cleared = nothing for 30 min' };
+}
+
 function mount(app, { requireView } = {}) {
   const gate = requireView ? requireView('fixed') : (req, res, next) => next();
+  app.get('/api/fixed/applog/impact', gate, async (req, res) => { try { res.json(await impact(req.query)); } catch (e) { res.status(500).json({ error: e.message }); } });
   app.get('/api/fixed/applog/lane', gate, async (req, res) => { try { res.json(await lane(req.query)); } catch (e) { res.status(500).json({ error: e.message }); } });
 }
-module.exports = { mount, lane };
+module.exports = { mount, lane, impact };

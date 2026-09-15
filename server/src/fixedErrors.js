@@ -156,6 +156,25 @@ const JOIN_OA = 'LEFT JOIN order_attempts oa ON oa.id = e.attempt_id';
  * The message is the provider / app text of the failing call (resultDesc, error message …). Grouped after masking digit
  * runs (order numbers, plate ids, amounts) so "no available ports … odb" is ONE entry, not one per plate. ---- */
 const MSG_EXPR = `left(regexp_replace(coalesce(nullif(btrim(e.message),''),'(no message)'),'[0-9]+','#','g'),160)`;
+/* ---- BUSINESS vs TECHNICAL for Fixed — the console-wide principle of errclass.js applied in SQL so the chips,
+ * the rows, the exports and the dashboards all agree (15 Sep 2026, "clear segregation everywhere, like MVNO"):
+ *   TECHNICAL = the platform / provider failed to answer — timeouts, OSS/BSS exceptions, 5xx, transport, "paid but
+ *               not notified / no order" (money stuck because a system failed).
+ *   BUSINESS  = the API answered with a NO — no coverage / no ports, blacklist, wrong OTP, NIC mismatch, appointment
+ *               refused, outstanding due, location denied. The platform worked.
+ * Category decides first, then an HTTP 5xx code, then the message text; an empty message is technical (nothing
+ * answered), any readable answer is business. Colours follow errclass.COLORS: business blue, technical red. ---- */
+const TECH_CATS = ['TIMEOUT', 'NAFATH_TIMEOUT', 'OSS_EXCEPTION', 'PAYMENT_NOT_NOTIFIED', 'PROVISION_NO_ORDER', 'LANDLINE_LOCK_FAILED'];
+const TECH_MSG_RE = `(timeout|timed[ -]?out|ETIMEDOUT|ECONN|EHOSTUNREACH|connection (reset|refused|closed)|SSL|I/O error|read timed out|broken pipe|service (is )?not available|temporarily unavailable|unavailable|OSB-382000|CRMException|SOAPFault|soap:Fault|internal server error|gateway time-?out|bad gateway|no response|empty response|null response|unreachable|circuit.?breaker|<h1>50[234]|Failed to validate customer info with Yakeen|Failed to check plate number)`;
+const CLASS_EXPR = `CASE WHEN e.category IN (${TECH_CATS.map(c => `'${c}'`).join(',')}) THEN 'technical'
+  WHEN e.code ~ '^5[0-9]{2}$' THEN 'technical'
+  WHEN e.message ~* '${TECH_MSG_RE}' THEN 'technical'
+  WHEN coalesce(nullif(btrim(e.message),''),'') = '' THEN 'technical'
+  ELSE 'business' END`;
+const CLASSES = [
+  { key: 'business',  label: 'Business',  color: '#3b82f6', desc: 'the API answered with a NO — no coverage / no ports, blacklist, wrong OTP, NIC mismatch, refused; the platform worked' },
+  { key: 'technical', label: 'Technical', color: '#ef4444', desc: 'the platform or a provider failed to answer — timeout, 5xx, OSS/BSS exception, transport; money stuck by a failure' },
+];
 
 /* ---- shared WHERE for summary/live (alias e = error_events, oa = order_attempts) ----
  * opts.skip = a dimension ('provider' | 'channel' | 'type') to leave OUT so its chips keep their counts while selected. */
@@ -172,6 +191,7 @@ function baseWhere(q, opts = {}) {
   }
   const type = TYPE[String(q.type || '').toLowerCase()] ? String(q.type).toLowerCase() : null;
   if (type && opts.skip !== 'type') { P.push(type); parts.push(`${TYPE_EXPR} = $${P.length}`); }
+  if ((q.cls === 'business' || q.cls === 'technical') && opts.skip !== 'cls') { P.push(q.cls); parts.push(`${CLASS_EXPR} = $${P.length}`); }
   if (q.msg && opts.skip !== 'msg') { P.push(String(q.msg).slice(0, 160)); parts.push(`${MSG_EXPR} = $${P.length}`); }
   const ident = identifierSql(q, P);
   if (ident) parts.push(ident);
@@ -274,7 +294,7 @@ function mount(app, deps) {
     const s = baseWhere(q);
     const openOnly = q.openOnly === '1' || q.openOnly === 'true';
     await refreshSplit();
-    const [catParts, provs, chans, types, msgs, fresh] = await Promise.all([
+    const [catParts, provs, chans, types, msgs, clss, fresh] = await Promise.all([
       each(s, (pool, where) => pool.query(`SELECT e.category, count(*)::int AS total, count(*) FILTER (WHERE NOT e.resolved)::int AS open,
           count(*) FILTER (WHERE e.occurred_at >= now() - interval '3 hours')::int AS last3h
         FROM error_events e ${JOIN_OA} ${where} GROUP BY 1 ORDER BY 2 DESC LIMIT 100`, s.P)),
@@ -282,6 +302,7 @@ function mount(app, deps) {
       grouped(q, CHANNEL_EXPR, 'channel', 10).catch(() => []),
       grouped(q, TYPE_EXPR, 'type', 10).catch(() => []),
       grouped(q, MSG_EXPR, 'msg', 80).catch(() => []),
+      grouped(q, CLASS_EXPR, 'cls', 4).catch(() => []),
       Promise.all(sources().map(async x => { try { const r = await x.pool.query(`SELECT max(occurred_at) AS latest FROM error_events e WHERE e.occurred_at >= now() - interval '30 days' ${sliceOnly(x.src)}`);
         const served = split() ? SRC_BUCKETS[x.src] : (x.src === 'ops' ? CHANNELS.map(c => c.key) : []);
         return { src: x.src, buckets: served, latest: r.rows[0] && r.rows[0].latest || null, stale: x.src === 'beta' && both() && !split(), reason: x.src === 'beta' ? splitState.reason : undefined }; } catch (e) { return { src: x.src, error: e.message }; } })),
@@ -300,8 +321,9 @@ function mount(app, deps) {
     const byType = TYPES.map(t => { const x = types.find(y => y.key === t.key) || { open: 0, total: 0 }; return { type: t.key, label: t.label, desc: t.desc, open: x.open, total: x.total }; });
     /* every distinct message in the window with its count — the select on the board; masked digits, newest-heavy first */
     const byMessage = msgs.map(x => ({ msg: x.key, open: x.open, total: x.total }));
-    return { window: s.window, from: s.from, to: s.to, channel: q.channel || '', type: s.type || '', openOnly, provider: q.provider || '', msg: q.msg || '',
-      byProvider, byChannel, byType, byMessage, sources: fresh, split: split(), splitReason: splitState.reason,
+    const byClass = CLASSES.map(c => { const x = clss.find(y => y.key === c.key) || { open: 0, total: 0 }; return { cls: c.key, label: c.label, color: c.color, desc: c.desc, open: x.open, total: x.total }; });
+    return { window: s.window, from: s.from, to: s.to, channel: q.channel || '', type: s.type || '', openOnly, provider: q.provider || '', msg: q.msg || '', cls: q.cls || '',
+      byProvider, byChannel, byType, byMessage, byClass, classes: CLASSES, sources: fresh, split: split(), splitReason: splitState.reason,
       total: byCategory.reduce((a, c) => a + c.total, 0), open: byCategory.reduce((a, c) => a + c.open, 0),
       byCategory: openOnly ? byCategory.filter(c => c.open > 0) : byCategory, byTeam, byPriority, taxonomy: TAXONOMY, spike: SPIKE, channels: CHANNELS, types: TYPES };
   }
@@ -329,7 +351,7 @@ function mount(app, deps) {
     P.push(lim + 1);
     const parts = await each({ ...s, P }, (pool, where, src) => pool.query(`SELECT e.id, e.attempt_id, e.order_number, e.acct_masked, e.cust_masked, e.category, e.code, e.message, e.client_side,
         e.channel, e.dealer_id, e.dealer_code, e.referral_code, e.region, e.step, e.occurred_at, e.resolved, e.resolved_at, e.signature,
-        ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, oa.workflow::text AS workflow, oa.plan, '${src}'::text AS src
+        ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_EXPR} AS cls, oa.workflow::text AS workflow, oa.plan, '${src}'::text AS src
       FROM error_events e ${JOIN_OA} ${where} ${extra.length ? 'AND ' + extra.join(' AND ') : ''} ORDER BY e.occurred_at DESC LIMIT $${P.length}`, P));
     const all = [].concat(...parts.map(p => p.r.rows)).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
     const rows = all.slice(0, lim);
@@ -387,7 +409,7 @@ function mount(app, deps) {
   // ---- GET /api/fixed/errors/detail ----
   async function detail(q, req) {
     const id = String(q.id || '').slice(0, 80); if (!id) { const e = new Error('id required'); e.status = 400; throw e; }
-    const DSQL = `SELECT e.*, d.dealer_name, d.staff_name, d.staff_code, ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, oa.workflow::text AS workflow, oa.plan
+    const DSQL = `SELECT e.*, d.dealer_name, d.staff_name, d.staff_code, ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_EXPR} AS cls, oa.workflow::text AS workflow, oa.plan
       FROM error_events e LEFT JOIN dealers d ON d.id = e.dealer_id ${JOIN_OA} WHERE e.id = $1 LIMIT 1`;
     // the row's own source first (the board passes src=); the same id may exist in both read models with a different channel label
     const order = sources().sort((a, b) => (a.src === q.src ? -1 : 0) - (b.src === q.src ? -1 : 0));
@@ -477,7 +499,7 @@ function mount(app, deps) {
     const callFor = r => { if (!r.attempt_id) return null; if (r.step && callKey[r.attempt_id + '|' + r.step]) return callKey[r.attempt_id + '|' + r.step];
       const tail = r.step ? calls.find(c => c.attempt_id === r.attempt_id && (c.endpoint.endsWith(r.step) || r.step.endsWith(c.endpoint))) : null; return tail || null; };
     const flat = out.map(r => { const b = bodyById[r.id] || {}; const c = callFor(r);
-      return { when: r.occurred_at, priority: r.priority, team: r.team, category: r.label || r.category, code: r.code || '', message: r.message || '',
+      return { when: r.occurred_at, priority: r.priority, team: r.team, cls: r.cls === 'technical' ? 'Technical' : 'Business', category: r.label || r.category, code: r.code || '', message: r.message || '',
         endpoint: r.step || (c && c.endpoint) || '', method: (c && c.method) || '', http: c && c.status != null ? c.status : '', ms: c && c.duration_ms != null ? c.duration_ms : '',
         chan: r.chan || '', channel: r.chanLabel || r.chan || r.channel || '', type: r.typeLabel || r.type || '', journey: r.journey || '', workflow: r.workflow || '',
         dealer: r.chan === 'qr' && r.referral_code ? 'QR ' + r.referral_code : (r.dealer_code || (r.chan === 'web' ? 'consumer-direct' : r.chan === 'salamhome' ? 'app' : '')), region: r.region || '',
@@ -487,7 +509,7 @@ function mount(app, deps) {
       ['Period', `${WIN_LABEL[sum.window] || sum.window} — ${ksaStr(sum.from)} → ${ksaStr(sum.to)} KSA`],
       ['Channel', chanLabel(q.channel)], ['Type', q.type && TYPE[q.type] ? TYPE[q.type].label : 'All types'],
       ['Open only', (q.openOnly === '1' || q.openOnly === 'true') ? 'yes' : 'no (open + resolved)'],
-      ['Team', q.team || 'All teams'], ['Priority', q.priority !== undefined && q.priority !== '' ? 'P' + q.priority : 'All'],
+      ['Class', q.cls === 'technical' ? 'Technical' : q.cls === 'business' ? 'Business' : 'All (business + technical)'], ['Team', q.team || 'All teams'], ['Priority', q.priority !== undefined && q.priority !== '' ? 'P' + q.priority : 'All'],
       ['Provider', q.provider === '-' ? 'no provider' : (q.provider || 'All')], ['Category', q.category ? (meta(q.category).label || q.category) : 'All'],
       ['Access tech', q.tech && q.tech !== 'all' ? q.tech.toUpperCase() : 'All'],
       ['Search', [q.find, q.odb && 'ODB ' + q.odb, q.iccid && 'ICCID ' + q.iccid, q.cpe && 'CPE ' + q.cpe, q.msisdn && 'MSISDN ' + q.msisdn, q.serviceNo && 'service ' + q.serviceNo,
@@ -500,8 +522,8 @@ function mount(app, deps) {
 
   function exportXlsx(d) {
     const xlsx = require('./xlsx');
-    const HEAD = ['Time (KSA)', 'Priority', 'Team', 'Category', 'Code', 'Message', 'Endpoint', 'Method', 'HTTP', 'Response time (ms)', 'Provider', 'Channel', 'Type', 'Journey', 'Workflow', 'Dealer / QR', 'Region', 'Order #', 'Workflow id (attempt)', 'Status', 'Acked by', 'Request', 'Response'];
-    const body = d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, r.team, r.category, r.code, r.message, r.endpoint, r.method, r.http, r.ms, r.provider, r.channel, r.type, r.journey, r.workflow, r.dealer, r.region, r.order, r.attempt, r.status, r.acked_by, oneLine(r.request, 32000), oneLine(r.response, 32000)]);
+    const HEAD = ['Time (KSA)', 'Priority', 'Class', 'Team', 'Category', 'Code', 'Message', 'Endpoint', 'Method', 'HTTP', 'Response time (ms)', 'Provider', 'Channel', 'Type', 'Journey', 'Workflow', 'Dealer / QR', 'Region', 'Order #', 'Workflow id (attempt)', 'Status', 'Acked by', 'Request', 'Response'];
+    const body = d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, r.cls, r.team, r.category, r.code, r.message, r.endpoint, r.method, r.http, r.ms, r.provider, r.channel, r.type, r.journey, r.workflow, r.dealer, r.region, r.order, r.attempt, r.status, r.acked_by, oneLine(r.request, 32000), oneLine(r.response, 32000)]);
     const S = d.sum, sumRows = [['Live error control board — export'], []];
     d.filters.forEach(([k, v]) => sumRows.push([k, v]));
     sumRows.push([], ['Totals', 'Open', 'Total'], ['All', S.open, S.total], []);
@@ -511,6 +533,7 @@ function mount(app, deps) {
     sumRows.push([], ['By provider', 'Open', 'Total']); (S.byProvider || []).forEach(p => sumRows.push([p.label, p.open, p.total]));
     sumRows.push([], ['By channel', 'Open', 'Total']); (S.byChannel || []).forEach(c => sumRows.push([c.label, c.open, c.total]));
     sumRows.push([], ['By type', 'Open', 'Total']); (S.byType || []).filter(t => t.total > 0).forEach(t => sumRows.push([t.label, t.open, t.total]));
+    sumRows.push([], ['By class (business = the API said no · technical = the platform failed)', 'Open', 'Total']); (S.byClass || []).forEach(c => sumRows.push([c.label, c.open, c.total]));
     sumRows.push([], ['By error message (digits masked)', 'Open', 'Total']); (S.byMessage || []).forEach(m => sumRows.push([m.msg, m.open, m.total]));
     return xlsx.build([
       { name: 'Errors', rows: [HEAD, ...body], numericCols: [8, 9], widths: [19, 8, 10, 26, 14, 40, 44, 8, 7, 12, 10, 16, 11, 11, 20, 14, 10, 14, 22, 9, 22, 60, 60] },
@@ -527,6 +550,8 @@ function mount(app, deps) {
     doc.at(46, top + 44, `${S.open} open - ${S.total} total - ${WIN_LABEL[S.window] || S.window}`, { size: 15, bold: true, color: CC.white });
     doc.space(10);
     doc.h2('Filters'); doc.kv(d.filters, { boldVal: true });
+    doc.h2('Summary - business vs technical');
+    doc.table([{ label: 'Class', w: 20 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], (S.byClass || []).map(c => [c.label, String(c.open), String(c.total)]));
     doc.h2('Summary - by category');
     doc.table([{ label: 'Category', w: 30 }, { label: 'Team', w: 12 }, { label: 'Prio', w: 8 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }, { label: 'Last 3h', w: 10, align: 'right' }],
       S.byCategory.map(c => [c.label, c.team, 'P' + c.priority, String(c.open), String(c.total), String(c.last3h)]),
@@ -539,8 +564,8 @@ function mount(app, deps) {
     doc.table([{ label: 'Channel', w: 24 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], (S.byChannel || []).map(c => [c.label, String(c.open), String(c.total)]));
     doc.table([{ label: 'Type', w: 24 }, { label: 'Open', w: 10, align: 'right' }, { label: 'Total', w: 10, align: 'right' }], (S.byType || []).filter(t => t.total > 0).map(t => [t.label, String(t.open), String(t.total)]));
     doc.h2(`Errors - ${d.flat.length} row(s)${d.capped ? ' (PDF capped - the xlsx export holds the full list)' : ''}`);
-    doc.table([{ label: 'Time (KSA)', w: 12 }, { label: 'P', w: 4 }, { label: 'Category / code', w: 15 }, { label: 'Channel', w: 8 }, { label: 'Type', w: 8 }, { label: 'Endpoint', w: 17 }, { label: 'ms', w: 5, align: 'right' }, { label: 'Dealer', w: 7 }, { label: 'Status', w: 6 }, { label: 'Request', w: 19 }, { label: 'Response', w: 19 }],
-      d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, `${r.category}${r.code ? ' - ' + r.code : ''}`, (CHAN[r.chan] || {}).short || r.channel, r.type + (r.journey ? ' - ' + r.journey : ''), r.endpoint || '—', r.ms === '' ? '—' : String(r.ms), r.dealer || '—', r.status, oneLine(r.request, 140) || '—', oneLine(r.response, 140) || '—']),
+    doc.table([{ label: 'Time (KSA)', w: 12 }, { label: 'P', w: 4 }, { label: 'Class', w: 7 }, { label: 'Category / code', w: 15 }, { label: 'Channel', w: 8 }, { label: 'Type', w: 8 }, { label: 'Endpoint', w: 17 }, { label: 'ms', w: 5, align: 'right' }, { label: 'Dealer', w: 7 }, { label: 'Status', w: 6 }, { label: 'Request', w: 16 }, { label: 'Response', w: 15 }],
+      d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, r.cls, `${r.category}${r.code ? ' - ' + r.code : ''}`, (CHAN[r.chan] || {}).short || r.channel, r.type + (r.journey ? ' - ' + r.journey : ''), r.endpoint || '—', r.ms === '' ? '—' : String(r.ms), r.dealer || '—', r.status, oneLine(r.request, 140) || '—', oneLine(r.response, 140) || '—']),
       { size: 6.8, rowColor: ri => d.flat[ri].priority <= 1 ? CC.red : (d.flat[ri].priority === 2 ? CC.amber : null) });
     doc.p('Identifiers are masked as on the board; full bodies and end-to-end traces stay in the console (Fixed > Errors > open a row > Open full trace).', { color: CC.muted, size: 8 });
     return doc.buffer();
@@ -566,4 +591,4 @@ function mount(app, deps) {
   app.get('/api/fixed/errors/taxonomy', gate, (req, res) => res.json({ taxonomy: TAXONOMY, teams: TEAMS, spike: SPIKE, channels: CHANNELS, types: TYPES }));
 }
 
-module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CHANNEL_EXPR, TYPE_EXPR, effectiveSeverity, parseWindow };
+module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CLASSES, CHANNEL_EXPR, TYPE_EXPR, CLASS_EXPR, effectiveSeverity, parseWindow };

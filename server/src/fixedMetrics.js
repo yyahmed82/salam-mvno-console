@@ -275,5 +275,121 @@ const FIXED_METRICS = {
   }
 };
 
+/* ================= APP-LOG metrics — SMART thresholds (15 Sep 2026) =================
+ * Source: unified_console.fixed_app_events (fixedAppLogCollector.js ← combined.log on 146). These do not use the
+ * sda_ops pool: they read the console DB directly. Principle: no static "> N errors" — every failing SIGNATURE
+ * (channel · step · reason class) is compared to ITS OWN history:
+ *   baseline = median + MAD of the same signature's hourly counts, same hour-of-day over the last 14 days when
+ *              ≥ 5 such hours exist, else all hours of the last 7 days; robust z = (now − median) / max(1.4826·MAD, √median, 1)
+ *   the rule fires on the worst z (threshold 3.5, min count 10). A signature with NO history at all (first seen
+ *   in the last hour, ≥ 5 events) is a separate metric — "new error" — because z is undefined for it.
+ * The snapshot's dim.note names the signature so the incident text says WHAT spiked, not just "z=6". */
+const consoleDb = () => require('./db').console;
+const APPLOG_SIG = `coalesce(channel,'other') || ' · ' || coalesce(regexp_replace(path,'^(sda|ePurchase|salamApp|paymentOptimization)\\.(actions\\.)?',''),kind,'?') || ' · ' || coalesce(reason_class,'?')`;
+function robust(values) {
+  if (!values.length) return null;
+  const a = values.slice().sort((x, y) => x - y); const med = a[Math.floor(a.length / 2)];
+  const dev = a.map(v => Math.abs(v - med)).sort((x, y) => x - y); const mad = dev[Math.floor(dev.length / 2)];
+  return { med, mad, n: a.length };
+}
+async function applogAnomaly(now, cls) {
+  const C = consoleDb();
+  const cur = (await C.query(`SELECT ${APPLOG_SIG} AS sig, count(*)::int AS n, count(DISTINCT request_id)::int AS requests, (array_agg(left(reason,90) ORDER BY ts DESC))[1] AS reason
+      FROM fixed_app_events WHERE ok IS NOT TRUE AND reason_class = $2 AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz
+      GROUP BY 1 HAVING count(*) >= 10 ORDER BY 2 DESC LIMIT 40`, [now, cls])).rows;
+  if (!cur.length) return [];
+  const hod = new Date(new Date(now).getTime() + 3 * 3600e3).getUTCHours();
+  const hist = (await C.query(`SELECT ${APPLOG_SIG} AS sig, date_trunc('hour', ts) AS h, count(*)::int AS n
+      FROM fixed_app_events WHERE ok IS NOT TRUE AND reason_class = $2 AND ts >= $1::timestamptz - interval '14 days' AND ts < $1::timestamptz - interval '60 minutes'
+        AND ${APPLOG_SIG} = ANY($3::text[]) GROUP BY 1,2`, [now, cls, cur.map(c => c.sig)])).rows;
+  const oldest = (await C.query(`SELECT min(ts) AS t FROM fixed_app_events`)).rows[0].t;
+  const coverageH = oldest ? (new Date(now) - new Date(oldest)) / 3600e3 : 0;
+  let worst = null;
+  for (const c of cur) {
+    const rows = hist.filter(h => h.sig === c.sig);
+    const sameHour = rows.filter(h => ((new Date(h.h).getUTCHours() + 3) % 24) === hod).map(h => h.n);
+    /* hours with ZERO events are real samples too: fill the covered span with zeros */
+    const spanH = Math.min(24 * 14, Math.max(1, Math.floor(coverageH) - 1));
+    const all = rows.map(h => h.n); while (all.length < spanH) all.push(0);
+    const sameFilled = sameHour.slice(); const sameSpan = Math.floor(spanH / 24); while (sameFilled.length < sameSpan) sameFilled.push(0);
+    const b = sameFilled.length >= 5 ? robust(sameFilled) : robust(all);
+    if (!b || coverageH < 3) continue;                     // under 3 h of history there is no baseline yet — the "new error" metric covers it
+    const scale = Math.max(1.4826 * b.mad, Math.sqrt(b.med), 1);
+    const z = (c.n - b.med) / scale;
+    if (!worst || z > worst.z) worst = { z, c, b };
+  }
+  if (!worst) return [];
+  const { z, c, b } = worst;
+  return [{ dim: { note: `${c.sig} — ${c.n} in the last 60 min vs typical ${b.med}/h${c.requests ? ` · ${c.requests} requests` : ''} · “${(c.reason || '').replace(/\s+/g, ' ')}”` }, value: Math.round(z * 10) / 10, sample: c.n }];
+}
+Object.assign(FIXED_METRICS, {
+  fixed_applog_anomaly_technical: {
+    label: 'Fixed · app-log TECHNICAL failure anomaly (robust z, worst signature)', unit: 'count', higherIsBad: true, segment: 'fixed',
+    sourceTables: 'unified_console.fixed_app_events',
+    compute: async (_src, now) => { try { return await applogAnomaly(now, 'technical'); } catch (e) { console.error(`[fixedMetrics] applog anomaly: ${e.message}`); return []; } }
+  },
+  fixed_applog_anomaly_business: {
+    label: 'Fixed · app-log BUSINESS refusal anomaly (robust z, worst signature)', unit: 'count', higherIsBad: true, segment: 'fixed',
+    sourceTables: 'unified_console.fixed_app_events',
+    compute: async (_src, now) => { try { return await applogAnomaly(now, 'business'); } catch (e) { console.error(`[fixedMetrics] applog anomaly: ${e.message}`); return []; } }
+  },
+  fixed_applog_new_signature: {
+    label: 'Fixed · NEW failing signatures (never seen in 14 d, ≥5 in the last hour)', unit: 'count', higherIsBad: true, segment: 'fixed',
+    sourceTables: 'unified_console.fixed_app_events',
+    compute: async (_src, now) => {
+      try {
+        const C = consoleDb();
+        const cov = (await C.query(`SELECT min(ts) AS t FROM fixed_app_events`)).rows[0].t;
+        if (!cov || (new Date(now) - new Date(cov)) < 24 * 3600e3) return [];   // needs a day of history before "never seen" means anything
+        const rows = (await C.query(`WITH cur AS (SELECT ${APPLOG_SIG} AS sig, count(*)::int AS n, (array_agg(left(reason,80) ORDER BY ts DESC))[1] AS reason
+              FROM fixed_app_events WHERE ok IS NOT TRUE AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1 HAVING count(*) >= 5)
+            SELECT c.* FROM cur c WHERE NOT EXISTS (SELECT 1 FROM fixed_app_events e WHERE e.ok IS NOT TRUE AND e.ts >= $1::timestamptz - interval '14 days' AND e.ts < $1::timestamptz - interval '60 minutes' AND ${APPLOG_SIG.replace(/\b(channel|path|kind|reason_class)\b/g, 'e.$1')} = c.sig)
+            ORDER BY n DESC LIMIT 5`, [now])).rows;
+        const total = rows.reduce((a, r) => a + r.n, 0);
+        return [{ dim: { note: rows.length ? rows.map(r => `${r.sig} ×${r.n} “${r.reason || ''}”`).join(' | ').slice(0, 220) : '' }, value: rows.length, sample: total }];
+      } catch (e) { console.error(`[fixedMetrics] new signature: ${e.message}`); return []; }
+    }
+  },
+  fixed_applog_retry_loop: {
+    label: 'Fixed · retry loops (a worker failing the same way on a schedule)', unit: 'count', higherIsBad: true, segment: 'fixed',
+    sourceTables: 'unified_console.fixed_app_events',
+    compute: async (_src, now) => {
+      try {
+        const rows = (await consoleDb().query(`WITH g AS (SELECT coalesce(path,kind) AS path, left(reason,80) AS reason, count(*)::int AS n, min(ts) AS first, max(ts) AS last,
+              count(DISTINCT date_trunc('hour', ts) + (floor(extract(minute FROM ts)/5)*5) * interval '1 minute')::int AS buckets, count(DISTINCT request_id)::int AS requests
+            FROM fixed_app_events WHERE ok IS NOT TRUE AND reason IS NOT NULL AND ts >= $1::timestamptz - interval '3 hours' AND ts < $1::timestamptz GROUP BY 1,2)
+          SELECT * FROM g WHERE n >= 30 AND requests <= 1 AND last - first >= interval '20 minutes' AND buckets >= 0.6 * ceil(extract(epoch FROM (last - first)) / 300.0)
+            AND last >= $1::timestamptz - interval '20 minutes' ORDER BY n DESC LIMIT 5`, [now])).rows;
+        return [{ dim: { note: rows.map(r => `${r.path} “${r.reason}” ×${r.n}`).join(' | ').slice(0, 220) }, value: rows.length, sample: rows.reduce((a, r) => a + r.n, 0) }];
+      } catch (e) { console.error(`[fixedMetrics] retry loop: ${e.message}`); return []; }
+    }
+  },
+  fixed_yakeen_technical_rate: {
+    label: 'Fixed · Yakeen / ELM technical failure rate (app log, 60 min)', unit: 'rate', higherIsBad: true, segment: 'fixed',
+    sourceTables: 'unified_console.fixed_app_events',
+    compute: async (_src, now) => {
+      try {
+        const r = (await consoleDb().query(`SELECT count(*)::int AS calls, count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class='technical')::int AS tech,
+              (array_agg(left(reason,80) ORDER BY ts DESC) FILTER (WHERE ok IS NOT TRUE AND reason_class='technical'))[1] AS reason
+            FROM fixed_app_events WHERE kind IN ('yakeen','yakeen_address') AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz`, [now])).rows[0];
+        if (!r || !r.calls) return [];
+        return [{ dim: { note: r.tech ? `${r.tech} of ${r.calls} Yakeen calls failed technically · “${r.reason || ''}”` : '' }, value: r.tech / r.calls, sample: r.calls }];
+      } catch (e) { console.error(`[fixedMetrics] yakeen rate: ${e.message}`); return []; }
+    }
+  },
+  fixed_yakeen_probe_down: {
+    label: 'Fixed · Yakeen / ELM synthetic probe not answering (latest run)', unit: 'count', higherIsBad: true, segment: 'fixed',
+    sourceTables: 'unified_console.yakeen_probe_runs',
+    compute: async (_src, now) => {
+      try {
+        const r = (await consoleDb().query(`SELECT verdict, ok_count, total, run_at, results FROM yakeen_probe_runs WHERE run_at >= $1::timestamptz - interval '8 hours' ORDER BY run_at DESC LIMIT 1`, [now])).rows[0];
+        if (!r) return [];
+        const bad = (r.results || []).filter(x => x.cls === 'technical').map(x => `${x.label}: ${x.message || ''}`).join(' | ');
+        return [{ dim: { note: bad.slice(0, 220) }, value: (r.verdict === 'down' || r.verdict === 'degraded') ? 1 : 0, sample: r.total }];
+      } catch (e) { if (!/does not exist/.test(e.message)) console.error(`[fixedMetrics] yakeen probe: ${e.message}`); return []; }
+    }
+  },
+});
+
 // NB: the metric map is exported under METRICS (not as the module itself) so helpers never leak into the registry.
 module.exports = { METRICS: FIXED_METRICS, FIXED_PARAMS, TICKET_SCOPES };

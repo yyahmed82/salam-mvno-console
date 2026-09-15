@@ -25,8 +25,8 @@
   const KSA=3*3600e3;
   const ts=(v,secs)=>{ if(!v) return "—"; const d=new Date(v); if(isNaN(d)) return esc(v);
     const s=new Date(d.getTime()+KSA).toISOString().replace("T"," "); return (secs?s.slice(0,19):s.slice(0,16)); };
-  async function api(path){
-    const r=await fetch((window.API_BASE||window.CONSOLE_BASE||"")+path,{headers:{"Content-Type":"application/json","X-Console-Role":SES.role,"X-Console-User":SES.email}});
+  async function api(path,opts){
+    const r=await fetch((window.API_BASE||window.CONSOLE_BASE||"")+path,{...(opts||{}),headers:{"Content-Type":"application/json","X-Console-Role":SES.role,"X-Console-User":SES.email,...((opts&&opts.headers)||{})}});
     const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||("HTTP "+r.status)); return j;
   }
   // The hub carries no filters (Yosri, 6 Sep): channel is always "All" — pages that need one (Errors, Reports) own it —

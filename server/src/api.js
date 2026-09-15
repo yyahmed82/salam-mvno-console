@@ -3067,7 +3067,8 @@ app.get('/api/health', async (req, res) => {
 // Fixed / Salam Home routes — all under /api/fixed/* (see fixed.js)
 require('./fixed').mount(app, { requireView, audit, requireCap });
 require('./fixedExec').mount(app, { requireView });
-require('./fixedAppLane').mount(app, { requireView });   // Troubleshoot › from-the-app-log lane (fixed_app_events)   // Fixed › Executive + Operations (one endpoint, read models only)
+require('./fixedAppLane').mount(app, { requireView });   // Troubleshoot › from-the-app-log lane (fixed_app_events)
+require('./yakeenProbe').mount(app, { requireView, audit });   // Yakeen / ELM synthetic probe: status · history · run (capped)   // Fixed › Executive + Operations (one endpoint, read models only)
 // Mobile › Executive + Operations and Home › Executive + Operations (both businesses). mvnoExec gets the Dashboard's
 // own KPI function so the 24 h numbers are the Dashboard's numbers, not a second implementation of them.
 { const execDeps = { requireView, homeKpis: homeKpisFromSource, boardNow, segment };
@@ -6540,6 +6541,7 @@ app.listen(PORT, async () => {
   try { require('./apiLogCollector').start(); } catch (e) { console.error('API-log collector:', e.message); }
   try { require('./apiErrLogCollector').start(); } catch (e) { console.error('App-error-log collector:', e.message); }
   try { require('./fixedAppLogCollector').start(); } catch (e) { console.error('Fixed app-log collector:', e.message); }
+  try { require('./yakeenProbe').start(); } catch (e) { console.error('Yakeen probe:', e.message); }
   try { require('./smsProbe').start(); } catch (e) { console.error('SMS probe:', e.message); }
   try { require('./zipkinCollector').start(); } catch (e) { console.error('APIGW trace collector:', e.message); }
   try { require('./dmsJourneys').start(); } catch (e) { console.error('DMS journey collector:', e.message); }

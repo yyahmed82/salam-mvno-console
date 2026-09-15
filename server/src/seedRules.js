@@ -499,7 +499,35 @@ const FIXED_RULES = [
   { key: 'fixed_incident_sla_breach', name: 'Incident SLA-breach rate (tickets)', severity: 'P3', team: 'Digital Ops', segment: 'fixed', alert_class: 'business', enabled: false,
     metric_key: 'fixed_incident_sla_breach_rate', operator: 'gte', threshold: 0.30, window_hours: 168, min_sample: 5,
     description: 'Share of CTT tickets whose SLA was Missed over the week. Not a prod built-in (the metric exists there without a seeded rule) — seeded OFF for parity; enable when the ticket feed is trusted.',
-    runbook: '1) Review the SLA-missed tickets by assigned group. 2) Raise with the owning group lead; adjust OLA if systematic.' }
+    runbook: '1) Review the SLA-missed tickets by assigned group. 2) Raise with the owning group lead; adjust OLA if systematic.' },
+  /* ---- APP-LOG smart thresholds (15 Sep 2026) — source unified_console.fixed_app_events (combined.log on 146).
+   * No static counts: each failing signature is compared to its own 14-day baseline (robust z), a signature never
+   * seen before is its own alert, a worker looping on the same failure is its own alert, and Yakeen/ELM has both
+   * a passive rate and the synthetic probe. Incident text carries the signature (dim.note). ---- */
+  { key: 'fixed_applog_anomaly_technical', name: 'App log · technical failure anomaly', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_applog_anomaly_technical', operator: 'gte', threshold: 3.5, window_hours: 1, min_sample: 10,
+    description: 'The worst TECHNICAL failing signature in the Fixed app log (SDA · Salam Home app · Epurchase) is ≥ 3.5 robust z above its own 14-day baseline for this hour of day.',
+    runbook: '1) Fixed → Troubleshoot → From the app log: the signature is in the incident text; open the channel card for the step and reason. 2) Impact check with the reason text: ongoing / recovering, since when, how many customers. 3) Provider named (Yakeen, Absher, Nafath, Semati)? Run the probe / check with the provider. 4) 5xx or timeout on an app step → platform team with the request ids from the lane.' },
+  { key: 'fixed_applog_anomaly_business', name: 'App log · business refusal anomaly', severity: 'P3', team: 'Digital Ops', segment: 'fixed', alert_class: 'business',
+    metric_key: 'fixed_applog_anomaly_business', operator: 'gte', threshold: 3.5, window_hours: 1, min_sample: 20,
+    description: 'The worst BUSINESS refusal signature (no coverage, NIC mismatch, blacklist, wrong OTP…) is ≥ 3.5 robust z above its own baseline — a refusal that suddenly multiplies is usually a data or configuration problem, not customers.',
+    runbook: '1) Troubleshoot → From the app log: which step and reason. 2) A refusal spike on one step = check what changed (plan, ODB data, provider rules) with Sales Ops / OSS. 3) If it is one dealer or one region, it is behaviour, not a fault.' },
+  { key: 'fixed_applog_new_signature', name: 'App log · new error never seen before', severity: 'P3', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_applog_new_signature', operator: 'gte', threshold: 1, window_hours: 1, min_sample: 0,
+    description: 'A failing signature (channel · step · class) that never appeared in the last 14 days, ≥ 5 times in the last hour — a release, a config change or a new provider behaviour.',
+    runbook: '1) The incident text names the signature(s). 2) Troubleshoot → From the app log → channel card → reason text. 3) Was there a deploy? Ask the app team; the Log Intelligence agent has a first triage for the new signature.' },
+  { key: 'fixed_applog_retry_loop', name: 'App log · retry loop (worker failing on a schedule)', severity: 'P3', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_applog_retry_loop', operator: 'gte', threshold: 1, window_hours: 3, min_sample: 0,
+    description: 'The same path + reason ≥ 30 times over ≥ 20 min on a flat cadence with no customer request behind it — a worker (e.g. invoices.voidInvoice → 500) that will never succeed on its own.',
+    runbook: '1) The incident text names the worker and reason. 2) One ticket to the app / payments team with the ids from the log — do not treat as N customer errors. 3) Resolves itself once the worker stops failing for 20 min.' },
+  { key: 'fixed_yakeen_technical_rate', name: 'Yakeen / ELM technical failure rate', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_yakeen_technical_rate', operator: 'gte', threshold: 0.30, window_hours: 1, min_sample: 5,
+    description: 'Yakeen (getYakeenInfo / getYakeenAddress) calls in the app log failing TECHNICALLY (504, timeout, 5xx) ≥ 30 % over the last hour with ≥ 5 calls — ELM unstable, as on 7 Jul and 14 Sep 2026.',
+    runbook: '1) Run the Yakeen probe from Troubleshoot (4 ELM calls, billed) to confirm from the console side. 2) Notify ELM / raise with Elm support; update the Operation Center thread. 3) Sales: identity step will fail for everyone — announce, do not let dealers retry in loops. 4) Clears when the rate drops below 30 %.' },
+  { key: 'fixed_yakeen_probe_down', name: 'Yakeen / ELM probe not answering', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
+    metric_key: 'fixed_yakeen_probe_down', operator: 'gte', threshold: 1, window_hours: 8, min_sample: 0,
+    description: 'The latest scheduled / manual Yakeen probe (login + 4 ELM data calls) ended down or degraded.',
+    runbook: '1) Troubleshoot → providers → Yakeen probe: which call failed and how (login vs data, timeout vs 5xx). 2) Login failing = credentials / ELM auth; data timing out = ELM capacity. 3) Re-run once (manual cap) after ELM confirms recovery so the alert clears.' },
 ];
 for (const r of FIXED_RULES) {
   if (!r.key.startsWith('fixed_') || !r.metric_key.startsWith('fixed_')) throw new Error(`fixed rule ${r.key} must use fixed_ keys`);
