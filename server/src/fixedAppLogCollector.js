@@ -83,14 +83,22 @@ function reasonClass(ok, status, reason, dflt) {
   if (s === 400 || s === 404 || s === 403 || s === 422 || /not match|not found|no data|لا توجد|not eligible|mismatch|already exists|not registered|no mobile/i.test(r)) return 'business';
   return dflt || (s ? 'business' : 'technical');
 }
+/* channel from the tRPC path prefix (the `source` field is unreliable — the ops console parser proved it):
+ *   sda.*                 SDA dealer app            → sda
+ *   salamApp.*            Salam Home consumer app   → salamhome   (15 Sep: was wrongly 'web')
+ *   ePurchase.*           Web e-purchase storefront → web
+ *   paymentOptimization.* the payment-link / e-purchase payment flow → web
+ *   no path               fall back to `source` (payments, pulse, epurchase, sda, salamhome) */
 const channelOf = (o) => {
   const p = String(o.path || '');
   if (/^sda\./i.test(p)) return 'sda';
-  if (/^ePurchase\./i.test(p)) return String(o.source || '').toLowerCase() === 'salamhome' || String(o.channel || '').toLowerCase() === 'salamhome' ? 'salamhome' : 'web';
+  if (/^salamApp\./i.test(p)) return 'salamhome';
+  if (/^(ePurchase|paymentOptimization)\./i.test(p)) return 'web';
   const src = String(o.source || '').toLowerCase();
   if (src === 'sda') return 'sda';
-  if (src === 'salamhome') return 'salamhome';
+  if (src === 'salamhome' || src === 'salamapp') return 'salamhome';
   if (src === 'epurchase' || src === 'pulse') return 'web';
+  if (src === 'payments' || src === 'payment') return 'payments';
   return null;
 };
 const tsOf = (o) => {
