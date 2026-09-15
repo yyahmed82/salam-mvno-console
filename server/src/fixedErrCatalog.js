@@ -80,14 +80,19 @@ async function sync() {
     }
   };
   let boardN = 0, appN = 0;
+  /* the board read models have a statement timeout and no index that helps a regex over res_body: walk the window in
+   * slices (≤ 1 day each; the routine 5-minute run is one slice) and use max() aggregates, never ordered array_agg */
+  const SLICE = 864e5;
   for (const pool of [db.ops, db.opsBeta].filter(Boolean)) {
-    try {
-      const rows = (await pool.query(`SELECT ${fe.MSG_EXPR} AS sig, (array_agg(e.message ORDER BY e.occurred_at DESC))[1] AS sample, (array_agg(e.category ORDER BY e.occurred_at DESC))[1] AS category,
-            (array_agg(e.step ORDER BY e.occurred_at DESC))[1] AS step, count(*)::int AS n, min(e.occurred_at) AS first, max(e.occurred_at) AS last,
-            (array_agg(${fe.CLASS_EXPR} ORDER BY e.occurred_at DESC))[1] AS auto
-          FROM error_events e WHERE e.occurred_at > $1 AND e.occurred_at <= $2 GROUP BY 1 ORDER BY 5 DESC LIMIT 400`, [since.toISOString(), now.toISOString()])).rows;
-      await up(rows, 'board', r => r.auto); boardN += rows.length;
-    } catch (e) { console.error('[ERRCAT] board sync: ' + e.message); }
+    for (let t = since.getTime(); t < now.getTime(); t += SLICE) {
+      const a = new Date(t).toISOString(), b = new Date(Math.min(t + SLICE, now.getTime())).toISOString();
+      try {
+        const rows = (await pool.query(`SELECT ${fe.MSG_EXPR} AS sig, max(left(${fe.RESP_EXPR},300)) AS sample, max(e.category) AS category, max(e.step) AS step,
+              count(*)::int AS n, min(e.occurred_at) AS first, max(e.occurred_at) AS last, max(${fe.CLASS_EXPR}) AS auto
+            FROM error_events e WHERE e.occurred_at > $1 AND e.occurred_at <= $2 GROUP BY 1 ORDER BY 5 DESC LIMIT 400`, [a, b])).rows;
+        await up(rows, 'board', r => r.auto); boardN += rows.length;
+      } catch (e) { console.error(`[ERRCAT] board sync ${a.slice(0, 10)}: ${e.message}`); }
+    }
   }
   try {
     const rows = (await db.console.query(`SELECT ${SIG_APP} AS sig, (array_agg(coalesce(reason,message) ORDER BY ts DESC))[1] AS sample, (array_agg(kind ORDER BY ts DESC))[1] AS category,

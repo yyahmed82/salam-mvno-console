@@ -159,7 +159,7 @@ const JOIN_OA = 'LEFT JOIN order_attempts oa ON oa.id = e.attempt_id';
  * label ("Feasibility / coverage failed"); the provider's own words (resultDesc "Accept Sync Request error! No plateID
  * found…", message "[CC-S-SALES-01014] [Unkown error..]") sit in the masked response body. RESP_EXPR pulls the first
  * resultDesc / message / errorMessage / … string out of res_body and falls back to the label when there is none. */
-const RESP_EXPR = `coalesce(nullif(btrim(substring(e.res_body from '"(?:resultDesc|responseMessage|errorMessage|errorDescription|errorDesc|resultMessage|message|error|desc|reason)"\\s*:\\s*"((?:[^"\\\\]|\\\\.){1,240})"')),''), nullif(btrim(e.message),''))`;
+const RESP_EXPR = `coalesce(nullif(btrim(substring(left(e.res_body,1500) from '"(?:resultDesc|responseMessage|errorMessage|errorDescription|errorDesc|resultMessage|message|error|desc|reason)"\\s*:\\s*"((?:[^"\\\\]|\\\\.){1,240})"')),''), nullif(btrim(e.message),''))`;
 const MSG_EXPR = `left(regexp_replace(coalesce(${RESP_EXPR},'(no message)'),'[0-9]+','#','g'),160)`;
 /* ---- BUSINESS vs TECHNICAL for Fixed — the console-wide principle of errclass.js applied in SQL so the chips,
  * the rows, the exports and the dashboards all agree (15 Sep 2026, "clear segregation everywhere, like MVNO"):
