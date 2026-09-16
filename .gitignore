@@ -33,3 +33,6 @@ local/.pglocal.env
 local/uploads/
 local/out/
 cache/
+
+server/jdbc/*.jar
+server/jdbc/*.class

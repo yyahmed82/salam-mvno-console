@@ -54,6 +54,7 @@ cp deploy152/check-fixed-sources.cjs "$STAGE/server/check-fixed-sources.cjs" 2>/
 cp deploy152/test-budget-mails.cjs "$STAGE/server/test-budget-mails.cjs" 2>/dev/null || true   # send the real AI-budget mails to one address for review (writes nothing)
 cp deploy152/install-watchdog.sh "$STAGE/install-watchdog.sh" 2>/dev/null || true
 cp server/package.json        "$STAGE/server/"
+[ -d server/jdbc ] && { mkdir -p "$STAGE/server/jdbc"; cp server/jdbc/*.java "$STAGE/server/jdbc/" 2>/dev/null || true; }   # Arqami JDBC bridge source (compiled on 152)
 # build stamp → /api/version reports the milestone actually shipped (VERSION file + git commit/tag)
 printf '{ "version": "%s", "commit": "%s", "tag": "%s", "builtAt": "%s" }\n' \
   "$(cat VERSION 2>/dev/null | tr -d '[:space:]')" "$(git rev-parse --short HEAD 2>/dev/null || echo dev)" \
@@ -112,6 +113,10 @@ else
   cp -f /tmp/csync/server/scripts/*.cjs "$APP/server/scripts/" 2>/dev/null || true
   cp -f /tmp/csync/server/package.json "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/build.json "$APP/server/" 2>/dev/null || true
+  if [ -d /tmp/csync/server/jdbc ]; then mkdir -p "$APP/server/jdbc"; cp -f /tmp/csync/server/jdbc/*.java "$APP/server/jdbc/" 2>/dev/null || true
+    JAVAC="${JAVAC:-/opt/java/bin/javac}"; OJDBC="$(ls "$APP"/server/jdbc/ojdbc*.jar 2>/dev/null | head -1)"
+    if [ -x "$JAVAC" ] && [ -n "$OJDBC" ]; then (cd "$APP/server/jdbc" && "$JAVAC" -cp "$OJDBC" ArqamiBridge.java && echo "▸ ArqamiBridge compiled (JDBC bridge for EBPROD 9i)") || echo "✗ ArqamiBridge failed to compile"; else echo "▸ JDBC bridge not compiled (javac=$JAVAC ojdbc=${OJDBC:-missing}) — Arqami stays on oracledb/CSV"; fi
+  fi
   [ -d /tmp/csync/server/node_modules ] && { rm -rf "$APP/server/node_modules"; cp -R /tmp/csync/server/node_modules "$APP/server/"; echo "▸ node_modules replaced"; }
   cp -f /tmp/csync/web/* "$APP/web/" 2>/dev/null || true
   [ -f /tmp/csync/ecosystem.prod.config.js ] && cp -f /tmp/csync/ecosystem.prod.config.js "$APP/ecosystem.prod.config.js"

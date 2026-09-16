@@ -11,9 +11,12 @@
  * The aggregation is exactly the operator's DBeaver query:
  *   TO_CHAR(TRUNC(CAST(REQUEST_TIME AS DATE),'MI'),'HH24:MI'), COUNT(*), SUM(SUCCESS='Y'), SUM(SUCCESS<>'Y'), ROUND(AVG(DURATION_MS)), MAX(DURATION_MS)
  *
- * Driver: node-oracledb. THIN mode (pure JavaScript) needs Oracle 12.1+; EBPROD is 11g, so 152 runs THICK mode with the
- * Instant Client Basic Light 21.x unzipped under CST_ORACLE_CLIENT_DIR (default /opt/oracle/instantclient_21_23) — 21c is the last
- * client series that still connects to 11.2. Without that directory the driver falls back to thin mode (NJS-138 on 11g).
+ * Backends (CST_ORACLE_MODE = jdbc | oracledb, auto = jdbc when the bridge is compiled and Java is present):
+ *   jdbc     EBPROD is Oracle 9i (9.2.0.6): no current native client connects to it (thin needs 12.1+, Instant Client 21/23 need
+ *            11.2.0.4+, the 11.2 client is no longer a public download) — Oracle's JDBC driver still does, which is how DBeaver
+ *            gets in. So one long-lived JVM (server/jdbc/ArqamiBridge.java + ojdbc11.jar, Temurin JDK under CST_ORACLE_JAVA)
+ *            runs beside Node and executes the same read-only SELECTs over stdin / stdout. ~120 MB RSS, one connection.
+ *   oracledb node-oracledb for 12.1+ servers (thin) or with an Instant Client under CST_ORACLE_CLIENT_DIR (thick, 11.2+).
  * Credentials live ONLY in /apps/unified/.env:
  *   CST_ORACLE_HOST=172.31.1.42  CST_ORACLE_PORT=1521  CST_ORACLE_SERVICE=EBPROD  CST_ORACLE_USER=apps  CST_ORACLE_PASSWORD=…
  *   optional: CST_ORACLE_TABLE (APPS.YY_REGISTER_NUMBER_AUDIT) · CST_ORACLE_TIME_COL (REQUEST_TIME) · CST_ORACLE_SUCCESS_COL (SUCCESS)
@@ -36,11 +39,13 @@ const cfg = () => ({
   backfillDays: Math.min(365, n(E.CST_ORACLE_BACKFILL_DAYS) || 30), pollSec: Math.max(20, n(E.CST_ORACLE_POLL_SEC) || 60), windowMin: Math.max(3, n(E.CST_ORACLE_POLL_WINDOW_MIN) || 12),
   disabled: /^(1|true|yes)$/i.test(E.CST_ORACLE_DISABLED || ''),
   clientDir: E.CST_ORACLE_CLIENT_DIR || '/opt/oracle/instantclient_21_23',
+  mode: (E.CST_ORACLE_MODE || 'auto').toLowerCase(), java: E.CST_ORACLE_JAVA || '/opt/java/bin/java', jdbcDir: E.CST_ORACLE_JDBC_DIR || require('path').join(__dirname, '..', 'jdbc'),
+  connect: E.CST_ORACLE_CONNECT || 'service',
 });
 const configured = () => { const c = cfg(); return !!(c.host && c.service && c.user && c.password) && !c.disabled; };
 
 /* ---------------------------------------------------------------- state (exposed on /api/cst/arqami/source) */
-const state = { driver: null, driverError: null, mode: null, clientError: null, pool: null, lastPoll: null, lastPollMs: null, lastPollRows: 0, lastError: null, lastErrorAt: null, polls: 0, backfill: null, timer: null, healTimer: null, busy: false };
+const state = { backend: null, driver: null, driverError: null, mode: null, clientError: null, pool: null, jvm: null, jvmInfo: null, jvmRestarts: 0, lastPoll: null, lastPollMs: null, lastPollRows: 0, lastError: null, lastErrorAt: null, polls: 0, backfill: null, timer: null, healTimer: null, busy: false };
 
 function driver() {
   if (state.driver || state.driverError) return state.driver;
@@ -68,6 +73,71 @@ async function withConn(fn, timeoutMs) {
   finally { try { await conn.close(); } catch (_) { /* pool handles it */ } }
 }
 
+/* ---------------------------------------------------------------- JDBC bridge (Oracle 9i path) */
+const fs = require('fs'), path = require('path');
+function jdbcReady() { const c = cfg(); return fs.existsSync(path.join(c.jdbcDir, 'ArqamiBridge.class')) && fs.existsSync(c.java) && fs.readdirSync(c.jdbcDir).some(f => /^ojdbc.*\.jar$/.test(f)); }
+function backend() {
+  if (state.backend) return state.backend;
+  const c = cfg();
+  state.backend = c.mode === 'jdbc' ? 'jdbc' : c.mode === 'oracledb' ? 'oracledb' : jdbcReady() ? 'jdbc' : 'oracledb';
+  if (state.backend === 'jdbc') state.mode = 'jdbc bridge (' + c.java + ', ' + c.jdbcDir + ')';
+  return state.backend;
+}
+const jvm = { proc: null, pending: new Map(), seq: 0, buf: '', starting: null };
+function jvmStart() {
+  if (jvm.proc) return Promise.resolve(jvm.proc);
+  if (jvm.starting) return jvm.starting;
+  const c = cfg();
+  const jar = fs.readdirSync(c.jdbcDir).filter(f => /^ojdbc.*\.jar$/.test(f)).sort().pop();
+  if (!jar) return Promise.reject(new Error('no ojdbc*.jar in ' + c.jdbcDir));
+  jvm.starting = new Promise((ok, ko) => {
+    const cp = require('child_process');
+    const p = cp.spawn(c.java, ['-Xmx160m', '-XX:+UseSerialGC', '-Djava.awt.headless=true', '-cp', path.join(c.jdbcDir, jar) + ':' + c.jdbcDir, 'ArqamiBridge'],
+      { env: Object.assign({}, process.env, { CST_ORACLE_HOST: c.host, CST_ORACLE_PORT: String(c.port), CST_ORACLE_SERVICE: c.service, CST_ORACLE_USER: c.user, CST_ORACLE_PASSWORD: c.password, CST_ORACLE_CONNECT: c.connect, JAVA_TOOL_OPTIONS: '' }), stdio: ['pipe', 'pipe', 'pipe'] });
+    let settled = false;
+    p.stdout.setEncoding('utf8');
+    p.stdout.on('data', chunk => {
+      jvm.buf += chunk; let i;
+      while ((i = jvm.buf.indexOf('\n')) >= 0) {
+        const line = jvm.buf.slice(0, i).trim(); jvm.buf = jvm.buf.slice(i + 1); if (!line) continue;
+        let m; try { m = JSON.parse(line); } catch (_) { console.error('[cst-oracle] bridge: bad line', line.slice(0, 200)); continue; }
+        if (m.ready) { state.jvmInfo = { url: m.url, java: m.java, since: new Date().toISOString() }; if (!settled) { settled = true; ok(p); } continue; }
+        const w = jvm.pending.get(String(m.id)); if (!w) continue; jvm.pending.delete(String(m.id)); clearTimeout(w.t);
+        if (m.error) w.ko(new Error(m.error)); else w.ok(m);
+      }
+    });
+    p.stderr.setEncoding('utf8'); p.stderr.on('data', d => { const t = String(d).trim(); if (t) console.error('[cst-oracle] bridge:', t.slice(0, 300)); });
+    p.on('exit', (code, sig) => {
+      console.error(`[cst-oracle] bridge exited (${code === null ? sig : code})`); jvm.proc = null; jvm.starting = null; state.jvm = null; state.jvmRestarts++;
+      for (const [, w] of jvm.pending) { clearTimeout(w.t); w.ko(new Error('bridge exited')); } jvm.pending.clear();
+      if (!settled) { settled = true; ko(new Error('bridge exited before it was ready (code ' + code + ')')); }
+    });
+    p.on('error', e => { if (!settled) { settled = true; ko(e); } });
+    jvm.proc = p; state.jvm = { pid: p.pid };
+    setTimeout(() => { if (!settled) { settled = true; ko(new Error('bridge did not become ready in 30 s')); try { p.kill(); } catch (_) {} } }, 30000);
+  }).finally(() => { jvm.starting = null; });
+  return jvm.starting;
+}
+const b64 = v => Buffer.from(String(v), 'utf8').toString('base64');
+async function jdbcQuery(sql, binds, timeoutMs) {
+  const p = await jvmStart();
+  const id = String(++jvm.seq);
+  const line = [id, b64(sql)].concat((binds || []).map(v => v == null ? 'null' : typeof v === 'number' ? 'n:' + v : 's:' + b64(v))).join('\t') + '\n';
+  return new Promise((ok, ko) => {
+    const t = setTimeout(() => { jvm.pending.delete(id); ko(new Error('bridge query timed out after ' + timeoutMs + ' ms')); try { p.kill(); } catch (_) {} }, timeoutMs || 30000);
+    jvm.pending.set(id, { ok, ko, t });
+    p.stdin.write(line, e => { if (e) { clearTimeout(t); jvm.pending.delete(id); ko(e); } });
+  });
+}
+function jvmStop() { if (jvm.proc) { try { jvm.proc.stdin.end(); jvm.proc.kill(); } catch (_) {} } }
+
+/* one entry point for every statement: SQL with ? placeholders + positional binds → rows with UPPERCASE keys */
+async function query(sql, binds, timeoutMs) {
+  if (backend() === 'jdbc') return (await jdbcQuery(sql, binds, timeoutMs)).rows;
+  let k = 0; const named = sql.replace(/\?/g, () => ':' + (++k));
+  return withConn(async conn => (await conn.execute(named, binds || [])).rows, timeoutMs);
+}
+
 /* ---------------------------------------------------------------- Oracle → minute rows */
 function aggSql(where) {
   const c = cfg(); const t = ident(c.table), tc = ident(c.timeCol), ok = ident(c.okCol), du = ident(c.durCol);
@@ -89,21 +159,19 @@ const rowsOf = r => (r.rows || []).map(x => ({ day: x.DAY, slot: x.MINUTE_SLOT, 
 async function fetchDay(day) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('day must be YYYY-MM-DD');
   const tc = ident(cfg().timeCol);
-  return withConn(async conn => rowsOf(await conn.execute(aggSql(`${tc} >= TO_DATE(:d0, 'YYYY-MM-DD') AND ${tc} < TO_DATE(:d0, 'YYYY-MM-DD') + 1`), { d0: day })), 120000);
+  return rowsOf({ rows: await query(aggSql(`${tc} >= TO_DATE(?, 'YYYY-MM-DD') AND ${tc} < TO_DATE(?, 'YYYY-MM-DD') + 1`), [day, day], 180000) });
 }
 /* the last N minutes by Oracle's SYSDATE — crosses midnight correctly because DAY comes from the row */
 async function fetchRecent(minutes) {
   const tc = ident(cfg().timeCol);
-  return withConn(async conn => rowsOf(await conn.execute(aggSql(`${tc} >= SYSDATE - :m / 1440`), { m: Number(minutes) })), 25000);
+  return rowsOf({ rows: await query(aggSql(`${tc} >= SYSDATE - ? / 1440`), [Number(minutes)], 40000) });
 }
 /* what the table looks like — used by the source card and the deploy verification */
 async function probe() {
   const c = cfg(); const t = ident(c.table), tc = ident(c.timeCol);
-  return withConn(async conn => {
-    const v = await conn.execute(`SELECT SYSDATE AS NOW_, TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') AS NOW_TXT, SYS_CONTEXT('USERENV', 'DB_NAME') AS DB FROM DUAL`);
-    const last = await conn.execute(`SELECT TO_CHAR(MAX(${tc}), 'YYYY-MM-DD HH24:MI:SS') AS LAST_, COUNT(*) AS TODAY_ROWS FROM ${t} WHERE ${tc} >= TRUNC(SYSDATE)`);
-    return { db: v.rows[0].DB, oracleNow: v.rows[0].NOW_TXT, lastRequest: last.rows[0].LAST_, todayRows: n(last.rows[0].TODAY_ROWS) };
-  }, 30000);
+  const v = await query(`SELECT TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') AS NOW_TXT, SYS_CONTEXT('USERENV', 'DB_NAME') AS DB, (SELECT banner FROM v$version WHERE rownum = 1) AS VER FROM DUAL`, [], 30000);
+  const last = await query(`SELECT TO_CHAR(MAX(${tc}), 'YYYY-MM-DD HH24:MI:SS') AS LAST_, COUNT(*) AS TODAY_ROWS FROM ${t} WHERE ${tc} >= TRUNC(SYSDATE)`, [], 60000);
+  return { db: v[0].DB, version: v[0].VER, oracleNow: v[0].NOW_TXT, lastRequest: last[0].LAST_, todayRows: n(last[0].TODAY_ROWS), backend: backend() };
 }
 
 /* ---------------------------------------------------------------- minute rows → console DB */
@@ -165,15 +233,18 @@ async function backfill(days, opts) {
 
 function status() {
   const c = cfg();
-  return { configured: configured(), disabled: c.disabled, driver: !!driver(), driverError: state.driverError, mode: state.mode, clientError: state.clientError, host: c.host, port: c.port, service: c.service, user: c.user, table: c.table,
+  const be = configured() ? backend() : null;
+  return { configured: configured(), disabled: c.disabled, backend: be, driver: be === 'jdbc' ? jdbcReady() : !!driver(), driverError: be === 'jdbc' ? (jdbcReady() ? null : `JDBC bridge not ready: need ${c.java}, ${c.jdbcDir}/ArqamiBridge.class and ojdbc*.jar`) : state.driverError, mode: state.mode, clientError: state.clientError, jvm: state.jvm, jvmInfo: state.jvmInfo, jvmRestarts: state.jvmRestarts, host: c.host, port: c.port, service: c.service, user: c.user, table: c.table,
     columns: { time: c.timeCol, success: c.okCol, duration: c.durCol }, pollSec: c.pollSec, windowMin: c.windowMin, backfillDays: c.backfillDays,
     lastPoll: state.lastPoll, lastPollMs: state.lastPollMs, lastPollRows: state.lastPollRows, polls: state.polls, lastError: state.lastError, lastErrorAt: state.lastErrorAt, backfill: state.backfill, busy: state.busy };
 }
 
 function start() {
   if (!configured()) { console.log(`[cst-oracle] not configured (${cfg().disabled ? 'CST_ORACLE_DISABLED=1' : 'CST_ORACLE_HOST / SERVICE / USER / PASSWORD missing in .env'}) — Arqami stays on CSV imports`); return; }
-  if (!driver()) { console.error('[cst-oracle]', state.driverError); return; }
+  if (backend() === 'jdbc') { if (!jdbcReady()) { console.error('[cst-oracle] JDBC bridge not ready:', status().driverError); return; } }
+  else if (!driver()) { console.error('[cst-oracle]', state.driverError); return; }
   const c = cfg();
+  process.on('exit', jvmStop);
   console.log(`[cst-oracle] ${c.user}@${c.host}:${c.port}/${c.service} ${c.table} — ${state.mode} — poll every ${c.pollSec} s (window ${c.windowMin} min), backfill ${c.backfillDays} days`);
   setTimeout(() => { poll().then(() => backfill(c.backfillDays)).catch(e => console.error('[cst-oracle] start:', e.message)); }, 8000);
   state.timer = setInterval(() => poll(), c.pollSec * 1000);
@@ -181,4 +252,4 @@ function start() {
   if (state.timer.unref) state.timer.unref(); if (state.healTimer.unref) state.healTimer.unref();
 }
 
-module.exports = { start, poll, backfill, refreshDay, fetchDay, probe, status, configured };
+module.exports = { start, poll, backfill, refreshDay, fetchDay, probe, status, configured, query };

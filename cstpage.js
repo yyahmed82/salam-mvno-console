@@ -211,12 +211,12 @@
       const bf = s.backfill;
       const rows = s.configured ? `
         <div class="cs-srcg">
-          <div><span class="cs-kl">Oracle</span><b>${esc(s.user)}@${esc(s.host)}:${s.port}/${esc(s.service)}</b><span class="cs-dim">${esc(s.table)} · ${esc(s.columns.time)} / ${esc(s.columns.success)} / ${esc(s.columns.duration)} · driver ${esc(s.mode || '—')}</span></div>
+          <div><span class="cs-kl">Oracle</span><b>${esc(s.user)}@${esc(s.host)}:${s.port}/${esc(s.service)}</b><span class="cs-dim">${esc(s.table)} · ${esc(s.columns.time)} / ${esc(s.columns.success)} / ${esc(s.columns.duration)} · driver ${esc(s.mode || '—')}${s.jvmInfo ? ` · JVM ${esc(s.jvmInfo.java)} up since ${ago(s.jvmInfo.since)}${s.jvmRestarts ? ` · ${s.jvmRestarts} restarts` : ''}` : ''}</span></div>
           ${s.clientError ? `<div><span class="cs-kl">Instant Client</span><b style="color:${T.bad}">${esc(s.clientError)}</b></div>` : ''}
           <div><span class="cs-kl">Poll</span><b style="color:${s.lastError ? T.bad : s.lastPoll ? T.ok : T.warn}">${s.lastError ? 'error' : s.lastPoll ? 'live' : 'waiting'}</b><span class="cs-dim">every ${s.pollSec} s · window ${s.windowMin} min · last ${ago(s.lastPoll)}${s.lastPollMs != null ? ` in ${s.lastPollMs} ms` : ''} · ${num(s.polls)} polls</span></div>
           <div><span class="cs-kl">Backfill</span><b>${bf ? (bf.running ? `${bf.done} / ${bf.days} days…` : `${bf.days} days done`) : 'not run'}</b><span class="cs-dim">${bf ? `${num(bf.minutes)} minutes · ${num(bf.requests)} requests${bf.current ? ` · reading ${bf.current}` : ''}${bf.errors.length ? ` · ${bf.errors.length} errors: ${esc(bf.errors[0].error)}` : ''}` : `default ${s.backfillDays} days at start-up`}</span></div>
           ${s.lastError ? `<div><span class="cs-kl">Last error</span><b style="color:${T.bad}">${esc(s.lastError)}</b><span class="cs-dim">${ago(s.lastErrorAt)}</span></div>` : ''}
-          ${s.probe ? `<div><span class="cs-kl">Probe</span><b>${esc(s.probe.db)} · ${esc(s.probe.oracleNow)}</b><span class="cs-dim">last request ${esc(s.probe.lastRequest || '—')} · ${num(s.probe.todayRows)} rows today</span></div>` : s.probeError ? `<div><span class="cs-kl">Probe</span><b style="color:${T.bad}">${esc(s.probeError)}</b></div>` : ''}
+          ${s.probe ? `<div><span class="cs-kl">Probe</span><b>${esc(s.probe.db)} · ${esc(s.probe.oracleNow)}</b><span class="cs-dim">${esc(s.probe.version || '')} · last request ${esc(s.probe.lastRequest || '—')} · ${num(s.probe.todayRows)} rows today</span></div>` : s.probeError ? `<div><span class="cs-kl">Probe</span><b style="color:${T.bad}">${esc(s.probeError)}</b></div>` : ''}
         </div>
         <div class="cs-acts" style="margin-top:10px">
           <button type="button" class="cs-btn" data-act="backfill" data-days="30">⟲ Backfill 30 days</button>
