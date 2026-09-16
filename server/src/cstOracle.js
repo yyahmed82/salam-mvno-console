@@ -11,7 +11,10 @@
  * The aggregation is exactly the operator's DBeaver query:
  *   TO_CHAR(TRUNC(CAST(REQUEST_TIME AS DATE),'MI'),'HH24:MI'), COUNT(*), SUM(SUCCESS='Y'), SUM(SUCCESS<>'Y'), ROUND(AVG(DURATION_MS)), MAX(DURATION_MS)
  *
- * Driver: node-oracledb in THIN mode (pure JavaScript — no Instant Client on 152). Credentials live ONLY in /apps/unified/.env:
+ * Driver: node-oracledb. THIN mode (pure JavaScript) needs Oracle 12.1+; EBPROD is 11g, so 152 runs THICK mode with the
+ * Instant Client Basic Light 21.x unzipped under CST_ORACLE_CLIENT_DIR (default /opt/oracle/instantclient_21_23) — 21c is the last
+ * client series that still connects to 11.2. Without that directory the driver falls back to thin mode (NJS-138 on 11g).
+ * Credentials live ONLY in /apps/unified/.env:
  *   CST_ORACLE_HOST=172.31.1.42  CST_ORACLE_PORT=1521  CST_ORACLE_SERVICE=EBPROD  CST_ORACLE_USER=apps  CST_ORACLE_PASSWORD=…
  *   optional: CST_ORACLE_TABLE (APPS.YY_REGISTER_NUMBER_AUDIT) · CST_ORACLE_TIME_COL (REQUEST_TIME) · CST_ORACLE_SUCCESS_COL (SUCCESS)
  *             CST_ORACLE_DURATION_COL (DURATION_MS) · CST_ORACLE_BACKFILL_DAYS (30) · CST_ORACLE_POLL_SEC (60) · CST_ORACLE_POLL_WINDOW_MIN (12)
@@ -32,16 +35,23 @@ const cfg = () => ({
   table: E.CST_ORACLE_TABLE || 'APPS.YY_REGISTER_NUMBER_AUDIT', timeCol: E.CST_ORACLE_TIME_COL || 'REQUEST_TIME', okCol: E.CST_ORACLE_SUCCESS_COL || 'SUCCESS', durCol: E.CST_ORACLE_DURATION_COL || 'DURATION_MS',
   backfillDays: Math.min(365, n(E.CST_ORACLE_BACKFILL_DAYS) || 30), pollSec: Math.max(20, n(E.CST_ORACLE_POLL_SEC) || 60), windowMin: Math.max(3, n(E.CST_ORACLE_POLL_WINDOW_MIN) || 12),
   disabled: /^(1|true|yes)$/i.test(E.CST_ORACLE_DISABLED || ''),
+  clientDir: E.CST_ORACLE_CLIENT_DIR || '/opt/oracle/instantclient_21_23',
 });
 const configured = () => { const c = cfg(); return !!(c.host && c.service && c.user && c.password) && !c.disabled; };
 
 /* ---------------------------------------------------------------- state (exposed on /api/cst/arqami/source) */
-const state = { driver: null, driverError: null, pool: null, lastPoll: null, lastPollMs: null, lastPollRows: 0, lastError: null, lastErrorAt: null, polls: 0, backfill: null, timer: null, healTimer: null, busy: false };
+const state = { driver: null, driverError: null, mode: null, clientError: null, pool: null, lastPoll: null, lastPollMs: null, lastPollRows: 0, lastError: null, lastErrorAt: null, polls: 0, backfill: null, timer: null, healTimer: null, busy: false };
 
 function driver() {
   if (state.driver || state.driverError) return state.driver;
   try { state.driver = require('oracledb'); state.driver.outFormat = state.driver.OUT_FORMAT_OBJECT; state.driver.fetchAsString = []; }
-  catch (e) { state.driverError = 'oracledb driver not installed in server/node_modules (deploy with --full): ' + e.message; }
+  catch (e) { state.driverError = 'oracledb driver not installed in server/node_modules (deploy with --full): ' + e.message; return null; }
+  /* thick mode when the Instant Client is present (EBPROD 11g rejects thin mode with NJS-138) */
+  const dir = cfg().clientDir;
+  if (dir && require('fs').existsSync(dir)) {
+    try { state.driver.initOracleClient({ libDir: dir }); state.mode = 'thick ' + dir; }
+    catch (e) { state.clientError = 'Instant Client at ' + dir + ' could not be loaded (libaio missing?): ' + e.message; state.mode = 'thin (thick init failed)'; console.error('[cst-oracle]', state.clientError); }
+  } else state.mode = 'thin (no Instant Client at ' + dir + ')';
   return state.driver;
 }
 async function pool() {
@@ -155,7 +165,7 @@ async function backfill(days, opts) {
 
 function status() {
   const c = cfg();
-  return { configured: configured(), disabled: c.disabled, driver: !!driver(), driverError: state.driverError, host: c.host, port: c.port, service: c.service, user: c.user, table: c.table,
+  return { configured: configured(), disabled: c.disabled, driver: !!driver(), driverError: state.driverError, mode: state.mode, clientError: state.clientError, host: c.host, port: c.port, service: c.service, user: c.user, table: c.table,
     columns: { time: c.timeCol, success: c.okCol, duration: c.durCol }, pollSec: c.pollSec, windowMin: c.windowMin, backfillDays: c.backfillDays,
     lastPoll: state.lastPoll, lastPollMs: state.lastPollMs, lastPollRows: state.lastPollRows, polls: state.polls, lastError: state.lastError, lastErrorAt: state.lastErrorAt, backfill: state.backfill, busy: state.busy };
 }
@@ -164,7 +174,7 @@ function start() {
   if (!configured()) { console.log(`[cst-oracle] not configured (${cfg().disabled ? 'CST_ORACLE_DISABLED=1' : 'CST_ORACLE_HOST / SERVICE / USER / PASSWORD missing in .env'}) — Arqami stays on CSV imports`); return; }
   if (!driver()) { console.error('[cst-oracle]', state.driverError); return; }
   const c = cfg();
-  console.log(`[cst-oracle] ${c.user}@${c.host}:${c.port}/${c.service} ${c.table} — poll every ${c.pollSec} s (window ${c.windowMin} min), backfill ${c.backfillDays} days`);
+  console.log(`[cst-oracle] ${c.user}@${c.host}:${c.port}/${c.service} ${c.table} — ${state.mode} — poll every ${c.pollSec} s (window ${c.windowMin} min), backfill ${c.backfillDays} days`);
   setTimeout(() => { poll().then(() => backfill(c.backfillDays)).catch(e => console.error('[cst-oracle] start:', e.message)); }, 8000);
   state.timer = setInterval(() => poll(), c.pollSec * 1000);
   state.healTimer = setInterval(() => { if (!state.busy && !(state.backfill && state.backfill.running)) refreshDay(todayKsa()).catch(e => console.error('[cst-oracle] heal:', e.message)); }, 3600e3);   // hourly full re-read of today
