@@ -392,4 +392,7 @@ Object.assign(FIXED_METRICS, {
 });
 
 // NB: the metric map is exported under METRICS (not as the module itself) so helpers never leak into the registry.
+/* per-channel × class metrics (board rate/anomaly/money, app-log rate/latency/volume/providers, api_calls) — fixedChannelMetrics.js */
+Object.assign(FIXED_METRICS, require('./fixedChannelMetrics').METRICS);
+
 module.exports = { METRICS: FIXED_METRICS, FIXED_PARAMS, TICKET_SCOPES };

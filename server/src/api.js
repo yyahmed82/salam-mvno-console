@@ -6544,6 +6544,7 @@ app.listen(PORT, async () => {
   try { require('./fixedAppLogCollector').start(); } catch (e) { console.error('Fixed app-log collector:', e.message); }
   try { require('./yakeenProbe').start(); } catch (e) { console.error('Yakeen probe:', e.message); }
   try { require('./fixedErrCatalog').start(); } catch (e) { console.error('Error catalogue:', e.message); }
+  try { require('./fixedChannelMetrics').start(); } catch (e) { console.error('Fixed channel metrics:', e.message); }
   try { require('./smsProbe').start(); } catch (e) { console.error('SMS probe:', e.message); }
   try { require('./zipkinCollector').start(); } catch (e) { console.error('APIGW trace collector:', e.message); }
   try { require('./dmsJourneys').start(); } catch (e) { console.error('DMS journey collector:', e.message); }

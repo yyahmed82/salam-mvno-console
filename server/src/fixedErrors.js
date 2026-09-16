@@ -255,6 +255,9 @@ function mount(app, deps) {
   /* run `fn(pool, where, src)` on every source that has something to answer for this filter set; results in source order */
   /* the sources that ANSWER right now: both when the partition is on, else prod alone (never both unsplit — that doubles) */
   const active = () => { const all = sources(); return split() ? all : [all.find(x => x.src === 'ops') || all[0]]; };
+  /* the metrics (fixedChannelMetrics.js) read the SAME partition the board uses: [{pool, src, slice}] where slice is
+   * the bucket predicate to AND in (null = every channel from this pool) */
+  module.exports.boardSources = async () => { const sp = await refreshSplit(); return active().map(x => ({ pool: x.pool, src: x.src, slice: sp ? bucketSql(SRC_BUCKETS[x.src]) : null })); };
   async function each(s, fn) {
     const sp = await refreshSplit();
     const jobs = active().map(x => { const w = whereFor(s, x.src, sp); return w ? fn(x.pool, w, x.src).then(r => ({ src: x.src, r })) : null; }).filter(Boolean);
@@ -621,4 +624,4 @@ function mount(app, deps) {
   app.get('/api/fixed/errors/taxonomy', gate, (req, res) => res.json({ taxonomy: TAXONOMY, teams: TEAMS, spike: SPIKE, channels: CHANNELS, types: TYPES }));
 }
 
-module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CLASSES, CHANNEL_EXPR, TYPE_EXPR, CLASS_EXPR, CLASS_SQL, MSG_EXPR, RESP_EXPR, PROVIDER_EXPR, msgOf, classOf, effectiveSeverity, parseWindow };
+module.exports = { mount, TAXONOMY, TEAMS, SPIKE, CHANNELS, TYPES, CLASSES, CHANNEL_EXPR, TYPE_EXPR, CLASS_EXPR, CLASS_SQL, MSG_EXPR, RESP_EXPR, PROVIDER_EXPR, msgOf, classOf, effectiveSeverity, parseWindow, boardSources: async () => [] };

@@ -529,6 +529,165 @@ const FIXED_RULES = [
     description: 'The latest scheduled / manual Yakeen probe (login + 4 ELM data calls) ended down or degraded.',
     runbook: '1) Troubleshoot → providers → Yakeen probe: which call failed and how (login vs data, timeout vs 5xx). 2) Login failing = credentials / ELM auth; data timing out = ELM capacity. 3) Re-run once (manual cap) after ELM confirms recovery so the alert clears.' },
 ];
+
+/* ---- PER-CHANNEL × CLASS rule families (16 Sep 2026 — "like MVNO: every alert type per channel, business and
+ * technical, accurate priority, latency"). Metrics live in fixedChannelMetrics.js and emit one snapshot row per
+ * dim value; each rule below selects its row with dim {channel} / {channel, cls} / {kind} / {src}.
+ * Priority doctrine (see that file's header): P1 = money at risk or a CUSTOMER channel failing wide / silent / 2×
+ * latency / a provider hard down · P2 = technical degradation, latency over threshold, monitoring blind · P3 =
+ * business anomalies (the platform works, customers are told no) · dealer-assisted SDA one notch under consumer
+ * channels on business signals. Every rule is enabled; thresholds are PROVISIONAL until a week of live snapshots
+ * (Alerts → rule → series) — tune the number, not the family. ---- */
+const FXCH = {
+  salamhome: { label: 'Salam Home app', consumer: true,  page: 'Salam Home app' },
+  web:       { label: 'Epurchase',      consumer: true,  page: 'Epurchase' },
+  qr:        { label: 'QR codes',       consumer: true,  page: 'Epurchase (QR)' },
+  sda:       { label: 'SDA (dealer)',   consumer: false, page: 'SDA' },
+  all:       { label: 'all channels',   consumer: true,  page: 'every channel' },
+};
+const BOARD_CH = ['salamhome', 'web', 'qr', 'sda', 'all'];
+const APP_CH = ['salamhome', 'web', 'sda', 'all'];
+const R = (o) => ({ team: 'Digital Ops', segment: 'fixed', window_hours: 1, min_sample: 0, ...o });
+const bizTeam = ch => (ch === 'sda' || ch === 'qr' ? 'Sales Ops' : 'Digital Ops');
+const CH_RULES = [];
+for (const ch of BOARD_CH) {
+  const c = FXCH[ch], p2 = c.consumer ? 0.15 : 0.20, p1 = c.consumer ? 0.40 : 0.50;
+  CH_RULES.push(
+    R({ key: `fixed_board_tech_rate_${ch}`, name: `${c.label} · technical error rate (P2)`, severity: 'P2', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_board_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p2, min_sample: 20,
+      description: `${c.label}: TECHNICAL errors on the error board (timeouts, OSS/BSS exceptions, 5xx, "[CC-…]" CRM codes, provider transport) ≥ ${Math.round(p2 * 100)} % of attempts in the last 60 min (≥ 20 attempts). Board classification = catalogue overrides + the business/technical CASE, so reclassifying an error on the board moves it here too.`,
+      runbook: `1) Fixed → Troubleshoot → Channel ${c.page} · Class Technical: the incident text names the top category and response. 2) Impact check with that response text: ongoing / recovering, since when, how many customers. 3) Provider named (TLS / DAWIYAT / STC / Yakeen…)? Check the provider rows and the probe; else the app team with request ids from the app-log lane. 4) Clears when the rate drops under ${Math.round(p2 * 100)} %.` }),
+    R({ key: `fixed_board_tech_storm_${ch}`, name: `${c.label} · technical error storm (P1)`, severity: 'P1', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_board_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p1, min_sample: 20,
+      description: `${c.label}: ≥ ${Math.round(p1 * 100)} % of attempts in the last 60 min end in a TECHNICAL error — the channel is effectively down for customers${c.consumer ? '' : ' / dealers'}.`,
+      runbook: `1) Page Digital Ops L2; open Troubleshoot → ${c.page} · Technical for the dominant category. 2) One category dominating = its dependency (OSS, BSS, provider) — page that on-call; many categories = platform / gateway / DB. 3) Sales / CX announcement while it lasts. 4) Downgrades to the P2 twin as the rate falls.` }),
+    R({ key: `fixed_board_tech_anomaly_${ch}`, name: `${c.label} · technical errors above own baseline`, severity: 'P2', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_board_fail_anomaly', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: 3.5, min_sample: 10,
+      description: `${c.label}: TECHNICAL board errors in the last 60 min are ≥ 3.5 robust z above this channel's own 14-day baseline for this hour of day (≥ 10 errors). Catches a rise the static rate rules miss on a busy channel.`,
+      runbook: `1) The incident text says the count vs typical and the top category. 2) Troubleshoot → ${c.page} · Technical → error message select: which response multiplied. 3) Same steps as the technical-rate rule.` }),
+    R({ key: `fixed_board_biz_anomaly_${ch}`, name: `${c.label} · business refusals above own baseline`, severity: 'P3', team: bizTeam(ch), alert_class: 'business', channel: ch,
+      metric_key: 'fixed_board_fail_anomaly', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 3.5, min_sample: 20,
+      description: `${c.label}: BUSINESS refusals (no coverage / no ports, NIC mismatch, blacklist, appointment refused, outstanding due…) are ≥ 3.5 z above this channel's own baseline — the platform works, customers are being told no far more than usual: usually data, plan or rule changes.`,
+      runbook: `1) Troubleshoot → ${c.page} · Business: which category and response multiplied. 2) Feasibility / ODB refusals → OSS data; identity refusals → Sales Ops (dealer behaviour) or the provider; plan / eligibility → product config. 3) One dealer or region = behaviour, not a fault.` }),
+    R({ key: `fixed_board_money_${ch}`, name: `${c.label} · paid but stuck (P2)`, severity: 'P2', team: 'BSS Ops', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_board_money_at_risk', dim: { channel: ch }, operator: 'gte', threshold: 1,
+      description: `${c.label}: at least one OPEN "paid — BSS not notified / order not created / payment failure" error in the last 60 min — a customer paid and got nothing.`,
+      runbook: `1) Troubleshoot → ${c.page} → categories PAYMENT_NOT_NOTIFIED / PROVISION_NO_ORDER / PAYMENT_FAILED: the customer and workflow ids. 2) BSS: confirm the payment and re-notify / create the order manually. 3) Resolve the events on the board once the customer is served (the rule clears on resolved = true).` }),
+    R({ key: `fixed_board_money_storm_${ch}`, name: `${c.label} · paid but stuck storm (P1)`, severity: 'P1', team: 'BSS Ops', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_board_money_at_risk', dim: { channel: ch }, operator: 'gte', threshold: 5,
+      description: `${c.label}: ≥ 5 open paid-but-stuck errors in 60 min — the payment → BSS / OSS hand-off is broken, money is accumulating at risk.`,
+      runbook: `1) Page BSS + OSS on-call. 2) Check the payment webhook / notification path and OSS order creation for the channel. 3) Finance list of affected payments from the board export (XLSX, category filter). 4) Downgrades to the P2 twin as events are resolved.` }),
+  );
+  if (c.consumer && ch !== 'all') CH_RULES.push(
+    R({ key: `fixed_board_biz_surge_${ch}`, name: `${c.label} · business refusal surge (P2)`, severity: 'P2', alert_class: 'business', channel: ch,
+      metric_key: 'fixed_board_fail_anomaly', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 8, min_sample: 40,
+      description: `${c.label}: business refusals ≥ 8 z above baseline with ≥ 40 in the hour — on a consumer channel a refusal wall this size is a configuration / data fault (wrong plan rules, ODB data, provider rule change), not customers.`,
+      runbook: `1) Troubleshoot → ${c.page} · Business → error message select: one response dominating? 2) Roll back / fix the change with product / OSS. 3) CX heads-up while it lasts.` }),
+  );
+}
+CH_RULES.push(
+  R({ key: 'fixed_board_ingest_stale_ops', name: 'Read model stale · sda_ops (board blind)', severity: 'P1', alert_class: 'technical', window_hours: 24,
+    metric_key: 'fixed_board_ingest_lag_min', dim: { src: 'ops' }, operator: 'gte', threshold: 120,
+    description: 'No new order attempt or error on the prod read model (sda_ops) for ≥ 2 h — either the Fixed platform is silent or ops-ingest-watch stopped. Every board number and every board-based alert is blind while this lasts.',
+    runbook: '1) On 152: pm2 status / logs of ops-ingest-watch (OOM during backfill = known — restart with a small DB_PAGE_SIZE). 2) If the ingest is fine, the platform itself is silent: check the app-log lane (combined.log) — if it is silent too, page the app team. 3) Clears when new rows land.' }),
+  R({ key: 'fixed_board_ingest_stale_beta', name: 'Read model stale · sda_ops_beta (Epurchase + app served from prod)', severity: 'P2', alert_class: 'technical', window_hours: 24,
+    metric_key: 'fixed_board_ingest_lag_min', dim: { src: 'beta' }, operator: 'gte', threshold: 120,
+    description: 'The beta read model (Epurchase + Salam Home app) has no new row for ≥ 2 h. The board automatically falls back to prod for those channels (Salam Home app journeys then appear under Epurchase) — degraded, not blind.',
+    runbook: '1) On 152: opsb-ingest-watch (crash-loop since 22 Aug 2026 — ticket). 2) Nothing to do on the board: the fallback is automatic. 3) Clears when beta writes again.' }),
+);
+for (const ch of APP_CH) {
+  const c = FXCH[ch], p2 = c.consumer ? 0.15 : 0.20, p1 = c.consumer ? 0.40 : 0.50;
+  const lat = { salamhome: [4000, 8000], web: [5000, 10000], sda: [6000, 12000], all: [6000, 12000] }[ch];
+  CH_RULES.push(
+    R({ key: `fixed_applog_tech_rate_${ch}`, name: `${c.label} · app steps failing technically (P2)`, severity: 'P2', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p2, min_sample: 20,
+      description: `${c.label}: ≥ ${Math.round(p2 * 100)} % of tRPC steps in the app log (combined.log) failed TECHNICALLY in the last 60 min (5xx, timeouts, exceptions, unknown error) — earlier and finer than the board: every step, not only journeys that reached an error event.`,
+      runbook: `1) Troubleshoot → From the app log → ${c.page} card: the failing step and reason (incident text has the last one). 2) Impact check with the reason text. 3) A single step failing for everyone (e.g. user.subscriptions "missing customerCode") = app team with request ids; many steps = platform. 4) Classify a wrongly-labelled reason in "Classify errors…" — the rule follows the catalogue.` }),
+    R({ key: `fixed_applog_tech_storm_${ch}`, name: `${c.label} · app steps failing technically — storm (P1)`, severity: 'P1', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p1, min_sample: 20,
+      description: `${c.label}: ≥ ${Math.round(p1 * 100)} % of app steps fail technically — the channel is down or a core step (auth, subscriptions, feasibility, payment) is broken for everyone.`,
+      runbook: `1) Page Digital Ops L2 and the app team. 2) From the app log → ${c.page}: the dominant step; auth / me / subscriptions failing = login broken for all customers. 3) CX + Sales announcement. 4) Downgrades to the P2 twin as it recovers.` }),
+    R({ key: `fixed_applog_biz_rate_${ch}`, name: `${c.label} · app steps refused (business)`, severity: 'P3', team: bizTeam(ch), alert_class: 'business', channel: ch,
+      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 0.5, min_sample: 30,
+      description: `${c.label}: ≥ 50 % of app steps in the last 60 min ended in a BUSINESS refusal (wrong OTP, NIC mismatch, no coverage, plate not found, rate limit…) on ≥ 30 steps — the platform answers, customers are being turned away.`,
+      runbook: `1) From the app log → ${c.page}: the refusing step. 2) OTP / identity refusals en masse = a provider rule or data change; feasibility = ODB / coverage data. 3) Sales Ops if it is dealer behaviour.` }),
+    R({ key: `fixed_applog_latency_${ch}`, name: `${c.label} · step latency p95 over ${lat[0] / 1000} s (P2)`, severity: 'P2', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_applog_latency_p95_ms', dim: { channel: ch }, operator: 'gte', threshold: lat[0], min_sample: 30,
+      description: `${c.label}: p95 duration of tRPC steps (from the "mutation … ms" lines in combined.log) ≥ ${lat[0]} ms over the last 60 min on ≥ 30 steps. Latency climbs before timeouts — this is the early warning. Threshold PROVISIONAL.`,
+      runbook: `1) The incident text names the slowest step and its p95. 2) One step slow = its dependency (provider, OSS/BSS call, DB) — check the matching provider row / api_calls host latency alert; every step slow = platform / DB / gateway on 146. 3) Tune the ms threshold here once a week of series exists. 4) Escalates to the ×2 P1 twin.` }),
+    R({ key: `fixed_applog_latency_storm_${ch}`, name: `${c.label} · step latency p95 over ${lat[1] / 1000} s (P1)`, severity: 'P1', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_applog_latency_p95_ms', dim: { channel: ch }, operator: 'gte', threshold: lat[1], min_sample: 30,
+      description: `${c.label}: p95 step duration ≥ ${lat[1]} ms — customers are timing out in the app, not just waiting.`,
+      runbook: `1) Page Digital Ops L2 + the app team (146 / DB). 2) Slowest step in the incident text → its dependency first. 3) Watch the technical-rate rule for the same channel: timeouts follow latency.` }),
+    R({ key: `fixed_applog_otp_tech_${ch}`, name: `${c.label} · OTP / verification failing technically`, severity: 'P2', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_applog_otp_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: 0.3, min_sample: 10,
+      description: `${c.label}: OTP / verification steps (sendOTP, validateCode, verifyOtp, Absher checkValidateCode) failing TECHNICALLY ≥ 30 % in the last 60 min — SMS gateway, Absher or DRM not answering; nobody can log in or confirm.`,
+      runbook: `1) From the app log → providers: Absher / DRM rows and the reason. 2) SMS gateway (Unifonic) balance / connectivity; Absher = provider. 3) Announce to CX: OTP delivery affected.` }),
+    R({ key: `fixed_applog_otp_biz_${ch}`, name: `${c.label} · OTP / verification refused`, severity: 'P3', team: bizTeam(ch), alert_class: 'business', channel: ch,
+      metric_key: 'fixed_applog_otp_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 0.5, min_sample: 20,
+      description: `${c.label}: ≥ 50 % of OTP / verification steps refused (wrong code, expired, "too many requests", no mobile registered) — rate limiting or a broken retry loop in the app, or an attack pattern.`,
+      runbook: `1) From the app log: the reason ("Too many requests…" = the app's own rate limit — check for a retry loop in the client). 2) Many refusals from one number / dealer = abuse → Fraud. 3) Otherwise informational.` }),
+    R({ key: `fixed_applog_payment_tech_${ch}`, name: `${c.label} · payment / checkout failing technically (P1)`, severity: 'P1', team: 'BSS Ops', alert_class: 'technical', channel: ch,
+      metric_key: 'fixed_applog_payment_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: 0.2, min_sample: 10,
+      description: `${c.label}: payment / checkout / invoice steps failing TECHNICALLY ≥ 20 % in the last 60 min (≥ 10 steps) — money path broken: gateway, payment service or BSS invoice call.`,
+      runbook: `1) From the app log → ${c.page}: checkPayment / payment steps and reason. 2) Payment gateway status; BSS invoice API; the payments worker lane (voidInvoice loop?). 3) Cross-check the "paid but stuck" board rule for the same channel — customers may have paid.` }),
+    R({ key: `fixed_applog_payment_biz_${ch}`, name: `${c.label} · payment / checkout refused`, severity: 'P3', team: 'BSS Ops', alert_class: 'business', channel: ch,
+      metric_key: 'fixed_applog_payment_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 0.5, min_sample: 20,
+      description: `${c.label}: ≥ 50 % of payment steps refused (invalid order state, declined, outstanding due) — usually a workflow-state or eligibility rule, sometimes a gateway declining en masse.`,
+      runbook: `1) From the app log: the reason ("Invalid order state … expectedStep" = workflow desync → app team). 2) Declines en masse = gateway / bank side. 3) Informational otherwise.` }),
+  );
+}
+CH_RULES.push(
+  R({ key: 'fixed_applog_payments_worker_tech', name: 'Payments worker · failing technically', severity: 'P2', team: 'BSS Ops', alert_class: 'technical', channel: 'payments',
+    metric_key: 'fixed_applog_fail_rate', dim: { channel: 'payments', cls: 'technical' }, operator: 'gte', threshold: 0.5, min_sample: 10,
+    description: 'The payments service worker lines in combined.log (invoices.voidInvoice, notifications…) are failing ≥ 50 % in the last 60 min — a background job that will not succeed on its own (see also the retry-loop rule).',
+    runbook: '1) From the app log → Payments worker card: the job and reason. 2) One ticket to the payments / app team with the invoice ids. 3) Not customer-facing by itself; check the paid-but-stuck rules for the customer impact.' }),
+  R({ key: 'fixed_applog_step_latency_worst', name: 'Slowest app step p95 over 10 s', severity: 'P2', alert_class: 'technical',
+    metric_key: 'fixed_applog_step_latency_p95_ms', operator: 'gte', threshold: 10000, min_sample: 20,
+    description: 'The single slowest tRPC step (≥ 20 calls in the last 60 min) has a p95 ≥ 10 s — one dependency is crawling even if the channel average looks fine (feasibility to a provider, Yakeen, an OSS call).',
+    runbook: '1) The incident text names the step, channel and p95. 2) Map the step to its dependency: validateIndividualCustomer → Yakeen; feasibility → TLS / DAWIYAT / STC; checkPayment → gateway / BSS. 3) Check that provider\'s own latency / failure alert; raise with the provider or the app team.' }),
+  R({ key: 'fixed_applog_collector_stale', name: 'App-log collector stale (lane + app-log alerts blind)', severity: 'P2', alert_class: 'technical', window_hours: 24,
+    metric_key: 'fixed_applog_collector_lag_min', operator: 'gte', threshold: 30,
+    description: 'No new line from combined.log on 146 for ≥ 30 min while FIXED_LOG_HOSTS is configured — the ssh tail died, the key / user (console_ro) broke, or the app is silent. Every app-log alert (rates, latency, providers, OTP, payments) is blind meanwhile.',
+    runbook: '1) On 152: pm2 logs salam-unified | grep APPLOG — ssh error? 2) ssh -i /root/.ssh/api_log_ed25519 console_ro@172.31.38.146 tail -1 /app/log/sda/combined.log — if the file moves, the collector is at fault (restart salam-unified); if not, the app is silent → app team. 3) Clears on the next line.' }),
+);
+for (const ch of ['salamhome', 'web', 'sda']) {
+  const c = FXCH[ch];
+  CH_RULES.push(R({ key: `fixed_applog_volume_collapse_${ch}`, name: `${c.label} · traffic collapsed (silent outage)`, severity: c.consumer ? 'P1' : 'P2', alert_class: 'technical', channel: ch,
+    metric_key: 'fixed_applog_volume_ratio', dim: { channel: ch }, operator: 'lte', threshold: c.consumer ? 0.3 : 0.25, active_from: c.consumer ? 9 : 10, active_to: c.consumer ? 23 : 22,
+    description: `${c.label}: app-log lines in the last 60 min are ≤ ${c.consumer ? 30 : 25} % of the same-hour 7-day median (KSA ${c.consumer ? '09–23' : '10–22'}) — the channel went quiet: an outage BEFORE the app (store, CDN, gateway, login page) shows up as silence, not as errors. Needs 3 days of log history.`,
+    runbook: `1) Open the ${c.page} yourself (or ask CX): does it load / log in? 2) Check the app-log collector rule (stale collector = same symptom) and the gateway / 146 health. 3) Compare the board ingest lag rule — both silent = platform-wide. 4) Clears when traffic returns.` }));
+}
+const KIND_LABEL = { yakeen: 'Yakeen / ELM (NIC record)', yakeen_address: 'Yakeen address (ELM)', absher: 'Absher OTP (DRM)', nafath: 'Nafath', semati: 'Semati (CITC)', manafith: 'Manafith', drm: 'DRM' };
+for (const [kind, label] of Object.entries(KIND_LABEL)) {
+  if (kind !== 'yakeen') CH_RULES.push(R({ key: `fixed_provider_tech_${kind}`, name: `${label} · technical failure rate (P2)`, severity: 'P2', alert_class: 'technical',
+    metric_key: 'fixed_applog_provider_technical_rate', dim: { kind }, operator: 'gte', threshold: 0.3, min_sample: 5,
+    description: `${label}: ≥ 30 % of calls in the app log failed TECHNICALLY (timeout, 5xx, transport) over the last 60 min with ≥ 5 calls — the provider is unstable; refusals ("no match", "no mobile registered") are business and excluded.`,
+    runbook: `1) Troubleshoot → From the app log → providers → ${label}: the last technical reason. 2) Raise with the provider (ELM / Absher / CITC / Nafath); note the thread in the incident. 3) Sales: the identity / eligibility step fails for everyone — announce, stop retry loops. 4) Clears under 30 %.` }));
+  CH_RULES.push(R({ key: `fixed_provider_down_${kind}`, name: `${label} · hard down (P1)`, severity: 'P1', alert_class: 'technical',
+    metric_key: 'fixed_applog_provider_technical_rate', dim: { kind }, operator: 'gte', threshold: 0.7, min_sample: 10,
+    description: `${label}: ≥ 70 % of ≥ 10 calls in the last 60 min failed technically — the provider is effectively down; every journey through it is blocked.`,
+    runbook: `1) Page Digital Ops L2; provider escalation (ELM / Absher / CITC / Nafath) with the timestamps from the lane. 2) Sales + CX announcement: onboarding blocked at the identity / eligibility step. 3) Yakeen: run the probe to confirm from the console side (billed, capped). 4) Downgrades to the P2 twin as it recovers.` }));
+}
+CH_RULES.push(
+  R({ key: 'fixed_api_host_tech_rate', name: 'Integration endpoint · technical failure rate (P2)', severity: 'P2', team: 'OSS Ops', alert_class: 'technical',
+    metric_key: 'fixed_provider_api_fail_rate', dim: { host: '(worst)' }, operator: 'gte', threshold: 0.3, min_sample: 10,
+    description: 'The worst outbound integration host in sda_ops.api_calls (feasibility / appointment / order calls to TLS, DAWIYAT, STC, SALAM, ACES, MOBILY…) has ≥ 30 % of its calls in the last 60 min ending in 5xx or a transport error (≥ 10 calls). The incident text names the host.',
+    runbook: '1) Fixed → Channel → Integrations: the host and endpoint family, p95 and failures. 2) 5xx from the provider = provider ticket; transport / timeouts from our side = network / gateway. 3) Board impact: the matching feasibility / appointment technical errors per channel.' }),
+  R({ key: 'fixed_api_host_down', name: 'Integration endpoint · hard down (P1)', severity: 'P1', team: 'OSS Ops', alert_class: 'technical',
+    metric_key: 'fixed_provider_api_fail_rate', dim: { host: '(worst)' }, operator: 'gte', threshold: 0.6, min_sample: 20,
+    description: 'The worst integration host has ≥ 60 % technical failures on ≥ 20 calls in the last 60 min — feasibility / appointment / order creation is blocked for the journeys that depend on it.',
+    runbook: '1) Page OSS Ops; provider escalation with the host and timestamps. 2) Sales announcement for the affected provider footprint (regions). 3) Downgrades to the P2 twin as it recovers.' }),
+  R({ key: 'fixed_api_host_latency', name: 'Integration endpoint · p95 latency over 8 s (P2)', severity: 'P2', team: 'OSS Ops', alert_class: 'technical',
+    metric_key: 'fixed_provider_api_latency_p95_ms', dim: { host: '(worst)' }, operator: 'gte', threshold: 8000, min_sample: 10,
+    description: 'The slowest outbound integration host has a p95 ≥ 8 s over the last 60 min (≥ 10 calls). Provider latency is what turns into feasibility timeouts and dealer timeout waves. Threshold PROVISIONAL.',
+    runbook: '1) Fixed → Channel → Integrations: host, family, p95 / max. 2) Provider capacity ticket if it persists; check the dealer-timeout rules. 3) Tune the ms once a week of series exists.' }),
+  R({ key: 'fixed_api_host_latency_storm', name: 'Integration endpoint · p95 latency over 15 s (P1)', severity: 'P1', team: 'OSS Ops', alert_class: 'technical',
+    metric_key: 'fixed_provider_api_latency_p95_ms', dim: { host: '(worst)' }, operator: 'gte', threshold: 15000, min_sample: 10,
+    description: 'The slowest integration host has a p95 ≥ 15 s — calls are hitting the app timeouts; journeys through this provider fail.',
+    runbook: '1) Page OSS Ops + provider. 2) Expect the technical-rate rules for the same provider footprint to follow. 3) Downgrades to the P2 twin as it recovers.' }),
+);
+for (const r of CH_RULES) FIXED_RULES.push(r);
 for (const r of FIXED_RULES) {
   if (!r.key.startsWith('fixed_') || !r.metric_key.startsWith('fixed_')) throw new Error(`fixed rule ${r.key} must use fixed_ keys`);
   if (!METRICS[r.metric_key]) throw new Error(`fixed rule ${r.key}: unknown metric ${r.metric_key}`);
