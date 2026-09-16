@@ -58,6 +58,9 @@ app.use('/api/tickets', (req, res, next) => req.method === 'POST'
 const DOC_BODY_LIMIT = process.env.DOC_BODY_LIMIT || '20mb';
 app.use('/api/workbench/docs', (req, res, next) => req.method === 'POST'
   ? express.json({ limit: DOC_BODY_LIMIT })(req, res, next) : next());
+// CST imports (RA escalation export ≈ 1 600 rows × 31 columns, Arqami per-minute CSV) — same per-route large-body trick.
+app.use('/api/cst', (req, res, next) => req.method === 'POST' && /\/import$/.test(req.path)
+  ? express.json({ limit: process.env.CST_BODY_LIMIT || '20mb' })(req, res, next) : next());
 app.use(express.json({ limit: '1mb' }));
 // General API limiter: keyed by CONSOLE USER (not IP) because the console sits behind a
 // shared corporate VPN — a per-IP limit would let one office collectively throttle itself.
@@ -3069,13 +3072,17 @@ require('./fixed').mount(app, { requireView, audit, requireCap });
 require('./fixedExec').mount(app, { requireView });
 require('./fixedAppLane').mount(app, { requireView });   // Troubleshoot › from-the-app-log lane (fixed_app_events)
 require('./yakeenProbe').mount(app, { requireView, audit });
-require('./fixedErrCatalog').mount(app, { requireView, audit });   // configurable error catalogue: every signature, auto class + operator override   // Yakeen / ELM synthetic probe: status · history · run (capped)   // Fixed › Executive + Operations (one endpoint, read models only)
+require('./fixedErrCatalog').mount(app, { requireView, audit });
+require('./datasets').mount(app, { requireCap, audit });        // Data sources tab: registry, freshness, prod mapping (both segments)
+require('./customMetrics').mount(app, { requireCap, audit });   // console-managed custom metrics: draft → shadow → live, versions, test / preview   // configurable error catalogue: every signature, auto class + operator override   // Yakeen / ELM synthetic probe: status · history · run (capped)   // Fixed › Executive + Operations (one endpoint, read models only)
+require('./cst').mount(app, { requireSuper, audit });                   // CST section (super admin): Arqami per-minute health + CST escalations (16 Sep 2026)
 // Mobile › Executive + Operations and Home › Executive + Operations (both businesses). mvnoExec gets the Dashboard's
 // own KPI function so the 24 h numbers are the Dashboard's numbers, not a second implementation of them.
 { const execDeps = { requireView, homeKpis: homeKpisFromSource, boardNow, segment };
   require('./mvnoExec').mount(app, execDeps);
   require('./execUnified').mount(app, execDeps);
-  require('./execRadar').mount(app, execDeps); }   // the case file behind one radar contact
+  require('./execRadar').mount(app, execDeps);     // the case file behind one radar contact
+  require('./execBrief').mount(app, { ...execDeps, execDeps, mvnoExec: require('./mvnoExec'), fixedExec: require('./fixedExec') }); }   // CEO / CIO brief: /api/exec/brief (outages, vendor SLAs, RCAs)
   /* Fixed app-log collector (combined.log → fixed_app_events): status + freshness for the Fixed pages / agents */
   app.get('/api/fixed/applog/status', requireView('fixed'), async (req, res) => {
     try { const col = require('./fixedAppLogCollector'); res.json({ ...col.status(), db: await col.ping() }); }
@@ -4191,6 +4198,10 @@ app.patch('/api/rules/:id', requireCap('editRules'), async (req, res) => {
   const sets = [], vals = [];
   for (const k of allowed) if (b[k] !== undefined) { vals.push(b[k]); sets.push(`${k}=$${vals.length}`); }
   if (b.dim !== undefined) { vals.push(JSON.stringify(b.dim || {})); sets.push(`dim=$${vals.length}`); }
+  /* any change other than the ON switch marks the rule operator-edited: the boot seed then leaves its values alone.
+   * operator_edited:false = "reset to seed" (the next restart re-applies the seeded values). */
+  if (b.operator_edited === false) { vals.push(false); sets.push(`operator_edited=$${vals.length}`); }
+  else if (sets.some(x => !/^enabled=/.test(x))) { vals.push(true); sets.push(`operator_edited=$${vals.length}`); }
   if (!sets.length) return res.json({ ok: true });
   /* change history (11 Sep 2026): snapshot BEFORE the update so the history shows field-level from → to */
   const before = (await C.query(`SELECT * FROM alert_rules WHERE id=$1`, [req.params.id])).rows[0];
@@ -6545,6 +6556,7 @@ app.listen(PORT, async () => {
   try { require('./yakeenProbe').start(); } catch (e) { console.error('Yakeen probe:', e.message); }
   try { require('./fixedErrCatalog').start(); } catch (e) { console.error('Error catalogue:', e.message); }
   try { require('./fixedChannelMetrics').start(); } catch (e) { console.error('Fixed channel metrics:', e.message); }
+  require('./customMetrics').load().catch(e => console.error('Custom metrics:', e.message));
   try { require('./smsProbe').start(); } catch (e) { console.error('SMS probe:', e.message); }
   try { require('./zipkinCollector').start(); } catch (e) { console.error('APIGW trace collector:', e.message); }
   try { require('./dmsJourneys').start(); } catch (e) { console.error('DMS journey collector:', e.message); }

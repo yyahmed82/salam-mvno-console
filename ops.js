@@ -191,7 +191,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   window.opsSession = () => SES;   // { email, role, me:{name,mobile,dashboard,...} }
   /* 2 Sep 2026 view split: home→'dashboard', dms→'dms' (own view), every Explore-menu entry
    * (topology/apigw/docs/journeys/integrations/sub360) → the single 'explore' view. */
-  const NAV_VIEW = { landing:"dashboard", execops:"dashboard", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
+  const NAV_VIEW = { landing:"dashboard", execops:"dashboard", nocwall:"dashboard", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
     explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", tapdocs:"explore", alerts:"alerts", errors:"errors", analytics:"analytics", sub360:"explore", settings:"settings" };
 
   async function loadMe(){
@@ -237,6 +237,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const slaMi = document.getElementById("slaMenuItem"); if(slaMi) slaMi.style.display = isSuper?"":"none";
     const sloMi = document.getElementById("sloSettingsMenuItem"); if(sloMi) sloMi.style.display = isSuper?"":"none";
     const vcMi = document.getElementById("vendorContractsMenuItem"); if(vcMi) vcMi.style.display = isSuper?"":"none";
+    ["governGroup","cstGroup","cstArqamiMenuItem","cstEscMenuItem"].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display = isSuper?"":"none"; });   // GOVERN + CST groups (16 Sep 2026): super admin only
     const agMi = document.getElementById("agentsMenuItem"); if(agMi) agMi.style.display = (SES.me && SES.me.root!==false && SES.me.realRole==="super_admin")?"":"none";
     // if current active tab is hidden, jump to first visible
     const active = document.querySelector(".navtab.active");
@@ -257,7 +258,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const oc = document.getElementById("hmOncall");
     if(oc) oc.style.display = (views.includes("errors")||views.includes("alerts")) ? "" : "none";
     // L2 Workbench menu item — only roles holding the 'workbench' view see it (server requireView gates access)
-    const wm = document.getElementById("workbenchMenuItem"); if(wm) wm.style.display = ((SES.me&&SES.me.views)||[]).includes("workbench")?"":"none";
+    const wm = document.getElementById("workbenchMenuItem"); if(wm) wm.style.display = "none";   // 16 Sep 2026: removed from the gear menu by design (#workbench stays reachable by hash)
     // Yusr config page — root tier only once ROOT_ADMINS is set (root stays true for all when unset)
     const yi = document.querySelector('#settingsMenu [data-seg="assist"]'); if(yi) yi.style.display = (SES.me && SES.me.root===false)?"none":"";
   }

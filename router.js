@@ -19,11 +19,14 @@
     agents:{agents:true}, "settings-agents":{agents:true},
     /* Executive / Operations (12 Sep 2026): Home = both businesses, Mobile = MVNO only; Fixed lives in the hub (#fixed?tab=exec|ops) */
     exec:{view:"execops"}, "executive":{view:"execops"},
+    noc:{view:"nocwall"},                       // NOC walls (16 Sep 2026): #noc = alert radar, #noc?w=kpi = key indicators
     /* merged 12 Sep 2026 — old entry points keep working, they just land on the page that absorbed them */
     ops:{view:"landing"}, "mobile-exec":{view:"execops"}, "mobile-ops":{home:true},
-    audit:{audit:true}, tickets:{tickets:true}
+    audit:{audit:true}, tickets:{tickets:true},
+    /* CST section (16 Sep 2026, super admin): #arqami · #cst-escalations (cstpage.js) */
+    arqami:{cst:"arqami"}, "cst-escalations":{cst:"escalations"}, cst:{cst:"escalations"}
   };
-  const VIEW_HASH={landing:"home",execops:"exec",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
+  const VIEW_HASH={landing:"home",execops:"exec",nocwall:"noc",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
   let _cur=null;
 
   /* ---- ROLE GUARD (2 Sep 2026) ---------------------------------------------------------------
@@ -31,7 +34,7 @@
    * view (page permission) it needs under the v2 model; a role without it gets a full
    * ACCESS DENIED panel — same message the API would 403 with — instead of a half-broken page.
    * The server gates the data regardless; this makes the denial clear instead of confusing. */
-  const VIEW_REQ={ landing:"dashboard", execops:"dashboard", monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts",
+  const VIEW_REQ={ landing:"dashboard", execops:"dashboard", nocwall:"dashboard", monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts",
     home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", mvnohld:"explore", otodocs:"explore",
     tapdocs:"explore", salamdocs:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
   const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed", errors:"Troubleshoot", alerts:"Alerts", fixed_alerts:"Fixed › Alerts",
@@ -116,6 +119,7 @@
     else if(r.sla){ window.openSla && window.openSla(); }
     else if(r.sloSettings){ window.openSloSettings && window.openSloSettings(); }
     else if(r.vendorContracts){ window.openVendorContracts && window.openVendorContracts(); }
+    else if(r.cst){ window.openCst && window.openCst(r.cst); }
     else if(r.notifyClone){ window.openNotifyClone && window.openNotifyClone(); }
     else if(r.assistClone){ window.openAssistClone && window.openAssistClone(); }
     else if(r.agents){ window.openAgents && window.openAgents(); }
@@ -152,7 +156,7 @@
 	      /* clickNav is a no-op when the tab is already active, so any view that only renders on a
 	       * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
-      const OPENER={ landing:"openLanding", execops:"openExecOps", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2" };
+      const OPENER={ landing:"openLanding", execops:"openExecOps", nocwall:"openNocWall", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2" };
       const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{
         if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); let t=m?m[1]:"overview";
           if(t==="exec"||t==="ops") t="overview";   // merged into the Operations Dashboard

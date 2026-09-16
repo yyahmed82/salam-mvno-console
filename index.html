@@ -139,7 +139,94 @@
   .navdrop-panel::before{content:"";position:absolute;left:26px;top:-7px;width:12px;height:12px;background:var(--card);border-left:1px solid var(--line);border-top:1px solid var(--line);transform:rotate(45deg)}
   .navdrop.open>.navdrop-panel{display:flex;animation:navdropIn .18s cubic-bezier(.2,.8,.2,1)}
   @keyframes navdropIn{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
-  .navdrop-panel .navgroup{padding:8px 12px 4px;font-size:9px}
+  /* ---- NOC walls (16 Sep 2026, nocwall.js): one Executive section alone, framed for a TV ---- */
+  body.noc-wall header,body.noc-wall #opsBar,body.noc-wall #appTabs,body.noc-wall #assistFab,body.noc-wall #assistPanel{display:none!important}
+  body.noc-wall main{max-width:none;padding:0;margin:0}
+  body.noc-wall{background:#04100a}
+  #view-nocwall{display:none}
+  #view-nocwall.active{min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(120% 90% at 50% 0%,#0b2a1c 0%,#06160f 45%,#03100a 100%);color:#e3f6ec;--ink:#e3f6ec;--muted:#79ab95;--line:rgba(55,211,154,.20);--card:#082016;--bg:#06180f;--green-bg:rgba(55,211,154,.12)}
+  .noc-top{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:18px 34px 10px;border-bottom:1px solid rgba(55,211,154,.18)}
+  .noc-brand{display:flex;align-items:center;gap:16px}
+  .noc-mark{font-weight:900;font-size:26px;letter-spacing:-.02em;color:#37d39a;text-shadow:0 0 18px rgba(55,211,154,.45)}
+  .noc-ttl{display:flex;flex-direction:column;gap:2px;font-size:15px;font-weight:800;letter-spacing:.18em;color:#cdeedd}
+  .noc-ttl small{font-size:11px;font-weight:600;letter-spacing:.08em;color:#79ab95;text-transform:none}
+  .noc-clock{display:flex;flex-direction:column;align-items:center;gap:0;font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace)}
+  .noc-clock b{font-size:clamp(34px,4.4vw,64px);font-weight:800;letter-spacing:.04em;color:#8affd0;text-shadow:0 0 22px rgba(138,255,208,.35);line-height:1}
+  .noc-clock small{font-size:12px;letter-spacing:.14em;color:#79ab95;text-transform:uppercase}
+  .noc-kpis{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+  .noc-open,.noc-sev{display:flex;flex-direction:column;align-items:center;min-width:74px;padding:8px 14px;border-radius:14px;border:1px solid rgba(55,211,154,.22);background:rgba(4,20,13,.7)}
+  .noc-open b,.noc-sev b{font-size:clamp(24px,2.6vw,40px);font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+  .noc-open small,.noc-sev small{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#79ab95;margin-top:4px}
+  .noc-open.calm b{color:#37d39a} .noc-open.hot b{color:#ff5b5b;text-shadow:0 0 18px rgba(255,91,91,.5)}
+  .noc-p1 b{color:#dc2626} .noc-p2 b{color:#d97706} .noc-p3 b{color:#3b82f6} .noc-sev:not(.hot) b{opacity:.45}
+  .noc-bizs{display:flex;flex-direction:column;gap:6px;margin-left:6px}
+  .noc-bz{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:#cdeedd}
+  .noc-bz b{font-size:15px;color:#8affd0;font-variant-numeric:tabular-nums}
+  .noc-gl{width:10px;height:10px;border:1.6px solid #8affd0;border-radius:50%;display:inline-block}
+  .noc-gl-fixed{border-radius:0;transform:rotate(45deg) scale(.9)}
+  .noc-body{flex:1;display:flex;align-items:center;justify-content:center;padding:14px 34px 18px}
+  .noc-body>.xo-sec{display:none}
+  .noc-body>.topo-card.xo-scope{width:100%;max-width:1800px;border:0;background:transparent;box-shadow:none}
+  #view-nocwall[data-wall="radar"] .xo-radarwrap{gap:34px}
+  #view-nocwall[data-wall="radar"] .xo-radar{max-width:min(78vh,880px);flex:1 1 520px}
+  #view-nocwall[data-wall="radar"] .xo-tty{max-width:560px;flex:1 1 420px}
+  #view-nocwall[data-wall="radar"] .xo-tty-out{font-size:clamp(12px,1.05vw,16px);min-height:min(60vh,600px);max-height:78vh}
+  #view-nocwall[data-wall="radar"] .xo-radarlegend{font-size:clamp(12px,1vw,15px);max-width:380px}
+  #view-nocwall[data-wall="radar"] .xo-rl-tot{font-size:clamp(34px,3.2vw,56px)}
+  #view-nocwall[data-wall="kpi"] .noc-body{align-items:stretch;flex-direction:column;justify-content:center}
+  #view-nocwall[data-wall="kpi"] .noc-body>.xo-bgrp{width:100%;max-width:1900px;margin:0 auto}
+  #view-nocwall[data-wall="kpi"] .xo-grid{grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:22px}
+  #view-nocwall[data-wall="kpi"] .xo-kpi{padding:26px 26px 22px;border-radius:18px;background:rgba(6,24,15,.85);min-height:clamp(150px,22vh,240px);display:flex;flex-direction:column;justify-content:center;border-top-width:5px}
+  #view-nocwall[data-wall="kpi"] .xo-bgrp+.xo-bgrp{margin-top:26px}
+  #view-nocwall[data-wall="kpi"] .xo-kt{font-size:clamp(12px,.95vw,15px)}
+  #view-nocwall[data-wall="kpi"] .xo-kv{font-size:clamp(38px,3.9vw,68px)}
+  #view-nocwall[data-wall="kpi"] .xo-ks,#view-nocwall[data-wall="kpi"] .xo-kd{font-size:clamp(12px,.95vw,15px)}
+  #view-nocwall[data-wall="kpi"] .xo-bgh{font-size:14px;margin:12px 0}
+  .noc-foot{display:flex;align-items:center;gap:18px;padding:10px 34px 14px;font-size:12px;color:#79ab95;border-top:1px solid rgba(55,211,154,.14);flex-wrap:wrap}
+  .noc-btns{margin-left:auto;display:flex;gap:8px}
+  .noc-btn{font:inherit;font-size:12px;font-weight:800;letter-spacing:.04em;cursor:pointer;padding:7px 13px;border-radius:10px;border:1px solid rgba(55,211,154,.35);background:rgba(55,211,154,.08);color:#8affd0;transition:background .15s,transform .15s}
+  .noc-btn:hover{background:rgba(55,211,154,.18);transform:translateY(-1px)}
+  body.noc-wall:fullscreen .noc-foot .noc-btns{opacity:.35;transition:opacity .3s} body.noc-wall:fullscreen .noc-foot:hover .noc-btns{opacity:1}
+  @media (max-width:900px){.noc-top{flex-direction:column;align-items:stretch}.noc-kpis{justify-content:flex-start}.noc-body{padding:10px 14px}.noc-foot{padding:10px 14px}}
+  /* ---- gear menu sections (16 Sep 2026): SETTINGS / AI / GOVERNANCE / CST fold like Mobile / Fixed (settingsmenu.js builds them) ---- */
+  #settingsMenu{min-width:300px;max-height:calc(100vh - 88px);overflow:auto;scrollbar-width:thin}
+  #settingsMenu .navgroup{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:2px;border-radius:10px;cursor:pointer;user-select:none;
+    font-size:10px;letter-spacing:.14em;font-weight:800;color:var(--muted);opacity:1;align-self:stretch;transition:background .15s ease,color .15s ease}
+  #settingsMenu .navgroup:hover,#settingsMenu .navgroup:focus-visible{background:var(--bg);color:var(--ink);outline:none}
+  #settingsMenu .navgroup .ngi{width:20px;height:20px;border-radius:7px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--muted);flex:none;transition:background .15s ease,color .15s ease,border-color .15s ease}
+  #settingsMenu .navgroup[aria-expanded="true"] .ngi{background:var(--green-bg);border-color:transparent;color:var(--green-dark)}
+  #settingsMenu .navgroup .ngl{text-transform:uppercase}
+  #settingsMenu .navgroup .ngn{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bg);border:1px solid var(--line);font-size:9.5px;font-weight:800;letter-spacing:0;color:var(--muted)}
+  #settingsMenu .navgroup .ngc{font-style:normal;font-size:11px;letter-spacing:0;color:var(--muted);transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+  #settingsMenu .navgroup[aria-expanded="true"] .ngc{transform:rotate(180deg)}
+  #settingsMenu .navsect:not(.open) .hm-tour,#settingsMenu .navsect:not(.open) .navtab{visibility:hidden}
+  #settingsMenu .navsect.open .hm-tour,#settingsMenu .navsect.open .navtab{visibility:visible}
+  #settingsMenu.reveal .navsect.open .hm-tour,#settingsMenu.reveal .navsect.open .navtab{animation:navItemIn .3s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 26ms)}
+  #settingsMenu [hidden]{display:none!important}
+  /* ---- sectioned menu (16 Sep 2026): head + OPERATE / EXPLORE disclosure rows + wrapped items (adaptive.js builds it) ---- */
+  .navdrop-head{display:flex;align-items:center;gap:11px;padding:8px 10px 12px;margin:0 0 6px;border-bottom:1px solid var(--line)}
+  .navdrop-head .nh-ic{width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,#0e9f5a,#019c20);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 6px 16px rgba(14,159,90,.32)}
+  .navdrop-head .nh-ic svg{width:16px;height:16px}
+  .navdrop-head .nh-t{display:flex;flex-direction:column;gap:1px;min-width:0}
+  .navdrop-head .nh-t b{font-size:13.5px;font-weight:800;color:var(--ink);letter-spacing:-.01em}
+  .navdrop-head .nh-t small{display:block;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+  .navdrop-panel .navgroup{display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:2px;border-radius:10px;cursor:pointer;user-select:none;
+    font-size:10px;letter-spacing:.14em;font-weight:800;color:var(--muted);opacity:1;align-self:stretch;transition:background .15s ease,color .15s ease}
+  .navdrop-panel .navgroup:hover,.navdrop-panel .navgroup:focus-visible{background:var(--bg);color:var(--ink);outline:none}
+  .navdrop-panel .navgroup .ngi{width:20px;height:20px;border-radius:7px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--muted);flex:none;transition:background .15s ease,color .15s ease,border-color .15s ease}
+  .navdrop-panel .navgroup[aria-expanded="true"] .ngi{background:var(--green-bg);border-color:transparent;color:var(--green-dark)}
+  .navdrop-panel .navgroup .ngl{text-transform:uppercase}
+  .navdrop-panel .navgroup .ngn{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bg);border:1px solid var(--line);font-size:9.5px;font-weight:800;letter-spacing:0;color:var(--muted)}
+  .navdrop-panel .navgroup .ngc{font-style:normal;font-size:11px;letter-spacing:0;color:var(--muted);transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+  .navdrop-panel .navgroup[aria-expanded="true"] .ngc{transform:rotate(180deg)}
+  .navsect{display:grid;grid-template-rows:0fr;transition:grid-template-rows .28s cubic-bezier(.2,.8,.2,1)}
+  .navsect.open{grid-template-rows:1fr}
+  .navsect>.navsect-in{overflow:hidden;min-height:0;display:flex;flex-direction:column;gap:2px;padding:0 0 2px}
+  .navsect:not(.open) .navtab{visibility:hidden}                     /* folded rows are neither focusable nor tabbable */
+  .navsect.open .navtab{visibility:visible}
+  .navdrop-panel.reveal .navsect.open .navtab{animation:navItemIn .3s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 26ms)}
+  @keyframes navItemIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.navsect{transition:none}.navdrop-panel.reveal .navsect.open .navtab{animation:none}}
   .navdrop-panel .navtab{width:100%;justify-content:flex-start;border-color:transparent;background:transparent;border-radius:11px;padding:8px 12px;transition:background .15s ease,transform .15s ease,border-color .15s ease}
   .navdrop-panel .navtab .num{width:30px;height:30px;border-radius:10px;transition:background .15s ease,color .15s ease}
   .navdrop-panel .navtab:hover,.navdrop-panel .navtab:focus-visible{background:var(--bg);border-color:var(--line);transform:translateX(3px);outline:none}
@@ -147,12 +234,13 @@
   .navdrop-panel .navtab.active{border-color:var(--green);background:var(--green-bg);box-shadow:inset 3px 0 0 var(--green)}
   .navdrop-panel .navtab.active .num{background:linear-gradient(135deg,#0e9f5a,#019c20);border-color:transparent;color:#fff}
   .navdrop-panel .navtab.hidden{display:none}
-  .navdrop-panel>.navgroup .ngc,.navdrop-panel>.navgroup .ngn{display:none}   /* collapse affordance is drawer-only (see ADAPTIVE UI LAYER) */
   .navdrop.hidden{display:none}
   nav .navtab small,.navdrop-btn small{display:none}                  /* descriptions live in tooltips now */
   nav>.navtab,.navdrop-btn{padding:9px 16px;font-size:13px}
-  .navdrop-panel .navtab{padding:9px 12px}
-  .navdrop-panel{min-width:250px}
+  .navdrop-panel .navtab{padding:7px 12px}
+  .navdrop-panel .navtab .num{width:28px;height:28px}
+  .navdrop-panel{max-height:calc(100vh - 88px);overflow:auto;scrollbar-width:thin}
+  .navdrop-panel{min-width:300px}
   #navTip{position:fixed;z-index:5000;pointer-events:none;background:var(--tip-bg);color:var(--tip-fg);font-size:11.5px;font-weight:500;line-height:1.35;padding:7px 10px;border-radius:9px;max-width:280px;box-shadow:0 10px 30px rgba(15,23,42,.25);opacity:0;transform:translateY(4px);transition:opacity .14s ease,transform .14s ease}
   #navTip.on{opacity:1;transform:none}
   #navTip::before{content:"";position:absolute;left:14px;top:-5px;border:5px solid transparent;border-top:0;border-bottom-color:var(--tip-bg)}
@@ -1291,18 +1379,9 @@
     .navdrop.on>.navdrop-btn .num{background:var(--green);color:#fff}
     .navdrop-panel{position:static;display:flex;box-shadow:none;border:0;padding:0;min-width:0;backdrop-filter:none;-webkit-backdrop-filter:none;background:transparent;animation:none;border-radius:0;gap:1px}
     .navdrop-panel::before{display:none}
-    /* OPERATE / EXPLORE: a quiet micro-label, not a second heading */
-    header>nav .navgroup{padding:9px 10px 4px;align-self:stretch;text-align:left;font-size:8.5px;letter-spacing:.16em;color:var(--muted);opacity:.75}
-    .navdrop-panel>.navgroup:first-child{padding-top:2px}
-    /* EXPLORE folds away so both businesses fit on one screen */
-    .navdrop-panel>.navgroup[data-collapse]{display:flex;align-items:center;gap:6px;cursor:pointer;opacity:1;color:var(--muted);
-      padding:10px 10px 8px;margin-top:2px;border-radius:9px;-webkit-tap-highlight-color:transparent}
-    .navdrop-panel>.navgroup[data-collapse]:hover{background:var(--bg);color:var(--ink)}
-    .navdrop-panel>.navgroup[data-collapse] .ngc{display:inline;font-style:normal;font-size:10px;letter-spacing:0;margin-left:auto;transition:transform .18s ease}
-    .navdrop-panel>.navgroup[data-collapse] .ngn{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;
-      border-radius:8px;background:var(--bg);border:1px solid var(--line);font-size:9px;font-weight:800;letter-spacing:0;color:var(--muted)}
-    .navdrop-panel.exp-open>.navgroup[data-collapse] .ngc{transform:rotate(180deg)}
-    .navdrop-panel:not(.exp-open) .navtab[data-navgroup="EXPLORE"]{display:none}
+    /* sectioned menu inside the drawer: same disclosure rows, no head (the group button already names the business) */
+    .navdrop-head{display:none}
+    header>nav .navgroup{padding:9px 10px;align-self:stretch;text-align:left;font-size:9px;letter-spacing:.16em}
     .navdiv{display:none}
     /* Customer 360 keeps its red, but sits in the row rhythm instead of a centred pill */
     header>nav>.navtab[data-view=sub360]{background:rgba(220,38,38,.09);color:var(--red);font-weight:700}
@@ -1503,18 +1582,23 @@
       <div class="hm-group" data-i18n="group.settings">SETTINGS</div>
       <button class="hm-tour" data-seg="users"><span class="hm-ic">◱</span><span data-i18n-html="menu.users">User management<small>Create users · roles · access</small></span></button>
       <button class="navtab hm-nav" data-view="analytics"><span class="num">▥</span><span data-i18n-html="nav.analytics">Analytics<small>Charts &amp; dashboards</small></span></button>
-      <button class="hm-tour" data-workbench="1" id="workbenchMenuItem" style="display:none"><span class="hm-ic">▥</span><span>L2 Workbench<small>Activity · replay · tests · docs</small></span></button>
       <button class="hm-tour" data-seg="sync"><span class="hm-ic">⟳</span><span data-i18n-html="menu.sync">Sync engine<small>Watcher mode &amp; change log</small></span></button>
       <button class="hm-tour" data-seg="notify"><span class="hm-ic">◧</span><span data-i18n-html="menu.notify">Notifications &amp; escalation<small>Slack / Teams &amp; on-call ladder</small></span></button>
-      <button class="hm-tour" data-seg="assist"><span class="hm-ic">✦</span><span data-i18n-html="menu.assist">Yusr — AI assistant<small>يُسر · Ollama URL &amp; model</small></span></button>
-      <button class="hm-tour" data-agents="1" id="agentsMenuItem" style="display:none"><span class="hm-ic">◍</span><span>Agents &amp; LLM<small>Log intelligence · incident triage · models</small></span></button>
       <button class="hm-tour" data-seg="nav"><span class="hm-ic">▤</span><span data-i18n-html="menu.nav">Navigation &amp; tabs<small>Reorder · show / hide tabs</small></span></button>
       <button class="hm-tour" data-demo="1" id="demoMenuItem"><span class="hm-ic">▶</span><span>Demo mode<small>Record once · replay instantly</small></span></button>
       <button class="hm-tour" data-tickets="1" id="ticketsMenuItem" style="display:none"><span class="hm-ic">▦</span><span data-i18n-html="menu.tickets">Tickets &amp; feedback<small>User suggestions &amp; issues · status board</small></span></button>
       <button class="hm-tour" data-audit="1" id="auditMenuItem" style="display:none"><span class="hm-ic">◈</span><span data-i18n-html="menu.audit">Audit log<small>Who did what · sign-ins &amp; trace access</small></span></button>
+      <button class="hm-tour" data-workbench="1" id="workbenchMenuItem" style="display:none" data-hidden-by-design="1"><span class="hm-ic">▥</span><span>L2 Workbench<small>Activity · replay · tests · docs</small></span></button>
+      <div class="hm-group">AI</div>
+      <button class="hm-tour" data-seg="assist"><span class="hm-ic">✦</span><span data-i18n-html="menu.assist">Yusr — AI assistant<small>يُسر · Ollama URL &amp; model</small></span></button>
+      <button class="hm-tour" data-agents="1" id="agentsMenuItem" style="display:none"><span class="hm-ic">◍</span><span>Agents &amp; LLM<small>Log intelligence · incident triage · models</small></span></button>
+      <div class="hm-group" id="governGroup" style="display:none">GOVERNANCE</div>
       <button class="hm-tour" data-sla="1" id="slaMenuItem" style="display:none"><span class="hm-ic">◎</span><span>SLA<small>Attainment &amp; vendor health</small></span></button>
       <button class="hm-tour" data-vendor-contracts="1" id="vendorContractsMenuItem" style="display:none"><span class="hm-ic">◇</span><span>Vendors &amp; contracts<small>SLAs · SLOs · assignments</small></span></button>
       <button class="hm-tour" data-slo-settings="1" id="sloSettingsMenuItem" style="display:none"><span class="hm-ic">◌</span><span>SLO definitions<small>Fixed / MVNO targets &amp; messages</small></span></button>
+      <div class="hm-group" id="cstGroup" style="display:none">CST</div>
+      <button class="hm-tour" data-cst="arqami" id="cstArqamiMenuItem" style="display:none"><span class="hm-ic">◎</span><span>Arqami<small>Number-ownership API health · per-minute traffic &amp; latency</small></span></button>
+      <button class="hm-tour" data-cst="escalations" id="cstEscMenuItem" style="display:none"><span class="hm-ic">⇄</span><span>CST Escalations<small>Complaint escalations · Remedy proof · engagement board</small></span></button>
     </div>
   </div>
   <div class="helpwrap">
@@ -1523,6 +1607,9 @@
       <div class="hm-group" data-i18n="group.guide">GUIDE</div>
       <button class="hm-tour" id="hmTour"><span class="hm-ic">▶</span><span data-i18n-html="menu.tour">Guided tour<small>Replay the 60-second walkthrough</small></span></button>
       <button class="hm-tour" id="hmOncall"><span class="hm-ic">◔</span><span>On-call view<small>Phone snapshot · #oncall (Mobile) · #fixed-oncall (Fixed)</small></span></button>
+      <div class="hm-group">NOC WALL</div>
+      <button class="navtab hm-nav" data-view="nocwall" data-hash="noc"><span class="num">◉</span><span>Alert radar<small>Full-screen 12 h clock for the NOC TV · F = fullscreen</small></span></button>
+      <button class="navtab hm-nav" data-view="nocwall" data-hash="noc?w=kpi"><span class="num">◎</span><span>Key indicators<small>North-star KPIs, Mobile + Fixed, full screen</small></span></button>
       <div class="hm-group" data-i18n="group.feedback">FEEDBACK</div>
       <button class="hm-tour" id="hmRaiseTicket"><span class="hm-ic">✎</span><span data-i18n-html="menu.raiseTicket">Raise a ticket<small>Suggest an improvement or report an issue</small></span></button>
     </div>
@@ -1670,6 +1757,7 @@
        payments map (topology2.js renders into #t2Host) and the DMS + RODOD BSS HLD atlas. Merged from
        two separate nav items so there is one "Topology" to look for. -->
   <section id="view-execops" class="view"></section>
+  <section id="view-nocwall" class="view"></section>
   <section id="view-topology2" class="view">
     <div class="t2tabs" id="t2Tabs">
       <button type="button" class="t2tab active" data-t2="map" title="Source-linked component map: controllers, managers, models, gateways, workers — click through to the code">◈ Payments · source map</button>
@@ -1847,6 +1935,7 @@
   <section id="view-slo" class="view"></section>
   <section id="view-slo-settings" class="view"></section>
   <section id="view-vendor-contracts" class="view"></section>
+  <section id="view-cst" class="view"></section>
 
   <section id="view-sub360" class="view"></section>
   <section id="view-apigw" class="view">
@@ -1882,6 +1971,8 @@
         <button class="pill" data-atab="all">History</button>
         <button class="pill" data-atab="metrics">Metric charts</button>
         <button class="pill" data-atab="rules">Alert rules</button>
+        <button class="pill" data-atab="metricdefs" title="Custom metrics managed from the console — declarative (dataset · measure · filters · dimension), tested and shadowed before they can page">⚙ Metrics</button>
+        <button class="pill" data-atab="sources" title="Every table the console reads, the prod source the L2 team monitors for it, how it is synced and whether it is fresh right now">⛁ Data sources</button>
         <button class="pill" data-atab="activity" title="Who did what — every console-user action on incidents, rules and the alerting configuration">◈ Activity log</button>
         <button class="pill" data-atab="noise" title="Which rules cry wolf: acknowledged vs ignored, single-customer firings, false positives — with a hint per rule">◎ Noise</button>
         <button class="pill" data-atab="oncall" title="Phone-sized snapshot for the on-call engineer of this business — status, KPIs, open incidents">◔ On-call</button>
@@ -1898,8 +1989,8 @@
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
 <script src="base.js?v=20260910c"></script>
 <script src="person.js?v=20260911b"></script>   <!-- ONE person card for every screen -->
-<script src="navdrop.js?v=20260912c" defer></script>
-<script src="adaptive.js?v=20260910c" defer></script>
+<script src="navdrop.js?v=20260916b" defer></script>
+<script src="adaptive.js?v=20260916b" defer></script>
 <script src="ksatime.js?v=20260910c"></script>
 <script src="data.js?v=20260910c"></script>
 <script src="data2.js?v=20260910c"></script>
@@ -1911,7 +2002,8 @@
 <script src="app.js?v=20260910c"></script>
 <script src="uinav.js?v=20260910c"></script>
 <script src="latencycfg.js?v=20260910c"></script>
-<script src="alertsview.js?v=20260911i"></script>
+<script src="alertsview.js?v=20260916a"></script>
+<script src="metricdefs.js?v=20260916c"></script>
 <script src="ops.js?v=20260914a"></script>
 <script src="opsbar.js?v=20260910c"></script>
 <script src="analytics.js?v=20260912d"></script>
@@ -1939,7 +2031,10 @@
 <script src="fixed-alerts.js?v=20260911s"></script>
 <script src="fixed-playbook.js?v=20260910c"></script>
 <script src="fixed-diagrams.js?v=20260911x"></script>
-<script src="execops.js?v=20260915a"></script>
+<script src="execops.js?v=20260916c"></script>
+<script src="execbrief.js?v=20260916d"></script>
+<script src="cstpage.js?v=20260916b"></script>
+<script src="nocwall.js?v=20260916b"></script>
 <script src="fixed-report.js?v=20260910c"></script>
 <script src="otodocs.js?v=20260910c"></script>
 <script src="salamdocs.js?v=20260910c"></script>
@@ -1954,9 +2049,9 @@
 <script src="sub360.js?v=20260910c"></script>
 <script src="rolesmatrix.js?v=20260910c"></script>
 <script src="i18n.js?v=20260910c"></script>
-<script src="settingsmenu.js?v=20260914a"></script>
+<script src="settingsmenu.js?v=20260916c"></script>
 <script src="tour.js?v=20260910c"></script>
-<script src="helpmenu.js?v=20260910c"></script>
+<script src="helpmenu.js?v=20260916b"></script>
 <script src="assist.js?v=20260911a"></script>
 <script src="assistcfg.js?v=20260910c"></script>
 <script src="assistclone.js?v=20260910c"></script>
