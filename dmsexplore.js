@@ -65,7 +65,7 @@
             <td class="rl" style="padding:5px 8px;color:var(--muted)">${esc(r.family)}</td>
             <td class="mono" style="padding:5px 8px;text-align:right;font-weight:800;color:${col}">${n==null?(r.implemented?"—":"n/a"):n+(L.capped?"+":"")}</td>
             <td class="rl" style="padding:5px 8px;color:var(--muted)">${L?esc(ago(L.at))+(L.ms!=null?` · ${esc(String(L.ms))} ms`:""):"never"}</td>
-            <td class="rl" style="padding:5px 8px;color:${L&&L.error?(L.skipped?"var(--amber,#b45309)":"var(--red,#dc2626)"):"var(--muted)"};font-size:10.5px">${L?esc(L.error||L.note||""):(r.implemented?"":"defined in DMS-JOURNEYS-CODE.md §6 — not wired yet")}</td></tr>
+            <td class="rl" style="padding:5px 8px;color:${L&&L.error?(L.skipped?"var(--amber,#b45309)":"var(--red,#dc2626)"):"var(--muted)"};font-size:10.5px">${r.retired?`<span style="color:var(--muted)">retired · ${esc(r.retired)}</span>`:esc(L?(L.error||L.note||""):(r.implemented?"":"defined in DMS-JOURNEYS-CODE.md §6 — not wired yet"))}</td></tr>
             <tr data-rdet="${esc(r.id)}" style="display:none"><td colspan="7" style="padding:6px 10px;background:var(--bg,transparent)"><div class="rl" style="font-size:11px;color:var(--muted)">Loading…</div></td></tr>`; }).join("")}</tbody></table></div></div>`;
   }
   async function showRule(host,id){

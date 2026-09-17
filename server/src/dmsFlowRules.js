@@ -148,26 +148,20 @@ const RULES = {
   } },
   /* Regulator: MNP transfer-operator accepted, no port order and no cancel */
   S4: { grace: 10 * MIN, run: async c => {
-    const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn', 'logs_reference_id']);
-    const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
+    const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn']);
+    const m = await c.T(AUD, 'mnp_logs', 'm', 'insert_date_time', ['mobile_number']);
+    /* was: semati vs uil_logs create-port-order. X1 proved the cms/uil trace does not correlate and
+     * uil_logs.msisdn is empty for the MNP DTO, so the port order is invisible there — the ledger
+     * written by the same consumer (mnp_logs, success only) is the honest counterpart. */
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.logs_reference_id
-      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
+      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} mm, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
             FROM ${s.ref} WHERE ${s.b} AND s.request_type='18' AND s.response_Code='600' AND ${W(s)}) x
-      LEFT JOIN (SELECT u.logs_reference_id ref, ${digits9('u.msisdn')} m, ${U(u)} at FROM ${u.ref} WHERE ${u.b} AND u.api_name LIKE '%/bss/mnp/create-port-order' AND u.response_Code='00') po
-        ON (po.ref = x.logs_reference_id AND po.ref <> '') OR (po.m = x.m AND po.at BETWEEN x.at AND x.at + INTERVAL 5 MINUTE)
-      LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='4') cn ON cn.m = x.m AND cn.at BETWEEN x.at AND x.at + INTERVAL 10 MINUTE
-      WHERE po.ref IS NULL AND cn.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
-    return { rows };
-  } },
-  /* Regulator: port order created but the dealer call did not end 00 (or a cancel followed) */
-  S5: { grace: 5 * MIN, run: async c => {
-    const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
-    const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
-    const rows = await dms.qSlow(`SELECT u.id, ${U(u)} at, u.msisdn, u.logs_reference_id, cm.api_name, cm.response_Code, cm.response_Message, cm.username dealer
-      FROM ${u.ref} JOIN ${cm.ref} ON ${cm.b} AND cm.logs_reference_id = u.logs_reference_id AND cm.api_name LIKE '%transportoperator'
-      WHERE ${u.b} AND u.api_name LIKE '%/bss/mnp/create-port-order' AND u.response_Code='00' AND ${W(u)} AND cm.response_Code <> '00'
-      ORDER BY u.id DESC LIMIT ${LIMIT}`, [u.lo, u.hi], c.budget);
-    return { rows };
+      LEFT JOIN (SELECT ${digits9('m.mobile_number')} mm, ${U(m)} at FROM ${m.ref} WHERE ${m.b}) p
+        ON p.mm = x.mm AND p.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 15 MINUTE
+      LEFT JOIN (SELECT ${digits9('s.msisdn')} mm, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='4') cn
+        ON cn.mm = x.mm AND cn.at BETWEEN x.at AND x.at + INTERVAL 15 MINUTE
+      WHERE p.mm IS NULL AND cn.mm IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
+    return { rows, note: 'Semati moved the number to Salam but no successful mnp_logs row followed and no cancel was sent' };
   } },
   /* Regulator: ownership transferred at Semati, no ledger success within 10 min and no revert */
   S6: { grace: 15 * MIN, run: async c => {
@@ -183,15 +177,19 @@ const RULES = {
   } },
   /* Regulator: subscription changed at Semati (6) but no BSS conversion/option update and no revert */
   S7: { grace: 10 * MIN, run: async c => {
-    const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn', 'logs_reference_id']);
-    const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
+    const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn']);
+    const pp = await c.T(AUD, 'price_plan_logs', 'pp', 'insert_date_time', ['mobile_number']);
+    /* same correction as S4: the plan change is confirmed by price_plan_logs (written on 00), not by
+     * a uil_logs row the trace cannot reach. */
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.logs_reference_id
-      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
+      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} mm, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
             FROM ${s.ref} WHERE ${s.b} AND s.request_type='6' AND s.response_Code='600' AND ${W(s)}) x
-      LEFT JOIN (SELECT u.logs_reference_id ref FROM ${u.ref} WHERE ${u.b} AND (u.api_name LIKE '%convert-billing-type' OR u.api_name LIKE '%update-subscription-price-plan-options') AND u.response_Code IN ('00','0','200') AND u.logs_reference_id <> '') cv ON cv.ref = x.logs_reference_id
-      LEFT JOIN (SELECT s.id sid, ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='6') rv ON rv.m = x.m AND rv.sid <> x.id AND rv.at BETWEEN x.at AND x.at + INTERVAL 10 MINUTE
-      WHERE cv.ref IS NULL AND rv.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
-    return { rows };
+      LEFT JOIN (SELECT ${digits9('pp.mobile_number')} mm, ${U(pp)} at FROM ${pp.ref} WHERE ${pp.b}) c2
+        ON c2.mm = x.mm AND c2.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 15 MINUTE
+      LEFT JOIN (SELECT s.id sid, ${digits9('s.msisdn')} mm, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='6') rv
+        ON rv.mm = x.mm AND rv.sid <> x.id AND rv.at BETWEEN x.at AND x.at + INTERVAL 15 MINUTE
+      WHERE c2.mm IS NULL AND rv.mm IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
+    return { rows, note: 'Semati accepted the subscription change with no price_plan_logs success and no revert' };
   } },
   /* Regulator: compensation (cancel number / cancel SIM) rejected by Semati */
   S8: { grace: 0, run: async c => {
@@ -245,19 +243,6 @@ const RULES = {
       FROM ${s.ref} WHERE ${s.b} AND ${W(s)} HAVING n >= 5 AND (avg_ms > 20000 OR over_60s >= 3)`, [s.lo, s.hi], c.budget);
     return { rows };
   } },
-  /* Integrity: number reserved at BSS, no Semati registration and no activation after it */
-  J1: { grace: 30 * MIN, run: async c => {
-    const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
-    const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'logs_reference_id']);
-    const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['logs_reference_id', 'response_Code']);
-    const rows = await dms.qSlow(`SELECT u.id, ${U(u)} at, u.msisdn, u.logs_reference_id,
-        (SELECT CONCAT(cm.api_name,' → ',cm.response_Code,' ',IFNULL(cm.response_Message,'')) FROM ${cm.ref} WHERE ${cm.b} AND cm.logs_reference_id = u.logs_reference_id ORDER BY cm.id DESC LIMIT 1) outcome,
-        (SELECT cm.username FROM ${cm.ref} WHERE ${cm.b} AND cm.logs_reference_id = u.logs_reference_id ORDER BY cm.id DESC LIMIT 1) dealer
-      FROM ${u.ref} WHERE ${u.b} AND u.api_name LIKE '%/bss/crm/number-reserve' AND u.response_Code IN ('0','00') AND ${W(u)}
-      AND NOT EXISTS (SELECT 1 FROM ${s.ref} WHERE ${s.b} AND s.logs_reference_id = u.logs_reference_id AND s.request_type IN ('1','17'))
-      ORDER BY u.id DESC LIMIT ${LIMIT}`, [u.lo, u.hi], c.budget);
-    return { rows, note: 'reservation made, flow rejected before Semati (plan block / balance) — BSS never releases it' };
-  } },
   /* Integrity: a 00 call on a ledgered URI whose journey row is missing (mapper/DB error in the consumer) */
   J2: { grace: 10 * MIN, run: async c => {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
@@ -273,15 +258,6 @@ const RULES = {
       out.push(...rows); if (out.length >= LIMIT) break;
     }
     return { rows: out.slice(0, LIMIT) };
-  } },
-  /* Integrity: UIL Semati new-number call with no customer-service /activate row for the same trace */
-  J3: { grace: 15 * MIN, run: async c => {
-    const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'logs_reference_id']);
-    const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['logs_reference_id']);
-    const rows = await dms.qSlow(`SELECT u.id, ${U(u)} at, u.api_name, u.response_Code, u.msisdn, u.logs_reference_id FROM ${u.ref}
-      WHERE ${u.b} AND u.api_name LIKE '%/semati/new-mobile-number' AND ${W(u)} AND u.logs_reference_id <> ''
-      AND NOT EXISTS (SELECT 1 FROM ${cm.ref} WHERE ${cm.b} AND cm.logs_reference_id = u.logs_reference_id) ORDER BY u.id DESC LIMIT ${LIMIT}`, [u.lo, u.hi], c.budget);
-    return { rows, note: 'customer-service push lost (filter/producer) or the service died mid-flow' };
   } },
   /* Integrity: share of cms_logs rows without channel attribution */
   J4: { grace: 0, run: async c => {
@@ -334,8 +310,11 @@ const RULES = {
   } },
   /* Integrity: static OTP in production */
   J12: { grace: 0, run: async c => {
-    const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['otp_req']);
-    const rows = await dms.qSlow(`SELECT cm.id, ${U(cm)} at, cm.api_name, cm.username dealer, cm.msisdn_req msisdn FROM ${cm.ref} WHERE ${cm.b} AND cm.otp_req='7777' AND ${W(cm)} ORDER BY cm.id DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
+    const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['otp_req', 'username']);
+    const rows = await dms.qSlow(`SELECT SUM(cm.otp_req='7777') static_otps, COUNT(*) total_otps,
+        SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT CASE WHEN cm.otp_req='7777' THEN cm.username END), ',', 5) dealers, MAX(${U(cm)}) last_at
+      FROM ${cm.ref} WHERE ${cm.b} AND ${W(cm)} AND cm.otp_req IS NOT NULL AND cm.otp_req <> ''
+      HAVING static_otps >= 3 AND static_otps > total_otps / 500`, [cm.lo, cm.hi], c.budget);
     return { rows };
   } },
   /* Integrity: OTP brute force */
@@ -425,25 +404,6 @@ const RULES = {
       WHERE r.dealer IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [w.lo, w.hi, cm.lo, cm.hi], c.budget);
     return { rows, note: 'no refund path exists in the service — each hit is a manual reconciliation' };
   } },
-  /* Money: change plan failed after the BSS adjustment failed while the wallet was debited */
-  M4: { grace: 5 * MIN, run: async c => {
-    const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
-    const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
-    const rows = await dms.qSlow(`SELECT cm.id, ${U(cm)} at, cm.msisdn_req msisdn, cm.username dealer, cm.response_Code, cm.response_Message, u.response_Code adj_code, u.response_Message adj_message, cm.logs_reference_id
-      FROM ${cm.ref} JOIN ${u.ref} ON ${u.b} AND u.logs_reference_id = cm.logs_reference_id AND u.api_name LIKE '%create-subscription-transaction' AND u.response_Code NOT IN ('00','0')
-      WHERE ${cm.b} AND cm.api_name LIKE '%/priceplan/update' AND cm.response_Code <> '00' AND ${W(cm)} ORDER BY cm.id DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
-    return { rows, note: 'the wallet debit precedes the adjustment in updatePriceplan — check the wallet row for the dealer before refunding' };
-  } },
-  /* Money: add-on BSS credit with no purchase row for the same trace */
-  M5: { grace: 5 * MIN, run: async c => {
-    const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
-    const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
-    const rows = await dms.qSlow(`SELECT u.id, ${U(u)} at, u.msisdn, u.logs_reference_id, cm.response_Code, cm.response_Message, cm.username dealer
-      FROM ${u.ref} JOIN ${cm.ref} ON ${cm.b} AND cm.logs_reference_id = u.logs_reference_id AND cm.api_name LIKE '%/addon/purchase'
-      WHERE ${u.b} AND u.api_name LIKE '%create-subscription-transaction' AND u.response_Code IN ('00','0') AND ${W(u)} AND cm.response_Code <> '00'
-      ORDER BY u.id DESC LIMIT ${LIMIT}`, [u.lo, u.hi], c.budget);
-    return { rows };
-  } },
   /* Money: stuck wallet initiates */
   M6: { grace: 0, run: async c => {
     const w = await c.T(WAL, 'wallet_payment_initiate', 'w', 'created_on', ['status', 'transaction_type', 'signature_expiry']);
@@ -517,13 +477,16 @@ const CLEAR = new Set([                                    // technical, never p
   'transaction_type', 'source_system', 'comments', 'payment_mode', 'payment_id', 'capped', 'skipped']);
 const DROP = new Set(['otp', 'otp_req', 'otp_mob', 'sim_list', 'request', 'response', 'token',
   'api_key', 'iam_token', 'manafith_app_token', 'signature', 'password']);
-const NUMERIC_OK = /^(n|calls|ok|attempts|failures|cancels|registrations|dealers|unattributed|rejected|over_60s|pct|bad_attempts|rows|amount|avg_ms|max_ms|ms|age_min|threshold_min|slowest_ms|total_ms|had_[a-z_]+)$/;
+const NUMERIC_OK = /^(n|calls|ok|attempts|failures|cancels|registrations|dealers|unattributed|rejected|over_60s|pct|bad_attempts|rows|amount|avg_ms|max_ms|ms|age_min|threshold_min|slowest_ms|total_ms|uil_rows|with_ref|distinct_refs|semati_type1|activations|had_[a-z_]+|refs_[a-z_]+|[a-z_]*count[a-z_]*|[a-z_]*_rows|[a-z_]*_n)$/;
 function maskRow(row) {
   const o = {};
   for (const [k, v] of Object.entries(row)) {
     const kl = k.toLowerCase();
     if (DROP.has(kl)) continue;
     if (v == null || typeof v === 'number' || typeof v === 'boolean' || v instanceof Date) { o[k] = v; continue; }
+    /* mysql2 returns SUM()/DECIMAL as a STRING: without this an aggregate like 8123410 was masked
+     * into "81**10" (seen on X1's with_ref in the first run). Numbers are not identifiers. */
+    if (NUMERIC_OK.test(kl) && /^-?\d+(\.\d+)?$/.test(String(v))) { o[k] = Number(v); continue; }
     if (CLEAR.has(kl) || NUMERIC_OK.test(kl) || /(^|_)at$/.test(kl)) { o[k] = String(v).slice(0, 200); continue; }
     o[k] = String(v).replace(/\d{4,}/g, m => m.slice(0, 2) + '*'.repeat(Math.min(6, Math.max(2, m.length - 4))) + m.slice(-2)).slice(0, 120);
   }
