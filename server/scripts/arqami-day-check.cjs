@@ -13,16 +13,41 @@
  * plus the neighbouring days for context and the session / database time zones, because a day that looks empty
  * is usually a day that landed in a different bucket.
  *
- * Read-only. Run on 152: set -a; . /apps/unified/.env; set +a; node server/scripts/arqami-day-check.cjs 2026-09-16
+ * Read-only. Run on 152:  cd /apps/unified && node server/scripts/arqami-day-check.cjs 2026-09-16
+ *
+ * It loads /apps/unified/.env itself (--env <path> to point elsewhere) with the same parser the PM2 ecosystem
+ * file uses. It is deliberately NOT sourced with `set -a; . .env`: a value containing < > or a space breaks that
+ * in a shell, which has already cost us one broken cron, and a .env is configuration, not a script.
  */
 'use strict';
-process.env.CST_ORACLE_DISABLED = process.env.CST_ORACLE_DISABLED || '';
+const fs = require('fs');
 const path = require('path');
+
+/* the ecosystem file's parser, kept identical on purpose: KEY=VALUE, # comments, optional surrounding quotes */
+function loadEnv(file) {
+  let text; try { text = fs.readFileSync(file, 'utf8'); } catch (e) { return { file, ok: false, error: e.message, keys: 0 }; }
+  let keys = 0;
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const i = t.indexOf('=');
+    if (i <= 0) continue;
+    let v = t.slice(i + 1).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    const k = t.slice(0, i);
+    if (process.env[k] === undefined) { process.env[k] = v; keys++; }
+  }
+  return { file, ok: true, keys };
+}
+const argv = process.argv.slice(2);
+const envAt = (() => { const i = argv.indexOf('--env'); if (i >= 0) { const v = argv[i + 1]; argv.splice(i, 2); return v; } return null; })();
+const ENV = loadEnv(envAt || path.join(__dirname, '..', '..', '.env'));
+
 const SRC = path.join(__dirname, '..', 'src');
 const oracle = require(path.join(SRC, 'cstOracle.js'));
 const db = require(path.join(SRC, 'db.js'));
 
-const day = (process.argv[2] || '').trim();
+const day = (argv[0] || '').trim();
 if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { console.error('usage: node arqami-day-check.cjs YYYY-MM-DD'); process.exit(2); }
 const shift = (d, n) => new Date(new Date(d + 'T00:00:00Z').getTime() + n * 864e5).toISOString().slice(0, 10);
 const T = process.env.CST_ORACLE_TABLE || 'APPS.YY_REGISTER_NUMBER_AUDIT';
@@ -33,7 +58,11 @@ const rpad = (s, n) => String(s == null ? '' : s).padStart(n);
 const head = t => console.log('\n' + t + '\n' + '-'.repeat(t.length));
 
 (async () => {
-  if (!oracle.configured()) { console.error('CST_ORACLE_* not set — run this with /apps/unified/.env loaded'); process.exit(2); }
+  head('0. Configuration');
+  console.log(ENV.ok ? `${ENV.file} \u2014 ${ENV.keys} variable(s) loaded` : `${ENV.file} \u2014 NOT READ: ${ENV.error}`);
+  console.log(`CST_ORACLE_* ${oracle.configured() ? 'set' : 'NOT SET'} \u00b7 ARQAMI_API_BASE ${process.env.ARQAMI_API_BASE ? 'set (' + process.env.ARQAMI_API_BASE + ')' : 'not set'}`
+    + ` \u00b7 ARQAMI_API_USER ${process.env.ARQAMI_API_USER ? 'set' : 'not set'} \u00b7 ARQAMI_API_PASSWORD ${process.env.ARQAMI_API_PASSWORD ? 'set' : 'not set'}`);
+  if (!oracle.configured()) { console.error('\nCST_ORACLE_* not set \u2014 point --env at the right .env file'); process.exit(2); }
 
   head('1. Which Oracle are we asking, and on whose clock');
   const who = await oracle.query(
