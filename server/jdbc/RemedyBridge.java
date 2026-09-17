@@ -15,6 +15,10 @@
  *   · The session is READ ONLY and runs at READ UNCOMMITTED (CST_REMEDY_NOLOCK=0 turns that off): a reporting
  *     query must never take shared locks on the tables the Remedy application is writing to. Dirty reads are
  *     acceptable for a troubleshooting console; blocking Remedy is not.
+ *   · CST_REMEDY_EXECUTE_AS drops the session to a database user without a login (one that holds only SELECT on
+ *     the reporting objects) right after connecting, and never reverts. It is what makes connecting as a
+ *     privileged login defensible: the rights are gone before the first query, enforced by SQL Server rather
+ *     than by this file. If the drop fails, the connection is closed instead of being used.
  *   · Every statement carries a query timeout (CST_REMEDY_QUERY_SECS, default 60) and a fetch size, so a bad
  *     query dies on the server instead of streaming a whole view into the JVM.
  * Credentials come from the environment (CST_REMEDY_*) — never on the command line, never logged.
@@ -28,7 +32,7 @@ import java.util.*;
 
 public class RemedyBridge {
   static Connection conn;
-  static String url, user, pass;
+  static String url, user, pass, executeAs;
   static boolean nolock = true;
   static int querySecs = 60;
 
@@ -38,6 +42,7 @@ public class RemedyBridge {
     String dbase = E.getOrDefault("CST_REMEDY_DATABASE", "ARSystem"), extra = E.getOrDefault("CST_REMEDY_JDBC_EXTRA", "");
     user = E.getOrDefault("CST_REMEDY_USER", ""); pass = E.getOrDefault("CST_REMEDY_PASSWORD", "");
     nolock = !"0".equals(E.getOrDefault("CST_REMEDY_NOLOCK", "1"));
+    executeAs = E.getOrDefault("CST_REMEDY_EXECUTE_AS", "").trim();
     try { querySecs = Integer.parseInt(E.getOrDefault("CST_REMEDY_QUERY_SECS", "60")); } catch (Exception ignore) {}
     /* encrypt=false + trustServerCertificate: an older SQL Server behind a JDBC 12 driver otherwise fails the
      * handshake outright. Anything else the DBA needs (instanceName, integratedSecurity, TLS overrides) goes in
@@ -50,7 +55,8 @@ public class RemedyBridge {
     BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
     PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out), true, "UTF-8");
     out.println("{\"ready\":true,\"url\":\"" + esc(url) + "\",\"java\":\"" + esc(System.getProperty("java.version"))
-        + "\",\"nolock\":" + nolock + ",\"querySecs\":" + querySecs + "}");
+        + "\",\"nolock\":" + nolock + ",\"querySecs\":" + querySecs
+        + ",\"executeAs\":" + (executeAs.isEmpty() ? "null" : "\"" + esc(executeAs) + "\"") + "}");
     String line;
     while ((line = in.readLine()) != null) {
       if (line.isEmpty()) continue;
@@ -77,6 +83,16 @@ public class RemedyBridge {
     conn.setAutoCommit(true);
     try { conn.setReadOnly(true); } catch (SQLException ignore) { /* a hint only on SQL Server */ }
     if (nolock && url.startsWith("jdbc:sqlserver:")) try (Statement s = conn.createStatement()) { s.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED"); }
+    /* PRIVILEGE DROP. When the connecting login is powerful (sa), the session immediately becomes a database
+     * user that owns nothing but SELECT on the reporting objects, and stays that way for its whole life — no
+     * REVERT is ever issued. The Java SELECT-only guard above then stops being the only thing between a bug in
+     * the console and the Remedy database: anything else is refused by SQL Server itself.
+     * This FAILS CLOSED. If the impersonation cannot be performed the connection is dropped rather than left
+     * running with the original privileges, because a silent fallback to sa is the exact failure worth avoiding. */
+    if (!executeAs.isEmpty()) {
+      try (Statement s = conn.createStatement()) { s.execute("EXECUTE AS USER = N'" + executeAs.replace("'", "''") + "'"); }
+      catch (SQLException e) { closeQuietly(); throw new SQLException("could not drop privileges to '" + executeAs + "': " + e.getMessage() + " — refusing to query as the connecting login"); }
+    }
     return conn;
   }
   static void closeQuietly() { try { if (conn != null) conn.close(); } catch (Throwable ignore) {} conn = null; }

@@ -17,6 +17,10 @@
  *  · READ UNCOMMITTED session (CST_REMEDY_NOLOCK=0 to disable): a console query must never take shared locks on
  *    tables the Remedy application is writing to.
  *  · Query timeout (CST_REMEDY_QUERY_SECS, 60 s), row caps on every call, one JVM, one connection.
+ *  · CST_REMEDY_EXECUTE_AS names a database user without a login that holds only SELECT on the reporting
+ *    objects. The bridge drops into it immediately after connecting and never reverts, so a privileged
+ *    connecting login (sa) stops being privileged before the first query — enforced by SQL Server, not by
+ *    this file. The probe reports IS_SYSADMIN so the drop is visible rather than assumed.
  *  · NOTHING IS WRITTEN TO THE CONSOLE DATABASE FROM HERE. Ticket rows are read, answered and dropped; only the
  *    non-PII aggregates computed elsewhere are stored. Customer identifiers never land in unified_console.
  *  · Identifier searches are an explicit operator action and are audited by the route, never run on a timer.
@@ -41,7 +45,7 @@ const cfg = () => ({
   java: E.CST_REMEDY_JAVA || E.CST_ORACLE_JAVA || '/opt/java/bin/java',
   jdbcDir: E.CST_REMEDY_JDBC_DIR || path.join(__dirname, '..', 'jdbc'),
   querySecs: Math.max(5, n(E.CST_REMEDY_QUERY_SECS) || 60),
-  nolock: E.CST_REMEDY_NOLOCK !== '0',
+  nolock: E.CST_REMEDY_NOLOCK !== '0', executeAs: (E.CST_REMEDY_EXECUTE_AS || '').trim(),
   jdbcExtra: E.CST_REMEDY_JDBC_EXTRA || '', jdbcUrl: E.CST_REMEDY_JDBC_URL || '',
   disabled: /^(1|true|yes)$/i.test(E.CST_REMEDY_DISABLED || '')
 });
@@ -106,7 +110,8 @@ function jvmStart() {
     const env = Object.assign({}, process.env, {
       CST_REMEDY_HOST: c.host, CST_REMEDY_PORT: String(c.port), CST_REMEDY_DATABASE: c.database,
       CST_REMEDY_USER: c.user, CST_REMEDY_PASSWORD: c.password, CST_REMEDY_QUERY_SECS: String(c.querySecs),
-      CST_REMEDY_NOLOCK: c.nolock ? '1' : '0', CST_REMEDY_JDBC_EXTRA: c.jdbcExtra, CST_REMEDY_JDBC_URL: c.jdbcUrl
+      CST_REMEDY_NOLOCK: c.nolock ? '1' : '0', CST_REMEDY_JDBC_EXTRA: c.jdbcExtra, CST_REMEDY_JDBC_URL: c.jdbcUrl,
+      CST_REMEDY_EXECUTE_AS: c.executeAs ? ident(c.executeAs) : ''
     });
     delete env.JAVA_TOOL_OPTIONS;                       // an empty value still makes the JVM print a line on stderr
     const p = cp.spawn(c.java, ['-Xmx160m', '-XX:+UseSerialGC', '-Djava.awt.headless=true', '-cp', jar + ':' + c.jdbcDir, 'RemedyBridge'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -208,9 +213,19 @@ async function probe({ deep = false } = {}) {
       next: `open TCP ${c.port} from this host to ${c.host} (the Remedy AR System database) — until then the page stays on the runbook snapshot` });
   }
   const t0 = Date.now();
-  const v = await query(`SELECT @@VERSION AS VERSION, DB_NAME() AS DB, SUSER_SNAME() AS LOGIN_NAME, GETDATE() AS SERVER_TIME`, [], 30000);
+  /* who the session actually is. With CST_REMEDY_EXECUTE_AS in place the connecting login is sa but the
+   * effective user is the SELECT-only one and IS_SYSADMIN comes back 0 — that is the proof the drop worked,
+   * and it is shown on the page rather than taken on trust. */
+  const v = await query(`SELECT @@VERSION AS VERSION, DB_NAME() AS DB, SUSER_SNAME() AS LOGIN_NAME,
+      ORIGINAL_LOGIN() AS CONNECTED_AS, USER_NAME() AS DB_USER, IS_SRVROLEMEMBER('sysadmin') AS IS_SYSADMIN,
+      GETDATE() AS SERVER_TIME`, [], 30000);
   out.server = v[0] ? String(v[0].VERSION || '').split('\n')[0] : null;
   out.db = v[0] && v[0].DB; out.login = v[0] && v[0].LOGIN_NAME; out.serverTime = v[0] && v[0].SERVER_TIME;
+  out.connectedAs = v[0] && v[0].CONNECTED_AS; out.dbUser = v[0] && v[0].DB_USER;
+  out.isSysadmin = v[0] && v[0].IS_SYSADMIN === 1;
+  out.privilegeDrop = cfg().executeAs
+    ? (out.isSysadmin ? 'FAILED — the session still has sysadmin rights' : `active — connected as ${out.connectedAs}, running as ${out.dbUser}`)
+    : (out.isSysadmin ? 'none — this session has sysadmin rights on the whole instance' : 'not configured');
   out.connectMs = Date.now() - t0;
   out.objects = (await query(
     `SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES
@@ -247,7 +262,7 @@ function status() {
     configured: configured(), disabled: c.disabled, host: c.host || null, port: c.port, database: c.database,
     view: c.view, mapTable: c.mapTable, user: c.user ? c.user : null,
     backend: 'jdbc bridge (' + c.java + ', ' + c.jdbcDir + ')', ready: ready(), blockers: why(),
-    nolock: c.nolock, querySecs: c.querySecs, tcp: state.tcp,
+    nolock: c.nolock, querySecs: c.querySecs, executeAs: c.executeAs || null, tcp: state.tcp,
     jvm: state.jvm, jvmInfo: state.jvmInfo, jvmRestarts: state.jvmRestarts,
     queries: state.queries, lastQueryAt: state.lastQueryAt, lastQueryMs: state.lastQueryMs,
     lastError: state.lastError, lastErrorAt: state.lastErrorAt,
