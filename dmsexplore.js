@@ -51,7 +51,7 @@
     return `<div class="topo-card" style="padding:10px 12px;background:var(--card,#fff)">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <b style="font-size:12px">Flow rules</b>
-        <span class="rl" style="font-size:10.5px;color:var(--muted)">${impl}/${rs.length} implemented · ${hits} with findings · window ${esc(String((RULES&&RULES.__st&&RULES.__st.windowH)||2))} h · every ${esc(String(Math.round(((RULES&&RULES.__st&&RULES.__st.intervalSec)||900)/60)))} min · identifiers masked at ingest</span>
+        <span class="rl" style="font-size:10.5px;color:var(--muted)">${impl}/${rs.length} implemented · ${hits} with findings · window ${esc(String((RULES&&RULES.__st&&RULES.__st.windowH)||2))} h · every ${esc(String(Math.round(((RULES&&RULES.__st&&RULES.__st.intervalSec)||900)/60)))} min · identifiers masked at ingest · rules marked <b>validating</b> do not alert yet</span>
         <button id="dxRun" class="btn" style="margin-left:auto;font-size:11.5px;padding:5px 12px">Run all now</button>
       </div>
       <div style="overflow:auto;margin-top:8px;border:1px solid var(--line);border-radius:10px">
@@ -60,7 +60,7 @@
         <tbody>${rs.map(r=>{ const L=r.last; const n=L&&!L.error?L.n:null; const col=n==null?"var(--muted)":n>0?SEVC[r.sev]:"var(--green,#0e9f6e)";
           return `<tr data-rrow="${esc(r.id)}" style="border-top:1px solid var(--line);cursor:pointer;${r.implemented?"":"opacity:.55"}">
             <td class="mono" style="padding:5px 8px;font-weight:800">${esc(r.id)}</td>
-            <td style="padding:5px 8px;font-weight:800;color:${SEVC[r.sev]}">${esc(r.sev)}</td>
+            <td style="padding:5px 8px;font-weight:800;color:${SEVC[r.sev]};white-space:nowrap">${esc(r.sev)}${r.alert===false?`<span class="rl" title="runs and is visible here, but does not raise an alert until its cross-table join is validated against live data" style="font-weight:600;color:var(--muted);font-size:9.5px"> · validating</span>`:""}</td>
             <td style="padding:5px 8px">${esc(r.title)}</td>
             <td class="rl" style="padding:5px 8px;color:var(--muted)">${esc(r.family)}</td>
             <td class="mono" style="padding:5px 8px;text-align:right;font-weight:800;color:${col}">${n==null?(r.implemented?"—":"n/a"):n+(L.capped?"+":"")}</td>

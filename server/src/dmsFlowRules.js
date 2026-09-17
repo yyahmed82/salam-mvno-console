@@ -95,8 +95,15 @@ async function makeCtx(fromUtc, toUtc) {
 const W = t => `${t.at} >= ? AND ${t.at} < ?`;
 const digits9 = col => `RIGHT(REGEXP_REPLACE(${col}, '[^0-9]', ''), 9)`;
 
+/* ---- CLOCK NORMALISATION (added after the first live run, 17 Sep 2026).
+ * Each ledger is read with its OWN clock for the window predicate (index-friendly), but the moment
+ * two tables are compared with each other the raw columns must not be mixed: trms_wallet and the
+ * KSA-written dms_v1 tables run 3 h ahead of the dms_audit_logs ledgers. U(t) expresses a table's
+ * timestamp in UTC, so every cross-table comparison below is clock-safe by construction. ---- */
+const U = t => `(${t.at} - INTERVAL ${t.shiftH} HOUR)`;
+
 /* ---- the rules. Each returns { rows, note? }. rows ≤ LIMIT (capped flag set by the runner). ---- */
-const LIMIT = 100;
+const LIMIT = 1000;
 const RULES = {
   /* Regulator: Semati type 1 accepted, no activation / re-auth / cancel afterwards */
   S1: { grace: 30 * MIN, run: async c => {
@@ -105,12 +112,12 @@ const RULES = {
     const r = await c.T(AUD, 'sim_reauthentication_logs', 'r', 'insert_date_time', ['mobile_number']).catch(() => null);
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'msisdn_req', 'response_Code']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.tcn, x.uil_transaction_id, x.logs_reference_id
-      FROM (SELECT s.id, ${s.at} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.tcn, s.uil_transaction_id, s.logs_reference_id
+      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.tcn, s.uil_transaction_id, s.logs_reference_id
             FROM ${s.ref} WHERE ${s.b} AND s.request_type='1' AND s.response_Code='600' AND ${W(s)}) x
-      LEFT JOIN (SELECT ${digits9('a.mobile_number')} m, ${a.at} at FROM ${a.ref} WHERE ${a.b}) act ON act.m = x.m AND act.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE
-      ${r ? `LEFT JOIN (SELECT ${digits9('r.mobile_number')} m, ${r.at} at FROM ${r.ref} WHERE ${r.b}) ra ON ra.m = x.m AND ra.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE` : ''}
-      LEFT JOIN (SELECT ${digits9('cm.msisdn_req')} m, ${cm.at} at FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%reauthenticate' AND cm.response_Code='00') rc ON rc.m = x.m AND rc.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE
-      LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${s.at} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='4') cn ON cn.m = x.m AND cn.at >= x.at
+      LEFT JOIN (SELECT ${digits9('a.mobile_number')} m, ${U(a)} at FROM ${a.ref} WHERE ${a.b}) act ON act.m = x.m AND act.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE
+      ${r ? `LEFT JOIN (SELECT ${digits9('r.mobile_number')} m, ${U(r)} at FROM ${r.ref} WHERE ${r.b}) ra ON ra.m = x.m AND ra.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE` : ''}
+      LEFT JOIN (SELECT ${digits9('cm.msisdn_req')} m, ${U(cm)} at FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%reauthenticate' AND cm.response_Code='00') rc ON rc.m = x.m AND rc.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE
+      LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='4') cn ON cn.m = x.m AND cn.at >= x.at
       WHERE act.m IS NULL ${r ? 'AND ra.m IS NULL' : ''} AND rc.m IS NULL AND cn.m IS NULL
       GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
     return { rows };
@@ -120,10 +127,10 @@ const RULES = {
     const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn', 'person_id']);
     const a = await c.T(AUD, 'sim_activation_logs', 'a', 'insert_date_time', ['api_name', 'customer_id_number']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.tcn, x.logs_reference_id
-      FROM (SELECT s.id, ${s.at} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.tcn, s.logs_reference_id
+      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.tcn, s.logs_reference_id
             FROM ${s.ref} WHERE ${s.b} AND s.request_type='2' AND s.response_Code='600' AND ${W(s)}) x
-      LEFT JOIN (SELECT a.customer_id_number pid, ${a.at} at FROM ${a.ref} WHERE ${a.b} AND a.api_name LIKE '%activatedatasim') act ON act.pid = x.person_id AND act.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE
-      LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${s.at} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='5') sw ON sw.m = x.m AND sw.at BETWEEN x.at AND x.at + INTERVAL 10 MINUTE
+      LEFT JOIN (SELECT a.customer_id_number pid, ${U(a)} at FROM ${a.ref} WHERE ${a.b} AND a.api_name LIKE '%activatedatasim') act ON act.pid = x.person_id AND act.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE
+      LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='5') sw ON sw.m = x.m AND sw.at BETWEEN x.at AND x.at + INTERVAL 10 MINUTE
       WHERE act.pid IS NULL AND sw.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
     return { rows, note: 'type 2 rows followed by a type 5 within 10 min are swaps and are excluded' };
   } },
@@ -132,10 +139,10 @@ const RULES = {
     const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn', 'logs_reference_id']);
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.dealer, x.logs_reference_id, MAX(sc.swap_call) swap_call
-      FROM (SELECT s.id, ${s.at} at, ${digits9('s.msisdn')} m, s.msisdn, s.employee_username dealer, s.logs_reference_id
+      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.employee_username dealer, s.logs_reference_id
             FROM ${s.ref} WHERE ${s.b} AND s.request_type='2' AND s.response_Code='600' AND ${W(s)}) x
       JOIN (SELECT cm.logs_reference_id ref, CONCAT(cm.api_name,' → ',cm.response_Code) swap_call FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%swap%' AND cm.logs_reference_id <> '') sc ON sc.ref = x.logs_reference_id
-      LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${s.at} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='5' AND s.response_Code='600') cn ON cn.m = x.m AND cn.at BETWEEN x.at AND x.at + INTERVAL 5 MINUTE
+      LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='5' AND s.response_Code='600') cn ON cn.m = x.m AND cn.at BETWEEN x.at AND x.at + INTERVAL 5 MINUTE
       WHERE cn.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
     return { rows };
   } },
@@ -144,11 +151,11 @@ const RULES = {
     const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn', 'logs_reference_id']);
     const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.logs_reference_id
-      FROM (SELECT s.id, ${s.at} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
+      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
             FROM ${s.ref} WHERE ${s.b} AND s.request_type='18' AND s.response_Code='600' AND ${W(s)}) x
-      LEFT JOIN (SELECT u.logs_reference_id ref, ${digits9('u.msisdn')} m, ${u.at} at FROM ${u.ref} WHERE ${u.b} AND u.api_name LIKE '%/bss/mnp/create-port-order' AND u.response_Code='00') po
+      LEFT JOIN (SELECT u.logs_reference_id ref, ${digits9('u.msisdn')} m, ${U(u)} at FROM ${u.ref} WHERE ${u.b} AND u.api_name LIKE '%/bss/mnp/create-port-order' AND u.response_Code='00') po
         ON (po.ref = x.logs_reference_id AND po.ref <> '') OR (po.m = x.m AND po.at BETWEEN x.at AND x.at + INTERVAL 5 MINUTE)
-      LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${s.at} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='4') cn ON cn.m = x.m AND cn.at BETWEEN x.at AND x.at + INTERVAL 10 MINUTE
+      LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='4') cn ON cn.m = x.m AND cn.at BETWEEN x.at AND x.at + INTERVAL 10 MINUTE
       WHERE po.ref IS NULL AND cn.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
     return { rows };
   } },
@@ -156,7 +163,7 @@ const RULES = {
   S5: { grace: 5 * MIN, run: async c => {
     const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
-    const rows = await dms.qSlow(`SELECT u.id, ${u.at} at, u.msisdn, u.logs_reference_id, cm.api_name, cm.response_Code, cm.response_Message, cm.username dealer
+    const rows = await dms.qSlow(`SELECT u.id, ${U(u)} at, u.msisdn, u.logs_reference_id, cm.api_name, cm.response_Code, cm.response_Message, cm.username dealer
       FROM ${u.ref} JOIN ${cm.ref} ON ${cm.b} AND cm.logs_reference_id = u.logs_reference_id AND cm.api_name LIKE '%transportoperator'
       WHERE ${u.b} AND u.api_name LIKE '%/bss/mnp/create-port-order' AND u.response_Code='00' AND ${W(u)} AND cm.response_Code <> '00'
       ORDER BY u.id DESC LIMIT ${LIMIT}`, [u.lo, u.hi], c.budget);
@@ -167,10 +174,10 @@ const RULES = {
     const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn']);
     const t = await c.T(AUD, 'transfer_ownership_logs', 't', 'insert_date_time', ['mobile_number']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.logs_reference_id
-      FROM (SELECT s.id, ${s.at} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
+      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
             FROM ${s.ref} WHERE ${s.b} AND s.request_type='17' AND s.response_Code='600' AND ${W(s)}) x
-      LEFT JOIN (SELECT ${digits9('t.mobile_number')} m, ${t.at} at FROM ${t.ref} WHERE ${t.b}) tr ON tr.m = x.m AND tr.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 15 MINUTE
-      LEFT JOIN (SELECT s.id sid, ${digits9('s.msisdn')} m, ${s.at} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='17') rv ON rv.m = x.m AND rv.sid <> x.id AND rv.at BETWEEN x.at AND x.at + INTERVAL 60 MINUTE
+      LEFT JOIN (SELECT ${digits9('t.mobile_number')} m, ${U(t)} at FROM ${t.ref} WHERE ${t.b}) tr ON tr.m = x.m AND tr.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 15 MINUTE
+      LEFT JOIN (SELECT s.id sid, ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='17') rv ON rv.m = x.m AND rv.sid <> x.id AND rv.at BETWEEN x.at AND x.at + INTERVAL 60 MINUTE
       WHERE tr.m IS NULL AND rv.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
     return { rows };
   } },
@@ -179,17 +186,17 @@ const RULES = {
     const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn', 'logs_reference_id']);
     const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.logs_reference_id
-      FROM (SELECT s.id, ${s.at} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
+      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
             FROM ${s.ref} WHERE ${s.b} AND s.request_type='6' AND s.response_Code='600' AND ${W(s)}) x
       LEFT JOIN (SELECT u.logs_reference_id ref FROM ${u.ref} WHERE ${u.b} AND (u.api_name LIKE '%convert-billing-type' OR u.api_name LIKE '%update-subscription-price-plan-options') AND u.response_Code IN ('00','0','200') AND u.logs_reference_id <> '') cv ON cv.ref = x.logs_reference_id
-      LEFT JOIN (SELECT s.id sid, ${digits9('s.msisdn')} m, ${s.at} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='6') rv ON rv.m = x.m AND rv.sid <> x.id AND rv.at BETWEEN x.at AND x.at + INTERVAL 10 MINUTE
+      LEFT JOIN (SELECT s.id sid, ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='6') rv ON rv.m = x.m AND rv.sid <> x.id AND rv.at BETWEEN x.at AND x.at + INTERVAL 10 MINUTE
       WHERE cv.ref IS NULL AND rv.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
     return { rows };
   } },
   /* Regulator: compensation (cancel number / cancel SIM) rejected by Semati */
   S8: { grace: 0, run: async c => {
     const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code']);
-    const rows = await dms.qSlow(`SELECT s.id, ${s.at} at, s.request_type, s.response_Code, s.response_Message, s.msisdn, s.employee_username dealer, s.logs_reference_id
+    const rows = await dms.qSlow(`SELECT s.id, ${U(s)} at, s.request_type, s.response_Code, s.response_Message, s.msisdn, s.employee_username dealer, s.logs_reference_id
       FROM ${s.ref} WHERE ${s.b} AND s.request_type IN ('4','5') AND s.response_Code <> '600' AND ${W(s)} ORDER BY s.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
     return { rows };
   } },
@@ -206,8 +213,8 @@ const RULES = {
     const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn', 'logs_reference_id']);
     const asel = await c.sel(AUD, 'sim_activation_logs', 'a', ['api_name', ['mobile_number', 'msisdn'], ['sim_iccid_number', 'iccid'], ['channel_username', 'dealer'], 'logs_reference_id']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.api_name, x.msisdn, x.iccid, x.dealer, x.logs_reference_id
-      FROM (SELECT a.id, ${a.at} at, ${digits9('a.mobile_number')} m, ${asel} FROM ${a.ref} WHERE ${a.b} AND ${W(a)}) x
-      LEFT JOIN (SELECT s.logs_reference_id ref, ${digits9('s.msisdn')} m, ${s.at} at FROM ${s.ref} WHERE ${s.b} AND s.request_type IN ('1','2') AND s.response_Code='600') sm
+      FROM (SELECT a.id, ${U(a)} at, ${digits9('a.mobile_number')} m, ${asel} FROM ${a.ref} WHERE ${a.b} AND ${W(a)}) x
+      LEFT JOIN (SELECT s.logs_reference_id ref, ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type IN ('1','2') AND s.response_Code='600') sm
         ON (sm.ref = x.logs_reference_id AND sm.ref <> '') OR (sm.m = x.m AND sm.at BETWEEN x.at - INTERVAL 30 MINUTE AND x.at + INTERVAL 5 MINUTE)
       WHERE sm.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [a.lo, a.hi], c.budget);
     return { rows, note: 'bypassSemati from the app, or the Semati push was lost (producer down during the verify)' };
@@ -216,7 +223,7 @@ const RULES = {
   S11: { grace: 2 * MIN, run: async c => {
     const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['response_Code', 'uil_transaction_id']);
     const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['response_Code', 'uil_transaction_id']);
-    const rows = await dms.qSlow(`SELECT s.id, ${s.at} at, s.request_type, s.msisdn, s.employee_username dealer, s.uil_transaction_id, u.response_Code uil_code, u.response_Message uil_message
+    const rows = await dms.qSlow(`SELECT s.id, ${U(s)} at, s.request_type, s.msisdn, s.employee_username dealer, s.uil_transaction_id, u.response_Code uil_code, u.response_Message uil_message
       FROM ${s.ref} LEFT JOIN ${u.ref} ON ${u.b} AND u.uil_transaction_id = s.uil_transaction_id AND u.uil_transaction_id <> ''
       WHERE ${s.b} AND s.response_Code='600' AND s.uil_transaction_id <> '' AND ${W(s)} AND (u.id IS NULL OR u.response_Code NOT IN ('600','00'))
       ORDER BY s.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
@@ -243,7 +250,7 @@ const RULES = {
     const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
     const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'logs_reference_id']);
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['logs_reference_id', 'response_Code']);
-    const rows = await dms.qSlow(`SELECT u.id, ${u.at} at, u.msisdn, u.logs_reference_id,
+    const rows = await dms.qSlow(`SELECT u.id, ${U(u)} at, u.msisdn, u.logs_reference_id,
         (SELECT CONCAT(cm.api_name,' → ',cm.response_Code,' ',IFNULL(cm.response_Message,'')) FROM ${cm.ref} WHERE ${cm.b} AND cm.logs_reference_id = u.logs_reference_id ORDER BY cm.id DESC LIMIT 1) outcome,
         (SELECT cm.username FROM ${cm.ref} WHERE ${cm.b} AND cm.logs_reference_id = u.logs_reference_id ORDER BY cm.id DESC LIMIT 1) dealer
       FROM ${u.ref} WHERE ${u.b} AND u.api_name LIKE '%/bss/crm/number-reserve' AND u.response_Code IN ('0','00') AND ${W(u)}
@@ -260,7 +267,7 @@ const RULES = {
     const out = [];
     for (const [api, table] of MAP) {
       const j = await c.T(AUD, table, 'j', 'insert_date_time', ['logs_reference_id']).catch(() => null); if (!j) continue;
-      const rows = await dms.qSlow(`SELECT cm.id, ${cm.at} at, cm.api_name, cm.msisdn_req msisdn, cm.username dealer, cm.logs_reference_id, '${table}' missing_in
+      const rows = await dms.qSlow(`SELECT cm.id, ${U(cm)} at, cm.api_name, cm.msisdn_req msisdn, cm.username dealer, cm.logs_reference_id, '${table}' missing_in
         FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name = ? AND cm.response_Code='00' AND ${W(cm)} AND cm.logs_reference_id <> ''
         AND NOT EXISTS (SELECT 1 FROM ${j.ref} WHERE ${j.b} AND j.logs_reference_id = cm.logs_reference_id) ORDER BY cm.id DESC LIMIT 30`, [api, cm.lo, cm.hi], c.budget);
       out.push(...rows); if (out.length >= LIMIT) break;
@@ -271,7 +278,7 @@ const RULES = {
   J3: { grace: 15 * MIN, run: async c => {
     const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'logs_reference_id']);
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['logs_reference_id']);
-    const rows = await dms.qSlow(`SELECT u.id, ${u.at} at, u.api_name, u.response_Code, u.msisdn, u.logs_reference_id FROM ${u.ref}
+    const rows = await dms.qSlow(`SELECT u.id, ${U(u)} at, u.api_name, u.response_Code, u.msisdn, u.logs_reference_id FROM ${u.ref}
       WHERE ${u.b} AND u.api_name LIKE '%/semati/new-mobile-number' AND ${W(u)} AND u.logs_reference_id <> ''
       AND NOT EXISTS (SELECT 1 FROM ${cm.ref} WHERE ${cm.b} AND cm.logs_reference_id = u.logs_reference_id) ORDER BY u.id DESC LIMIT ${LIMIT}`, [u.lo, u.hi], c.budget);
     return { rows, note: 'customer-service push lost (filter/producer) or the service died mid-flow' };
@@ -300,7 +307,7 @@ const RULES = {
   /* Integrity: re-used ICCID attempts */
   J7: { grace: 0, run: async c => {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['response_Code', 'response_Message', 'cardPackageId_req']);
-    const rows = await dms.qSlow(`SELECT cm.cardPackageId_req iccid, COUNT(*) attempts, MAX(${cm.at}) last_at, SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT cm.username), ',', 3) dealers
+    const rows = await dms.qSlow(`SELECT cm.cardPackageId_req iccid, COUNT(*) attempts, MAX(${U(cm)}) last_at, SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT cm.username), ',', 3) dealers
       FROM ${cm.ref} WHERE ${cm.b} AND cm.response_Code='1532' AND cm.response_Message LIKE 'The Requested ICCID%' AND ${W(cm)} GROUP BY cm.cardPackageId_req HAVING attempts > 1 ORDER BY attempts DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
     return { rows };
   } },
@@ -310,7 +317,7 @@ const RULES = {
     const at = await dms.pick(V1, 'person_verification_log', ['create_datetime', 'created_at', 'created_on', 'insert_date_time']);
     if (!at) throw Object.assign(new Error('person_verification_log: no timestamp column'), { skip: true });
     const p = await c.T(V1, 'person_verification_log', 'p', at, []);
-    const rows = await dms.qSlow(`SELECT p.transaction_id, ${p.at} at, p.request_status, p.activation_status FROM ${p.ref}
+    const rows = await dms.qSlow(`SELECT p.transaction_id, ${U(p)} at, p.request_status, p.activation_status FROM ${p.ref}
       WHERE ${p.b} AND ${W(p)} AND ((p.request_status='PENDING') OR (p.request_status='COMPLETED' AND (p.activation_status=0 OR p.activation_status IS NULL))) ORDER BY p.id DESC LIMIT ${LIMIT}`, [p.lo, p.hi], c.budget);
     return { rows };
   } },
@@ -318,48 +325,68 @@ const RULES = {
   J10: { grace: 5 * MIN, run: async c => {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'msisdn_req']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.dealer, x.logs_reference_id, MAX(b.m IS NOT NULL) had_balance_step, MAX(o.m IS NOT NULL) had_otp_step
-      FROM (SELECT cm.id, ${cm.at} at, ${digits9('cm.msisdn_req')} m, cm.msisdn_req msisdn, cm.username dealer, cm.logs_reference_id
+      FROM (SELECT cm.id, ${U(cm)} at, ${digits9('cm.msisdn_req')} m, cm.msisdn_req msisdn, cm.username dealer, cm.logs_reference_id
             FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%/linedeactivation/line-deactivation' AND cm.response_Code='00' AND ${W(cm)}) x
-      LEFT JOIN (SELECT ${digits9('cm.msisdn_req')} m, ${cm.at} at FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%/linedeactivation/get-balance') b ON b.m = x.m AND b.at BETWEEN x.at - INTERVAL 30 MINUTE AND x.at
-      LEFT JOIN (SELECT ${digits9('cm.msisdn_req')} m, ${cm.at} at FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%verifyotp' AND cm.response_Code='00') o ON o.m = x.m AND o.at BETWEEN x.at - INTERVAL 30 MINUTE AND x.at
+      LEFT JOIN (SELECT ${digits9('cm.msisdn_req')} m, ${U(cm)} at FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%/linedeactivation/get-balance') b ON b.m = x.m AND b.at BETWEEN x.at - INTERVAL 30 MINUTE AND x.at
+      LEFT JOIN (SELECT ${digits9('cm.msisdn_req')} m, ${U(cm)} at FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%verifyotp' AND cm.response_Code='00') o ON o.m = x.m AND o.at BETWEEN x.at - INTERVAL 30 MINUTE AND x.at
       GROUP BY x.id HAVING had_balance_step = 0 OR had_otp_step = 0 ORDER BY x.id DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
     return { rows };
   } },
   /* Integrity: static OTP in production */
   J12: { grace: 0, run: async c => {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['otp_req']);
-    const rows = await dms.qSlow(`SELECT cm.id, ${cm.at} at, cm.api_name, cm.username dealer, cm.msisdn_req msisdn FROM ${cm.ref} WHERE ${cm.b} AND cm.otp_req='7777' AND ${W(cm)} ORDER BY cm.id DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
+    const rows = await dms.qSlow(`SELECT cm.id, ${U(cm)} at, cm.api_name, cm.username dealer, cm.msisdn_req msisdn FROM ${cm.ref} WHERE ${cm.b} AND cm.otp_req='7777' AND ${W(cm)} ORDER BY cm.id DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
     return { rows };
   } },
   /* Integrity: OTP brute force */
   J13: { grace: 0, run: async c => {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'msisdn_req']);
-    const rows = await dms.qSlow(`SELECT cm.msisdn_req msisdn, cm.username dealer, COUNT(*) bad_attempts, MAX(${cm.at}) last_at FROM ${cm.ref}
+    const rows = await dms.qSlow(`SELECT cm.msisdn_req msisdn, cm.username dealer, COUNT(*) bad_attempts, MAX(${U(cm)}) last_at FROM ${cm.ref}
       WHERE ${cm.b} AND cm.api_name LIKE '%verifyotp' AND cm.response_Code IN ('1525','1521') AND ${W(cm)} GROUP BY cm.msisdn_req, cm.username HAVING bad_attempts >= 3 ORDER BY bad_attempts DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
     return { rows };
   } },
   /* Integrity: downstream timeouts per UIL operation */
   J14: { grace: 0, run: async c => {
     const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'response_Message']);
-    const rows = await dms.qSlow(`SELECT u.api_name, u.response_Code, COUNT(*) n, MAX(${u.at}) last_at, SUBSTRING_INDEX(MAX(u.response_Message), 'nested', 1) sample_message FROM ${u.ref}
+    const rows = await dms.qSlow(`SELECT u.api_name, u.response_Code, COUNT(*) n, MAX(${U(u)}) last_at, SUBSTRING_INDEX(MAX(u.response_Message), 'nested', 1) sample_message FROM ${u.ref}
       WHERE ${u.b} AND ${W(u)} AND (u.response_Code='5002' OR (u.response_Code='1500' AND (u.response_Message LIKE '%Timeout%' OR u.response_Message LIKE '%Transport%' OR u.response_Message LIKE '%Connection%')))
       GROUP BY u.api_name, u.response_Code HAVING n >= 3 ORDER BY n DESC LIMIT ${LIMIT}`, [u.lo, u.hi], c.budget);
     return { rows };
   } },
+  /* Diagnostic: DOES THE TRACE ID ACTUALLY JOIN? Half the rules below assume that one dealer request
+   * carries one Sleuth trace id through customer-service -> UIL -> the ledgers. The first live run made
+   * that doubtful (J1/J3 matched almost everything). This measures it instead of assuming it. */
+  X1: { grace: 5 * MIN, run: async c => {
+    const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'logs_reference_id']);
+    const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['logs_reference_id']);
+    const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['logs_reference_id']);
+    const rows = await dms.qSlow(`SELECT COUNT(*) uil_rows,
+        SUM(x.ref IS NOT NULL AND x.ref <> '') with_ref,
+        COUNT(DISTINCT CASE WHEN cmx.ref IS NOT NULL THEN x.ref END) refs_matching_cms,
+        COUNT(DISTINCT CASE WHEN sx.ref IS NOT NULL THEN x.ref END) refs_matching_semati,
+        COUNT(DISTINCT x.ref) distinct_refs
+      FROM (SELECT u.logs_reference_id ref FROM ${u.ref} WHERE ${u.b} AND ${W(u)}) x
+      LEFT JOIN (SELECT DISTINCT cm.logs_reference_id ref FROM ${cm.ref} WHERE ${cm.b} AND ${W(cm)}) cmx ON cmx.ref = x.ref AND x.ref <> ''
+      LEFT JOIN (SELECT DISTINCT s.logs_reference_id ref FROM ${s.ref} WHERE ${s.b} AND ${W(s)}) sx ON sx.ref = x.ref AND x.ref <> ''`,
+      [u.lo, u.hi, cm.lo, cm.hi, s.lo, s.hi], c.budget);
+    const r = rows[0] || {};
+    const pct = Number(r.distinct_refs) ? Math.round(100 * Number(r.refs_matching_cms) / Number(r.distinct_refs)) : 0;
+    return { rows, note: `${pct}% of UIL trace ids also appear in cms_logs — below ~70% the trace-join rules (J1,J2,J3,S5,S7,M4,M5) are unreliable and must fall back to msisdn+time` };
+  } },
+
   /* Money: top-up success without a PAID wallet row */
   M1: { grace: 5 * MIN, run: async c => {
     const t = await c.T(AUD, 'topup_logs', 't', 'insert_date_time', ['channel_user_id', 'amount', 'response_Code']);
     const w = await c.T(WAL, 'wallet_payment_initiate', 'w', 'created_on', ['account_from', 'amount', 'status', 'comments']);
     await c.have(V1, 'dms_users', ['id', 'account_number']);
-    const dh = (w.shiftH - t.shiftH);
     const tsel = await c.sel(AUD, 'topup_logs', 't', [['mobile_number', 'msisdn'], 'amount', 'payment_mode', 'channel_user_id', 'logs_reference_id']);
     const rech = (await c.col(AUD, 'topup_logs', 'recharge')) ? `AND IFNULL(t.recharge,'Y')='Y'` : '';
     const pm = (await c.col(AUD, 'topup_logs', 'payment_mode')) ? `AND IFNULL(t.payment_mode,'') <> 'TPP'` : '';
-    const rows = await dms.qSlow(`SELECT t.id, ${t.at} at, ${tsel}, u.username dealer, u.account_number
+    const rows = await dms.qSlow(`SELECT t.id, ${U(t)} at, ${tsel}, u.username dealer, u.account_number
       FROM ${t.ref} LEFT JOIN ${q(V1, 'dms_users')} u ON u.id = t.channel_user_id
       WHERE ${t.b} AND t.response_Code='00' ${rech} ${pm} AND ${W(t)}
       AND NOT EXISTS (SELECT 1 FROM ${w.ref} WHERE ${w.b} AND w.account_from = u.account_number AND w.status='PAID' AND w.comments IN ('Topup','Top up','TopUp')
-        AND ${w.at} BETWEEN ${t.at} + INTERVAL ${dh} HOUR - INTERVAL 3 MINUTE AND ${t.at} + INTERVAL ${dh} HOUR + INTERVAL 3 MINUTE)
+        AND ${U(w)} BETWEEN ${U(t)} - INTERVAL 3 MINUTE AND ${U(t)} + INTERVAL 3 MINUTE)
       ORDER BY t.id DESC LIMIT ${LIMIT}`, [t.lo, t.hi], c.budget);
     return { rows, note: 'VoucherServiceImpl.topup() overwrites a wallet failure with 00 — verify the wallet comment literal on first hits' };
   } },
@@ -372,7 +399,7 @@ const RULES = {
       const pm = await c.col(AUD, table, 'payment_mode');
       const jsel = await c.sel(AUD, table, 'j', ['api_name', ['mobile_number', 'msisdn'], ['channel_username', 'dealer'], ['price_plan_id', 'plan'], 'payment_id', 'payment_mode', 'logs_reference_id']);
       const exOk = ex && (await c.col(AUD, table, 'channel_username')) && (await c.col(AUD, table, 'price_plan_id'));
-      const rows = await dms.qSlow(`SELECT j.id, ${j.at} at, '${table}' ledger, ${jsel}
+      const rows = await dms.qSlow(`SELECT j.id, ${U(j)} at, '${table}' ledger, ${jsel}
         FROM ${j.ref} WHERE ${j.b} AND j.response_Code='00' AND (j.payment_id IS NULL OR j.payment_id='' OR j.payment_id='0') AND ${W(j)}
         ${pm ? `AND IFNULL(j.payment_mode,'') <> 'TPP'` : ''}
         ${exOk ? `AND NOT EXISTS (SELECT 1 FROM ${q(V1, 'plan_price_exempted')} e WHERE e.channel_username = j.channel_username AND e.price_plan_id = j.price_plan_id)` : ''}
@@ -386,20 +413,23 @@ const RULES = {
     const w = await c.T(WAL, 'wallet_payment_initiate', 'w', 'created_on', ['account_from', 'status', 'comments']);
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'username']);
     await c.have(V1, 'dms_users', ['username', 'account_number']);
-    const dh = (cm.shiftH - w.shiftH);
-    const rows = await dms.qSlow(`SELECT w.id, ${w.at} at, w.account_from, u.username dealer, w.amount, w.status, w.comments
-      FROM ${w.ref} LEFT JOIN ${q(V1, 'dms_users')} u ON u.account_number = w.account_from
-      WHERE ${w.b} AND w.status='PAID' AND w.comments LIKE 'Renew%' AND ${W(w)}
-      AND NOT EXISTS (SELECT 1 FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%/priceplan/renew' AND cm.response_Code='00' AND cm.username = u.username
-        AND ${cm.at} BETWEEN ${w.at} + INTERVAL ${dh} HOUR - INTERVAL 1 MINUTE AND ${w.at} + INTERVAL ${dh} HOUR + INTERVAL 5 MINUTE)
-      ORDER BY w.id DESC LIMIT ${LIMIT}`, [w.lo, w.hi], c.budget);
+    /* both sides are materialised ONCE (the first run timed out at 25 s re-scanning cms_logs per
+     * wallet row); the renewal side is tiny because it is filtered to the one URI. */
+    const rows = await dms.qSlow(`SELECT x.id, x.at, x.account_from, x.dealer, x.amount, x.comments
+      FROM (SELECT w.id, ${U(w)} at, w.account_from, w.amount, w.comments, u.username dealer
+            FROM ${w.ref} LEFT JOIN ${q(V1, 'dms_users')} u ON u.account_number = w.account_from
+            WHERE ${w.b} AND w.status='PAID' AND w.comments LIKE 'Renew%' AND ${W(w)}) x
+      LEFT JOIN (SELECT cm.username dealer, ${U(cm)} at FROM ${cm.ref}
+                 WHERE ${cm.b} AND cm.api_name LIKE '%/priceplan/renew' AND cm.response_Code='00') r
+        ON r.dealer = x.dealer AND r.at BETWEEN x.at - INTERVAL 1 MINUTE AND x.at + INTERVAL 5 MINUTE
+      WHERE r.dealer IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [w.lo, w.hi, cm.lo, cm.hi], c.budget);
     return { rows, note: 'no refund path exists in the service — each hit is a manual reconciliation' };
   } },
   /* Money: change plan failed after the BSS adjustment failed while the wallet was debited */
   M4: { grace: 5 * MIN, run: async c => {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
     const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
-    const rows = await dms.qSlow(`SELECT cm.id, ${cm.at} at, cm.msisdn_req msisdn, cm.username dealer, cm.response_Code, cm.response_Message, u.response_Code adj_code, u.response_Message adj_message, cm.logs_reference_id
+    const rows = await dms.qSlow(`SELECT cm.id, ${U(cm)} at, cm.msisdn_req msisdn, cm.username dealer, cm.response_Code, cm.response_Message, u.response_Code adj_code, u.response_Message adj_message, cm.logs_reference_id
       FROM ${cm.ref} JOIN ${u.ref} ON ${u.b} AND u.logs_reference_id = cm.logs_reference_id AND u.api_name LIKE '%create-subscription-transaction' AND u.response_Code NOT IN ('00','0')
       WHERE ${cm.b} AND cm.api_name LIKE '%/priceplan/update' AND cm.response_Code <> '00' AND ${W(cm)} ORDER BY cm.id DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
     return { rows, note: 'the wallet debit precedes the adjustment in updatePriceplan — check the wallet row for the dealer before refunding' };
@@ -408,7 +438,7 @@ const RULES = {
   M5: { grace: 5 * MIN, run: async c => {
     const u = await c.T(AUD, 'uil_logs', 'u', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
-    const rows = await dms.qSlow(`SELECT u.id, ${u.at} at, u.msisdn, u.logs_reference_id, cm.response_Code, cm.response_Message, cm.username dealer
+    const rows = await dms.qSlow(`SELECT u.id, ${U(u)} at, u.msisdn, u.logs_reference_id, cm.response_Code, cm.response_Message, cm.username dealer
       FROM ${u.ref} JOIN ${cm.ref} ON ${cm.b} AND cm.logs_reference_id = u.logs_reference_id AND cm.api_name LIKE '%/addon/purchase'
       WHERE ${u.b} AND u.api_name LIKE '%create-subscription-transaction' AND u.response_Code IN ('00','0') AND ${W(u)} AND cm.response_Code <> '00'
       ORDER BY u.id DESC LIMIT ${LIMIT}`, [u.lo, u.hi], c.budget);
@@ -417,18 +447,18 @@ const RULES = {
   /* Money: stuck wallet initiates */
   M6: { grace: 0, run: async c => {
     const w = await c.T(WAL, 'wallet_payment_initiate', 'w', 'created_on', ['status', 'transaction_type', 'signature_expiry']);
-    const nowLocal = new Date(Date.now() + w.shiftH * H);
-    const rows = await dms.qSlow(`SELECT w.id, ${w.at} at, w.transaction_type, w.source_system, w.status, w.amount, w.account_from, w.account_to, w.comments, w.signature_expiry
+    const nowLocal = new Date(Date.now() + w.shiftH * H), nowUtc = new Date();
+    const rows = await dms.qSlow(`SELECT w.id, ${U(w)} at, w.transaction_type, w.source_system, w.status, w.amount, w.account_from, w.account_to, w.comments, w.signature_expiry
       FROM ${w.ref} WHERE ${w.b} AND ${W(w)} AND (w.status='CONSUMED'
-        OR (w.status='PENDING' AND ((w.signature_expiry < ? - INTERVAL 40 MINUTE) OR (w.transaction_type IN ('CC','REFUND') AND ${w.at} < ? - INTERVAL 10 MINUTE) OR (w.transaction_type='WALLET_TRANSFER' AND ${w.at} < ? - INTERVAL 60 MINUTE))))
-      ORDER BY w.id DESC LIMIT ${LIMIT}`, [w.lo, w.hi, nowLocal, nowLocal, nowLocal], c.budget);
+        OR (w.status='PENDING' AND ((w.signature_expiry < ? - INTERVAL 40 MINUTE) OR (w.transaction_type IN ('CC','REFUND') AND ${U(w)} < ? - INTERVAL 10 MINUTE) OR (w.transaction_type='WALLET_TRANSFER' AND ${U(w)} < ? - INTERVAL 60 MINUTE))))
+      ORDER BY w.id DESC LIMIT ${LIMIT}`, [w.lo, w.hi, nowLocal, nowUtc, nowUtc], c.budget);
     return { rows };
   } },
   /* Money: e-voucher issued (voucher number in the response) but the call did not end 00 */
   M9: { grace: 0, run: async c => {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code']);
     if (!(await c.col(AUD, 'cms_logs', 'voucherNo_resp'))) throw Object.assign(new Error('cms_logs lacks voucherNo_resp'), { skip: true });
-    const rows = await dms.qSlow(`SELECT cm.id, ${cm.at} at, cm.msisdn_req msisdn, cm.username dealer, cm.response_Code, cm.response_Message, cm.logs_reference_id
+    const rows = await dms.qSlow(`SELECT cm.id, ${U(cm)} at, cm.msisdn_req msisdn, cm.username dealer, cm.response_Code, cm.response_Message, cm.logs_reference_id
       FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%/recharge/evoucher' AND cm.response_Code <> '00' AND cm.voucherNo_resp IS NOT NULL AND cm.voucherNo_resp <> '' AND ${W(cm)} ORDER BY cm.id DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
     return { rows };
   } },
@@ -436,7 +466,7 @@ const RULES = {
   M10: { grace: 5 * MIN, run: async c => {
     const w = await c.T(WAL, 'wallet_payment_initiate', 'w', 'created_on', ['status', 'comments', 'account_from']);
     await c.have(V1, 'payment_history', ['payment_id']);
-    const rows = await dms.qSlow(`SELECT w.id, ${w.at} at, w.account_from, w.amount, w.comments FROM ${w.ref}
+    const rows = await dms.qSlow(`SELECT w.id, ${U(w)} at, w.account_from, w.amount, w.comments FROM ${w.ref}
       WHERE ${w.b} AND w.status='PAID' AND w.comments LIKE 'Bill Payment%' AND ${W(w)}
       AND NOT EXISTS (SELECT 1 FROM ${q(V1, 'payment_history')} p WHERE p.payment_id = w.id OR p.payment_id = CAST(w.id AS CHAR)) ORDER BY w.id DESC LIMIT ${LIMIT}`, [w.lo, w.hi], c.budget);
     return { rows, note: 'payment_history.payment_id semantics assumed = wallet initiate id — verify on first hits' };
@@ -444,7 +474,7 @@ const RULES = {
   /* Money: duplicate money movements (same dealer, same msisdn, same URI within 10 min) */
   M12: { grace: 0, run: async c => {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'msisdn_req', 'username']);
-    const rows = await dms.qSlow(`SELECT cm.api_name, cm.msisdn_req msisdn, cm.username dealer, COUNT(*) calls, SUM(cm.response_Code='00') ok, MIN(${cm.at}) first_at, MAX(${cm.at}) last_at
+    const rows = await dms.qSlow(`SELECT cm.api_name, cm.msisdn_req msisdn, cm.username dealer, COUNT(*) calls, SUM(cm.response_Code='00') ok, MIN(${U(cm)}) first_at, MAX(${U(cm)}) last_at
       FROM ${cm.ref} WHERE ${cm.b} AND ${W(cm)} AND cm.msisdn_req <> '' AND cm.api_name IN ('/cus/recharge/topup','/cus/recharge/evoucher','/cus/bill/payment','/cus/priceplan/renew','/cus/addon/purchase','/cus/mnp/transportoperator','/cus/simactivation/activate','/cus/wallet/wallettransfer')
       GROUP BY cm.api_name, cm.msisdn_req, cm.username HAVING calls > 1 AND ok > 1 AND TIMESTAMPDIFF(MINUTE, first_at, last_at) <= 10 ORDER BY ok DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
     return { rows, note: 'more than one 00 for the same dealer/msisdn/URI within 10 min — no idempotency key exists in the code' };
@@ -455,13 +485,13 @@ const RULES = {
     const at = await dms.pick(V1, 'nafath_record', ['created_at', 'created_on', 'create_datetime', 'insert_date_time', 'updated_at']);
     if (!at) throw Object.assign(new Error('nafath_record: no timestamp column'), { skip: true });
     const n = await c.T(V1, 'nafath_record', 'n', at, []);
-    const rows = await dms.qSlow(`SELECT n.id, ${n.at} at, n.status FROM ${n.ref} WHERE ${n.b} AND ${W(n)} AND n.status='INITIATED' ORDER BY n.id DESC LIMIT ${LIMIT}`, [n.lo, n.hi], c.budget);
+    const rows = await dms.qSlow(`SELECT n.id, ${U(n)} at, n.status FROM ${n.ref} WHERE ${n.b} AND ${W(n)} AND n.status='INITIATED' ORDER BY n.id DESC LIMIT ${LIMIT}`, [n.lo, n.hi], c.budget);
     return { rows };
   } },
   /* Access: login failure bursts */
   L1: { grace: 0, run: async c => {
     const o = await c.T(AUD, 'user_onboarding_logs', 'o', 'insert_date_time', ['api_name', 'response_Code', 'username_req']);
-    const rows = await dms.qSlow(`SELECT o.username_req dealer, COUNT(*) failures, SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT o.response_Code), ',', 4) codes, MAX(${o.at}) last_at
+    const rows = await dms.qSlow(`SELECT o.username_req dealer, COUNT(*) failures, SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT o.response_Code), ',', 4) codes, MAX(${U(o)}) last_at
       FROM ${o.ref} WHERE ${o.b} AND o.api_name = '/onboarding/user/login' AND o.response_Code <> '00' AND ${W(o)} GROUP BY o.username_req HAVING failures >= 5 ORDER BY failures DESC LIMIT ${LIMIT}`, [o.lo, o.hi], c.budget);
     return { rows, note: 'failed logins also evict the dealer\'s live sessions (pruning runs before the password check)' };
   } },
@@ -474,15 +504,28 @@ const RULES = {
 };
 /* window end grace: give in-flight journeys time to complete before calling them abnormal */
 
-/* ---- masking at ingest (identifiers never enter the console DB) ---- */
-const KEEP = new Set(['dealer', 'username', 'employee_username', 'api_name', 'ledger', 'missing_in', 'table', 'request_type', 'response_code', 'uil_code', 'codes', 'status', 'transaction_type', 'source_system', 'comments', 'swap_call', 'outcome', 'payment_mode', 'plan']);
-const DROP = new Set(['otp', 'otp_req', 'sim_list', 'request', 'response']);
+/* ---- MASKING AT INGEST — identifiers never enter the console DB.
+ * The first live run (17 Sep 2026) leaked `person_id` (a national id) in clear: the old pass-through
+ * pattern allowed anything ending in `_id`, which is true of both a Sleuth trace id and a national id.
+ * The policy is explicit now: a short allow-list of TECHNICAL keys stays readable because tracing is
+ * impossible without it; a deny-list is dropped outright; everything else has its digit runs masked. */
+const CLEAR = new Set([                                    // technical, never personal
+  'id', 'src_id', 'newest_id', 'payment_initiate_id', 'logs_reference_id', 'uil_transaction_id', 'tcn',
+  'rule', 'table', 'ledger', 'missing_in', 'api_name', 'swap_call', 'outcome', 'info', 'note', 'error',
+  'dealer', 'username', 'employee_username', 'channel_code', 'dealer_type', 'request_type', 'plan',
+  'response_code', 'uil_code', 'adj_code', 'codes', 'status', 'user_status', 'wallet_status',
+  'transaction_type', 'source_system', 'comments', 'payment_mode', 'payment_id', 'capped', 'skipped']);
+const DROP = new Set(['otp', 'otp_req', 'otp_mob', 'sim_list', 'request', 'response', 'token',
+  'api_key', 'iam_token', 'manafith_app_token', 'signature', 'password']);
+const NUMERIC_OK = /^(n|calls|ok|attempts|failures|cancels|registrations|dealers|unattributed|rejected|over_60s|pct|bad_attempts|rows|amount|avg_ms|max_ms|ms|age_min|threshold_min|slowest_ms|total_ms|had_[a-z_]+)$/;
 function maskRow(row) {
   const o = {};
   for (const [k, v] of Object.entries(row)) {
-    const kl = k.toLowerCase(); if (DROP.has(kl)) continue;
-    if (v == null || typeof v === 'number' || v instanceof Date || KEEP.has(kl) || /^(id|n|at|.*_at|.*_id|attempts|calls|ok|.*_ms|age_min|threshold_min|pct|.*count.*|cancels|registrations|failures|dealers|unattributed|over_60s|rejected|amount|.*_step|had_.*)$/.test(kl)) { o[k] = v; continue; }
-    o[k] = String(v).replace(/\d{5,}/g, m => m.slice(0, 2) + '*'.repeat(Math.min(6, m.length - 4)) + m.slice(-2)).slice(0, 120);
+    const kl = k.toLowerCase();
+    if (DROP.has(kl)) continue;
+    if (v == null || typeof v === 'number' || typeof v === 'boolean' || v instanceof Date) { o[k] = v; continue; }
+    if (CLEAR.has(kl) || NUMERIC_OK.test(kl) || /(^|_)at$/.test(kl)) { o[k] = String(v).slice(0, 200); continue; }
+    o[k] = String(v).replace(/\d{4,}/g, m => m.slice(0, 2) + '*'.repeat(Math.min(6, Math.max(2, m.length - 4))) + m.slice(-2)).slice(0, 120);
   }
   return o;
 }
@@ -531,7 +574,10 @@ async function runRules(ids, opts = {}) {
 /* ---- alerts: money/regulator rules (P2/P3) open one alert per rule while hits persist ---- */
 async function alertsFromResults(results, now) {
   for (const r of results) {
-    const meta = RULE_META[r.rule]; if (!meta || !['P2', 'P3'].includes(meta.sev)) continue;
+    const meta = RULE_META[r.rule];
+    /* alert === false = the rule runs and is visible in Explore, but does not raise an alert until its
+     * cross-table join has been validated against live data (see DMS-JOURNEYS-CODE.md §6). */
+    if (!meta || meta.alert === false || !['P2', 'P3'].includes(meta.sev)) continue;
     const key = `dms:flow:${r.rule}`;
     const cur = (await db.console.query(`SELECT id FROM alerts WHERE rule_key=$1 AND status='open' ORDER BY id DESC LIMIT 1`, [key])).rows[0];
     if (r.error || r.n === 0) { if (cur && !r.error) await db.console.query(`UPDATE alerts SET status='resolved', resolved_at=$2 WHERE id=$1`, [cur.id, now]); continue; }
@@ -541,9 +587,10 @@ async function alertsFromResults(results, now) {
     if (cur) await db.console.query(`UPDATE alerts SET last_seen_at=$2, observed_value=$3, message=$4, breach_count=breach_count+1, peak_value=GREATEST(peak_value,$3) WHERE id=$1`, [cur.id, now, r.n, msg]);
     else await db.console.query(
       `INSERT INTO alerts (rule_key,name,severity,team,status,metric_key,operator,threshold,observed_value,sample,window_hours,dim,message,fired_at,last_seen_at,peak_value,breach_count)
-       VALUES ($1,$2,$3,'Digital Ops','open',$4,'>',0,$5,$5,$6,$7,$8,$9,$9,$5,1)`,
-      [key, `DMS flow ${r.rule} · ${meta.title}`, meta.sev, `dms.flow.${r.rule}`, r.n, Math.round((r.win_to - r.win_from) / H),
-        JSON.stringify({ rule: r.rule, family: meta.family, source: 'dms_flow_findings' }), msg, now]);
+       VALUES ($1,$2,$3,'Digital Ops','open',$4,'>',0,$5::numeric,$6::numeric,$7::int,$8,$9,$10,$10,$11::numeric,1)`,
+      [key, `DMS flow ${r.rule} · ${meta.title}`, meta.sev, `dms.flow.${r.rule}`, r.n, r.n,
+        Math.round((r.win_to - r.win_from) / H),
+        JSON.stringify({ rule: r.rule, family: meta.family, source: 'dms_flow_findings' }), msg, now, r.n]);
   }
 }
 
