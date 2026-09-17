@@ -320,8 +320,8 @@ const JOURNEYS = [
 ];
 
 const RULE_META = {
-  M1: { sev: 'P2', family: 'money', title: 'Top-up success without wallet debit' , alert: false },
-  M2: { sev: 'P2', family: 'money', title: 'Journey success without payment' , alert: false },
+  M1: { sev: 'P2', family: 'money', title: 'Top-up success without wallet debit' },
+  M2: { sev: 'P2', family: 'money', title: 'Journey success without payment' },
   M3: { sev: 'P2', family: 'money', title: 'Renew Now debited, not renewed' , alert: false },
   M4: { sev: 'P2', family: 'money', title: 'Change plan: adjustment failed after debit' , alert: false , retired: 'retired 17 Sep: needs the cms↔uil trace (2% match); the wallet-vs-ledger check in M2/M3 covers the money side' },
   M5: { sev: 'P2', family: 'money', title: 'Add-on: BSS credited, no purchase row' , alert: false , retired: 'retired 17 Sep: needs the cms↔uil trace (2% match); add-on charging is covered by M2 and addon_transaction_history' },
@@ -329,7 +329,7 @@ const RULE_META = {
   M7: { sev: 'P3', family: 'money', title: 'Refill approved with ≠1 credit or pending > 1 h' },
   M8: { sev: 'P3', family: 'money', title: 'HyperPay checkout without credit / duplicate credit' },
   M9: { sev: 'P2', family: 'money', title: 'E-voucher issued but unpaid' },
-  M10: { sev: 'P2', family: 'money', title: 'Bill payment wallet ↔ payment_history mismatch' , alert: false },
+  M10: { sev: 'P2', family: 'money', title: 'Bill payment wallet ↔ payment_history mismatch' },
   M11: { sev: 'P4', family: 'money', title: 'Daily top-up cap exceeded' },
   M12: { sev: 'P3', family: 'money', title: 'Duplicate money movement (replay)' },
   M13: { sev: 'P3', family: 'money', title: 'Negative wallet balance' },

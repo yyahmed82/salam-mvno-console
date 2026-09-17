@@ -98,7 +98,10 @@ const W = t => `${t.at} >= ? AND ${t.at} < ?`;
  * appears in the ledger. The online / self-activation channel does not write the DMS journey ledgers
  * at all, so comparing it against them is meaningless — S14 watches that channel on its own terms. */
 const DEALER_ONLY = a => `${a}.employee_username NOT LIKE 'ONLINE%'`;
-const digits9 = col => `RIGHT(REGEXP_REPLACE(${col}, '[^0-9]', ''), 9)`;
+/* CONVERT+COLLATE because the schemas disagree: dms_audit_logs is utf8mb4_unicode_ci and dms_v1 is
+ * utf8mb4_general_ci, which makes a cross-schema '=' fail outright ("Illegal mix of collations",
+ * seen on S14's first run). These are digit strings — forcing one collation costs nothing. */
+const digits9 = col => `CONVERT(RIGHT(REGEXP_REPLACE(${col}, '[^0-9]', ''), 9) USING utf8mb4) COLLATE utf8mb4_general_ci`;
 
 /* ---- CLOCK NORMALISATION (added after the first live run, 17 Sep 2026).
  * Each ledger is read with its OWN clock for the window predicate (index-friendly), but the moment
@@ -430,13 +433,14 @@ const RULES = {
      * wallet row); the renewal side is tiny because it is filtered to the one URI. */
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.account_from, u.username dealer, x.amount, x.comments
       FROM (SELECT w.id, ${U(w)} at, w.account_from, w.amount, w.comments
-            FROM ${w.ref} WHERE ${w.b} AND w.status='PAID' AND w.comments LIKE 'Renew%' AND ${W(w)}) x
+            FROM ${w.ref} WHERE ${w.b} AND w.status='PAID' AND w.comments LIKE 'Renew now%'
+              AND w.account_from <> 1234567 AND ${W(w)}) x
       LEFT JOIN ${q(V1, 'dms_users')} u ON u.account_number = x.account_from
       LEFT JOIN (SELECT cm.username dealer, ${U(cm)} at FROM ${cm.ref}
                  WHERE ${cm.b} AND cm.api_name LIKE '%/priceplan/renew' AND cm.response_Code='00') r
         ON r.dealer = u.username AND r.at BETWEEN x.at - INTERVAL 1 MINUTE AND x.at + INTERVAL 5 MINUTE
-      WHERE r.dealer IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [w.lo, w.hi, cm.lo, cm.hi], c.budget);
-    return { rows, note: 'no refund path exists in the service — each hit is a manual reconciliation' };
+      WHERE r.dealer IS NULL AND u.username IS NOT NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [w.lo, w.hi, cm.lo, cm.hi], c.budget);
+    return { rows, note: 'dealer debited for Renew Now with no successful renewal — no refund path exists in the service, so each hit is a manual reconciliation (the "Renew-Now-Commission" credit leg is excluded)' };
   } },
   /* Money: stuck wallet initiates */
   M6: { grace: 0, run: async c => {
