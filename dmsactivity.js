@@ -187,10 +187,10 @@
               <span class="mono" style="color:var(--muted);font-size:10.5px">${esc(k.t(h.at, true))}</span><span>${h.icon || '•'}</span>
               <span><b>${esc(h.label)}</b>${h.api ? ` <span class="mono" style="color:var(--muted);font-size:10px">${esc(h.api)}</span>` : ''}</span>
               <span class="da-smsg" style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.plan ? h.plan + (h.message ? ' · ' + h.message : '') : h.message || '')}</span>
-              <span class="da-scode">${codeHtml(h)}</span></div>`).join('')}</div></details>`).join('')}${F.flows.length > 800 ? `<div class="da-sub">showing 800 of ${F.flows.length} journeys on screen — use the List view or the CSV for the rest</div>` : ''}</div>`;
+              <span class="da-scode">${codeHtml(h)}${isLogRef(h.ref) ? ` <button type="button" class="da-chip" data-log="${esc(h.ref)}" data-at="${esc(h.at)}" data-t="${esc(h.label)}" title="full application logs of this call: request, response, SOAP to the BSS" style="padding:1px 7px;font-size:10px">⛏ logs</button>` : ''}</span></div>`).join('')}</div></details>`).join('')}${F.flows.length > 800 ? `<div class="da-sub">showing 800 of ${F.flows.length} journeys on screen — use the List view or the CSV for the rest</div>` : ''}</div>`;
         } else {
           content = `<div class="da-scroll"><table class="da-tbl"><thead><tr><th>At (KSA)</th><th>Journey</th><th>Endpoint</th><th>Code</th><th>Customer</th><th>ID</th><th>Plan</th><th>Message</th><th>Ref</th></tr></thead><tbody>
-            ${F.hits.slice(0, 6000).map(h => `<tr class="${h.err ? 'err' : ''}" data-j="${esc(h.journey)}" data-id="${h.src_id}" title="open the full ledger row"><td class="mono">${esc(k.md(h.at))}:${esc(String(k.t(h.at, true)).slice(-2))}</td><td>${h.icon || '•'} ${esc(h.label)}</td><td class="mono" title="${esc(h.api || '')}">${esc(h.api || '—')}</td><td>${codeHtml(h)}</td><td class="mono">${esc(h.msisdn || '')}</td><td class="mono">${esc(h.customer || '')}</td><td title="${esc(h.plan || '')}">${esc(h.plan || '')}</td><td title="${esc(h.message || '')}" style="color:var(--muted)">${esc(h.message || '')}</td><td class="mono" title="${esc(h.ref || '')}">${esc(h.ref || '')}</td></tr>`).join('')}
+            ${F.hits.slice(0, 6000).map(h => `<tr class="${h.err ? 'err' : ''}" data-j="${esc(h.journey)}" data-id="${h.src_id}" title="open the full ledger row"><td class="mono">${esc(k.md(h.at))}:${esc(String(k.t(h.at, true)).slice(-2))}</td><td>${h.icon || '•'} ${esc(h.label)}</td><td class="mono" title="${esc(h.api || '')}">${esc(h.api || '—')}</td><td>${codeHtml(h)}</td><td class="mono">${esc(h.msisdn || '')}</td><td class="mono">${esc(h.customer || '')}</td><td title="${esc(h.plan || '')}">${esc(h.plan || '')}</td><td title="${esc(h.message || '')}" style="color:var(--muted)">${esc(h.message || '')}</td><td class="mono" title="${esc(h.ref || '')}">${esc(h.ref || '')}${isLogRef(h.ref) ? ` <button type="button" class="da-chip" data-log="${esc(h.ref)}" data-at="${esc(h.at)}" data-t="${esc(h.label)}" title="full application logs of this call" style="padding:1px 7px;font-size:10px">⛏</button>` : ''}</td></tr>`).join('')}
           </tbody></table></div>${F.hits.length > 6000 ? `<div class="da-sub">showing 6 000 of ${F.hits.length} rows on screen — the CSV carries all of them</div>` : ''}`;
         }
         const more = d.hasMore ? `<div class="da-bar" style="margin:8px 0 0"><span class="da-sub" style="color:${AMBER}"><b>Not everything yet</b> — ${esc(d.truncated.join(', '))} still ${d.truncated.length === 1 ? 'has' : 'have'} older rows in this window (oldest loaded ${esc(k.md(d.oldest))}).</span>
@@ -209,6 +209,7 @@
       host.querySelectorAll('[data-days]').forEach(b => b.onclick = () => { state.days = Number(b.dataset.days); state.from = state.to = null; load(); });
       host.querySelectorAll('[data-j]').forEach(b => { if (b.classList.contains('da-chip')) b.onclick = () => { state.journey = state.journey === b.dataset.j ? null : b.dataset.j; paint(); }; });
       host.querySelectorAll('.da-step[data-j],.da-tbl tr[data-j]').forEach(r => r.onclick = () => { if (window.openDmsRowPopup) window.openDmsRowPopup(r.dataset.j, r.dataset.id); });
+      host.querySelectorAll('[data-log]').forEach(b => b.onclick = e => { e.stopPropagation(); const at = b.dataset.at ? new Date(new Date(b.dataset.at).getTime() + 3 * 3600e3).toISOString().slice(0, 10) : ''; window.openDmsAppLogs(b.dataset.log, at, b.dataset.t); });
       const act = a => host.querySelector(`[data-act="${a}"]`);
       if (act('failed')) act('failed').onclick = () => { state.failed = !state.failed; paint(); };
       if (act('reload')) act('reload').onclick = () => load();
@@ -228,4 +229,57 @@
     load();
     return { reload: load };
   };
+
+  /* ---------------------------------------------------------------- APPLICATION LOGS — the full story of one call as it sits in the
+   * UIL / DMS service logs on the APP nodes (SSH grep by Sleuth trace id or uilTransactionId, server/src/dmsLogGrep.js):
+   * every UIL call block (URL, request body, response, timing) and every SOAP envelope exchanged with the BSS. */
+  const isLogRef = v => /^[0-9a-f]{16}$/i.test(String(v || '').trim()) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || '').trim());
+  const pretty = t => { const s = String(t == null ? '' : t).trim(); try { return JSON.stringify(JSON.parse(s), null, 2); } catch (_) { return s; } };
+  const prettyXml = x => { let out = '', pad = 0; String(x || '').replace(/>\s*</g, '><').split(/(?=<)/).forEach(n => { if (/^<\//.test(n)) pad = Math.max(0, pad - 1); out += '  '.repeat(pad) + n + '\n'; if (/^<[^!?\/][^>]*[^\/]>$/.test(n) && !/<\/[^>]+>$/.test(n)) pad++; }); return out.trim(); };
+  window.openDmsAppLogs = async function (ref, dateKsa, title) {
+    css();
+    if (!isLogRef(ref)) { alert('This reference is not a trace id (16 hex) or a UIL transaction id (UUID) — the app logs cannot be searched by it.'); return; }
+    const old = document.getElementById('daLogOv'); if (old) old.remove();
+    const ov = document.createElement('div'); ov.id = 'daLogOv';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:1400;background:rgba(15,23,42,.6);backdrop-filter:blur(2px);overflow:auto;padding:3vh 3vw';
+    const date = dateKsa ? String(dateKsa).slice(0, 10) : '';
+    ov.innerHTML = `<div style="max-width:1320px;margin:0 auto;background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 70px rgba(2,6,23,.45);overflow:hidden">
+      <div style="position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 18px;background:var(--card,#fff);border-bottom:1px solid var(--line)">
+        <span style="font-size:15px">⛏</span><div style="line-height:1.15"><b style="font-size:13px">Application logs · <span class="mono">${esc(ref)}</span></b><br><span class="da-sub">${esc(title || '')} · UIL + DMS service logs on the APP nodes · ${date ? 'current logs + rotated files of ' + esc(date) : 'current logs'} · credentials redacted at source · this view is audited</span></div>
+        <span style="flex:1"></span>
+        <input type="date" class="da-in" id="daLogDate" value="${esc(date)}" title="deep-search the rotated logs of this day (≤ 7 days back)">
+        <button type="button" class="da-chip on" id="daLogGo">↻ Search</button>
+        <button type="button" id="daLogX" style="cursor:pointer;width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--card2,rgba(148,163,184,.08));color:inherit;font-size:14px;display:inline-flex;align-items:center;justify-content:center">✕</button></div>
+      <div id="daLogBody" style="padding:14px 18px"><div class="da-empty">Searching the APP nodes… (a dated deep search can take up to a minute; repeats are served from cache)</div></div></div>`;
+    document.body.appendChild(ov); document.body.style.overflow = 'hidden';
+    const close = () => { ov.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', onEsc); };
+    const onEsc = e => { if (e.key === 'Escape') close(); }; document.addEventListener('keydown', onEsc);
+    ov.addEventListener('click', e => { if (e.target === ov) close(); }); ov.querySelector('#daLogX').onclick = close;
+    const run = async () => {
+      const body = ov.querySelector('#daLogBody'); const dt = ov.querySelector('#daLogDate').value;
+      body.innerHTML = `<div class="da-empty">Searching the APP nodes… ${dt ? '(deep search of ' + esc(dt) + ' — up to a minute)' : ''}</div>`;
+      let d; try { d = await api(`/api/apigw/logref/${encodeURIComponent(ref)}${dt ? '?date=' + encodeURIComponent(dt) : ''}`); }
+      catch (e) { body.innerHTML = `<div class="da-empty" style="color:${RED}">${esc(e.message)}</div>`; return; }
+      if (window.audit) window.audit('DMS_APP_LOGS', String(ref).slice(0, 40));
+      if (d.error || d.ok === false || d.configured === false) { body.innerHTML = `<div class="da-empty" style="color:${RED}">${esc(d.error || 'search failed')}</div>`; return; }
+      const calls = d.calls || [], soap = d.soap || [];
+      let h = `<div class="da-sub" style="margin-bottom:10px"><b>${num(d.total_hits)}</b> matching line(s) · ${esc(d.scope || '')} · ${d.ms} ms${d.cached ? ' · from cache' : ''}${d.errors ? ` · <span style="color:${RED}">${esc(d.errors.join(' · '))}</span>` : ''}</div>`;
+      if (!d.total_hits) h += `<div class="da-empty" style="color:${AMBER}">${esc(d.note || 'No match.')}</div>`;
+      else {
+        if (calls.length) h += `<div class="da-title" style="margin:6px 0">Calls through the UIL gateway <span class="da-badge">${calls.length}</span></div>` + calls.map((c, i) => {
+          const bad = c.response_code && !/^(00|0|200|600)$/.test(String(c.response_code));
+          return `<details class="da-flow ${bad ? 'bad' : 'ok'}" ${i < 3 ? 'open' : ''}><summary style="grid-template-columns:1fr auto"><span style="min-width:0"><b class="mono">${esc(c.method || '')} ${esc((c.url || '').replace(/^https?:\/\/[^/]+/, ''))}</b><span class="da-sub"> · ${esc(c.host)} · from ${esc(c.requester || '?')}${c.ms ? ' · ' + esc(c.ms) + ' ms' : ''}</span></span><span class="da-out" style="color:${bad ? RED : GREEN};background:color-mix(in srgb,${bad ? RED : GREEN} 12%,transparent)">${esc(c.response_code || '—')}${c.response_message ? ' · ' + esc(c.response_message) : ''}</span></summary>
+            <div class="da-steps" style="padding-left:11px"><div class="da-sub" style="margin:4px 0 2px">URL</div><div class="mono" style="font-size:11px;word-break:break-all">${esc(c.url || '')}</div>
+            ${c.query ? `<div class="da-sub" style="margin:8px 0 2px">Query / context</div><pre style="font-size:10.5px;white-space:pre-wrap;word-break:break-all;margin:0">${esc(c.query)}</pre>` : ''}
+            <div class="da-sub" style="margin:8px 0 2px">Request body</div><pre style="font-size:10.5px;white-space:pre-wrap;word-break:break-all;margin:0;max-height:260px;overflow:auto">${esc(pretty(c.request_body) || '—')}</pre>
+            <div class="da-sub" style="margin:8px 0 2px">Response</div><pre style="font-size:10.5px;white-space:pre-wrap;word-break:break-all;margin:0;max-height:320px;overflow:auto">${esc(pretty(c.response) || '—')}</pre></div></details>`; }).join('');
+        if (soap.length) h += `<div class="da-title" style="margin:10px 0 6px">SOAP exchanged with the BSS <span class="da-badge">${soap.length}</span></div>` + soap.map((x, i) => `<details class="da-flow ok" ${i < 2 ? 'open' : ''}><summary style="grid-template-columns:1fr auto"><span><b>${esc(x.direction)}</b> · <span class="mono">${esc(x.operation || 'envelope')}</span><span class="da-sub"> · ${esc(x.at || '')} · ${esc(x.host)}</span></span><span class="da-sub">${num(x.envelope.length)} chars</span></summary><div class="da-steps" style="padding-left:11px"><pre style="font-size:10px;white-space:pre-wrap;word-break:break-all;margin:0;max-height:420px;overflow:auto">${esc(prettyXml(x.envelope))}</pre></div></details>`).join('');
+        if (window._dmsLogResultHtml) h += `<details style="margin-top:10px"><summary class="da-sub" style="cursor:pointer">Files, hops and raw lines (as on the nodes)</summary><div style="margin-top:6px">${window._dmsLogResultHtml(d)}</div></details>`;
+        else { const raw = (d.hosts || []).filter(x => (x.lines || []).length).map(x => `== ${x.host} ==\n${x.lines.join('\n')}${x.ctx ? '\n-- context --\n' + x.ctx : ''}`).join('\n\n'); if (raw) h += `<details style="margin-top:10px"><summary class="da-sub" style="cursor:pointer">Raw log lines (as on the nodes)</summary><pre style="font-size:10px;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-all">${esc(raw)}</pre></details>`; }
+      }
+      body.innerHTML = h;
+    };
+    ov.querySelector('#daLogGo').onclick = run; run();
+  };
+  window.isDmsLogRef = isLogRef;
 })();

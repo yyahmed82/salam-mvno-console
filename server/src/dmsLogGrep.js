@@ -55,7 +55,7 @@ function sshExec(host, remoteCmd, timeoutMs) {
   const args = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new',
     '-i', c.key, `${c.user}@${host}`, remoteCmd];
   return new Promise((resolve, reject) => {
-    execFile('ssh', args, { maxBuffer: 4 * MB, timeout: timeoutMs, encoding: 'utf8' },
+    execFile('ssh', args, { maxBuffer: 16 * MB, timeout: timeoutMs, encoding: 'utf8' },
       (err, stdout, stderr) => {
         if (err && !stdout) return reject(new Error((String(stderr || '') || err.message || 'ssh failed').trim().slice(0, 300)));
         resolve(String(stdout || ''));                     // partial output beats no output
@@ -70,7 +70,9 @@ function sshExec(host, remoteCmd, timeoutMs) {
  * finding; surfacing them in a browser would widen that exposure. */
 const MASK_SED = `sed -e 's/eyJ[A-Za-z0-9_.\\-]\\{20,\\}/***JWT***/g' ` +
   `-e 's/"apiKey" *: *"[^"]*"/"apiKey":"***"/g' ` +
-  `-e "s/apiKey='[^']*'/apiKey='***'/g"`;
+  `-e "s/apiKey='[^']*'/apiKey='***'/g" ` +
+  `-e 's/<wsse:Password[^>]*>[^<]*<\\/wsse:Password>/<wsse:Password>***<\\/wsse:Password>/g' ` +   // Redknee BSS user-token password in every SOAP header (17 Sep)
+  `-e 's/"password" *: *"[^"]*"/"password":"***"/g'`;
 
 /* Build the per-host script. date=null → current *.log only (cheap). date=YYYY-MM-DD → that
  * day's .gz too, niced + ionice'd, everything under one hard timeout.
@@ -99,12 +101,12 @@ for f in ${files}; do
     L=$($NI zgrep -n -F ${R} "$f" 2>/dev/null | head -1 | cut -d: -f1)
     if [ -n "$L" ]; then
       echo "@@CTX $f"
-      A=$((L>60?L-60:1)); B=$((L+90))
-      $NI zcat -f "$f" 2>/dev/null | sed -n "\${A},\${B}p" | cut -c1-600
+      A=$((L>80?L-80:1)); B=$((L+220))
+      $NI zcat -f "$f" 2>/dev/null | sed -n "\${A},\${B}p" | cut -c1-6000
       echo "@@CTXEND"
     fi
   fi${quick ? '\n  break' : ''}
-done' | ${MASK_SED} | head -c 250000`;
+done' | ${MASK_SED} | head -c 900000`;
 }
 
 /* parse one host's raw output into files / lines / summary hops */
@@ -120,7 +122,7 @@ function parseHost(host, raw) {
     }
     if (line.startsWith('@@CTX ')) { mode = 'ctx'; continue; }
     if (line.startsWith('@@CTXEND')) { out.ctx = ctxBuf.join('\n'); mode = 'lines'; continue; }
-    if (mode === 'ctx') { if (ctxBuf.length < 400) ctxBuf.push(line); }
+    if (mode === 'ctx') { if (ctxBuf.length < 1200) ctxBuf.push(line); }
     else if (line.trim() && out.lines.length < 300) out.lines.push(line);
   }
   if (!out.ctx && ctxBuf.length) out.ctx = ctxBuf.join('\n');
@@ -154,6 +156,39 @@ function extractHops(ctx) {
   for (let i = 0; i < uris.length; i++)
     hops.push({ kind: 'provider-call', url: uris[i], status: statuses[i] || null, response_head: bodies[i] || null });
   return hops;
+}
+
+/* THE DETAIL — what the operator sees in Xshell, structured: every UIL call block (URL, method, requester,
+ * request body, full response, timing) and every SOAP envelope exchanged with the BSS (Redknee) in the
+ * context window, in log order. Bounded per item; credentials already redacted at source. */
+function extractDetail(ctx) {
+  if (!ctx) return { calls: [], soap: [] };
+  const calls = [];
+  const blocks = ctx.split(/<=+Begin Logs=+>/).slice(1);
+  for (const b0 of blocks) {
+    const b = b0.split(/<=+End Logs=+>/)[0];
+    const g = re => (re.exec(b) || [])[1] || null;
+    const line = k => { const m = new RegExp('\\|\\s*' + k + ':\\s*(.*)').exec(b); return m ? m[1].trim().slice(0, 12000) : null; };
+    calls.push({ url: g(/\|\s*URL:\s*(\S+)/), method: g(/\|\s*Method:\s*(\S+)/), requester: g(/\|\s*Requester:\s*(\S+)/),
+      query: line('QueryStringParams'), request_body: line('RequestBody'), response: line('Response'),
+      ms: g(/TotalTimeElapsed:\s*(\d+)\s*ms/), uil_txn: g(/uilTransactionId=([0-9a-f*-]{8,40})/i),
+      response_code: g(/"responseCode"\s*:\s*"?(\w+)"?/), response_message: g(/"responseMessage"\s*:\s*"([^"]{0,160})"/),
+      at: g(/(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+)/), raw: b.trim().slice(0, 20000) });
+  }
+  const soap = [];
+  const lines = ctx.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const env = /(<(?:SOAP-ENV|soapenv|soap-env|soap|S):Envelope[\s\S]*?<\/(?:SOAP-ENV|soapenv|soap-env|soap|S):Envelope>)/i.exec(l) || /(<\?xml[\s\S]*Envelope>)/i.exec(l);
+    if (!env) continue;
+    const back = lines.slice(Math.max(0, i - 6), i).join('\n');
+    const dir = /request|sending|outgoing|REQUEST/i.test(back) && !/response|incoming/i.test(back) ? 'request' : /response|incoming|RESPONSE/i.test(back) ? 'response' : (/Response>|Response\b/.test(env[1]) ? 'response' : 'request');
+    const op = (/<(?:\w+:)?(\w+)(?:Response)?[\s>]/.exec(env[1].split(/Body[^>]*>/)[1] || '') || [])[1] || null;
+    const at = (/(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+)/.exec(back) || [])[1] || null;
+    soap.push({ at, direction: dir, operation: op, envelope: env[1].slice(0, 30000) });
+    if (soap.length >= 40) break;
+  }
+  return { calls: calls.slice(0, 60), soap };
 }
 
 /* RESULT CACHE. A (ref, date) deep-search answer is IMMUTABLE — rotated logs never change —
@@ -212,7 +247,7 @@ async function _search(rawRef, { date = null, quick = false } = {}) {
   const t0 = Date.now();
   const script = remoteScript(ref, d, !!quick);
   const settled = await Promise.allSettled(c.hosts.map(h => sshExec(h, script, c.timeoutMs)));
-  const hosts = [], allHops = [], uilTxns = new Set();
+  const hosts = [], allHops = [], allCalls = [], allSoap = [], uilTxns = new Set();
   let totalHits = 0;
   settled.forEach((s, i) => {
     const host = c.hosts[i];
@@ -222,6 +257,8 @@ async function _search(rawRef, { date = null, quick = false } = {}) {
     const hops = extractHops(p.ctx);
     for (const h of hops) if (h.uil_txn && !h.uil_txn.includes('*')) uilTxns.add(h.uil_txn);
     allHops.push(...hops.map(h => ({ ...h, host })));
+    const det = extractDetail(p.ctx);
+    allCalls.push(...det.calls.map(x => ({ ...x, host }))); allSoap.push(...det.soap.map(x => ({ ...x, host })));
     hosts.push(p);
   });
   const errors = hosts.filter(h => h.error).map(h => `${h.host}: ${h.error}`);
@@ -229,7 +266,7 @@ async function _search(rawRef, { date = null, quick = false } = {}) {
     configured: true, ok: true, ref, date: d, ms: Date.now() - t0,
     scope: d ? `current logs + rotated files of ${d} on ${c.hosts.length} nodes`
              : `current (uncompressed) logs on ${c.hosts.length} nodes — deep-search a specific date for rotated history`,
-    total_hits: totalHits, hosts, hops: allHops, uil_transaction_ids: [...uilTxns],
+    total_hits: totalHits, hosts, hops: allHops, calls: allCalls, soap: allSoap, uil_transaction_ids: [...uilTxns],
     errors: errors.length ? errors : null,
     note: totalHits === 0
       ? 'No line carries this reference in the searched window. Current logs cover only the last few hours — '

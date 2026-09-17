@@ -136,7 +136,9 @@
             <div class="mono" style="font-size:11px;overflow-wrap:anywhere;${f.v==null?"color:var(--muted)":""}">${f.v==null?"—":esc(f.v)}</div></div>`).join("");
         body.innerHTML=(d.unmasked?`<div style="border:1px solid #dc2626;border-radius:9px;padding:6px 11px;margin-bottom:10px;background:rgba(220,38,38,.06);font-size:11px;font-weight:700;color:#dc2626">🔓 Identifiers shown in full — this reveal is recorded in the audit log.</div>`:"")
           +`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:7px">${cells}</div>`
+          +(d.ref&&window.isDmsLogRef&&window.isDmsLogRef(d.ref)?`<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" class="pill" id="djRvLogs" style="font-size:11px;padding:4px 12px;border-left-color:#3b82f6">⛏ Application logs — request, response, SOAP to the BSS</button><span class="rl" style="font-size:10px;color:var(--muted)">greps the UIL / DMS service logs on the APP nodes by this reference (audited)</span></div>`:"")
           +`<div id="djRvTrace" style="margin-top:14px">${d.ref?`<div class="rl" style="font-size:11px">Tracing reference <span class="mono">${esc(d.ref)}</span> across all journeys…</div>`:`<div class="rl" style="font-size:10px;color:var(--muted)">No correlation reference on this row — cross-journey trace not possible.</div>`}</div>`;
+        const lb=ov.querySelector("#djRvLogs"); if(lb) lb.onclick=()=>{ const atF=(d.fields||[]).find(f=>/insert_date_time|created_at|created_date|date_time|creation_time/i.test(f.k)); const at=atF&&atF.v?new Date(new Date(atF.v).getTime()+(d.tz_note?0:3*3600e3)).toISOString().slice(0,10):""; window.openDmsAppLogs(d.ref, at, d.label); };
         if(d.ref){
           try{
             const t=await api(`/api/dms/journeys/trace?q=${encodeURIComponent(d.ref)}${um()?"&unmask=1":""}`);
