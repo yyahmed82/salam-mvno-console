@@ -400,6 +400,12 @@
     async function trace(q){
     const out=$("#djtrace"), msg=$("#djmsg"); if(!out) return;
     q=String(q||"").trim(); if(!q) return;
+    /* a DEALER code (dis_012125, pos_019361, rtl_371327934…) is not a customer identifier — the digit trace would follow
+       a stranger's number. Open the dealer instead: profile + everything the dealer did in DMS (17 Sep 2026). */
+    if(/^[a-z]{2,5}_\d{3,}$/i.test(q)){
+      out.innerHTML=`<div class="rl" style="font-size:11px"><b>${esc(q)}</b> is a dealer code — opening the dealer's own activity (every DMS ledger, journeys + list). For a customer story, trace an MSISDN, national ID or reference.</div>`;
+      openDealer360(q); return;
+    }
     out.innerHTML=`<div class="rl">Tracing ${esc(q.length>18?q.slice(0,18)+"…":q)} …</div>`; if(msg) msg.textContent="";
     let d; try{ d=await api(`/api/dms/journeys/trace?q=${encodeURIComponent(q)}${um()?"&unmask=1":""}`); }
     catch(e){ out.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
