@@ -21,14 +21,22 @@
  *   GET  /api/cst/escalations/list?status=open    rows (masked: no names / phones are ever stored)
  *   POST /api/cst/escalations/import {rows,name}  rows = JSON objects keyed by the export's Arabic headers; mapping auto-detected
  *   GET  /api/cst/escalations/imports             import history
- *   GET  /api/cst/config · PUT /api/cst/config    connectors (Oracle / Remedy) are CONFIG ONLY for now — nothing dials out
+ *   GET  /api/cst/remedy/source[?probe=1&deep=1]  Remedy live-connector status; probe = server, objects, real column names
+ *                                                 (deep adds row count, date range and the duplicate-SRID count)
+ *   GET  /api/cst/remedy/sample?limit=3           a few rows exactly as ITC_CITC_MOH holds them — audited, never stored
+ *   GET  /api/cst/config · PUT /api/cst/config    connector settings (secrets stay in .env — nothing here holds one)
  *
  * Arqami is fed live by cstOracle.js when CST_ORACLE_* is set in .env (per-minute aggregation of APPS.YY_REGISTER_NUMBER_AUDIT,
- * 60 s poll + history backfill); the CSV import stays as the fallback. Remedy (escalations) is still export-only. */
+ * 60 s poll + history backfill); the CSV import stays as the fallback.
+ * Escalations read Remedy live through cstRemedy.js when CST_REMEDY_* is set (SQL Server 172.30.1.14 / ARSystem /
+ * ITC_CITC_MOH over a small JDBC bridge, read-only, READ UNCOMMITTED so a console query can never block Remedy).
+ * Ticket rows are answered and dropped — no customer identifier is written to the console database; the RA export
+ * import stays as the fallback and the runbook snapshot as the labelled default. */
 'use strict';
 const db = require('./db');
 const settings = require('./settings');
 const oracle = require('./cstOracle');
+const remedy = require('./cstRemedy');
 
 const C = () => db.console;
 const n = v => Number(v) || 0;
@@ -379,6 +387,24 @@ function mount(app, { requireSuper, audit }) {
   app.get('/api/cst/escalations/imports', gate, async (req, res) => {
     try { res.json({ imports: (await C().query(`SELECT id, kind, name, rows, inserted, updated, mapping, warnings, by_user, at FROM cst_imports ORDER BY id DESC LIMIT 30`)).rows }); }
     catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  /* ---- Remedy: the live source behind CST Escalations (read-only, super admin, explicit action only) ---- */
+  app.get('/api/cst/remedy/source', gate, async (req, res) => {
+    const st = remedy.status();
+    if (st.configured && req.query.probe === '1') {
+      try { st.probe = await remedy.probe({ deep: req.query.deep === '1' }); } catch (e) { st.probeError = e.message; }
+    }
+    res.json(st);
+  });
+  /* the view's real shape, read once so the mapping is written against ARSystem instead of guessed. These rows
+     carry customer identifiers: the call is audited, the rows are returned to the operator and stored nowhere. */
+  app.get('/api/cst/remedy/sample', gate, async (req, res) => {
+    try {
+      if (!remedy.configured()) return res.status(400).json({ error: 'Remedy connector not configured (CST_REMEDY_* in .env)' });
+      if (audit) audit(req, 'CST_REMEDY_SAMPLE', String(n(req.query.limit) || 3), { view: remedy.cfg().view }).catch(() => {});
+      res.json({ view: remedy.cfg().view, rows: await remedy.sample(req.query.limit) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   app.get('/api/cst/board', gate, async (req, res) => { try { res.json(Object.assign({}, BOARD_DEFAULT, (await settings.getSetting('cst_board')) || {})); } catch (e) { res.status(500).json({ error: e.message }); } });
