@@ -82,6 +82,9 @@
       <div class="rl" style="font-weight:800;font-size:12px;margin:4px 0 8px">②b BULK WALLET BALANCE · SELF-SERVICE
         <span style="font-weight:600;color:var(--muted)">· the "current balance for the users below" mail (INC0027800), answered here — paste the list, export the same sheet</span></div>
       <div id="dmsBulk" style="margin-bottom:18px"></div>
+      <div class="rl" style="font-weight:800;font-size:12px;margin:4px 0 8px">②c EXPLORE · THE JOURNEYS FROM THE CODE
+        <span style="font-weight:600;color:var(--muted)">· what the app calls, what a normal run leaves in the databases, where it breaks — and the flow rules that catch the abnormal ones (DMS-JOURNEYS-CODE.md)</span></div>
+      <div id="dmsExplore" style="margin-bottom:18px"></div>
       <div class="rl" style="font-weight:800;font-size:12px;margin:4px 0 8px">③ COMMISSIONING · DMS TRUTH
         <span style="font-weight:600;color:var(--muted)">· from the activation ledger + rate table — follows the range above</span></div>
       <div id="dmsBiz" style="margin-bottom:16px"><div class="rl">Loading commissioning…</div></div>
@@ -101,6 +104,7 @@
     });
     renderHome(); renderBiz(); renderDealers(); renderDealer360(); renderCommission();
     if(window.renderBulkBalance) window.renderBulkBalance($("#dmsBulk"));
+    if(window.renderDmsExplore) window.renderDmsExplore($("#dmsExplore"));
     if(window.renderDmsJourneys) window.renderDmsJourneys(win());
   }
 

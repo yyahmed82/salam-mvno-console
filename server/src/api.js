@@ -1119,6 +1119,33 @@ app.post('/api/dms/wallet/bulk-balance', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* DMS EXPLORE — the journey spec (dmsJourneySpec.js, from the production code of 17 Sep 2026) and
+ * the flow rules that recognise abnormal journeys from the databases (dmsFlowRules.js). Findings
+ * are stored masked; the only action is "run now", audited. */
+app.get('/api/dms/journeys/spec', (req, res) => {
+  try { res.json(require('./dmsJourneySpec').spec()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/dms/flow-rules', async (req, res) => {
+  try { const R = require('./dmsFlowRules'); res.json({ status: R.status(), rules: await R.latest() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/dms/flow-rules/:id', async (req, res) => {
+  try {
+    const R = require('./dmsFlowRules'); const id = String(req.params.id || '').toUpperCase().slice(0, 8);
+    res.json({ rule: id, history: await R.history(id, req.query.limit) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/dms/flow-rules/run', async (req, res) => {
+  try {
+    const R = require('./dmsFlowRules');
+    const ids = req.query.id ? String(req.query.id).toUpperCase().split(',').map(s => s.trim()).filter(Boolean) : R.RULES;
+    audit(req, 'DMS_FLOW_RULES_RUN', ids.length === R.RULES.length ? 'all' : ids.join(','), { hours: req.query.hours || null });
+    const out = await R.runRules(ids, { hours: req.query.hours });
+    if (!out.ok) return res.status(409).json(out);
+    res.json({ ok: true, ms: out.ms, results: out.results.map(r => ({ rule: r.rule, n: r.n, capped: r.capped, ms: r.ms, error: r.error, skipped: r.skipped, note: r.note })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /* DMS COMMISSION REPORT — replaces the "please share the list of users who got this commission"
  * mail loop (Flex packages thread, 30-31 Aug 2026). Filter by window / plan / dealer / identifier;
  * JSON for the panel, format=xlsx for the full workbook, format=pdf for the executive summary.
@@ -6605,6 +6632,7 @@ app.listen(PORT, async () => {
   try { require('./smsProbe').start(); } catch (e) { console.error('SMS probe:', e.message); }
   try { require('./zipkinCollector').start(); } catch (e) { console.error('APIGW trace collector:', e.message); }
   try { require('./dmsJourneys').start(); } catch (e) { console.error('DMS journey collector:', e.message); }
+  try { require('./dmsFlowRules').start(); } catch (e) { console.error('DMS flow rules:', e.message); }
   try { require('./uilSampler').start(); } catch (e) { console.error('UIL sampler:', e.message); }
   try { require('./assist').startWarm(); } catch (e) { /* LLM warm-up is best-effort */ }
   try { demo.startWarmup(); } catch (e) { /* cache warm-up is best-effort */ }
