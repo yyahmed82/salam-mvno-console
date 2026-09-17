@@ -3131,6 +3131,7 @@ app.get('/api/health', async (req, res) => {
 require('./fixed').mount(app, { requireView, audit, requireCap });
 require('./fixedExec').mount(app, { requireView });
 require('./fixedAppLane').mount(app, { requireView });   // Troubleshoot › from-the-app-log lane (fixed_app_events)
+require('./fixedLogGrep').mount(app, { requireView, audit });   // Troubleshoot › grep the raw combined.log on 146 (explicit action, audited)
 require('./yakeenProbe').mount(app, { requireView, audit });
 require('./fixedErrCatalog').mount(app, { requireView, audit });
 require('./datasets').mount(app, { requireCap, audit });        // Data sources tab: registry, freshness, prod mapping (both segments)

@@ -147,6 +147,7 @@
           <div class="fe-hint">searches apply as you type (Enter to apply now) · identifiers are shown as last digits only · full values via Unmask (audited)</div>
         </div>
       </div>
+      <div id="feGrep"></div>
       <div id="feApp"></div>
       <div id="feClass" class="fe-chips" style="margin-bottom:8px"></div>
       <div id="feCat"></div>
@@ -169,6 +170,9 @@
     host.querySelector("#feClear").onclick=()=>{ Object.assign(S,{channel:"",type:"",openOnly:true,team:"",prio:"",provider:"",msg:"",resp:"",cls:"",category:"",tech:"all",find:"",ids:{},expanded:new Set()}); render(host,fx); };
     const rp=host.querySelector("#feResp"); if(rp){ let rdeb=null; const goR=()=>{ S.resp=rp.value.trim(); S.category=""; load(host,fx,true); }; rp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(rdeb); goR(); } }; rp.oninput=()=>{ clearTimeout(rdeb); rdeb=setTimeout(goR,600); }; }
     host.querySelector("#feFind").focus();
+    /* the grep panel: additive, explicit-action only. Prefilled with whatever the operator is already looking
+       for, so "no result on the board" → one click to see what the raw app log actually holds. */
+    if(window.fixedGrep) try{ window.fixedGrep.render(host.querySelector("#feGrep"),fx,S.find||S.ids.customerId||S.ids.msisdn||S.ids.iccid||S.ids.custCode||S.ids.serviceNo||""); }catch(e){}
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }
       if(document.visibilityState!=="visible") return; load(host,fx,true); },60000);
@@ -249,11 +253,13 @@
           const age=x.latest?Date.now()-new Date(x.latest).getTime():null; const stale=age==null||age>2*3600e3; return `<span><b>${esc(bk)}</b> ← ${esc(SRC[x.src]||x.src)} · last event <span class="${stale?"stale":""}">${esc(rel(x.latest))}</span></span>`; }).join(" &nbsp;·&nbsp; ");
         if(sum.warnings&&sum.warnings.length) srcEl.insertAdjacentHTML("beforeend",` &nbsp;·&nbsp; <span class="stale">${esc(sum.warnings.map(w=>w.part).join(", "))} breakdown not computed (${esc(sum.warnings[0].error.replace(/canceling statement due to statement timeout/i,"query too slow on the read model"))}) — narrow the period or the filters</span>`); }
       const tiles=sum.byCategory.filter(c=>(!S.team||c.team===S.team)&&(S.prio===""||String(c.priority)===S.prio));
+      const term=S.find||S.ids.customerId||S.ids.msisdn||S.ids.iccid||S.ids.custCode||S.ids.serviceNo||S.ids.workflowId||"";
       $("#feTiles").innerHTML=tiles.length?tiles.map(c=>{ const on=S.category===c.category; const t=TONE[c.tone]||TONE.muted;
         return `<button class="fe-tile${on?" on":""}" data-c="${esc(c.category)}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><span class="lbl">${esc(c.label)}</span><span style="display:flex;align-items:center;gap:8px;flex:none;padding-top:2px">${prioBadge(c.priority)}<span class="fe-team" style="color:${TEAM_COLOR[c.team]||"var(--muted)"}">${esc(c.team)}</span></span></div>
           <div style="display:flex;align-items:baseline;gap:10px;margin-top:10px"><span class="big" style="color:${t.fg}">${fmt(S.openOnly?c.open:c.total)}</span><span style="font-size:12px;color:var(--muted)">${S.openOnly?`${fmt(c.total)} total · ${fmt(c.last3h)} in 3h`:`${fmt(c.open)} open · ${fmt(c.last3h)} in 3h`}</span></div></button>`; }).join("")
-        :`<div class="fe-tile" style="cursor:default;color:var(--muted)">No errors in this window.</div>`;
+        :`<div class="fe-tile" style="cursor:default;color:var(--muted)">No errors in this window.${term&&window.fixedGrep?`<div style="margin-top:8px"><button type="button" class="fe-btn fe-exp" id="feGrepGo" title="Read the raw app log (combined.log on 146) — successes and failures, every field">🔎 Grep the app log for ${esc(term)}</button></div>`:""}</div>`;
+      const gg=$("#feGrepGo"); if(gg) gg.onclick=e=>{ e.stopPropagation(); window.fixedGrep.searchFor(term); };
       host.querySelectorAll(".fe-tile").forEach(b=>b.onclick=()=>{ S.category=(S.category===b.dataset.c)?"":b.dataset.c; load(host,fx,true); });
       drawRows(host,fx,live.rows,first);
       $("#feMore").innerHTML=live.nextCursor?`<button id="feMoreBtn" class="btn" style="font-size:11px;padding:5px 12px">Load more</button>`:"";
@@ -275,7 +281,8 @@
         <td>${catBadge(r)}${clsPill(r)}${r.code?`<span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:8px">${esc(r.code)}</span>`:""}</td>
         <td>${chanPill(r)}</td><td>${typePill(r)}</td>
         <td class="fe-nostop">${dealer(r)}</td><td class="c-region">${esc(r.region||"—")}</td><td style="white-space:nowrap">${status(r)}<span class="fe-caret" aria-hidden="true">›</span></td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="8"></td></tr>`).join("")
-      :`<tr><td colspan="8" class="fe-empty">No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""||S.provider||S.channel||S.type?` (team / priority / provider / channel / type filter active)`:""}.</td></tr>`}</tbody></table>`;
+      :`<tr><td colspan="8" class="fe-empty">${(S.find||S.ids.customerId||S.ids.msisdn||S.ids.iccid||S.ids.custCode)&&window.fixedGrep?`<button type="button" class="fe-btn fe-exp" id="feGrepGo2" style="float:right;margin-left:12px" title="Read the raw app log (combined.log on 146) — successes and failures, every field">🔎 Grep the app log</button>`:""}No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""||S.provider||S.channel||S.type?` (team / priority / provider / channel / type filter active)`:""}.</td></tr>`}</tbody></table>`;
+    const g2=el.querySelector("#feGrepGo2"); if(g2) g2.onclick=()=>window.fixedGrep.searchFor(S.find||S.ids.customerId||S.ids.msisdn||S.ids.iccid||S.ids.custCode||"");
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); tr.click(); } });
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; e.preventDefault();
       const id=tr.dataset.id; const x=el.querySelector(`.fe-x[data-id="${id.replace(/[^\w-]/g,"")}"]`); if(!x) return;
