@@ -4,7 +4,8 @@
  *   #cst-escalations   CST complaint escalations — classification, closure lag, open cohort, Remedy proof, engagement board
  *
  * Data: /api/cst/* (server/src/cst.js). Arqami is fed live from Oracle EBPROD (cstOracle.js: 60 s poll + history backfill
- * of APPS.YY_REGISTER_NUMBER_AUDIT) with the CSV import as fallback; escalations still come from the RA export (Import button). Charts are inline SVG, tokens for light / dark,
+ * of APPS.YY_REGISTER_NUMBER_AUDIT) with the CSV import as fallback; escalations show the runbook snapshot / RA import above and the LIVE Remedy section (cst-remedy.js,
+ * dbo.ITC_CITC_MOH on 172.30.1.14) below it. Charts are inline SVG, tokens for light / dark,
  * phone-first, RTL-safe (Arabic labels are isolated). No third-party script except SheetJS, loaded from cdnjs only
  * when an .xlsx is imported (the browser has internet; 152 does not). */
 (function () {
@@ -185,8 +186,12 @@
       ${d.snapshot ? '' : `<div id="csOpenList">${card('Open cohort', `<div class="cs-loading">Loading open complaints…</div>`, 'sorted by escalation date · IDs only, never names')}</div>`}
       ${boardHtml}
       <div class="cs-grid2">${card('The three arguments that hold', `<ol class="cs-args"><li><b>53 % of escalations are a five-day-deadline breach</b>, not a bad resolution — commit to a fixed internal-intervention date, not a shorter final SLA.</li><li><b>Every open complaint is still winnable</b> — daily follow-up before they become adjudication decisions.</li><li><b>Never one SLA across categories</b> — cancellations are a desk action; network faults are governed by site-access time.</li></ol>`, 'runbook §10.2')}${card('Communication rules', `<ul class="cs-find"><li>External teams (DBA, vendors): findings and the ask only — no plan, scripts or SQL.</li><li>National IDs masked to the last 4 digits; names and phones never leave the workstation.</li><li>Never send the raw evidence workbook to CST — extract what serves the response.</li><li>Arabic, RTL for mails and reports; the WhatsApp group is semi-external.</li></ul>`, 'runbook §2 — hard constraints')}</div>
+      <div id="csRemedyMount"></div>
       ${importPanel('escalations')}${sourcePanel('escalations')}`;
     wire(host);
+    /* live section: the same questions asked of ARSystem itself. Own fetches, own errors — it never blocks the
+       runbook figures above it, which stay the dated reference even when Remedy is unreachable. */
+    if (window.cstRemedy) { try { window.cstRemedy.render($('#csRemedyMount', host)); } catch (e) {} }
     if (!d.snapshot) api('/api/cst/escalations/list?status=open&limit=200').then(l => {
       const el = $('#csOpenList', host); if (!el) return;
       el.innerHTML = card(`Open cohort · ${num(l.rows.length)}`, l.rows.length ? `<div class="tscroll"><table class="cs-tbl"><thead><tr><th>REQ</th><th>Domain</th><th>Sub-type</th><th>Region</th><th>Escalated</th><th>Reason</th><th>Stage</th></tr></thead><tbody>${l.rows.map(r => `<tr class="${r.it_scope ? 'it' : ''}"><td class="cs-num">${esc(r.req)}</td><td>${esc(r.domain)}${r.it_scope ? ' <span class="cs-code it">IT</span>' : ''}</td><td>${ar(r.sub_type || '')}</td><td>${ar(r.region || '')}</td><td class="cs-num">${ksa(r.escalated_at).slice(0, 10)}</td><td>${ar(r.escalation_reason || '')}</td><td>${ar(r.stage || r.status || '')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="cs-empty">Nothing open.</div>`, 'sorted by escalation date · IDs only, never names');

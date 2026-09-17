@@ -256,6 +256,214 @@ async function sample(limit = 3) {
   return query(`SELECT TOP ${lim} * FROM ${ident(cfg().view)}`);
 }
 
+/* ---------------------------------------------------------------- the view, as ARSystem actually holds it
+ * Confirmed against dbo.ITC_CITC_MOH on 17 Sep 2026 (SQL Server 2016 SP2-CU17, 824 898 rows, 777 112 distinct
+ * Service_RequestID). Names are not guessed: every one below came back from INFORMATION_SCHEMA. `resolve()`
+ * still checks them against the live schema before use, so a rename in Remedy surfaces as a named missing
+ * column rather than a broken statement. */
+const COL = {
+  key: 'Service_RequestID', incident: 'Incident_Number', created: 'Creation_Date', resolved: 'Resolved_Date',
+  serviceId: 'ITC_Service_Id', order: 'ITC_Order_Number', shipTo: 'ITC_Ship_to_1', customer: 'ITC_Customer_Number',
+  name: 'Customer_Name', idType: 'ID_Type', idNumber: 'ID_Number', custType: 'Customer_type',
+  provider: 'Provider_name', problem: 'Problem_Code', t1: 'Categorization_Tier_1', t2: 'Categorization_Tier_2',
+  t3: 'Categorization_Tier_3', statusReason: 'Status_Reason', action: 'ITC_Action_Taken', status: 'Status',
+  statusCode: 'Status_Code', resolution: 'Resolution', ttype: 'Trouble_Ticket_Types', product: 'ITC_Product_Name',
+  source: 'ITC_Source', activation: 'Activation_Date', svcStatus: 'Service_Status',
+  complaintSub: 'CITC_Complaint_SubTypeCode', complaint: 'CITC_Complaint_TypeCode',
+  mainType: 'CITC_Service_MainTypeCode', subType: 'CITC_Service_SubTypeCode'
+};
+/* what the one search box looks in. Every one of these is an identifier an engineer actually has in hand when
+ * CST forwards a complaint — the REQ number, the Remedy incident, the customer number, the service, the order,
+ * or the national id off the complaint form. */
+const ID_FIELDS = [
+  { key: 'req', col: COL.key, label: 'Complaint number (REQ / SRID)' },
+  { key: 'incident', col: COL.incident, label: 'Remedy incident / work order' },
+  { key: 'custId', col: COL.customer, label: 'Customer number' },
+  { key: 'serviceId', col: COL.serviceId, label: 'Service id' },
+  { key: 'orderNo', col: COL.order, label: 'Order number' },
+  { key: 'idNumber', col: COL.idNumber, label: 'National / Iqama id' }
+];
+const PII = new Set([COL.name.toUpperCase(), COL.idNumber.toUpperCase()]);
+
+/* identifiers are masked on the way out exactly like the rest of the console: last four digits of an id, the
+ * initials of a name. `unmask` is a capability the route checks, and it audits — nothing here is ever stored. */
+const maskId = v => { const s = String(v == null ? '' : v); return s.length <= 4 ? (s ? '••••' : null) : '•'.repeat(Math.min(8, s.length - 4)) + s.slice(-4); };
+const maskName = v => String(v == null ? '' : v).trim().split(/\s+/).filter(Boolean).map(w => w[0] + '.').join(' ') || null;
+function shapeRow(r, unmask) {
+  const o = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (k === 'RN') continue;
+    if (!unmask && PII.has(k)) { o[k] = k === COL.name.toUpperCase() ? maskName(v) : maskId(v); continue; }
+    o[k] = v;
+  }
+  return o;
+}
+/* every column the search returns, in the order an operator reads a ticket */
+const SEARCH_COLS = [COL.key, COL.incident, COL.created, COL.resolved, COL.status, COL.statusCode, COL.statusReason,
+  COL.t1, COL.t2, COL.t3, COL.problem, COL.customer, COL.name, COL.idType, COL.idNumber, COL.custType,
+  COL.serviceId, COL.order, COL.product, COL.svcStatus, COL.activation, COL.source, COL.provider,
+  COL.action, COL.resolution, COL.ttype, COL.complaint, COL.complaintSub, COL.mainType, COL.subType];
+
+/* resolve the names against the live view once, so a rename is reported instead of producing bad SQL */
+async function resolve(names) {
+  const cols = await viewColumns();
+  const have = new Set(cols.map(c => c.name.toLowerCase()));
+  const missing = names.filter(n => !have.has(String(n).toLowerCase()));
+  if (missing.length) throw new Error('column(s) not present in ' + cfg().view + ': ' + missing.join(', ') + ' — the view changed shape');
+  return true;
+}
+
+/* SEARCH — the ask: one box, any identifier, live. 47 786 of the 824 898 rows share a Service_RequestID with
+ * another row (the view is a UNION ALL of incidents and work orders, joined to a code-mapping table that holds
+ * duplicate tier triples), so the result is collapsed to ONE row per complaint with ROW_NUMBER and each ticket
+ * carries `RAW_ROWS` — how many rows of the view it came from. Counting tickets without that collapse
+ * overstates every figure by about 6 %. */
+async function search(term, { field = null, contains = false, limit = 100, unmask = false } = {}) {
+  const t = String(term == null ? '' : term).trim();
+  if (t.length < 3) return { ok: false, error: 'search term must be at least 3 characters' };
+  if (t.length > 64) return { ok: false, error: 'search term too long (64 characters max)' };
+  const fields = field ? ID_FIELDS.filter(f => f.key === field) : ID_FIELDS;
+  if (!fields.length) return { ok: false, error: 'unknown field: ' + field + ' (use ' + ID_FIELDS.map(f => f.key).join(', ') + ')' };
+  const lim = Math.min(500, Math.max(1, Number(limit) || 100));
+  await resolve(SEARCH_COLS.concat(fields.map(f => f.col)));
+  const where = fields.map(f => contains ? `${ident(f.col)} LIKE ?` : `${ident(f.col)} = ?`).join(' OR ');
+  const binds = fields.map(() => contains ? `%${t}%` : t);
+  const t0 = Date.now();
+  const rows = await query(
+    `WITH m AS (SELECT ${SEARCH_COLS.map(ident).join(', ')},
+        ROW_NUMBER() OVER (PARTITION BY ${ident(COL.key)} ORDER BY ${ident(COL.created)} DESC) AS RN,
+        COUNT(*) OVER (PARTITION BY ${ident(COL.key)}) AS RAW_ROWS
+      FROM ${ident(cfg().view)} WHERE ${where})
+     SELECT TOP ${lim} * FROM m WHERE RN = 1 ORDER BY ${ident(COL.created)} DESC`, binds);
+  return {
+    ok: true, term: t, field: field || 'any', contains, ms: Date.now() - t0, view: cfg().view,
+    searched: fields.map(f => ({ key: f.key, column: f.col, label: f.label })),
+    count: rows.length, truncated: rows.length >= lim, unmasked: !!unmask,
+    tickets: rows.map(r => shapeRow(r, unmask))
+  };
+}
+
+/* KPIs — ONE scan, everything else derived here. Grouping to (day, status, tier, source) after collapsing to one
+ * row per complaint gives the board's own figures (escalated, still open, five-day breaches, median closure) on
+ * live data instead of the runbook snapshot, plus the daily series, at the cost of a single pass over the window.
+ * The window uses the SERVER's clock (GETDATE), never this host's: ARSystem runs on KSA time, three hours ahead
+ * of the console, and guessing that offset is how date filters quietly lose a day. */
+const LAG_BUCKETS = [[0, 5, '0–5 days'], [6, 15, '6–15 days'], [16, 30, '16–30 days'], [31, 60, '31–60 days'], [61, 99999, 'over 60 days']];
+async function kpis({ days = 90 } = {}) {
+  const d = Math.min(3650, Math.max(1, Number(days) || 90));
+  await resolve([COL.key, COL.created, COL.resolved, COL.status, COL.t1, COL.source]);
+  const t0 = Date.now();
+  const rows = await query(
+    `WITH t AS (
+       SELECT ${ident(COL.key)} AS K, MIN(${ident(COL.created)}) AS CREATED, MAX(${ident(COL.resolved)}) AS RESOLVED,
+              MAX(${ident(COL.status)}) AS STATUS, MAX(${ident(COL.t1)}) AS TIER1, MAX(${ident(COL.source)}) AS SOURCE,
+              COUNT(*) AS RAW_ROWS
+         FROM ${ident(cfg().view)}
+        WHERE ${ident(COL.created)} >= DATEADD(day, -${d}, GETDATE())
+        GROUP BY ${ident(COL.key)})
+     SELECT CAST(CREATED AS date) AS DAY, STATUS, TIER1, SOURCE,
+            COUNT(*) AS TICKETS, SUM(RAW_ROWS) AS RAW_ROWS,
+            SUM(CASE WHEN RESOLVED IS NULL THEN 1 ELSE 0 END) AS STILL_OPEN,
+            SUM(CASE WHEN RESOLVED IS NOT NULL THEN 1 ELSE 0 END) AS CLOSED,
+            SUM(CASE WHEN RESOLVED IS NOT NULL THEN DATEDIFF(day, CREATED, RESOLVED) ELSE 0 END) AS LAG_SUM,
+            SUM(CASE WHEN RESOLVED IS NOT NULL AND DATEDIFF(day, CREATED, RESOLVED) > 5 THEN 1 ELSE 0 END) AS CLOSED_LATE,
+            SUM(CASE WHEN RESOLVED IS NULL AND DATEDIFF(day, CREATED, GETDATE()) > 5 THEN 1 ELSE 0 END) AS OPEN_LATE,
+            ${LAG_BUCKETS.map(([a, b], i) => `SUM(CASE WHEN RESOLVED IS NOT NULL AND DATEDIFF(day, CREATED, RESOLVED) BETWEEN ${a} AND ${b} THEN 1 ELSE 0 END) AS LAG${i}`).join(',\n            ')}
+       FROM t GROUP BY CAST(CREATED AS date), STATUS, TIER1, SOURCE`, [], 120000);
+  const ms = Date.now() - t0;
+  const N = v => Number(v) || 0;
+  const tot = { tickets: 0, rawRows: 0, open: 0, closed: 0, lagSum: 0, closedLate: 0, openLate: 0, lag: LAG_BUCKETS.map(() => 0) };
+  const by = { status: new Map(), tier1: new Map(), source: new Map(), day: new Map() };
+  const bump = (m, k, r) => { const x = m.get(k) || { key: k, tickets: 0, open: 0, closed: 0, late: 0 }; x.tickets += N(r.TICKETS); x.open += N(r.STILL_OPEN); x.closed += N(r.CLOSED); x.late += N(r.CLOSED_LATE) + N(r.OPEN_LATE); m.set(k, x); };
+  for (const r of rows) {
+    tot.tickets += N(r.TICKETS); tot.rawRows += N(r.RAW_ROWS); tot.open += N(r.STILL_OPEN); tot.closed += N(r.CLOSED);
+    tot.lagSum += N(r.LAG_SUM); tot.closedLate += N(r.CLOSED_LATE); tot.openLate += N(r.OPEN_LATE);
+    LAG_BUCKETS.forEach((_, i) => { tot.lag[i] += N(r['LAG' + i]); });
+    bump(by.status, r.STATUS || '—', r); bump(by.tier1, r.TIER1 || '—', r);
+    bump(by.source, r.SOURCE || '—', r); bump(by.day, String(r.DAY || '').slice(0, 10), r);
+  }
+  /* median closure from the buckets: the bucket holding the middle closed ticket, reported as its range rather
+   * than a false precision — the exact median would need a second pass over every closed ticket. */
+  let acc = 0, medianBucket = null; const half = tot.closed / 2;
+  LAG_BUCKETS.forEach(([, , label], i) => { acc += tot.lag[i]; if (medianBucket === null && acc >= half && tot.closed) medianBucket = label; });
+  const pct = (a, b) => b ? Math.round(a / b * 1000) / 10 : null;
+  const list = m => [...m.values()].sort((a, b) => b.tickets - a.tickets);
+  return {
+    ok: true, days: d, ms, view: cfg().view, at: new Date().toISOString(),
+    totals: {
+      tickets: tot.tickets, rawRows: tot.rawRows, duplicateRows: tot.rawRows - tot.tickets,
+      duplicatePct: pct(tot.rawRows - tot.tickets, tot.rawRows),
+      open: tot.open, openPct: pct(tot.open, tot.tickets), closed: tot.closed,
+      breaches: tot.closedLate + tot.openLate, breachPct: pct(tot.closedLate + tot.openLate, tot.tickets),
+      closedLate: tot.closedLate, openLate: tot.openLate,
+      avgClosureDays: tot.closed ? Math.round(tot.lagSum / tot.closed * 10) / 10 : null,
+      medianClosureBucket: medianBucket, perDay: Math.round(tot.tickets / d * 10) / 10
+    },
+    lag: LAG_BUCKETS.map(([, , label], i) => ({ label, tickets: tot.lag[i], pct: pct(tot.lag[i], tot.closed) })),
+    byStatus: list(by.status), byTier1: list(by.tier1), bySource: list(by.source),
+    daily: [...by.day.values()].map(x => x).sort((a, b) => a.key < b.key ? -1 : 1)
+  };
+}
+
+/* FINDINGS — the questions the snapshot cannot answer. Each one is its own small query and carries its own
+ * error, so a single failure never blanks the section (house rule: errors travel with results). */
+async function findings({ days = 90 } = {}) {
+  const d = Math.min(3650, Math.max(1, Number(days) || 90));
+  const out = { days: d, at: new Date().toISOString(), items: [] };
+  const add = async (id, title, note, sql, binds) => {
+    const t0 = Date.now();
+    try { out.items.push({ id, title, note, ms: Date.now() - t0, rows: await query(sql, binds || [], 120000) }); }
+    catch (e) { out.items.push({ id, title, note, error: String(e.message || e).slice(0, 300) }); }
+  };
+  const V = ident(cfg().view);
+  await add('duplicates', 'What the duplicate rows actually are',
+    'A complaint appearing more than once in the view. If the copies differ only by the code columns it is fan-out from the mapping join, not two tickets.',
+    `SELECT TOP 20 ${ident(COL.key)} AS SRID, COUNT(*) AS ROWS_IN_VIEW,
+        COUNT(DISTINCT ${ident(COL.incident)}) AS INCIDENTS, COUNT(DISTINCT ${ident(COL.status)}) AS STATUSES,
+        COUNT(DISTINCT ${ident(COL.t3)}) AS TIER3, COUNT(DISTINCT ${ident(COL.mainType)}) AS MAIN_CODES
+      FROM ${V} WHERE ${ident(COL.created)} >= DATEADD(day, -${d}, GETDATE())
+      GROUP BY ${ident(COL.key)} HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC`);
+  await add('open_ageing', 'Open complaints by age',
+    'Still unresolved, grouped by how long they have been open on the server\'s own clock.',
+    `WITH t AS (SELECT ${ident(COL.key)} AS K, MIN(${ident(COL.created)}) AS CREATED, MAX(${ident(COL.resolved)}) AS RESOLVED
+        FROM ${V} WHERE ${ident(COL.created)} >= DATEADD(day, -${d}, GETDATE()) GROUP BY ${ident(COL.key)})
+     SELECT CASE WHEN DATEDIFF(day, CREATED, GETDATE()) <= 5 THEN '0-5 days'
+                 WHEN DATEDIFF(day, CREATED, GETDATE()) <= 15 THEN '6-15 days'
+                 WHEN DATEDIFF(day, CREATED, GETDATE()) <= 30 THEN '16-30 days'
+                 WHEN DATEDIFF(day, CREATED, GETDATE()) <= 60 THEN '31-60 days'
+                 ELSE 'over 60 days' END AS AGE, COUNT(*) AS TICKETS
+       FROM t WHERE RESOLVED IS NULL GROUP BY CASE WHEN DATEDIFF(day, CREATED, GETDATE()) <= 5 THEN '0-5 days'
+                 WHEN DATEDIFF(day, CREATED, GETDATE()) <= 15 THEN '6-15 days'
+                 WHEN DATEDIFF(day, CREATED, GETDATE()) <= 30 THEN '16-30 days'
+                 WHEN DATEDIFF(day, CREATED, GETDATE()) <= 60 THEN '31-60 days' ELSE 'over 60 days' END`);
+  await add('top_problems', 'Where the complaints concentrate',
+    'The tier-1 / tier-2 / problem-code combinations carrying the most complaints in the window, with how many are still open.',
+    `WITH t AS (SELECT ${ident(COL.key)} AS K, MAX(${ident(COL.t1)}) AS T1, MAX(${ident(COL.t2)}) AS T2,
+        MAX(${ident(COL.problem)}) AS PROBLEM, MAX(${ident(COL.resolved)}) AS RESOLVED
+        FROM ${V} WHERE ${ident(COL.created)} >= DATEADD(day, -${d}, GETDATE()) GROUP BY ${ident(COL.key)})
+     SELECT TOP 25 T1, T2, PROBLEM, COUNT(*) AS TICKETS, SUM(CASE WHEN RESOLVED IS NULL THEN 1 ELSE 0 END) AS STILL_OPEN
+       FROM t GROUP BY T1, T2, PROBLEM ORDER BY COUNT(*) DESC`);
+  await add('unmapped_codes', 'Complaints carrying no CST code',
+    'Rows whose CITC code columns are null — the regulator classification the mapping table is supposed to supply did not resolve.',
+    `SELECT COUNT(DISTINCT ${ident(COL.key)}) AS TICKETS,
+            SUM(CASE WHEN ${ident(COL.complaint)} IS NULL THEN 1 ELSE 0 END) AS NO_COMPLAINT_CODE,
+            SUM(CASE WHEN ${ident(COL.mainType)} IS NULL THEN 1 ELSE 0 END) AS NO_MAIN_CODE,
+            SUM(CASE WHEN ${ident(COL.subType)} IS NULL THEN 1 ELSE 0 END) AS NO_SUB_CODE
+       FROM ${V} WHERE ${ident(COL.created)} >= DATEADD(day, -${d}, GETDATE())`);
+  return out;
+}
+
+/* one in-memory cache for the expensive reads. Nothing about a ticket is written to the console database —
+ * the cache holds only the aggregates, and it is dropped when the process restarts. */
+const _cache = new Map();
+async function cached(key, ttlMs, fn) {
+  const hit = _cache.get(key);
+  if (hit && Date.now() - hit.at < ttlMs) return { ...hit.value, cached: true, cachedAt: new Date(hit.at).toISOString() };
+  const value = await fn();
+  _cache.set(key, { at: Date.now(), value });
+  return value;
+}
+
 function status() {
   const c = cfg();
   return {
@@ -270,4 +478,5 @@ function status() {
   };
 }
 
-module.exports = { configured, cfg, query, columns, viewColumns, pick, probe, sample, status, stop, ident, reachable };
+module.exports = { configured, cfg, query, columns, viewColumns, pick, probe, sample, status, stop, ident, reachable,
+  search, kpis, findings, cached, COL, ID_FIELDS };

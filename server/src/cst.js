@@ -24,6 +24,10 @@
  *   GET  /api/cst/remedy/source[?probe=1&deep=1]  Remedy live-connector status; probe = server, objects, real column names
  *                                                 (deep adds row count, date range and the duplicate-SRID count)
  *   GET  /api/cst/remedy/sample?limit=3           a few rows exactly as ITC_CITC_MOH holds them — audited, never stored
+ *   GET  /api/cst/remedy/search?q=&field=&contains=&unmask=   live identifier search (REQ · incident · customer no ·
+ *                                                 service id · order no · national id) — one row per complaint, audited
+ *   GET  /api/cst/remedy/kpis?days=90             the board's own KPIs on live data (one scan, cached 10 min)
+ *   GET  /api/cst/remedy/findings?days=90         duplicate analysis, open ageing, concentration, unmapped CST codes
  *   GET  /api/cst/config · PUT /api/cst/config    connector settings (secrets stay in .env — nothing here holds one)
  *
  * Arqami is fed live by cstOracle.js when CST_ORACLE_* is set in .env (per-minute aggregation of APPS.YY_REGISTER_NUMBER_AUDIT,
@@ -404,6 +408,35 @@ function mount(app, { requireSuper, audit }) {
       if (!remedy.configured()) return res.status(400).json({ error: 'Remedy connector not configured (CST_REMEDY_* in .env)' });
       if (audit) audit(req, 'CST_REMEDY_SAMPLE', String(n(req.query.limit) || 3), { view: remedy.cfg().view }).catch(() => {});
       res.json({ view: remedy.cfg().view, rows: await remedy.sample(req.query.limit) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  /* LIVE FROM REMEDY — search, KPIs and findings straight off ITC_CITC_MOH.
+   * Nothing from these calls is written to the console database: rows are read, answered and dropped. Identifier
+   * searches are an operator action and are audited with the term; the two PII columns (Customer_Name, ID_Number)
+   * come back masked unless the caller holds unmaskPII, and that unmasking is audited separately. */
+  app.get('/api/cst/remedy/search', gate, async (req, res) => {
+    try {
+      if (!remedy.configured()) return res.status(400).json({ error: 'Remedy connector not configured (CST_REMEDY_* in .env)' });
+      const q = String(req.query.q || '').trim();
+      const unmask = req.query.unmask === '1' && !!(req.caps && req.caps.unmaskPII);
+      if (audit) audit(req, unmask ? 'pii.unmask' : 'CST_REMEDY_SEARCH', 'cst-remedy ' + q.slice(0, 40), { field: req.query.field || 'any', contains: req.query.contains === '1' }).catch(() => {});
+      const out = await remedy.search(q, { field: req.query.field || null, contains: req.query.contains === '1', limit: req.query.limit, unmask });
+      res.json({ ...out, unmaskAvailable: !!(req.caps && req.caps.unmaskPII) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.get('/api/cst/remedy/kpis', gate, async (req, res) => {
+    try {
+      if (!remedy.configured()) return res.status(400).json({ error: 'Remedy connector not configured (CST_REMEDY_* in .env)' });
+      const days = Math.min(3650, Math.max(1, n(req.query.days) || 90));
+      res.json(await remedy.cached('kpis:' + days, 10 * 60000, () => remedy.kpis({ days })));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.get('/api/cst/remedy/findings', gate, async (req, res) => {
+    try {
+      if (!remedy.configured()) return res.status(400).json({ error: 'Remedy connector not configured (CST_REMEDY_* in .env)' });
+      const days = Math.min(3650, Math.max(1, n(req.query.days) || 90));
+      res.json(await remedy.cached('findings:' + days, 30 * 60000, () => remedy.findings({ days })));
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
