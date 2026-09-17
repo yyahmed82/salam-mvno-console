@@ -79,6 +79,9 @@
       <div class="rl" style="font-weight:800;font-size:12px;margin:4px 0 8px">② DEALER 360 · DMS SYSTEM OF RECORD
         <span style="font-weight:600;color:var(--muted)">· live from the Clara cluster — profile, security, wallet, commission, stock</span></div>
       <div id="dms360" style="margin-bottom:18px"></div>
+      <div class="rl" style="font-weight:800;font-size:12px;margin:4px 0 8px">②b BULK WALLET BALANCE · SELF-SERVICE
+        <span style="font-weight:600;color:var(--muted)">· the "current balance for the users below" mail (INC0027800), answered here — paste the list, export the same sheet</span></div>
+      <div id="dmsBulk" style="margin-bottom:18px"></div>
       <div class="rl" style="font-weight:800;font-size:12px;margin:4px 0 8px">③ COMMISSIONING · DMS TRUTH
         <span style="font-weight:600;color:var(--muted)">· from the activation ledger + rate table — follows the range above</span></div>
       <div id="dmsBiz" style="margin-bottom:16px"><div class="rl">Loading commissioning…</div></div>
@@ -97,6 +100,7 @@
       range={mode:"custom",from:f,to:t}; saveRange();
     });
     renderHome(); renderBiz(); renderDealers(); renderDealer360(); renderCommission();
+    if(window.renderBulkBalance) window.renderBulkBalance($("#dmsBulk"));
     if(window.renderDmsJourneys) window.renderDmsJourneys(win());
   }
 

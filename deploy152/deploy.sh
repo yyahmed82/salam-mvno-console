@@ -115,7 +115,7 @@ else
   cp -f /tmp/csync/server/build.json "$APP/server/" 2>/dev/null || true
   if [ -d /tmp/csync/server/jdbc ]; then mkdir -p "$APP/server/jdbc"; cp -f /tmp/csync/server/jdbc/*.java "$APP/server/jdbc/" 2>/dev/null || true
     JAVAC="${JAVAC:-/opt/java/bin/javac}"; OJDBC="$(ls "$APP"/server/jdbc/ojdbc*.jar 2>/dev/null | head -1)"
-    if [ -x "$JAVAC" ] && [ -n "$OJDBC" ]; then (cd "$APP/server/jdbc" && "$JAVAC" -cp "$OJDBC" ArqamiBridge.java && echo "▸ ArqamiBridge compiled (JDBC bridge for EBPROD 9i)") || echo "✗ ArqamiBridge failed to compile"; else echo "▸ JDBC bridge not compiled (javac=$JAVAC ojdbc=${OJDBC:-missing}) — Arqami stays on oracledb/CSV"; fi
+    if [ -x "$JAVAC" ] && [ -n "$OJDBC" ]; then (cd "$APP/server/jdbc" && "$JAVAC" -encoding UTF-8 -cp "$OJDBC" ArqamiBridge.java && echo "▸ ArqamiBridge compiled (JDBC bridge for EBPROD 9i)") || echo "✗ ArqamiBridge failed to compile"; else echo "▸ JDBC bridge not compiled (javac=$JAVAC ojdbc=${OJDBC:-missing}) — Arqami stays on oracledb/CSV"; fi
   fi
   [ -d /tmp/csync/server/node_modules ] && { rm -rf "$APP/server/node_modules"; cp -R /tmp/csync/server/node_modules "$APP/server/"; echo "▸ node_modules replaced"; }
   cp -f /tmp/csync/web/* "$APP/web/" 2>/dev/null || true
