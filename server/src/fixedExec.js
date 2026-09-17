@@ -8,7 +8,7 @@
  *                         24 h for deltas, N days for the trends
  *   pipeline / pileup     order_attempts.step_reached for every attempt that did not COMPLETE
  *   API errors + budget   error_events, both schemas; the /day budget is the fixed_error_spike rule threshold
- *   alerts                alert_events FIRED in the window (sda_ops.public)
+ *   alerts                unified_console.alerts, segment 'fixed' (the console's own fixed_* rules — same rows as Fixed › Alerts)
  *   top ongoing issues    error_events by category: open, first seen, per-day sparkline, trend
  * SADAD / SFTP / revenue have NO feed in this console — reported as "not wired", never as a green tick.
  * Read-only; nothing here writes. */
@@ -16,6 +16,8 @@ const db = require('./db');
 const f360 = require('./fixed360');
 const K = require('./execContract');
 const slo = require('./slo');
+const segment = require('./segment');
+const execRadar = require('./execRadar');
 const { n, pct, delta, dayKey, dayAxis, trendOf, sevOf, humanStep } = K;
 
 const ERR_DAY = `SELECT (date_trunc('day', occurred_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day,
@@ -95,45 +97,38 @@ async function errorBudget() {
   try { const r = await db.ops.query(`SELECT threshold FROM alert_rules WHERE key='fixed_error_spike' AND enabled LIMIT 1`); const t = n((r.rows[0] || {}).threshold); return t > 0 ? t : 50; }
   catch (_) { return 50; }
 }
-/* alert_events is an EVALUATION log, one row per rule check, so a rule that keeps breaching writes a
- * row every cycle. Counting those rows read as ~900 "alerts" in 7 d, which made the radar look like
- * noise. The radar's unit is therefore DISTINCT RULES, and a rule counts as still open when its most
- * recent evaluation (at any time, not just in the window) is FIRED. */
-/* Bounded to the same window as the outer query on purpose, and still exact: we only ask about
- * rules that FIRED inside the window, and a rule's latest evaluation is by definition at or
- * after that firing, so it is always inside `fired_at >= $1` too. An unbounded DISTINCT ON
- * would scan the whole evaluation log on every page load. */
-const LAST_EVAL = `SELECT DISTINCT ON (rule_key) rule_key, status FROM alert_events
-                    WHERE fired_at >= $1 ORDER BY rule_key, fired_at DESC`;
-async function alertsByDay(fromIso) {
-  try { return (await db.ops.query(
-    `WITH last AS (${LAST_EVAL})
-     SELECT (date_trunc('day', e.fired_at AT TIME ZONE 'Asia/Riyadh'))::date::text AS day, e.severity,
-            count(DISTINCT e.rule_key)::int AS n,
-            count(DISTINCT e.rule_key) FILTER (WHERE l.status = 'FIRED')::int AS open,
-            count(*)::int AS firings,
-            (array_agg(DISTINCT coalesce(e.rule_name, e.rule_key)))[1:4] AS rules
-       FROM alert_events e LEFT JOIN last l ON l.rule_key = e.rule_key
-      WHERE e.status='FIRED' AND e.fired_at >= $1 GROUP BY 1,2`, [fromIso])).rows; }
-  catch (_) { return []; }
-}
-async function alertsTotals(fromIso) {
-  try { return (await db.ops.query(
-    `WITH last AS (${LAST_EVAL})
-     SELECT e.severity, count(DISTINCT e.rule_key)::int AS rules,
-            count(DISTINCT e.rule_key) FILTER (WHERE l.status = 'FIRED')::int AS open,
-            count(*)::int AS firings
-       FROM alert_events e LEFT JOIN last l ON l.rule_key = e.rule_key
-      WHERE e.status='FIRED' AND e.fired_at >= $1 GROUP BY 1`, [fromIso])).rows; }
-  catch (_) { return []; }
-}
+/* Alerts: the unified console's OWN engine — `alerts` in unified_console, segment 'fixed' (fixed_* rules
+ * evaluated by alertRunner over metric_snapshots). This is exactly what Fixed › Alerts lists, so the radar,
+ * the "Active critical signals" tile and the alert feed agree with that page. The old prod engine's
+ * evaluation log (sda_ops.alert_events) is NOT read here any more: it records one row per evaluation with
+ * no incident identity, so its rules never matched the console's incidents (radar read "Fixed 0 / 0" while
+ * Fixed › Alerts showed 12 open — 16 Sep 2026). The radar face (12-hour clock) comes from execRadar.radarRows('fixed'),
+ * the same query Mobile uses. */
+const SEG_WHERE = () => segment.sqlWhere('a', 'rule_key', 'fixed');
+const cq = (sql, params) => db.console.query(sql, params).then(r => r.rows, e => { console.error('[fixedExec] alerts query failed:', e.message); return []; });
 async function firedAlerts(fromIso) {
-  try { return (await db.ops.query(`SELECT rule_key, rule_name, team, severity, metric_value, threshold, metric_text, fired_at
-                                     FROM alert_events WHERE status='FIRED' AND fired_at >= $1 ORDER BY fired_at DESC LIMIT 50`, [fromIso])).rows; }
-  catch (_) { return []; }
+  return cq(`SELECT a.rule_key, a.name AS rule_name, a.team, a.severity, a.status, a.observed_value AS metric_value,
+                    a.threshold, a.message AS metric_text, a.fired_at
+               FROM alerts a WHERE ${SEG_WHERE()} AND (a.status='open' OR a.fired_at >= $1)
+              ORDER BY a.status='open' DESC, a.fired_at DESC LIMIT 50`, [fromIso]);
 }
 
+/* MEMO (16 Sep 2026): the executive query set (~13 scans of error_events / order_attempts on sda_ops, both schemas)
+ * took 6–7 s and was recomputed for every visitor of Home, the Executive Dashboard and the brief. One entry per
+ * range: fresh ≤ 60 s is served as is; older is served immediately while ONE background refresh runs
+ * (stale-while-revalidate, ≤ 10 min); a failed refresh keeps the last good copy. sda_ops sees one query set
+ * per minute at most instead of one per page view. `?fresh=1` bypasses the memo (Settings › refresh). */
+const MEMO = {}, FRESH_MS = 60e3, STALE_MS = 600e3;
 async function exec(q = {}) {
+  const range = K.rangeOf(q), key = range;
+  const m = MEMO[key] || (MEMO[key] = {});
+  const age = m.data ? Date.now() - m.at : Infinity;
+  if (!q.fresh && m.data && age < FRESH_MS) return m.data;
+  const run = () => { if (!m.promise) m.promise = execRaw(q).then(d => { m.data = d; m.at = Date.now(); m.promise = null; return d; }, e => { m.promise = null; throw e; }); return m.promise; };
+  if (!q.fresh && m.data && age < STALE_MS) { run().catch(e => console.error('[fixedExec] background refresh failed:', e.message)); return m.data; }
+  const t0 = Date.now(); const d = await run(); if (Date.now() - t0 > 3000) console.log(`[fixedExec] exec ${range} took ${Date.now() - t0} ms`); return d;
+}
+async function execRaw(q = {}) {
   if (!db.ops && !db.opsBeta) return { configured: false, biz: 'fixed', label: 'Fixed', reason: 'OPS_DATABASE_URL / OPS_BETA_DATABASE_URL not set' };
   const range = K.rangeOf(q), days = range === '30d' ? 30 : 7;
   const now = new Date(), D = 864e5;
@@ -145,7 +140,7 @@ async function exec(q = {}) {
     both(ERR_DAY, [from, to]), both(ERR_CAT, [from, to]), both(ERR_CAT_DAY, [from, to]), both(STEPS, [from, to]),
     errorBudget(), firedAlerts(from), both(ERR_24(), [from24]),
   ]);
-  const [radarRows, radarTot, ident, yak] = await Promise.all([alertsByDay(from), alertsTotals(from), identity(from, to), yakeen(from, to)]);
+  const [radar, ident, yak] = await Promise.all([execRadar.radarRows('fixed'), identity(from, to), yakeen(from, to)]);
 
   // ---- day axis
   const byDay = {}; for (const r of series.byDay || []) byDay[dayKey(r.day)] = { n: n(r.n), completed: n(r.completed) };
@@ -268,8 +263,8 @@ async function exec(q = {}) {
     ] },
     pipeline: { title: 'Order pipeline — where not-completed attempts stopped', sub: `${notDone.toLocaleString('en-US')} attempts in ${days} d did not complete`, rows: pipelineRows, href: '#fixed?tab=epurchase' },
     issues,
-    radar: K.radarOf(radarRows, daysArr.map(d => d.day), radarTot),
-    alerts: alerts.slice(0, 12).map(a => ({ severity: a.severity, name: a.rule_name || a.rule_key, text: a.metric_text || (a.metric_value != null ? `${a.metric_value} vs ${a.threshold}` : ''), team: a.team, at: a.fired_at, href: '#fixed-alerts', status: 'fired' })),
+    radar: K.radarOf(radar),
+    alerts: alerts.slice(0, 12).map(a => ({ severity: a.severity, name: a.rule_name || a.rule_key, text: a.metric_text || (a.metric_value != null ? `${a.metric_value} vs ${a.threshold}` : ''), team: a.team, at: a.fired_at, href: '#fixed-alerts', status: a.status || 'fired' })),
   };
 }
 

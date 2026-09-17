@@ -120,11 +120,16 @@
     return `<a href="${esc(a.href)}" class="xo-al ${cls}"><span class="xo-sev ${cls}">${esc(a.severity)}</span><div class="xo-at">${badge(h, unified)}<b>${esc(a.name)}</b>${a.text ? ` — ${esc(a.text)}` : ''}${a.team ? `<span class="xo-dim"> · ${esc(a.team)}</span>` : ''}</div><span class="xo-dim">${a.status === 'open' ? 'open · ' : ''}${ts(a.at)}</span></a>`; }).join('');
 
 
-  /* ---------- radar: a CRT scope, not a chart ----------
+  /* ---------- radar: a CRT scope, not a chart — and a CLOCK ----------
    * The scope face is its own instrument: dark green, phosphor grid, scanlines, sweeping beam —
    * in BOTH themes, because a radar reads as a radar. .xo-scope redefines --ink/--muted/--line
    * locally so the legend beside it inherits the instrument palette instead of the page's.
-   * Encoding: ring = severity, sector = KSA day, dot size = distinct rules.
+   * Encoding (16 Sep 2026): ring = severity, sector = KSA CLOCK HOUR, dot size = distinct rules.
+   *   The face is a 12-hour clock: 13:00 sits at 1 o'clock, 18:00 at 6 o'clock — exactly where a
+   *   wall clock would put it, so "when did that fire" is read the way a shift reads the wall. The
+   *   twelve sectors are the last twelve hours; the current (partial) hour is marked NOW.
+   *   Still-open rules that fired BEFORE the window are pinned into the oldest sector (hatched
+   *   ring on the contact) so nothing open ever falls off the face.
    *   live contact (a rule still breaching)  = severity colour, solid, glowing, locked, pings
    *   dead star   (every rule cleared)       = faint phosphor green, hollow — its RING still says
    *                                            which severity it was, so no information is lost. */
@@ -133,51 +138,60 @@
   const RING_R = { P1: 62, P2: 112, P3: 162 };
   const RD = { cx: 210, cy: 210, R: 186, VB: 420 };
   const SWEEP_S = 8;
+  const slotHour = sl => Number(String(sl).slice(11, 13)) || 0;                // 'YYYY-MM-DDTHH' → HH
+  const slotLabel = sl => `${String(sl).slice(8, 10)} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(String(sl).slice(5, 7)) - 1] || ''} ${String(sl).slice(11, 13)}:00–${String((slotHour(sl) + 1) % 24).padStart(2, '0')}:00`;
   function radar(halves) {
     const parts = halves.map(h => h.radar).filter(Boolean);
     if (!parts.length) return '';
-    const days = parts[0].days || [];
-    if (!days.length) return `<div class="xo-empty">No alert history in this window.</div>`;
-    const { cx, cy, R, VB } = RD, nd = days.length;
-    const ang = i => (-90 + i * (360 / nd)) * Math.PI / 180;
-    const at = (i, r, off) => [cx + r * Math.cos(ang(i) + (off || 0)), cy + r * Math.sin(ang(i) + (off || 0))];
-    /* seconds into the loop at which the beam crosses sector i. The wedge's leading edge starts at
-     * 3 o'clock (90 deg clockwise from 12), so a blip at theta is reached after theta-90 of turn. */
-    const tAt = (i, off) => {
-      const deg = i * (360 / nd) + (off || 0) * 180 / Math.PI - 90;
-      return (((deg % 360) + 360) % 360) / 360 * SWEEP_S;
-    };
+    const slots = parts[0].slots || [];
+    if (!slots.length) return `<div class="xo-empty">No alert history in this window.</div>`;
+    const { cx, cy, R, VB } = RD, hours = slots.length;
+    const nowSlot = slots[hours - 1], oldSlot = slots[0];
+    /* clock geometry: a sector's angle is its CLOCK position, not its index — 12 o'clock at the top */
+    const degOf = sl => (slotHour(sl) % 12) * 30 - 90;
+    const angOf = (sl, off) => degOf(sl) * Math.PI / 180 + (off || 0);
+    const at = (sl, r, off) => [cx + r * Math.cos(angOf(sl, off)), cy + r * Math.sin(angOf(sl, off))];
+    /* seconds into the loop at which the beam crosses a contact: the wedge's leading edge starts at
+     * 3 o'clock (90 deg clockwise from 12), so a blip at theta is reached after theta-90 of turn */
+    const tAt = (sl, off) => { const deg = degOf(sl) + (off || 0) * 180 / Math.PI; return (((deg % 360) + 360) % 360) / 360 * SWEEP_S; };
     const G = 'var(--xo-grid,#37d39a)';
 
-    const spokes = days.map((d, i) => { const [x, y] = at(i, R); return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${G}" stroke-width=".8" opacity=".16"/>`; }).join('');
-    const axes = [0, 90, 180, 270].map(a => { const r = a * Math.PI / 180;
-      return `<line x1="${cx - R * Math.cos(r)}" y1="${cy - R * Math.sin(r)}" x2="${cx + R * Math.cos(r)}" y2="${cy + R * Math.sin(r)}" stroke="${G}" stroke-width="1" opacity=".3"/>`; }).join('');
+    /* twelve clock spokes (hour marks) + the four axes, like a dial; every hour of the day sits on one */
+    const spokes = Array.from({ length: 12 }, (_, i) => { const r = (i * 30 - 90) * Math.PI / 180;
+      return `<line x1="${cx + 18 * Math.cos(r)}" y1="${cy + 18 * Math.sin(r)}" x2="${cx + R * Math.cos(r)}" y2="${cy + R * Math.sin(r)}" stroke="${G}" stroke-width=".8" opacity="${i % 3 ? '.16' : '.3'}"/>`; }).join('');
+    const ticks = Array.from({ length: 60 }, (_, i) => { if (i % 5 === 0) return ''; const r = (i * 6 - 90) * Math.PI / 180;
+      return `<line x1="${cx + (R - 5) * Math.cos(r)}" y1="${cy + (R - 5) * Math.sin(r)}" x2="${cx + R * Math.cos(r)}" y2="${cy + R * Math.sin(r)}" stroke="${G}" stroke-width=".7" opacity=".28"/>`; }).join('');
     const rings = RADAR_SEVS.slice().reverse().map(sev =>
       `<circle cx="${cx}" cy="${cy}" r="${RING_R[sev]}" fill="none" stroke="${G}" stroke-width="1" opacity=".34"/>`).join('')
       + [26, 140, 186].map(r => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${G}" stroke-width=".7" opacity=".14"/>`).join('');
+    /* the current hour's sector is lit faintly so the eye finds NOW before it finds anything else */
+    const nowWedge = (() => { const a0 = degOf(nowSlot) * Math.PI / 180, a1 = a0 + Math.PI / 6;
+      return `<path d="M${cx},${cy} L${(cx + R * Math.cos(a0)).toFixed(1)},${(cy + R * Math.sin(a0)).toFixed(1)} A${R},${R} 0 0,1 ${(cx + R * Math.cos(a1)).toFixed(1)},${(cy + R * Math.sin(a1)).toFixed(1)} Z" fill="${G}" opacity=".07"/>`; })();
 
-    /* long windows: label every other / every third day so the rim never overlaps.
-     * Up to 10 sectors the labels stay horizontal (easiest to read); denser rims turn tangentially. */
-    const step = nd <= 10 ? 1 : nd <= 16 ? 2 : Math.ceil(nd / 10);
-    const dayLab = days.map((d, i) => {
-      if (i % step) return '';
-      const [x, y] = at(i, R + 15);
-      const a = (ang(i) * 180 / Math.PI + 450) % 360, flip = a > 90 && a < 270;
-      const rot = nd <= 10 ? '' : ` transform="rotate(${flip ? a + 180 : a} ${x} ${y})"`;
-      return `<text x="${x}" y="${y}" font-size="10" fill="${G}" opacity=".72" text-anchor="middle" dominant-baseline="middle" font-weight="700"${rot}>${d.slice(5)}</text>`;
+    /* hour labels on the rim, at the clock position of each of the twelve slots; the newest one says
+     * the time as NOW, the oldest carries a −12 h marker so the direction of time is unambiguous */
+    const hourLab = slots.map(sl => {
+      const [x, y] = at(sl, R + 16);
+      const isNow = sl === nowSlot, isOld = sl === oldSlot;
+      const t = `${String(slotHour(sl)).padStart(2, '0')}:00`;
+      return `<text x="${x}" y="${y}" font-size="${isNow ? 10.5 : 10}" fill="${isNow ? 'var(--xo-beam,#8affd0)' : G}" opacity="${isNow ? '1' : '.72'}" text-anchor="middle" dominant-baseline="middle" font-weight="${isNow ? '900' : '700'}"><title>${slotLabel(sl)}${isNow ? ' · current hour' : isOld ? ' · oldest sector (still-open rules that fired earlier are pinned here)' : ''}</title>${t}${isNow ? '' : ''}</text>`
+        + (isNow ? `<text x="${x}" y="${y + 11}" font-size="7.5" fill="var(--xo-beam,#8affd0)" text-anchor="middle" dominant-baseline="middle" font-weight="800" letter-spacing="1">NOW</text>` : '')
+        + (isOld ? `<text x="${x}" y="${y + 11}" font-size="7.5" fill="${G}" opacity=".6" text-anchor="middle" dominant-baseline="middle" font-weight="800" letter-spacing=".5">−12 h</text>` : '');
     }).join('');
-    /* severity labels sit on a dark plate so the phosphor grid never runs through them */
-    const ringLab = RADAR_SEVS.map(sev => { const y = cy - RING_R[sev];
-      return `<g><rect x="${cx - 15}" y="${y - 8}" width="30" height="16" rx="5" fill="var(--xo-plate,#06180f)" opacity=".92"/>`
-        + `<text x="${cx}" y="${y}" font-size="11" fill="${SEV_COLOR[sev]}" text-anchor="middle" dominant-baseline="central" font-weight="800">${sev}</text></g>`; }).join('');
+    /* severity labels sit on a dark plate so the phosphor grid never runs through them. They stand
+     * BETWEEN the 11 and 12 spokes (never on one): every spoke is a clock hour and can carry a
+     * contact, and a label on the 12 o'clock spoke would cover the current hour's contacts. */
+    const LAB_A = -105 * Math.PI / 180;
+    const ringLab = RADAR_SEVS.map(sev => { const x = cx + RING_R[sev] * Math.cos(LAB_A), y = cy + RING_R[sev] * Math.sin(LAB_A);
+      return `<g><rect x="${(x - 15).toFixed(1)}" y="${(y - 8).toFixed(1)}" width="30" height="16" rx="5" fill="var(--xo-plate,#06180f)" opacity=".92"/>`
+        + `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="11" fill="${SEV_COLOR[sev]}" text-anchor="middle" dominant-baseline="central" font-weight="800">${sev}</text></g>`; }).join('');
 
     const cells = halves.flatMap(h => (h.radar ? h.radar.cells : []).filter(c => RING_R[c.sev]).map(c => ({ c, h })));
     const maxN = Math.max(1, ...cells.map(x => x.c.n));
-    /* dot size and the two-business offset both scale with the sector width, so a 30-day window
-     * stays readable instead of turning into one solid ring of overlapping dots */
-    const rMax = Math.max(3.2, Math.min(11, 170 / nd));
-    const rMin = Math.max(1.8, rMax * 0.34);
-    const OFF = halves.length > 1 ? Math.min(0.14, (Math.PI / nd) * 0.44) : 0;
+    const rMax = 9, rMin = 3.2;
+    /* two businesses share a sector: Mobile sits a little counter-clockwise of the hour spoke,
+     * Fixed a little clockwise, so contacts of the same hour never stack */
+    const OFF = halves.length > 1 ? 0.11 : 0;
     /* Which BUSINESS a contact belongs to is carried by its SHAPE, the way a tactical display
      * separates track types — colour is already spent on severity and brightness on open/cleared.
      *   Mobile = round contact      Fixed = diamond contact
@@ -189,16 +203,16 @@
       ? `<path d="M${x} ${(y - r * DIA).toFixed(1)}L${(x + r * DIA).toFixed(1)} ${y}L${x} ${(y + r * DIA).toFixed(1)}L${(x - r * DIA).toFixed(1)} ${y}Z" ${attrs}>${inner || ''}</path>`
       : `<circle cx="${x}" cy="${y}" r="${r.toFixed(1)}" ${attrs}>${inner || ''}</circle>`;
     const blips = halves.flatMap((h, hi) => (h.radar ? h.radar.cells : []).map(c => {
-      const di = days.indexOf(c.day); if (di < 0 || !RING_R[c.sev]) return '';
+      if (slots.indexOf(c.slot) < 0 || !RING_R[c.sev]) return '';
       const off = hi === 0 ? -OFF : OFF;
-      const [x, y] = at(di, RING_R[c.sev], off);
+      const [x, y] = at(c.slot, RING_R[c.sev], off);
       const rr = rMin + (rMax - rMin) * Math.sqrt(c.n / maxN);
-      const dly = tAt(di, off).toFixed(2);
-      const live = c.open > 0, b = h.biz;
-      const tip = `<title>${esc(h.label)} · ${c.sev} · ${c.day} · ${c.n} rule${c.n === 1 ? '' : 's'}`
-        + `${live ? ` · ${c.open} still open` : ' · all cleared'} · ${num(c.firings)} firing${c.firings === 1 ? '' : 's'}`
+      const dly = tAt(c.slot, off).toFixed(2);
+      const live = c.open > 0, b = h.biz, older = c.older || 0;
+      const tip = `<title>${esc(h.label)} · ${c.sev} · ${slotLabel(c.slot)} · ${c.n} rule${c.n === 1 ? '' : 's'}`
+        + `${live ? ` · ${c.open} still open` : ' · all cleared'}${older ? ` · ${older} fired before this window, still open` : ''} · ${num(c.firings)} firing${c.firings === 1 ? '' : 's'}`
         + `${c.rules && c.rules.length ? '\n' + c.rules.map(r => '• ' + esc(r)).join('\n') : ''}</title>`;
-      const coord = `data-cell="1" data-biz="${esc(b)}" data-sev="${esc(c.sev)}" data-day="${esc(c.day)}" data-label="${esc(h.label)}" tabindex="0" role="button" aria-label="${esc(h.label)} ${c.sev} ${c.day}: open the case file"`;
+      const coord = `data-cell="1" data-biz="${esc(b)}" data-sev="${esc(c.sev)}" data-slot="${esc(c.slot)}"${older ? ' data-older="1"' : ''} data-label="${esc(h.label)}" tabindex="0" role="button" aria-label="${esc(h.label)} ${c.sev} ${esc(slotLabel(c.slot))}: open the case file"`;
       if (!live) { const dr = Math.max(2, rr * 0.62);
         return `<g class="xo-blip xo-dead xo-b-${b}" style="--d:${dly}s" ${coord}>`
           + glyph(b, x, y, dr, `class="xo-dot" fill="none" stroke="${G}" stroke-width="1.1"`, tip)
@@ -206,6 +220,7 @@
           + `<circle class="xo-hit" cx="${x}" cy="${y}" r="${Math.max(9, dr + 6).toFixed(1)}" fill="transparent"/></g>`; }
       return `<g class="xo-blip xo-live xo-b-${b}" style="--d:${dly}s" ${coord}>`
         + glyph(b, x, y, rr + 5, `class="xo-lock" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.1" stroke-dasharray="3 3"`)
+        + (older ? glyph(b, x, y, rr + 9, `class="xo-older" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1" stroke-dasharray="1.5 2.5" opacity=".8"`) : '')
         + glyph(b, x, y, rr + rr * 0.5 + 2, `class="xo-ping" fill="none" stroke="${SEV_COLOR[c.sev]}" stroke-width="1.4"`)
         + glyph(b, x, y, rr + rr * 0.6 + 3, `class="xo-halo" fill="${SEV_COLOR[c.sev]}"`)
         + glyph(b, x, y, rr, `class="xo-dot" fill="${SEV_COLOR[c.sev]}" stroke="${b === 'mobile' ? '#e6f0ff' : '#d8fde9'}" stroke-width="${Math.min(1.3, rr * 0.28).toFixed(2)}" filter="url(#xoGlow)"`, tip)
@@ -213,8 +228,8 @@
     })).join('');
 
     const tot = halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || {}).rules || 0, o: (h.radar || {}).open || 0 }));
-    /* window totals come from the payload, never from summing the daily cells: one rule firing on
-     * five days is five cells but ONE rule */
+    /* face totals come from the payload, never from summing the hourly cells: one rule firing in
+     * five hours is five cells but ONE rule */
     const sevTot = {};
     halves.forEach(h => Object.entries((h.radar || {}).sev || {}).forEach(([sv, e]) => {
       const a = sevTot[sv] || (sevTot[sv] = { rules: 0, open: 0, firings: 0 });
@@ -222,6 +237,7 @@
     }));
     const sum = k => RADAR_SEVS.reduce((a, sv) => a + ((sevTot[sv] || {})[k] || 0), 0);
     const openNow = sum('open'), ruleTot = sum('rules'), fireTot = sum('firings');
+    const olderTot = cells.reduce((a, x) => a + (x.c.older || 0), 0);
     const peak = cells.slice().sort((a, b) => (b.c.open - a.c.open) || (b.c.n - a.c.n) || (b.c.firings - a.c.firings))[0];
 
     return `<div class="xo-radarwrap">
@@ -230,7 +246,7 @@
           <button type="button" class="xo-tty-b" data-tty="back" hidden>◂ all open</button></div>
         <div class="xo-tty-out" role="log" aria-live="polite" aria-label="Open alert contacts"></div>
       </div>
-      <svg viewBox="0 0 ${VB} ${VB}" class="xo-radar" role="img" aria-label="Alert radar: P1 to P3 severity rings by day, open contacts and cleared history">
+      <svg viewBox="0 0 ${VB} ${VB}" class="xo-radar" role="img" aria-label="Alert radar: a 12-hour clock, P1 to P3 severity rings by hour, open contacts and cleared history">
         <defs>
           <radialGradient id="xoFace" cx="50%" cy="46%" r="58%">
             <stop offset="0%" stop-color="var(--xo-face1,#123a2a)"/><stop offset="55%" stop-color="var(--xo-face2,#0a2419)"/><stop offset="100%" stop-color="var(--xo-face3,#05130d)"/></radialGradient>
@@ -247,20 +263,20 @@
         <circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#xoFace)"/>
         <circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#xoBloom)"/>
         <g clip-path="url(#xoFaceClip)">
-          ${spokes}${axes}${rings}
+          ${nowWedge}${spokes}${ticks}${rings}
           <g class="xo-sweepg"><path class="xo-sweep" d="M${cx},${cy} L${cx},${cy - R} A${R},${R} 0 0,1 ${cx + R},${cy} Z" fill="url(#xoSweep)"/>
             <line class="xo-beam" x1="${cx}" y1="${cy}" x2="${cx + R}" y2="${cy}" stroke="var(--xo-beam,#8affd0)" stroke-width="2.2" filter="url(#xoGlow)"/></g>
           <rect x="${cx - R}" y="${cy - R}" width="${2 * R}" height="${2 * R}" fill="url(#xoScan)" class="xo-scan"/>
-          ${blips}${ringLab}
+          ${ringLab}${blips}
         </g>
         <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${G}" stroke-width="1.6" opacity=".45"/>
         <circle cx="${cx}" cy="${cy}" r="${R + 5}" fill="none" stroke="${G}" stroke-width="1" opacity=".14"/>
-        ${dayLab}
+        ${hourLab}
         <circle cx="${cx}" cy="${cy}" r="4" fill="${G}" filter="url(#xoGlow)"/>
         <circle cx="${cx}" cy="${cy}" r="10" fill="none" stroke="${G}" stroke-width="1" opacity=".45"/>
       </svg>
       <div class="xo-radarlegend">
-        <div class="xo-rl-h">Distinct rules · ${days.length} days</div>
+        <div class="xo-rl-h">Distinct rules · last ${hours} h</div>
         <div class="xo-rl-tot ${openNow ? 'hot' : 'calm'}">${num(openNow)}<span>still open now</span></div>
         <div class="xo-rlh2"><span>severity</span><span>open / fired</span></div>
         ${RADAR_SEVS.map(sev => { const e = sevTot[sev] || { rules: 0, open: 0 };
@@ -269,11 +285,11 @@
           return `<div class="xo-rl"><i style="background:${SEV_COLOR[sev]}"></i><b>${sev}</b>`
             + `<span class="xo-rlb"><u style="background:${SEV_COLOR[sev]};width:${w}%"></u></span>`
             + `<span class="xo-rln">${num(e.open)}<em> / ${num(e.rules)}</em></span></div>`; }).join('')
-          || `<div class="xo-rl-d">No rule fired in this window.</div>`}
-        <div class="xo-rl-d"${fireTot > ruleTot ? ` title="${num(fireTot)} firing events behind them — the same rule re-fires on every evaluation cycle, which is why the radar counts rules, not firings"` : ''}><b>${num(ruleTot)}</b> rule${ruleTot === 1 ? '' : 's'} fired in ${days.length} d</div>
-        ${peak ? `<div class="xo-rl-d">busiest: <b>${esc(peak.c.sev)}</b> · ${esc(peak.c.day)} · ${num(peak.c.n)} rule${peak.c.n === 1 ? '' : 's'} on ${esc(peak.h.label)}</div>` : ''}
+          || `<div class="xo-rl-d">No rule fired in the last ${hours} h.</div>`}
+        <div class="xo-rl-d"${fireTot > ruleTot ? ` title="${num(fireTot)} firing events behind them — the same rule re-fires on every evaluation cycle, which is why the radar counts rules, not firings"` : ''}><b>${num(ruleTot)}</b> rule${ruleTot === 1 ? '' : 's'} on the face · ${hours} h${olderTot ? ` · <b>${num(olderTot)}</b> open since before, pinned at −12 h` : ''}</div>
+        ${peak ? `<div class="xo-rl-d">busiest: <b>${esc(peak.c.sev)}</b> · ${esc(slotLabel(peak.c.slot))} · ${num(peak.c.n)} rule${peak.c.n === 1 ? '' : 's'} on ${esc(peak.h.label)}</div>` : ''}
         <div class="xo-rl-d"><span class="xo-lg"><i class="xo-lg-live"></i>open — still breaching</span><span class="xo-lg"><i class="xo-lg-dead"></i>cleared — kept as history</span></div>
-        <div class="xo-rl-d">ring = severity · sector = day · dot size = distinct rules · <b>click a contact to tune the console</b></div>
+        <div class="xo-rl-d">ring = severity · sector = clock hour (KSA) · dot size = distinct rules · <b>click a contact to tune the console</b></div>
         <div class="xo-rl-biz">${(tot.length > 1 ? tot : halves.map(h => ({ label: h.label, biz: h.biz, t: (h.radar || {}).rules || 0, o: (h.radar || {}).open || 0 })))
           .map(t => `<span class="xo-bz"><i class="xo-gl xo-gl-${t.biz}"></i><b>${esc(t.label)}</b><span>${num(t.o)} open / ${num(t.t)}</span></span>`).join('')}</div>
         <a href="#alerts" class="xo-link">open alerts →</a>
@@ -348,20 +364,19 @@
     const me = ++ttySeq;
     const ttl = host.querySelector('.xo-tty-ttl');
     const all = !scope;
-    if (ttl) ttl.textContent = all ? 'open contacts' : `${scope.label} · ${scope.sev} · ${scope.day}`;
+    if (ttl) ttl.textContent = all ? 'open contacts' : `${scope.label} · ${scope.sev} · ${slotLabel(scope.slot)}`;
     const back = host.querySelector('[data-tty="back"]'); if (back) back.hidden = all;
-    typeInto(out, [{ t: '> ' + (all ? 'scanning all sectors…' : `tuning to ${scope.label} ${scope.sev} ${scope.day}…`), c: 'dim' }]);
+    typeInto(out, [{ t: '> ' + (all ? 'scanning all sectors…' : `tuning to ${scope.label} ${scope.sev} ${slotLabel(scope.slot)}…`), c: 'dim' }]);
     const ask = h => api(`/api/exec/radar/cell?biz=${encodeURIComponent(h.biz)}`
-      + (all ? `&days=${state.range === '30d' ? 30 : 7}&open=1` : `&sev=${encodeURIComponent(scope.sev)}&day=${encodeURIComponent(scope.day)}`))
+      + (all ? `&open=1` : `&sev=${encodeURIComponent(scope.sev)}&slot=${encodeURIComponent(scope.slot)}${scope.older ? '&older=1' : ''}`))
       .then(d => ({ h, d })).catch(e => ({ h, d: { rules: [], error: e.message } }));
     const targets = all ? halves : halves.filter(h => h.biz === scope.biz);
     const res = await Promise.all(targets.map(ask));
     if (me !== ttySeq) return;
     const multi = halves.length > 1;
     const lines = [];
-    const days = state.range === '30d' ? 30 : 7;
     lines.push({ t: `> SALAM OPERATIONS · ALERT SCOPE`, c: 'dim' });
-    lines.push({ t: `> ${all ? `still breaching now · last ${days} d` : `contact ${scope.sev} · ${scope.day} · open first, then cleared`}`, c: 'dim' });
+    lines.push({ t: `> ${all ? `still breaching now · whenever it fired` : `contact ${scope.sev} · ${slotLabel(scope.slot)}${scope.older ? ' · incl. open since before the window' : ''} · open first, then cleared`}`, c: 'dim' });
     lines.push({ t: '', c: '' });
     let nOpen = 0, nCleared = 0;
     for (const { h, d } of res) {
@@ -421,7 +436,7 @@
         ${title ? `<h2 class="xo-h">${esc(title)}</h2>` : ''}${sub ? `<div class="xo-meta">${esc(sub)}</div>` : ''}</div>
       <div class="xo-tools">${statusPill(status)}<span class="xo-dim">${c.critical} critical · ${c.warnings} warning · ${c.alerts24} alert(s) in 24 h</span>
         ${opts.range === false ? '' : `<span class="xo-range">${['7d', '30d'].map(r => `<button type="button" class="xo-r${state.range === r ? ' on' : ''}" data-r="${r}">${r}</button>`).join('')}</span>`}
-        ${opts.brief ? `<button type="button" class="xo-btn xo-brief" data-act="brief" hidden>▶ Executive brief</button>` : ''}
+        ${opts.brief ? `<a href="#noc" class="xo-btn xo-noc" title="Alert radar on the NOC wall (F = fullscreen)">◉ NOC wall</a><button type="button" class="xo-btn xo-brief" data-act="brief" hidden>▶ Executive brief</button>` : ''}
         <button type="button" class="xo-btn" data-act="refresh" title="refresh now">↻ <span class="xo-upd">updated ${hm(new Date())}</span></button></div></div>`;
   }
 
@@ -465,7 +480,7 @@
             ${chip(openRules ? 'amber' : 'green', 'alert rules still open', num(openRules), '#alerts')}
             ${issue ? chip(issue.sev === 'critical' ? 'red' : issue.sev === 'warning' ? 'amber' : 'info', clip(issue.label, 30) + ' open', num(issue.open), issue.href, issue.label + ' — biggest ongoing issue') : ''}
           </div></div>`; }).join('')}</div>`,
-    radar: (H) => sec('signal', 'Alert radar', 'severity by day · click through to alerts') + `<div class="topo-card xo-chart xo-scope">${radar(H)}</div>`,
+    radar: (H) => sec('signal', 'Alert radar', '12-hour clock · severity by hour · click through to alerts') + `<div class="topo-card xo-chart xo-scope">${radar(H)}</div>`,
     kpisExec: (H, u) => sec('north-star', 'Key indicators', 'click a tile to open its page') +
       grouped(H, u, 'xo-grid', h => h.kpis.filter(k => k.exec).map(k => kpiTile(k, h, false))),
     kpisAll: (H, u) => sec('indicators', 'Key indicators', 'click a tile to open its page') +
@@ -492,6 +507,8 @@
    * are trending, then the radar as the bridge from trend to what is still open, then the
    * issues themselves. The radar sits directly above Top ongoing issues because the contacts
    * it leaves lit ARE that list. */
+  /* The radar is on this page AND on the NOC wall (#noc, nocwall.js): the wall is the same section scaled for a
+   * TV, the header button opens it. Restored here on 16 Sep 2026 after a cut that moved it to the wall only. */
   const EXEC_SECTIONS = ['summary', 'kpisExec', 'slos', 'trendsExec', 'radar', 'issues', 'foot'];
 
   async function render(host, opts, force) {
@@ -515,7 +532,7 @@
       const tune = scope => { host.querySelectorAll('.xo-blip.sel').forEach(x => x.classList.remove('sel')); ttyLoad(host, halves, scope); };
       host.querySelectorAll('.xo-blip[data-cell]').forEach(g => {
         const go = () => { host.querySelectorAll('.xo-blip.sel').forEach(x => x.classList.remove('sel')); g.classList.add('sel');
-          ttyLoad(host, halves, { biz: g.dataset.biz, sev: g.dataset.sev, day: g.dataset.day, label: g.dataset.label });
+          ttyLoad(host, halves, { biz: g.dataset.biz, sev: g.dataset.sev, slot: g.dataset.slot, older: g.dataset.older === '1', label: g.dataset.label });
           if (wrap) wrap.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
         g.addEventListener('click', go);
         g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
@@ -526,7 +543,7 @@
     const rb = host.querySelector('[data-act="refresh"]'); if (rb) rb.onclick = () => render(host, o, true);
     const bb = host.querySelector('[data-act="brief"]'); if (bb) { bb.onclick = openBrief; briefExists().then(ok => { if (ok) bb.hidden = false; }); }
     host.setAttribute('data-xo-host', '1'); host._xo = o;
-    clearTimeout(timers.get(host)); timers.set(host, setTimeout(() => { if (host.isConnected && !document.hidden) render(host, o, true); }, 300e3));
+    clearTimeout(timers.get(host)); if (!o.noAutoRefresh) timers.set(host, setTimeout(() => { if (host.isConnected && !document.hidden) render(host, o, true); }, 300e3));   // the NOC wall paces itself
   }
 
   /* mount ops sections into a page that already owns part of the story */
@@ -549,7 +566,7 @@
     document.querySelectorAll('.navtab:not([data-view="execops"]).active').forEach(b => b.classList.remove('active'));
     if (window.navdropSync) window.navdropSync();
     render(host, { biz: 'all', sections: EXEC_SECTIONS, title: 'Executive Dashboard',
-      sub: 'both businesses · north-star KPIs, SLO compliance, alert radar and the issues that are still open',
+      sub: 'both businesses · north-star KPIs, SLO compliance, trends, the alert radar and the issues that are still open',
       kicker: 'executive', brief: true });
   };
 
@@ -580,6 +597,7 @@
       .xo-status{display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;font-weight:800;font-size:12px;color:var(--c);background:color-mix(in srgb,var(--c) 13%,transparent);border:1px solid color-mix(in srgb,var(--c) 35%,transparent)}
       .xo-status i{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 25%,transparent)}
       .xo-range{display:inline-flex;gap:4px}.xo-r,.xo-btn{cursor:pointer;font:inherit;font-size:11.5px;font-weight:700;padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:inherit;transition:border-color .15s,background .15s}
+      a.xo-btn{text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:5px}
       .xo-r.on{background:var(--green,#0e9f5a);border-color:var(--green,#0e9f5a);color:#fff}.xo-r:hover,.xo-btn:hover{border-color:var(--green,#0e9f5a)}
       .xo-sec{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
       .xo-title{margin:0;font-size:14px}.xo-dim{font-size:11px;color:var(--muted);font-weight:600}

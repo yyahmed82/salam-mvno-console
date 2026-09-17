@@ -15,10 +15,13 @@
  *   pipeline:{title,sub,rows:[{step,label,n,share,tone}],href},
  *   issues:[{category,label,open,total,first_seen,daysOngoing,trend,spark,sev,href}],
  *   alerts:[{severity,name,text,team,at,href,status}],
- *   radar:{days:[KSA day],
- *          cells:[{day, sev, n:<distinct RULES that fired that day>, open:<of those, still breaching now>,
+ *   radar:{unit:'hour', hours:12, from:<iso>, slots:['YYYY-MM-DDTHH' KSA clock hour, oldest first],
+ *          cells:[{slot, sev, n:<distinct RULES that fired in that hour>, open:<of those, still breaching now>,
+ *                  older:<still-open rules fired BEFORE the window, pinned into the oldest slot>,
  *                  firings:<raw event rows>, rules:[name]}],
  *          sev:{P1:{rules,open,firings},…}, rules, open, firings, total}
+ *     A 12-hour CLOCK (16 Sep 2026): sector = KSA clock hour, one sweep = the last 12 h. Open
+ *     incidents are always on the face whenever they fired. Rows come from execRadar.radarRows(seg).
  *     n / rules are DISTINCT RULE COUNTS, never raw firings: one noisy rule re-firing every
  *     evaluation used to read as ~900 'alerts' in 7 d, which made the board look like noise.
  * } */
@@ -37,18 +40,19 @@ const rangeOf = q => q && q.range === '30d' ? '30d' : '7d';
 const statusOf = (critical, warnings) => critical > 0 ? 'CRITICAL' : warnings > 0 ? 'WARNING' : 'HEALTHY';
 const humanStep = s => String(s || '').replace(/^(ePurchase|salamHome)/, (m) => m === 'ePurchase' ? 'E-purchase · ' : 'Salam Home · ').replace(/([a-z])([A-Z])/g, '$1 $2');
 const SEVS = ['P1', 'P2', 'P3', 'P4'];
-/* rows:   {day, severity, n, open, firings, rules[]}  — one per KSA day x severity
- * totals: {severity, rules, open, firings}            — one per severity for the WHOLE window
- * The window totals cannot be summed from the daily rows: a rule that fires on five days is five
- * daily rows but ONE rule. That is the whole point of the unit change, so they are queried apart. */
-const radarOf = (rows, days, totals) => {
+/* rows:   {slot, severity, n, open, older, firings, rules[]}  — one per KSA clock hour x severity
+ * totals: {severity, rules, open, firings}                   — one per severity for the WHOLE face
+ * The face totals cannot be summed from the hourly rows: a rule that fires in five hours is five
+ * rows but ONE rule. That is the whole point of the unit change, so they are queried apart. */
+const radarOf = ({ slots, rows, totals, from, hours }) => {
   const cells = [];
-  for (const d of days) for (const sev of SEVS) {
-    const hit = rows.find(r => r.day === d && r.severity === sev);
+  for (const slot of slots) for (const sev of SEVS) {
+    const hit = rows.find(r => r.slot === slot && r.severity === sev);
     if (!hit) continue;
     const n = Number(hit.n) || 0; if (!n) continue;
-    cells.push({ day: d, sev, n,
+    cells.push({ slot, sev, n,
       open: Math.min(n, Number(hit.open) || 0),
+      older: Math.min(n, Number(hit.older) || 0),
       firings: Number(hit.firings) || 0,
       rules: Array.isArray(hit.rules) ? hit.rules.filter(Boolean).map(String).slice(0, 4) : [] });
   }
@@ -61,6 +65,6 @@ const radarOf = (rows, days, totals) => {
     e.open = Math.min(e.rules, e.open);
     sev[s] = e; rules += e.rules; open += e.open; firings += e.firings;
   }
-  return { days, cells, sev, rules, open, firings, total: rules };
+  return { unit: 'hour', hours, from, slots, cells, sev, rules, open, firings, total: rules };
 };
 module.exports = { SEVS, radarOf, n, pct, delta, dayKey, dayAxis, trendOf, sevOf, rangeOf, statusOf, humanStep };

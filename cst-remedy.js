@@ -21,6 +21,7 @@
   const kpi = (label, value, sub, tone) => `<div class="cs-kpi" style="--t:${tone || T.line}"><div class="cs-kl">${esc(label)}</div><div class="cs-kv">${value}</div><div class="cs-ks">${sub || ''}</div></div>`;
   const card = (title, body, right) => `<div class="topo-card cs-card"><div class="cs-ch"><b>${title}</b>${right ? `<span class="cs-dim">${right}</span>` : ''}</div>${body}</div>`;
   const dt = v => { if (!v) return '—'; const s = String(v).replace('T', ' '); return esc(s.slice(0, 19)); };
+  const h3 = (title, desc) => `<div class="cs-h3">${esc(title)}</div>${desc ? `<div class="cs-h3d">${esc(desc)}</div>` : ''}`;
   const FIELDS = [['', 'Any identifier'], ['req', 'Complaint number (REQ / SRID)'], ['incident', 'Remedy incident / work order'],
     ['custId', 'Customer number'], ['serviceId', 'Service id'], ['orderNo', 'Order number'], ['idNumber', 'National / Iqama id']];
   /* Windows. 1 / 3 / 7 answer "what is happening right now", 30 / 90 are the operating view (90 is also the
@@ -76,13 +77,15 @@
   async function render(host) {
     if (!host) return;
     host.innerHTML = `<div id="csRemedy"><style>${STYLE}</style>
-      <div class="cs-ch" style="margin-bottom:6px"><b>Live from Remedy</b><span class="cs-dim" id="rxBar">connecting…</span></div>
+      <div class="rx-bar" style="margin-bottom:10px"><span class="rx-note" id="rxBar">connecting…</span></div>
+      ${h3('1.1 — The window you are looking at', 'Every figure below is counted over this window, as complaints rather than rows. A window costs one scan of the view, so the answer is cached server-side and a window already read is free to return to.')}
       <div class="rx-row" style="margin-bottom:12px">
         <span class="rx-note" style="margin-right:2px">Window:</span>
         ${WINDOWS.map(([d, l]) => `<button type="button" class="rx-chip${S.days === d ? ' on' : ''}" data-days="${d}">${l}</button>`).join('')}
         <span class="rx-note" id="rxCost" style="margin-left:auto"></span>
       </div>
       <div id="rxKpis"></div>
+      ${h3('1.2 — Find one complaint', 'Search any identifier an engineer actually holds — a CST complaint number, a Remedy incident, a customer or service id, an order number or a national id. Rows are read from ARSystem, shown once and never stored; names and ids arrive masked.')}
       <div class="topo-card cs-card">
         <div class="cs-ch"><b>Find a complaint</b><span class="cs-dim">any identifier · queried on ARSystem, never stored · every search is audited</span></div>
         <div class="rx-row">
@@ -93,6 +96,7 @@
         </div>
         <div id="rxOut"></div>
       </div>
+      ${h3('1.3 — What the window says that the snapshot cannot', 'Asked of ARSystem directly, and unanswerable from the dated snapshot: what the duplicate rows really are, how long the open complaints have been open, where they concentrate, which tickets carry no CST complaint number and which carry no CST code. Each one says how it was counted.')}
       <div id="rxFindings"></div></div>`;
     const $ = s => host.querySelector(s);
     $('#rxGo').onclick = () => run(host);
@@ -116,7 +120,7 @@
       const st = await api('/api/cst/remedy/source');
       if (my !== S.seq) return;
       if (!st.configured) { $('#rxBar').innerHTML = `<span class="rx-dot off"></span> not configured — CST_REMEDY_* in /apps/unified/.env`; return; }
-      $('#rxBar').innerHTML = `<span class="rx-dot${st.lastError ? ' bad' : ''}"></span> ${esc(st.view)} on ${esc(st.host)}:${st.port} · ${esc(st.database)}`
+      $('#rxBar').innerHTML = `<span class="rx-dot${st.lastError ? ' bad' : ''}"></span> <b>Live from Remedy</b> · ${esc(st.view)} on ${esc(st.host)}:${st.port} · ${esc(st.database)}`
         + (st.executeAs ? ` · running as <b>${esc(st.executeAs)}</b>` : ` · <span style="color:var(--xo-p2,#d97706)">no privilege drop</span>`)
         + (st.tcp && st.tcp.ok ? ` · reachable in ${st.tcp.ms} ms` : '');
     } catch (e) { if (my === S.seq) $('#rxBar').innerHTML = `<span class="rx-dot bad"></span> ${esc(e.message)}`; }
@@ -230,8 +234,13 @@
     CITC_SERVICE_MAINTYPECODE: 'CST service code', CITC_SERVICE_SUBTYPECODE: 'CST service sub-code', RAW_ROWS: 'Rows in the view' };
   function detail(cell, r) {
     const keys = Object.keys(r).filter(k => !LONG.includes(k));
-    cell.innerHTML = `<div class="rx-in2"><div class="rx-kv">${keys.map(k => `<div><span class="k">${esc(LABEL[k] || k)}</span><span class="v">${/DATE$/.test(k) ? dt(r[k]) : (r[k] == null || r[k] === '' ? '—' : esc(r[k]))}</span></div>`).join('')}</div>
+    /* the same ticket, asked of CST: section 4 answers what the regulator receives for it */
+    const ask = window.cstApi && (r.SERVICE_REQUESTID || r.ITC_SERVICE_ID)
+      ? `<div class="rx-row" style="margin:0 0 10px"><button type="button" class="cs-btn ghost" data-ask="1">Ask the CST APIs about this complaint ↓</button><span class="rx-note">fills section 4 with ${esc(r.SERVICE_REQUESTID || r.ITC_SERVICE_ID)}</span></div>` : '';
+    cell.innerHTML = `<div class="rx-in2">${ask}<div class="rx-kv">${keys.map(k => `<div><span class="k">${esc(LABEL[k] || k)}</span><span class="v">${/DATE$/.test(k) ? dt(r[k]) : (r[k] == null || r[k] === '' ? '—' : esc(r[k]))}</span></div>`).join('')}</div>
       ${LONG.filter(k => r[k]).map(k => `<div class="rx-long"><span class="k rx-note">${esc(LABEL[k] || k)}</span><pre>${esc(r[k])}</pre></div>`).join('')}</div>`;
+    const b = cell.querySelector('[data-ask]');
+    if (b) b.onclick = e => { e.stopPropagation(); window.cstApi.prefill({ SpTicketNumber: r.SERVICE_REQUESTID || '', ServiceNumber: r.ITC_SERVICE_ID || '', IdentificationNumber: '' }); };
   }
 
   window.cstRemedy = { render, state: S };

@@ -303,7 +303,7 @@ const METRICS = {
   },
   fixed_applog_payment_fail_rate: {
     label: 'Fixed · payment / checkout step failure rate, 60 min (per channel × class)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
-    compute: safe('applog_payment', async now => stepFamily(now, 'payment', `(path ~* '(payment|invoice|checkout|\\bpay)' OR channel = 'payments')`))
+    compute: safe('applog_payment', async now => stepFamily(now, 'payment', `(path ~* '(payment|invoice|checkout|\\ypay)' OR channel = 'payments')`))
   },
   fixed_applog_collector_lag_min: {
     label: 'Fixed · app-log collector lag (minutes since newest line)', unit: 'minutes', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',

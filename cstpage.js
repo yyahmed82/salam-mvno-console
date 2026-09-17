@@ -61,6 +61,22 @@
   const kpi = (label, value, sub, tone, href) => `<${href ? `a href="${esc(href)}"` : 'div'} class="cs-kpi" style="--t:${tone || T.line}"><div class="cs-kl">${esc(label)}</div><div class="cs-kv">${value}</div><div class="cs-ks">${sub || ''}</div></${href ? 'a' : 'div'}>`;
   const card = (title, body, right, cls) => `<div class="topo-card cs-card ${cls || ''}"><div class="cs-ch"><b>${title}</b>${right ? `<span class="cs-dim">${right}</span>` : ''}</div>${body}</div>`;
   const banner = (tone, html) => `<div class="cs-banner" style="--c:${tone}">${html}</div>`;
+  /* Section headers, the same shape as the Executive Dashboard: a number, the question the section answers,
+     one line of what it is made of, and the method on the right. SECS is the single list — the jump bar, the
+     numbering and the anchors all read from it, so a section cannot end up numbered one way and linked another. */
+  const SECS = [
+    ['remedy', 'What does Remedy hold right now?', 'Live from ARSystem (dbo.ITC_CITC_MOH on 172.30.1.14): the board\u2019s own KPIs on live rows, a search by any identifier an engineer holds, and the findings the snapshot cannot answer.', 'live \u00b7 read-only \u00b7 audited'],
+    ['snapshot', 'What did CST actually escalate?', 'The verified figures of the engagement runbook \u00a710.2 \u2014 dated, frozen, and the ones quoted back to the regulator. Replaced by rows the moment an RA export is imported.', null],
+    ['board', 'Where does the engagement stand?', 'Workstreams A\u2013F with their current state, the open items, and the three arguments that hold in front of CST.', 'runbook \u00a74\u2013\u00a79, \u00a713'],
+    ['api', 'What does CST receive when it asks?', 'The five regulator endpoints of spec CITC006001 v6.2, run from the console exactly as the Swagger runs them \u2014 the other side of every discrepancy above.', 'CITC006001 v6.2']
+  ];
+  const secIndex = id => SECS.findIndex(x => x[0] === id) + 1;
+  const qsec = (id, right) => { const x = SECS.find(y => y[0] === id); if (!x) return '';
+    const r = right === undefined ? x[3] : right;
+    return `<div class="cs-q" id="cs-s-${x[0]}"><div class="cs-qn">${secIndex(id)}</div><div class="cs-qt"><h3 class="cs-qh">${esc(x[1])}</h3><div class="cs-qd">${esc(x[2])}</div></div>${r ? `<div class="cs-qr">${esc(r)}</div>` : ''}</div>`; };
+  const jumpBar = () => `<nav class="cs-jump" aria-label="Sections">${SECS.map((x, i) => `<a href="#cs-s-${x[0]}" data-jump="${x[0]}"><i>${i + 1}</i>${esc(x[1].replace(/\?$/, ''))}</a>`).join('')}</nav>`;
+  /* a sub-heading inside a section: a real title plus the one line that says what the reader is looking at */
+  const h3 = (title, desc) => `<div class="cs-h3">${esc(title)}</div>${desc ? `<div class="cs-h3d">${esc(desc)}</div>` : ''}`;
 
   /* ---------- state ---------- */
   const state = { page: 'arqami', day: null, range: 30, esc: null, board: null, cfg: null, src: null, daily: null };
@@ -171,7 +187,9 @@
       <div class="cs-ah">Open items</div>
       <div class="cs-oi">${board.openItems.map(o => `<label class="cs-oir ${o.done ? 'done' : ''}"><input type="checkbox" data-oi="${o.id}" ${o.done ? 'checked' : ''}><span>${esc(o.text)}</span></label>`).join('')}</div>
       <div class="cs-acts" style="margin-top:10px"><button type="button" class="cs-btn" data-act="save-board">Save board</button><span class="cs-dim" id="csBoardMsg"></span></div>`, 'workstreams A–F · runbook §4–§9, §13');
-    host.innerHTML = head + `<div id="csRemedyMount"></div>` + bannerHtml + kpis + `
+    host.innerHTML = head + jumpBar() + qsec('remedy') + `<div id="csRemedyMount"></div>`
+      + qsec('snapshot', d.snapshot ? `as at ${esc(d.asAt)} \u00b7 ${esc(d.window.from)} \u2192 ${esc(d.window.to)}` : `imported rows \u00b7 ${esc(ksa(d.window.from).slice(0, 10))} \u2192 ${esc(ksa(d.window.to).slice(0, 10))}`)
+      + bannerHtml + kpis + `
       <div class="cs-grid2">
         ${card('By domain — from «نوع شكوي رئيسي», IT scope highlighted', hbars(domItems, { total: d.total }), 'auditable by both sides: CST\'s own field, no re-interpretation')}
         ${card('Why CST escalated', hbars(d.reasons.map(r => ({ label: r.label, count: r.count, color: /خمسة|5/.test(r.label) ? T.bad : T.warn })), { total: d.total }) + `<div class="cs-ah">Closure lag (closed only)</div>` + hbars(lagItems, { total: lagTotal }), `${num(lagTotal)} closed`)}
@@ -184,13 +202,17 @@
       ${d.outcomes && d.outcomes.length ? card('Outcome in our own statements to CST', hbars(d.outcomes.map(r => ({ label: r.label, count: r.count, color: /تسوية|أُلغيت/.test(r.label) ? T.ok : /قيد/.test(r.label) ? T.warn : T.muted })), { total: d.total }), 'classifier of runbook §8, applied to the full statement text') : ''}
       ${proof}
       ${d.snapshot ? '' : `<div id="csOpenList">${card('Open cohort', `<div class="cs-loading">Loading open complaints…</div>`, 'sorted by escalation date · IDs only, never names')}</div>`}
+      ` + qsec('board') + `
       ${boardHtml}
       <div class="cs-grid2">${card('The three arguments that hold', `<ol class="cs-args"><li><b>53 % of escalations are a five-day-deadline breach</b>, not a bad resolution — commit to a fixed internal-intervention date, not a shorter final SLA.</li><li><b>Every open complaint is still winnable</b> — daily follow-up before they become adjudication decisions.</li><li><b>Never one SLA across categories</b> — cancellations are a desk action; network faults are governed by site-access time.</li></ol>`, 'runbook §10.2')}${card('Communication rules', `<ul class="cs-find"><li>External teams (DBA, vendors): findings and the ask only — no plan, scripts or SQL.</li><li>National IDs masked to the last 4 digits; names and phones never leave the workstation.</li><li>Never send the raw evidence workbook to CST — extract what serves the response.</li><li>Arabic, RTL for mails and reports; the WhatsApp group is semi-external.</li></ul>`, 'runbook §2 — hard constraints')}</div>
+      ` + qsec('api') + `<div id="csApiMount"></div>
       ${importPanel('escalations')}${sourcePanel('escalations')}`;
     wire(host);
     /* live section: the same questions asked of ARSystem itself. Own fetches, own errors — it never blocks the
        runbook figures above it, which stay the dated reference even when Remedy is unreachable. */
     if (window.cstRemedy) { try { window.cstRemedy.render($('#csRemedyMount', host)); } catch (e) {} }
+    /* the five CST endpoints, at the end of the page: what the regulator receives, against what we hold above */
+    if (window.cstApi) { try { window.cstApi.render($('#csApiMount', host)); } catch (e) {} }
     if (!d.snapshot) api('/api/cst/escalations/list?status=open&limit=200').then(l => {
       const el = $('#csOpenList', host); if (!el) return;
       el.innerHTML = card(`Open cohort · ${num(l.rows.length)}`, l.rows.length ? `<div class="tscroll"><table class="cs-tbl"><thead><tr><th>REQ</th><th>Domain</th><th>Sub-type</th><th>Region</th><th>Escalated</th><th>Reason</th><th>Stage</th></tr></thead><tbody>${l.rows.map(r => `<tr class="${r.it_scope ? 'it' : ''}"><td class="cs-num">${esc(r.req)}</td><td>${esc(r.domain)}${r.it_scope ? ' <span class="cs-code it">IT</span>' : ''}</td><td>${ar(r.sub_type || '')}</td><td>${ar(r.region || '')}</td><td class="cs-num">${ksa(r.escalated_at).slice(0, 10)}</td><td>${ar(r.escalation_reason || '')}</td><td>${ar(r.stage || r.status || '')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="cs-empty">Nothing open.</div>`, 'sorted by escalation date · IDs only, never names');
@@ -342,11 +364,21 @@
       .cs-row{cursor:pointer}.cs-row:hover td{background:color-mix(in srgb,${T.info} 8%,transparent)}.cs-row.on td{background:color-mix(in srgb,${T.info} 14%,transparent)}
       .cs-srcg{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.cs-srcg>div{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 11px;display:flex;flex-direction:column;gap:2px;min-width:0}.cs-srcg b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .cs-pre{font-size:11.5px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;white-space:pre;overflow:auto}
+      .cs-q{display:flex;align-items:flex-start;gap:14px;margin:26px 0 12px;padding-bottom:10px;border-bottom:1px solid var(--line);scroll-margin-top:96px}
+      .cs-qn{flex:none;width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;color:#fff;background:linear-gradient(135deg,#0e9f5a,#019c20);box-shadow:0 6px 16px rgba(14,159,90,.28)}
+      .cs-qt{flex:1 1 auto;min-width:0}.cs-qh{margin:0;font-size:18px;font-weight:800;letter-spacing:-.01em;line-height:1.2}
+      .cs-qd{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.4;max-width:900px}
+      .cs-qr{flex:none;font-size:11px;color:var(--muted);font-weight:700;padding-top:4px;text-align:right;white-space:nowrap}
+      .cs-jump{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px}
+      .cs-jump a{font-size:11.5px;font-weight:800;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:7px;transition:color .15s,border-color .15s,transform .15s}
+      .cs-jump a:hover{color:var(--green,#0e9f5a);border-color:var(--green,#0e9f5a);transform:translateY(-1px)}
+      .cs-jump a i{font-style:normal;width:18px;height:18px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#fff;background:linear-gradient(135deg,#0e9f5a,#019c20)}
+      .cs-h3{font-size:14px;font-weight:800;margin:18px 0 2px;letter-spacing:-.01em}.cs-h3d{font-size:12px;color:var(--muted);margin:0 0 9px;line-height:1.45;max-width:900px}
       .cs-loading,.cs-empty{padding:18px;color:var(--muted);font-size:13px}.cs-err{padding:14px;border-left:4px solid ${T.bad}}
       .cs-in-anim{animation:csIn .4s cubic-bezier(.2,.8,.2,1) both}@keyframes csIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
       html[dir=rtl] .cs-tbl th{text-align:right}html[dir=rtl] .cs-hbv{text-align:left}html[dir=rtl] .cs-banner{border-left:1px solid var(--line);border-right:5px solid var(--c)}
       @media (max-width:1100px){.cs-kpis,.cs-kpis5{grid-template-columns:repeat(3,minmax(0,1fr))}}
-      @media (max-width:720px){.cs-kpis,.cs-kpis5{grid-template-columns:repeat(2,minmax(0,1fr))}.cs-kv{font-size:20px}.cs-hbr{grid-template-columns:1fr 2fr 56px;gap:6px}.cs-wsr{grid-template-columns:30px 1fr;}.cs-wsr .cs-sel{grid-column:2}.cs-h{font-size:19px}}
+      @media (max-width:720px){.cs-kpis,.cs-kpis5{grid-template-columns:repeat(2,minmax(0,1fr))}.cs-kv{font-size:20px}.cs-hbr{grid-template-columns:1fr 2fr 56px;gap:6px}.cs-wsr{grid-template-columns:30px 1fr;}.cs-wsr .cs-sel{grid-column:2}.cs-h{font-size:19px}.cs-q{gap:10px;margin:18px 0 10px}.cs-qh{font-size:16px}.cs-qr{display:none}.cs-jump{gap:5px}.cs-jump a{font-size:11px;padding:5px 10px}}
       @media (prefers-reduced-motion:reduce){.cs-in-anim{animation:none}.cs-btn,.cs-tab,.cs-kpi{transition:none}}
     `; document.head.appendChild(st);
   }

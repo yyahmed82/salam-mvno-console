@@ -1,16 +1,18 @@
 /* execRadar.js — the case file behind one radar contact (13 Sep 2026).
  *
- *   GET /api/exec/radar/cell?biz=mobile|fixed[&sev=P1|P2|P3][&day=YYYY-MM-DD][&days=7|30][&open=1]
+ *   GET /api/exec/radar/cell?biz=mobile|fixed[&sev=P1|P2|P3][&slot=YYYY-MM-DDTHH[&older=1]][&day=YYYY-MM-DD][&days=N][&open=1]
  *                                                                           (gate: that business)
  *
- * A blip on the Executive radar is one (KSA day x severity) cell for one business. Clicking it asks for
+ * The Executive radar is a 12-HOUR CLOCK (16 Sep 2026): sector = KSA clock hour, ring = severity, one
+ * sweep = the last 12 hours. A blip is one (hour x severity) cell for one business. Clicking it asks for
  * that cell: every distinct RULE that fired in it, and for each one who has it, how long it has been
  * open, the acknowledgement SLA it is being measured against, and how long this rule has historically
- * taken to clear.
+ * taken to clear. `older=1` (the oldest sector) also includes rules that are STILL OPEN but fired before
+ * the window — the clock pins them there so nothing open ever falls off the face.
  *
- * Omit `day` (and `sev`) and it answers for the WHOLE window instead — `days` back from now — which is
- * how the scope's console lists everything still open without asking cell by cell. `open=1` keeps only
- * rules that are still breaching.
+ * Omit `slot`/`day` (and `sev`) and it answers for the whole window; `open=1` keeps only rules that are
+ * still breaching, regardless of when they fired (open is open). `radarRows(seg)` is the shared query
+ * behind the face itself, used by mvnoExec.js and fixedExec.js.
  *
  * WHAT IS REAL AND WHAT IS NOT — this file invents nothing:
  *   owner        alerts.assignee, else alerts.ack_by (who acknowledged it). NULL = nobody has taken it.
@@ -25,10 +27,8 @@
  *                shown. The honest stand-ins are the ack SLA due time and the rule's own MTTR, and the
  *                payload says so in `missing` rather than printing a made-up date.
  *
- * FIXED is a different source: sda_ops.alert_events is an evaluation log with no ack, assignee,
- * resolution or ticket columns, so a Fixed case file carries what that log really has — team, first and
- * last firing, how many evaluations breached, and whether the newest evaluation is still FIRED — and
- * declares the rest as not wired instead of leaving blank fields that look like "nobody is on it".
+ * FIXED reads the same `alerts` table with segment 'fixed' (16 Sep 2026; before that it read the old prod
+ * engine's sda_ops.alert_events, which never matched the console's own fixed_* incidents).
  * Read-only; nothing here writes. */
 'use strict';
 const db = require('./db');
@@ -39,20 +39,58 @@ const n = v => Number(v) || 0;
 const SEVS = new Set(['P1', 'P2', 'P3', 'P4']);
 const minsBetween = (a, b) => (a && b) ? Math.round((new Date(b) - new Date(a)) / 60000) : null;
 const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+const isSlot = d => /^\d{4}-\d{2}-\d{2}T\d{2}$/.test(String(d || ''));
 
-/* ---------------------------------------------------------------- mobile: console DB `alerts` */
+/* ---------------------------------------------------------------- the clock face: shared by both businesses */
+const RADAR_HOURS = 12;
+/* KSA clock-hour key 'YYYY-MM-DDTHH' — the same key in SQL and in JS, so cells and axis always match */
+const SLOT = col => `to_char(date_trunc('hour', (${col}) AT TIME ZONE 'Asia/Riyadh'), 'YYYY-MM-DD"T"HH24')`;
+const slotKey = t => new Date(t + 3 * 3600e3).toISOString().slice(0, 13);
+const hourFloor = t => Math.floor(t / 3600e3) * 3600e3;
+const windowFrom = hours => new Date(hourFloor(Date.now()) - (hours - 1) * 3600e3).toISOString();   // start of the oldest sector
+const slotAxis = hours => { const h0 = hourFloor(Date.now()), out = []; for (let i = hours - 1; i >= 0; i--) out.push(slotKey(h0 - i * 3600e3)); return out; };
+/* rows:   one per (slot x severity): n = DISTINCT rules fired in that hour, open = of those still open,
+ *         older = still-open rules that fired BEFORE the window and were pinned into the oldest sector
+ * totals: one per severity for the whole face, queried apart (a rule firing in five hours is ONE rule)
+ * Open incidents are always counted, whenever they fired: the face is an instrument of NOW. */
+async function radarRows(seg, hours = RADAR_HOURS) {
+  const from = windowFrom(hours), W = SEG.sqlWhere('a', 'rule_key', seg);
+  const q = (sql, p) => db.console.query(sql, p).then(r => r.rows, e => { console.error('[execRadar] radar query failed:', e.message); return []; });
+  const [rows, totals] = await Promise.all([
+    q(`SELECT ${SLOT('GREATEST(a.fired_at, $1::timestamptz)')} AS slot, a.severity,
+              count(DISTINCT a.rule_key)::int AS n,
+              count(DISTINCT a.rule_key) FILTER (WHERE a.status = 'open')::int AS open,
+              count(DISTINCT a.rule_key) FILTER (WHERE a.status = 'open' AND a.fired_at < $1::timestamptz)::int AS older,
+              count(*)::int AS firings,
+              (array_agg(DISTINCT coalesce(a.name, a.rule_key)))[1:4] AS rules
+         FROM alerts a WHERE ${W} AND (a.fired_at >= $1::timestamptz OR a.status = 'open') GROUP BY 1, 2`, [from]),
+    q(`SELECT a.severity, count(DISTINCT a.rule_key)::int AS rules,
+              count(DISTINCT a.rule_key) FILTER (WHERE a.status = 'open')::int AS open,
+              count(*)::int AS firings
+         FROM alerts a WHERE ${W} AND (a.fired_at >= $1::timestamptz OR a.status = 'open') GROUP BY 1`, [from]),
+  ]);
+  return { slots: slotAxis(hours), rows, totals, from, hours };
+}
+
+/* ---------------------------------------------------------------- console DB `alerts`, one segment */
 const M_COLS = `a.id, a.rule_key, a.name, a.severity, a.team, a.status, a.message,
                 a.observed_value, a.threshold, a.peak_value, a.breach_count, a.window_hours,
                 a.fired_at, a.last_seen_at, a.resolved_at, a.opened_wall, a.snoozed_until,
                 a.assignee, a.ack_by, a.ack_at, a.ack_reminder_level, a.ack_reminder_at, a.sn_number, a.note`;
 
-async function mobileCell({ day, sev, days, openOnly }) {
+async function consoleCell(seg, { day, sev, days, slot, older, openOnly }) {
   const C = db.console;
-  const segWhere = SEG.sqlWhere('a', 'rule_key', 'mvno');
+  const segWhere = SEG.sqlWhere('a', 'rule_key', seg);
+  const biz = seg === 'fixed' ? 'fixed' : 'mobile';
   const w = [segWhere], pp = [];
   if (sev) { pp.push(sev); w.push(`a.severity = $${pp.length}`); }
-  if (day) { pp.push(day); w.push(`(a.fired_at AT TIME ZONE 'Asia/Riyadh')::date = $${pp.length}::date`); }
-  else { pp.push(days); w.push(`a.fired_at >= now() - ($${pp.length}::int || ' days')::interval`); }
+  if (slot) {
+    pp.push(slot); const eq = `${SLOT('a.fired_at')} = $${pp.length}`;
+    if (older) { pp.push(windowFrom(RADAR_HOURS)); w.push(`(${eq} OR (a.status = 'open' AND a.fired_at < $${pp.length}::timestamptz))`); }
+    else w.push(eq);
+  }
+  else if (day) { pp.push(day); w.push(`(a.fired_at AT TIME ZONE 'Asia/Riyadh')::date = $${pp.length}::date`); }
+  else if (!openOnly) { pp.push(days); w.push(`a.fired_at >= now() - ($${pp.length}::int || ' days')::interval`); }
   if (openOnly) w.push(`a.status = 'open' AND a.resolved_at IS NULL`);
   const rows = (await C.query(
     `SELECT ${M_COLS} FROM alerts a WHERE ${w.join(' AND ')}
@@ -73,8 +111,8 @@ async function mobileCell({ day, sev, days, openOnly }) {
   } catch (_) { /* leave MTTR unknown rather than guessing */ }
 
   const cfg = await ackSla.getConfig().catch(() => null);
-  const biz = cfg && cfg.mobile, ladder = biz && biz[sev] ? biz[sev] : null;
-  const slaOn = !!(cfg && cfg.enabled && biz && biz.enabled);
+  const bcfg = cfg && cfg[biz], ladder = bcfg && bcfg[sev] ? bcfg[sev] : null;
+  const slaOn = !!(cfg && cfg.enabled && bcfg && bcfg.enabled);
   const now = Date.now();
 
   const rules = rows.map(a => {
@@ -107,50 +145,16 @@ async function mobileCell({ day, sev, days, openOnly }) {
       breachCount: n(a.breach_count), windowHours: a.window_hours == null ? null : Number(a.window_hours),
       message: a.message || null, ack,
       mttr: m && m.n ? { avgMin: m.avgMin, p50Min: m.p50Min, samples: m.n } : null,
-      href: `#alerts?rule=${encodeURIComponent(a.rule_key)}`,
+      href: seg === 'fixed' ? `#fixed?tab=alerts&rule=${encodeURIComponent(a.rule_key)}` : `#alerts?rule=${encodeURIComponent(a.rule_key)}`,
     };
   });
   return { rules, ladder: ladder ? { enabled: slaOn, ...ladder } : null };
 }
-
-/* ---------------------------------------------------------------- fixed: sda_ops.alert_events */
-async function fixedCell({ day, sev, days, openOnly }) {
-  const P = db.ops; if (!P) return { rules: [], ladder: null, missing: ['OPS_DATABASE_URL not set'] };
-  const w = [`e.status = 'FIRED'`], pp = [];
-  if (sev) { pp.push(sev); w.push(`e.severity = $${pp.length}`); }
-  if (day) { pp.push(day); w.push(`(e.fired_at AT TIME ZONE 'Asia/Riyadh')::date = $${pp.length}::date`); }
-  else { pp.push(days); w.push(`e.fired_at >= now() - ($${pp.length}::int || ' days')::interval`); }
-  const having = openOnly ? `HAVING max(l.status) = 'FIRED'` : '';
-  const rows = (await P.query(
-    `WITH last AS (SELECT DISTINCT ON (rule_key) rule_key, status, fired_at, metric_value, metric_text
-                     FROM alert_events ORDER BY rule_key, fired_at DESC)
-     SELECT e.rule_key, max(e.rule_name) AS name, max(e.team) AS team, count(*)::int AS firings,
-            min(e.fired_at) AS first_at, max(e.fired_at) AS last_at, max(e.severity) AS severity,
-            max(e.threshold) AS threshold, max(e.metric_value) AS metric_value, max(e.metric_text) AS metric_text,
-            max(l.status) AS last_status, max(l.fired_at) AS last_eval_at
-       FROM alert_events e LEFT JOIN last l ON l.rule_key = e.rule_key
-      WHERE ${w.join(' AND ')}
-      GROUP BY e.rule_key ${having} ORDER BY max(e.fired_at) DESC LIMIT 60`, pp)).rows;
-  const now = Date.now();
-  return {
-    ladder: null,
-    rules: rows.map(r => ({
-      id: null, key: r.rule_key, name: r.name || r.rule_key, severity: r.severity || sev, team: r.team || null,
-      status: r.last_status === 'FIRED' ? 'open' : 'cleared',
-      firedAt: r.first_at, lastSeenAt: r.last_at, resolvedAt: null,
-      openMin: r.last_status === 'FIRED' ? minsBetween(r.first_at, now) : minsBetween(r.first_at, r.last_at),
-      owner: null, ownerFrom: null, ackAt: null, ackBy: null, ticket: null, note: null,
-      observed: r.metric_value == null ? null : Number(r.metric_value),
-      threshold: r.threshold == null ? null : Number(r.threshold),
-      peak: null, breachCount: n(r.firings), windowHours: null,
-      message: r.metric_text || null, ack: null, mttr: null,
-      href: `#fixed?tab=alerts&rule=${encodeURIComponent(r.rule_key)}`,
-    })),
-    /* said out loud rather than rendered as empty owner / SLA fields, which would read as
-     * "nobody is on it" when the truth is "this source does not record it" */
-    missing: ['alert_events is an evaluation log: it records no owner, acknowledgement, resolution time or ticket for Fixed rules — only that a rule breached and when'],
-  };
-}
+const mobileCell = q => consoleCell('mvno', q);
+/* Fixed reads the SAME console table (segment 'fixed'): the unified engine's fixed_* incidents carry owner,
+ * ack, resolution and ticket exactly like Mobile's. The old sda_ops.alert_events evaluation log is no
+ * longer consulted — it had none of that, and its rules never matched Fixed › Alerts. */
+const fixedCell = q => consoleCell('fixed', q);
 
 /* ---------------------------------------------------------------- mount */
 function mount(app, { requireView }) {
@@ -165,14 +169,17 @@ function mount(app, { requireView }) {
       const day = req.query.day ? String(req.query.day) : null;
       const days = Math.min(90, Math.max(1, Number(req.query.days || 7)));
       const openOnly = req.query.open === '1' || req.query.open === 'true';
+      const slot = req.query.slot ? String(req.query.slot) : null;
+      const older = req.query.older === '1' || req.query.older === 'true';
       if (sev && !SEVS.has(sev)) return res.status(400).json({ error: 'sev must be P1, P2, P3 or P4' });
       if (day && !isDay(day)) return res.status(400).json({ error: 'day must be YYYY-MM-DD (KSA)' });
-      const q = { day, sev, days, openOnly };
+      if (slot && !isSlot(slot)) return res.status(400).json({ error: 'slot must be YYYY-MM-DDTHH (KSA clock hour)' });
+      const q = { day, sev, days, slot, older, openOnly };
       const out = biz === 'fixed' ? await fixedCell(q) : await mobileCell(q);
       res.json({
-        biz, label: biz === 'fixed' ? 'Fixed' : 'Mobile', sev, day, days: day ? null : days, openOnly,
+        biz, label: biz === 'fixed' ? 'Fixed' : 'Mobile', sev, day, slot, older, days: (day || slot || openOnly) ? null : days, openOnly,
         generatedAt: new Date().toISOString(),
-        source: biz === 'fixed' ? 'sda_ops.alert_events' : 'unified_console.alerts',
+        source: 'unified_console.alerts',
         open: out.rules.filter(r => r.status === 'open').length,
         rules: out.rules, ladder: out.ladder || null,
         /* no ETA field exists on either side — say so instead of printing an invented date */
@@ -181,4 +188,4 @@ function mount(app, { requireView }) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 }
-module.exports = { mount, mobileCell, fixedCell };
+module.exports = { mount, mobileCell, fixedCell, radarRows, RADAR_HOURS };

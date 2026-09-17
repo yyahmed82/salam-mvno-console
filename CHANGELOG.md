@@ -3,6 +3,22 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.38] — 2026-09-16 — Exec radar: Fixed alerts on the face, 12-hour clock
+### Fixed
+- **Executive dashboard › Alert radar showed `Fixed 0 open / 0` while Fixed › Alerts had 12 open.** The radar's Fixed
+  half (and the contact drill-down `/api/exec/radar/cell?biz=fixed`) read the old prod engine's evaluation log
+  `sda_ops.alert_events`, never the unified console's own `fixed_*` incidents in `unified_console.alerts`; the Mobile
+  queries explicitly exclude `fixed_*` keys, so those incidents were invisible to both halves. Both businesses now read
+  the same `alerts` table (segment-scoped via `segment.sqlWhere`), so the radar, the Fixed "Active critical signals"
+  tile and the Fixed alert feed agree with Fixed › Alerts. Fixed contacts now carry a real owner, ack SLA and MTTR.
+### Changed
+- **Alert radar is a 12-hour clock.** Sector = KSA clock hour (13:00 at 1 o'clock), ring = severity, one sweep = the
+  last 12 hours; the current hour is marked NOW and lit, the oldest sector carries −12 h. Still-open rules that fired
+  before the window are pinned into the oldest sector (dotted outer ring) so nothing open ever falls off the face, and
+  "still open now" counts open incidents whenever they fired. Contract: `radar.{unit:'hour',hours,slots,cells[{slot…}]}`
+  (replaces `days`/`cells[{day…}]`); shared query `execRadar.radarRows(seg)` for both producers.
+- `/api/exec/radar/cell` accepts `slot=YYYY-MM-DDTHH` (+`older=1`); `open=1` no longer applies a time filter.
+
 ## [2.0.0-alpha.37] — 2026-09-14 — Vendor penalty candidate model
 ### Added
 - **Vendors & contracts** now has a **Penalty model** tab per vendor/contract for candidate-only penalty estimates:

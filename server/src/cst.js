@@ -28,6 +28,8 @@
  *                                                 service id · order no · national id) — one row per complaint, audited
  *   GET  /api/cst/remedy/kpis?days=90             the board's own KPIs on live data (one scan, cached 10 min)
  *   GET  /api/cst/remedy/findings?days=90         duplicate analysis, open ageing, concentration, unmapped CST codes
+ *   GET  /api/cst/api/spec[?probe=1]             the five CST endpoints as the Swagger declares them; probe = can this host reach the gateway
+ *   POST /api/cst/api/call {endpoint, fields}    run one of the five against https://itc-tt-view.itc.sa — explicit operator action, audited
  *   GET  /api/cst/config · PUT /api/cst/config    connector settings (secrets stay in .env — nothing here holds one)
  *
  * Arqami is fed live by cstOracle.js when CST_ORACLE_* is set in .env (per-minute aggregation of APPS.YY_REGISTER_NUMBER_AUDIT,
@@ -41,6 +43,7 @@ const db = require('./db');
 const settings = require('./settings');
 const oracle = require('./cstOracle');
 const remedy = require('./cstRemedy');
+const cstApi = require('./cstApi');
 
 const C = () => db.console;
 const n = v => Number(v) || 0;
@@ -441,6 +444,32 @@ function mount(app, { requireSuper, audit }) {
       if (!remedy.configured()) return res.status(400).json({ error: 'Remedy connector not configured (CST_REMEDY_* in .env)' });
       const days = Math.min(3650, Math.max(1, n(req.query.days) || 90));
       res.json(await remedy.cached('findings:' + days, 2 * ttlFor(days), () => remedy.findings({ days })));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  /* ---- The five CST endpoints (spec CITC006001 v6.2), run from the console exactly as the Swagger runs them ----
+   * Remedy above answers what we hold; these answer what the regulator receives. The call is made server-side so
+   * the api key never reaches a browser, the endpoint is chosen by key from a fixed table so nothing else can be
+   * posted to, and every run is audited with a masked identifier. Nothing is stored and nothing is scheduled. */
+  const mask4 = v => { const t = String(v == null ? '' : v).trim(); return !t ? '' : t.length <= 4 ? '\u2022\u2022\u2022\u2022' : '\u2022'.repeat(Math.min(6, t.length - 4)) + t.slice(-4); };
+  app.get('/api/cst/api/spec', gate, async (req, res) => {
+    try {
+      const out = cstApi.spec();
+      if (req.query.probe === '1') { try { out.tcp = await cstApi.reachable(); } catch (e) { out.tcp = { ok: false, error: e.message }; } }
+      res.json(out);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.post('/api/cst/api/call', gate, async (req, res) => {
+    try {
+      const b = req.body || {};
+      const ep = cstApi.byKey(String(b.endpoint || ''));
+      if (!ep) return res.status(400).json({ error: 'unknown endpoint: ' + String(b.endpoint || '').slice(0, 40) });
+      const fields = (b.fields && typeof b.fields === 'object' && !Array.isArray(b.fields)) ? b.fields : {};
+      const idish = fields.SpTicketNumber || fields.ServiceNumber || fields.IdentificationNumber || '';
+      if (audit) audit(req, 'CST_API_CALL', ep.path + ' ' + mask4(idish), { endpoint: ep.key }).catch(() => {});
+      /* the transport result IS the answer — an HTTP 500 from CST is a finding, not a console failure, so it
+         comes back as 200 with the gateway's own status inside and the page renders it. */
+      res.json(await cstApi.call(ep.key, fields));
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

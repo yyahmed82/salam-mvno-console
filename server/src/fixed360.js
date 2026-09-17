@@ -77,7 +77,24 @@ async function freshness(pool = db.ops) {
 }
 
 /* ---- the dashboard ---- */
+/* MEMO (16 Sep 2026): 11 scans of order_attempts per call, requested by Home, the Fixed hub and the exec pages for the
+ * same range. Fresh ≤ 60 s served as is, ≤ 10 min served while one refresh runs in the background. Keyed on the whole
+ * scope (range / from-to rounded to the minute / channel / filters); `fresh=1` bypasses. */
+const MEMO = {}, FRESH_MS = 60e3, STALE_MS = 600e3;
 async function summary(q) {
+  const qq = Object.assign({}, q || {}); const fresh = qq.fresh; delete qq.fresh;
+  for (const k of ['from', 'to']) if (qq[k]) qq[k] = String(qq[k]).slice(0, 16);
+  const key = JSON.stringify(qq, Object.keys(qq).sort());
+  const m = MEMO[key] || (MEMO[key] = {});
+  const age = m.data ? Date.now() - m.at : Infinity;
+  if (!fresh && m.data && age < FRESH_MS) return m.data;
+  const run = () => { if (!m.promise) m.promise = summaryRaw(q).then(d => { m.data = d; m.at = Date.now(); m.promise = null; return d; }, e => { m.promise = null; throw e; }); return m.promise; };
+  if (!fresh && m.data && age < STALE_MS) { run().catch(e => console.error('[fixed360] background refresh failed:', e.message)); return m.data; }
+  const d = await run();
+  const keys = Object.keys(MEMO); if (keys.length > 200) for (const k of keys.slice(0, 100)) delete MEMO[k];   // ad-hoc from/to scopes must not pile up
+  return d;
+}
+async function summaryRaw(q) {
   const s = parseScope(q);
   const pool = poolFor(s.channel); if (!pool) throw notConfigured();
   const P = s.params, W = s.where;

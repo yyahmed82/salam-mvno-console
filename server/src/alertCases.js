@@ -141,17 +141,86 @@ const CASES = {
   fixed_incident_sla_breach_rate: (a, T, W, d) => ({ pool: db.ops, from: 'incident_log', cols: INC_COLS, head: INC_HEAD, pop: `submitted_at >= $1::timestamptz - ($2||' hours')::interval AND submitted_at <= $1::timestamptz AND ($3::text IS NULL OR theme ILIKE '%' || $3 || '%')`, num: 'sla_missed', params: [T, W, d && d.scope ? d.scope : null], order: 'submitted_at DESC', note: 'population = tickets submitted in the window · counted = SLA missed' }),
   fixed_incident_ticket_count: (a, T, W, d) => ({ pool: db.ops, from: 'incident_log', cols: INC_COLS, head: INC_HEAD, pop: `submitted_at >= $1::timestamptz - ($2||' hours')::interval AND submitted_at <= $1::timestamptz AND ($3::text IS NULL OR theme ILIKE '%' || $3 || '%')`, num: 'TRUE', params: [T, W, d && d.scope ? d.scope : null], order: 'submitted_at DESC', note: 'tickets submitted in the window' }),
 };
-const NO_ROWS = { apigw_nodes_unreachable: 'console TCP probe (apigw_probe_log) — see #apigw for the node map', dealer_activity: 'aggregate of dealer activity', offhours_orders: 'aggregate', sms_probe_fail_count: 'SMS probe events — see Monitoring › SMS', courier_backlog: 'derived from paid reseller orders without a delivery request', onboarding_created: 'count of orders created', fixed_workhours_activity_ratio: 'same-hour baseline ratio (SDA activity) — see Fixed › Dashboard', fixed_sms_balance: 'Unifonic balance reading' };
+/* ---- FIXED per-channel families (16 Sep 2026 — fixedChannelMetrics.js twins). Same window, same dim, same class SQL. ----
+ * Board rows carry the same channel / class / response text / provider the board and the metric compute use (fixedErrors
+ * expressions), so a "Salam Home app · technical" alert exports exactly the Salam Home technical rows of that hour. */
+const fe = () => require('./fixedErrors');
+const EE2_COLS = () => `e.id, e.occurred_at, ${fe().CHANNEL_EXPR} AS channel, ${fe().CLASS_SQL()} AS cls, e.category, e.code, left(${fe().RESP_EXPR}, 300) AS response, ${fe().PROVIDER_EXPR} AS provider, e.dealer_code, e.region, e.order_number, e.attempt_id, e.resolved`;
+const EE2_HEAD = [['occurred_at', 'Time (KSA)'], ['channel', 'Channel'], ['cls', 'Class'], ['category', 'Category'], ['response', 'Response'], ['provider', 'Provider'], ['code', 'Code'], ['dealer_code', 'Dealer'], ['region', 'Region'], ['order_number', 'Order'], ['attempt_id', 'Workflow id'], ['resolved', 'Resolved'], ['id', 'Event id']];
+const EE_WIN = `e.occurred_at >= $1::timestamptz - ($2||' hours')::interval AND e.occurred_at < $1::timestamptz`;
+const AE_COLS = `id::text AS id, ts, coalesce(channel,'other') AS channel, path, kind, ok, reason_class AS cls, status_code, left(reason, 300) AS reason, duration_ms, request_id, state_id, platform, app_version, host`;
+const AE_HEAD = [['ts', 'Time (KSA)'], ['channel', 'Channel'], ['path', 'Step'], ['kind', 'Kind'], ['ok', 'OK'], ['cls', 'Class'], ['reason', 'Reason'], ['duration_ms', 'Duration (ms)'], ['status_code', 'Code'], ['request_id', 'Request id'], ['state_id', 'Workflow id'], ['platform', 'Platform'], ['app_version', 'App version'], ['id', 'Row id']];
+const AE_WIN = `ts >= $1::timestamptz - ($2||' hours')::interval AND ts < $1::timestamptz`;
+const AC_HOST = `coalesce(substring(ac.endpoint from '^https?://([^/:]+)'), 'unknown')`;
+const AC_COLS = `ac.id::text AS id, ac.created_at, ${AC_HOST} AS host, regexp_replace(regexp_replace(split_part(ac.endpoint, '?', 1), '^https?://[^/]+', ''), '/[0-9A-Za-z_-]*[0-9][0-9A-Za-z_-]*', '/{id}', 'g') AS family, ac.status, ac.error_class, ac.duration_ms, ac.attempt_id, left(ac.endpoint, 200) AS endpoint`;
+const AC_HEAD = [['created_at', 'Time (KSA)'], ['host', 'Host'], ['family', 'Endpoint family'], ['status', 'HTTP'], ['error_class', 'Error class'], ['duration_ms', 'Duration (ms)'], ['attempt_id', 'Workflow id'], ['endpoint', 'Endpoint'], ['id', 'Call id']];
+const AC_WIN = `ac.created_at >= $1::timestamptz - ($2||' hours')::interval AND ac.created_at < $1::timestamptz`;
+const YP_COLS = `id::text AS id, run_at, trigger_kind, actor, verdict, ok_count, total, login->>'ok' AS login_ok, login->>'ms' AS login_ms, (SELECT string_agg(x->>'label' || ': ' || coalesce(x->>'message',''), ' | ') FROM jsonb_array_elements(results) x WHERE x->>'cls' = 'technical') AS failures`;
+const YP_HEAD = [['run_at', 'Run (KSA)'], ['trigger_kind', 'Trigger'], ['verdict', 'Verdict'], ['ok_count', 'OK'], ['total', 'Calls'], ['login_ok', 'Login'], ['login_ms', 'Login ms'], ['failures', 'Technical failures'], ['actor', 'Actor'], ['id', 'Run id']];
+const chan = d => d && d.channel && d.channel !== 'all' ? String(d.channel) : null;
+const clsOf = d => d && (d.cls === 'business' || d.cls === 'technical') ? d.cls : null;
+const MONEY = ['PAYMENT_NOT_NOTIFIED', 'PROVISION_NO_ORDER', 'PAYMENT_FAILED'];
+/* the board pool for a channel: the same partition the board and the metric used (beta serves web + salamhome while fresh) */
+async function boardPool(channel) {
+  try { const srcs = await fe().boardSources(); const hit = srcs.find(x => x.slice ? (channel ? x.slice.includes(`'${channel}'`) : x.src === 'ops') : true); return (hit || srcs[0] || {}).pool || db.ops; } catch (_) { return db.ops; }
+}
+function boardSpec(a, T, W, d, { onlyMoney = false, counted } = {}) {
+  const p = [T, W]; let f = ''; const c = chan(d); if (c) { p.push(c); f += ` AND ${fe().CHANNEL_EXPR} = $${p.length}`; }
+  if (onlyMoney) { p.push(MONEY); f += ` AND e.category = ANY($${p.length}::text[])`; }
+  const k = clsOf(d); let num = 'TRUE'; if (counted === 'cls' && k) { p.push(k); num = `${fe().CLASS_SQL()} = $${p.length}`; } else if (counted === 'open') num = 'NOT e.resolved';
+  return { from: 'error_events e', cols: EE2_COLS(), head: EE2_HEAD, pop: `${EE_WIN}${f}`, num, params: p, order: 'e.occurred_at DESC', group: 'category' };
+}
+function appSpec(a, T, W, d, { pred = '', counted = 'cls', mutationOnly = true, group = 'path' } = {}) {
+  const p = [T, W]; let f = mutationOnly ? ` AND kind = 'mutation'` : ''; const c = chan(d); if (c) { p.push(c); f += ` AND coalesce(channel,'other') = $${p.length}`; }
+  const k = clsOf(d); let num = 'TRUE';
+  if (counted === 'cls') { if (k) { p.push(k); num = `ok IS NOT TRUE AND reason_class = $${p.length}`; } else num = 'ok IS NOT TRUE'; }
+  else if (counted === 'technical') num = `ok IS NOT TRUE AND reason_class = 'technical'`;
+  else if (counted === 'slow') { p.push(Number(a.threshold) || 0); num = `duration_ms >= $${p.length}::numeric`; f += ' AND duration_ms IS NOT NULL'; }
+  else if (counted === 'failed') num = 'ok IS NOT TRUE';
+  return { pool: db.console, from: 'fixed_app_events', cols: AE_COLS, head: AE_HEAD, pop: `${AE_WIN}${f}${pred}`, num, params: p, order: counted === 'slow' ? 'duration_ms DESC NULLS LAST' : 'ts DESC', group };
+}
+function apiSpec(a, T, W, d, counted) {
+  const p = [T, W]; let f = ''; if (d && d.host && d.host !== '(worst)' && d.host !== 'unknown') { p.push(String(d.host)); f += ` AND ${AC_HOST} = $${p.length}`; }
+  let num; if (counted === 'slow') { p.push(Number(a.threshold) || 0); num = `ac.duration_ms >= $${p.length}::numeric`; f += ' AND ac.duration_ms IS NOT NULL'; } else num = `(ac.status >= 500 OR ac.error_class IS NOT NULL)`;
+  return { pool: db.ops, from: 'api_calls ac', cols: AC_COLS, head: AC_HEAD, pop: `${AC_WIN}${f}`, num, params: p, order: counted === 'slow' ? 'ac.duration_ms DESC NULLS LAST' : 'ac.created_at DESC', group: 'host' };
+}
+Object.assign(CASES, {
+  fixed_board_fail_rate: async (a, T, W, d) => ({ pool: await boardPool(chan(d)), ...boardSpec(a, T, W, d, { counted: 'cls' }), note: `population = every error-board event of ${chan(d) ? 'channel ' + chan(d) : 'every channel'} in the window (the rate divides the ${clsOf(d) || ''} ones by the order attempts of the same window) · counted = ${clsOf(d) || 'all'} class` }),
+  fixed_board_fail_anomaly: async (a, T, W, d) => ({ pool: await boardPool(chan(d)), ...boardSpec(a, T, W, d, { counted: 'cls' }), note: `population = error-board events of ${chan(d) ? 'channel ' + chan(d) : 'every channel'} in the window · counted = ${clsOf(d) || 'all'} class (the z-score compares this count with the channel's own 14-day same-hour baseline)` }),
+  fixed_board_money_at_risk: async (a, T, W, d) => ({ pool: await boardPool(chan(d)), ...boardSpec(a, T, W, d, { onlyMoney: true, counted: 'open' }), note: 'population = paid-but-stuck events (PAYMENT_NOT_NOTIFIED · PROVISION_NO_ORDER · PAYMENT_FAILED) in the window · counted = still open (not resolved)' }),
+  fixed_applog_fail_rate: (a, T, W, d) => ({ ...appSpec(a, T, W, d), note: `population = tRPC steps (mutation lines) of ${chan(d) || 'every channel'} in the window · counted = failed ${clsOf(d) || ''}` }),
+  fixed_applog_otp_fail_rate: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { pred: ` AND path ~* '(otp|validatecode|verifycode|verifyotp|checkvalidate)'` }), note: `population = OTP / verification steps of ${chan(d) || 'every channel'} · counted = failed ${clsOf(d) || ''}` }),
+  fixed_applog_payment_fail_rate: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { pred: ` AND (path ~* '(payment|invoice|checkout|\\ypay)' OR channel = 'payments')` }), note: `population = payment / checkout steps of ${chan(d) || 'every channel'} · counted = failed ${clsOf(d) || ''}` }),
+  fixed_applog_latency_p95_ms: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { counted: 'slow' }), note: `population = timed steps of ${chan(d) || 'every channel'} in the window (p95 is computed on them) · counted = steps at or over the rule threshold (${a.threshold} ms), slowest first` }),
+  fixed_applog_step_latency_p95_ms: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { counted: 'slow' }), note: `population = every timed step in the window · counted = steps at or over ${a.threshold} ms (the metric is the p95 of the slowest step with ≥ 20 calls — see the By step table)` }),
+  fixed_applog_volume_ratio: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { counted: 'none', mutationOnly: false }), num: 'TRUE', note: `population = every app-log line of ${chan(d) || 'the channel'} in the window (the ratio compares this volume with the same-hour 7-day median)` }),
+  fixed_applog_provider_technical_rate: (a, T, W, d) => { const p = [T, W, d && d.kind ? String(d.kind) : 'yakeen']; return { pool: db.console, from: 'fixed_app_events', cols: AE_COLS, head: AE_HEAD, pop: `${AE_WIN} AND kind = $3`, num: `ok IS NOT TRUE AND reason_class = 'technical'`, params: p, order: 'ts DESC', group: 'cls', note: `population = every ${p[2]} call in the window · counted = technical failure (timeout / 5xx / transport); business refusals are in the population but not counted` }; },
+  fixed_yakeen_technical_rate: (a, T, W) => ({ pool: db.console, from: 'fixed_app_events', cols: AE_COLS, head: AE_HEAD, pop: `${AE_WIN} AND kind IN ('yakeen','yakeen_address')`, num: `ok IS NOT TRUE AND reason_class = 'technical'`, params: [T, W], order: 'ts DESC', group: 'cls', note: 'population = Yakeen / ELM calls in the window · counted = technical failure' }),
+  fixed_applog_anomaly_technical: (a, T, W) => ({ ...appSpec(a, T, W, null, { counted: 'technical', mutationOnly: false }), pop: `${AE_WIN} AND ok IS NOT TRUE AND reason_class = 'technical'`, num: 'TRUE', note: 'every technical failure line in the window, grouped by step — the incident text names the signature that spiked' }),
+  fixed_applog_anomaly_business: (a, T, W) => ({ ...appSpec(a, T, W, null, { counted: 'failed', mutationOnly: false }), pop: `${AE_WIN} AND ok IS NOT TRUE AND reason_class = 'business'`, num: 'TRUE', note: 'every business refusal line in the window, grouped by step — the incident text names the signature that spiked' }),
+  fixed_applog_new_signature: (a, T, W) => ({ ...appSpec(a, T, W, null, { counted: 'failed', mutationOnly: false }), pop: `${AE_WIN} AND ok IS NOT TRUE`, num: 'TRUE', note: 'every failing line in the window, grouped by step — the new signature(s) are named in the incident text' }),
+  fixed_applog_retry_loop: (a, T, W) => ({ ...appSpec(a, T, W, null, { counted: 'failed', mutationOnly: false }), pop: `${AE_WIN} AND ok IS NOT TRUE AND reason IS NOT NULL`, num: 'request_id IS NULL', params: [T, W], note: 'population = failing lines in the window · counted = lines with no customer request behind them (worker / scheduler), grouped by step' }),
+  fixed_yakeen_probe_down: (a, T, W) => ({ pool: db.console, from: 'yakeen_probe_runs', cols: YP_COLS, head: YP_HEAD, pop: `run_at >= $1::timestamptz - ($2||' hours')::interval AND run_at <= $1::timestamptz`, num: `verdict IN ('down','degraded','unreachable')`, params: [T, W], order: 'run_at DESC', note: 'population = probe runs in the window · counted = runs that ended down / degraded / unreachable' }),
+  fixed_provider_api_fail_rate: (a, T, W, d) => ({ ...apiSpec(a, T, W, d, 'fail'), note: `population = outbound integration calls${d && d.host && d.host !== '(worst)' ? ' to ' + d.host : ''} in the window · counted = 5xx or transport error` }),
+  fixed_provider_api_latency_p95_ms: (a, T, W, d) => ({ ...apiSpec(a, T, W, d, 'slow'), note: `population = timed integration calls${d && d.host && d.host !== '(worst)' ? ' to ' + d.host : ''} · counted = calls at or over ${a.threshold} ms, slowest first` }),
+});
+/* console-managed metrics: the population is the dataset rows matching the definition's filters in the window; counted =
+ * the numerator (rate) / rows at or over the rule threshold (percentile · avg) / every row (count · distinct) */
+async function customSpec(a, T, W, d) {
+  try { const cm = require('./customMetrics'); const spec = await cm.caseSpec(a.metric_key, T, W, d, Number(a.threshold)); return spec; } catch (e) { return { pool: null, head: [], error: e.message }; }
+}
+
+const NO_ROWS = { fixed_board_ingest_lag_min: 'freshness of the read model — see Alerts › Data sources', fixed_applog_collector_lag_min: 'freshness of the app-log collector — see Alerts › Data sources', apigw_nodes_unreachable: 'console TCP probe (apigw_probe_log) — see #apigw for the node map', dealer_activity: 'aggregate of dealer activity', offhours_orders: 'aggregate', sms_probe_fail_count: 'SMS probe events — see Monitoring › SMS', courier_backlog: 'derived from paid reseller orders without a delivery request', onboarding_created: 'count of orders created', fixed_workhours_activity_ratio: 'same-hour baseline ratio (SDA activity) — see Fixed › Dashboard', fixed_sms_balance: 'Unifonic balance reading' };
 
 async function casesFor(alert, opts = {}) {
-  const key = alert.metric_key; const fn = CASES[key];
+  const key = alert.metric_key; const fn = CASES[key] || (/custom_/.test(key) ? customSpec : null);
   const at = opts.at === 'first' ? (alert.fired_at || alert.last_seen_at) : (alert.last_seen_at || alert.fired_at || new Date().toISOString());
   const T = new Date(at).toISOString(), W = Number(alert.window_hours) || 1, dim = alert.dim || {};
   const base = { alert, at: T, window_hours: W, dim, metric: key, segment: segOf(alert) };
   if (!fn) return { ...base, supported: false, reason: NO_ROWS[key] || 'this metric is computed from aggregates, not from individual rows', head: [], rows: [], total: 0, counted: 0 };
   const spec = await fn(alert, T, W, dim);
   if (!spec) return { ...base, supported: false, reason: 'the API-traffic source is the Grafana MySQL feed (no row store) — switch the collector on to get row-level cases', head: [], rows: [], total: 0, counted: 0 };
-  if (!spec.pool) return { ...base, supported: false, reason: 'data source not configured', head: spec.head, rows: [], total: 0, counted: 0 };
+  if (!spec.pool) return { ...base, supported: false, reason: spec.error || 'data source not configured', head: spec.head || [], rows: [], total: 0, counted: 0 };
   const cap = opts.cap || CAP;
   const tsCol = (spec.head[0] || ['created_at'])[0];
   const order = spec.order || `${tsCol} DESC`;
