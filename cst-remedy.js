@@ -23,7 +23,17 @@
   const dt = v => { if (!v) return '—'; const s = String(v).replace('T', ' '); return esc(s.slice(0, 19)); };
   const FIELDS = [['', 'Any identifier'], ['req', 'Complaint number (REQ / SRID)'], ['incident', 'Remedy incident / work order'],
     ['custId', 'Customer number'], ['serviceId', 'Service id'], ['orderNo', 'Order number'], ['idNumber', 'National / Iqama id']];
-  const S = { days: 90, term: '', field: '', contains: false, res: null, busy: false, open: new Set(), unmask: false };
+  /* Windows. 1 / 3 / 7 answer "what is happening right now", 30 / 90 are the operating view (90 is also the
+   * size of the runbook's own window, so the two sections compare), 180 / 365 are the trend. 240 days is left
+   * out deliberately — it sits between two brackets that already answer the same question, and every extra chip
+   * is another full scan somebody will click. */
+  const WINDOWS = [[1, '24h'], [3, '3d'], [7, '7d'], [30, '30d'], [90, '90d'], [180, '180d'], [365, '1y']];
+  const LS = 'cst_remedy_days';
+  const startDays = () => { try { const v = Number(localStorage.getItem(LS)); return WINDOWS.some(([d]) => d === v) ? v : 90; } catch (_) { return 90; } };
+  const S = { days: startDays(), term: '', field: '', contains: false, res: null, busy: false, open: new Set(), unmask: false, seq: 0 };
+  /* fetched windows are kept for the life of the page: flipping back to one already read costs nothing, and the
+   * server holds its own cache on top (5 min for a week, 3 h for a year — a scan is 3.9 s at 90 days). */
+  const MEMO = { kpis: new Map(), findings: new Map() };
 
   const STYLE = `
     #csRemedy .rx-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px}
@@ -48,6 +58,10 @@
     #csRemedy .rx-kv div{font-size:12.5px;min-width:0} #csRemedy .rx-kv .k{color:var(--muted);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
     #csRemedy .rx-kv .v{font-weight:600;word-break:break-word} #csRemedy .rx-long{margin-top:10px}
     #csRemedy .rx-long pre{margin:4px 0 0;background:var(--card2,#f8fafc);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
+    #csRemedy .rx-chip{cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:var(--ink);transition:background .14s,border-color .14s,color .14s,transform .14s}
+    #csRemedy .rx-chip:hover{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);transform:translateY(-1px)}
+    #csRemedy .rx-chip.on{background:var(--green,#0e9f5a);border-color:var(--green,#0e9f5a);color:#fff}
+    #csRemedy .rx-chip:disabled{opacity:.55;cursor:progress;transform:none}
     #csRemedy .rx-note{font-size:11.5px;color:var(--muted)} #csRemedy .rx-note b{color:var(--ink)}
     #csRemedy .rx-warn{border-left:4px solid var(--xo-p1,#dc2626);background:rgba(220,76,76,.07);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-bottom:10px}
     #csRemedy .rx-bars{display:flex;flex-direction:column;gap:6px;margin-top:4px}
@@ -63,6 +77,11 @@
     if (!host) return;
     host.innerHTML = `<div id="csRemedy"><style>${STYLE}</style>
       <div class="cs-ch" style="margin-bottom:6px"><b>Live from Remedy</b><span class="cs-dim" id="rxBar">connecting…</span></div>
+      <div class="rx-row" style="margin-bottom:12px">
+        <span class="rx-note" style="margin-right:2px">Window:</span>
+        ${WINDOWS.map(([d, l]) => `<button type="button" class="rx-chip${S.days === d ? ' on' : ''}" data-days="${d}">${l}</button>`).join('')}
+        <span class="rx-note" id="rxCost" style="margin-left:auto"></span>
+      </div>
       <div id="rxKpis"></div>
       <div class="topo-card cs-card">
         <div class="cs-ch"><b>Find a complaint</b><span class="cs-dim">any identifier · queried on ARSystem, never stored · every search is audited</span></div>
@@ -80,49 +99,70 @@
     $('#rxQ').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); run(host); } };
     $('#rxField').onchange = e => { S.field = e.target.value; };
     $('#rxContains').onchange = e => { S.contains = e.target.checked; };
+    host.querySelectorAll('.rx-chip').forEach(b => b.onclick = () => {
+      const d = Number(b.dataset.days); if (d === S.days) return;
+      S.days = d; try { localStorage.setItem(LS, String(d)); } catch (_) {}
+      host.querySelectorAll('.rx-chip').forEach(x => x.classList.toggle('on', Number(x.dataset.days) === S.days));
+      loadKpis(host);
+    });
     if (S.res) draw(host);
     loadKpis(host);
   }
 
   async function loadKpis(host) {
     const $ = s => host.querySelector(s);
+    const my = ++S.seq, days = S.days;
     try {
       const st = await api('/api/cst/remedy/source');
+      if (my !== S.seq) return;
       if (!st.configured) { $('#rxBar').innerHTML = `<span class="rx-dot off"></span> not configured — CST_REMEDY_* in /apps/unified/.env`; return; }
-      const jv = st.jvmInfo || {};
       $('#rxBar').innerHTML = `<span class="rx-dot${st.lastError ? ' bad' : ''}"></span> ${esc(st.view)} on ${esc(st.host)}:${st.port} · ${esc(st.database)}`
         + (st.executeAs ? ` · running as <b>${esc(st.executeAs)}</b>` : ` · <span style="color:var(--xo-p2,#d97706)">no privilege drop</span>`)
         + (st.tcp && st.tcp.ok ? ` · reachable in ${st.tcp.ms} ms` : '');
-    } catch (e) { $('#rxBar').innerHTML = `<span class="rx-dot bad"></span> ${esc(e.message)}`; }
-    $('#rxKpis').innerHTML = `<div class="cs-loading">Reading ${S.days} days from ARSystem…</div>`;
-    let k;
-    try { k = await api('/api/cst/remedy/kpis?days=' + S.days); }
-    catch (e) { $('#rxKpis').innerHTML = `<div class="rx-warn"><b>Live KPIs unavailable</b> — ${esc(e.message)}</div>`; return; }
+    } catch (e) { if (my === S.seq) $('#rxBar').innerHTML = `<span class="rx-dot bad"></span> ${esc(e.message)}`; }
+
+    const chips = () => host.querySelectorAll('.rx-chip');
+    let k = MEMO.kpis.get(days);
+    if (!k) {
+      chips().forEach(b => { b.disabled = true; });
+      $('#rxCost').textContent = days >= 180 ? 'a year is a bigger scan — a few seconds' : '';
+      $('#rxKpis').innerHTML = `<div class="cs-loading">Reading ${days === 1 ? 'the last 24 hours' : days + ' days'} from ARSystem…</div>`;
+      try { k = await api('/api/cst/remedy/kpis?days=' + days); MEMO.kpis.set(days, k); }
+      catch (e) { if (my === S.seq) $('#rxKpis').innerHTML = `<div class="rx-warn"><b>Live KPIs unavailable</b> — ${esc(e.message)}</div>`; chips().forEach(b => { b.disabled = false; }); return; }
+      finally { chips().forEach(b => { b.disabled = false; }); }
+    }
+    if (my !== S.seq) return;                                   // the operator moved on — do not paint a stale window
     const t = k.totals;
+    $('#rxCost').textContent = `one scan · ${k.ms ? (k.ms / 1000).toFixed(1) + ' s' : '—'}${k.cached ? ' · served from cache' : ''}`;
     $('#rxKpis').innerHTML = `<div class="cs-kpis">
-      ${kpi('Complaints (live)', num(t.tickets), `${S.days} days · ${t.perDay} / day · ${num(t.rawRows)} rows in the view`, T.info)}
+      ${kpi('Tickets (live)', num(t.tickets), `${num(t.complaints)} with a CST complaint number · ${days === 1 ? 'last 24 h' : days + ' days'} · ${t.perDay} / day`, T.info)}
       ${kpi('Still open', num(t.open), `${t.openPct == null ? '—' : t.openPct + '%'} of the window`, t.open ? T.warn : T.ok)}
       ${kpi('5-day breaches', num(t.breaches), `${t.breachPct == null ? '—' : t.breachPct + '%'} · ${num(t.closedLate)} closed late, ${num(t.openLate)} still open past day 5`, T.bad)}
       ${kpi('Average closure', t.avgClosureDays == null ? '—' : t.avgClosureDays + ' d', `median in ${esc(t.medianClosureBucket || '—')} · ${num(t.closed)} closed`, T.info)}
-      ${kpi('Duplicate rows', num(t.duplicateRows), `${t.duplicatePct == null ? '—' : t.duplicatePct + '%'} of rows are the same complaint twice`, t.duplicateRows ? T.warn : T.ok)}
+      ${kpi('No complaint number', num(t.withoutComplaintNo), `${t.withoutComplaintPct == null ? '—' : t.withoutComplaintPct + '%'} · CTT tickets with no Service_RequestID`, t.withoutComplaintNo ? T.warn : T.ok)}
+      ${kpi('Duplicate rows', num(t.duplicateRows), `${t.duplicatePct == null ? '—' : t.duplicatePct + '%'} · the same ticket more than once in the view`, t.duplicateRows ? T.warn : T.ok)}
     </div>
     <div class="cs-grid2">
-      ${card('Closure lag', bars(k.lag.map(l => ({ label: l.label, n: l.tickets, sub: l.pct == null ? '' : l.pct + '%', color: /0–5/.test(l.label) ? T.ok : /6–15/.test(l.label) ? T.info : /16–30/.test(l.label) ? T.warn : T.bad }))), 'closed complaints only')}
+      ${card('Closure lag', bars(k.lag.map(l => ({ label: l.label, n: l.tickets, sub: l.pct == null ? '' : l.pct + '%', color: /0–5/.test(l.label) ? T.ok : /6–15/.test(l.label) ? T.info : /16–30/.test(l.label) ? T.warn : T.bad }))), 'closed tickets only')}
       ${card('Where they land', bars(k.byTier1.slice(0, 8).map(x => ({ label: x.key, n: x.tickets, sub: x.open ? x.open + ' open' : '', color: T.info }))), 'Categorization_Tier_1')}
     </div>
     <div class="cs-grid2">
       ${card('Status', bars(k.byStatus.slice(0, 8).map(x => ({ label: x.key, n: x.tickets, color: /closed|resolved/i.test(x.key) ? T.ok : T.warn }))), 'as Remedy holds it')}
       ${card('Source', bars(k.bySource.slice(0, 8).map(x => ({ label: x.key, n: x.tickets, color: T.muted }))), 'ITC_Source')}
     </div>
-    <div class="rx-note" style="margin:-4px 0 12px">Counted as complaints, not rows: ${num(t.rawRows)} rows in the window collapse to ${num(t.tickets)} distinct Service_RequestID. One scan, ${k.ms ? (k.ms / 1000).toFixed(1) + ' s' : '—'}${k.cached ? ' · cached' : ''}.</div>`;
-    loadFindings(host);
+    <div class="rx-note" style="margin:-4px 0 12px">Counted as tickets, not rows: ${num(t.rawRows)} rows collapse to ${num(t.tickets)} tickets — ${num(t.complaints)} carrying a Service_RequestID and ${num(t.withoutComplaintNo)} without one, which are separate tickets rather than duplicates of each other.</div>`;
+    loadFindings(host, days, my);
   }
 
-  async function loadFindings(host) {
+  async function loadFindings(host, days, my) {
     const el = host.querySelector('#rxFindings'); if (!el) return;
-    let f;
-    try { f = await api('/api/cst/remedy/findings?days=' + S.days); }
-    catch (e) { el.innerHTML = `<div class="rx-warn">Findings unavailable — ${esc(e.message)}</div>`; return; }
+    let f = MEMO.findings.get(days);
+    if (!f) {
+      el.innerHTML = `<div class="cs-loading">Reading the findings…</div>`;
+      try { f = await api('/api/cst/remedy/findings?days=' + days); MEMO.findings.set(days, f); }
+      catch (e) { if (my === S.seq) el.innerHTML = `<div class="rx-warn">Findings unavailable — ${esc(e.message)}</div>`; return; }
+    }
+    if (my !== S.seq) return;
     el.innerHTML = (f.items || []).map(it => {
       if (it.error) return card(esc(it.title), `<div class="rx-warn">${esc(it.error)}</div>`, 'could not run');
       const rows = it.rows || [];

@@ -348,6 +348,14 @@ async function search(term, { field = null, contains = false, limit = 100, unmas
  * live data instead of the runbook snapshot, plus the daily series, at the cost of a single pass over the window.
  * The window uses the SERVER's clock (GETDATE), never this host's: ARSystem runs on KSA time, three hours ahead
  * of the console, and guessing that offset is how date filters quietly lose a day. */
+/* A TICKET IS NOT A ROW, AND NOT EVERY TICKET HAS A COMPLAINT NUMBER. The live data settled this on 18 Sep:
+ * of 131 323 rows in a 90-day window, 10 174 carry NO Service_RequestID — and they hold 10 174 DISTINCT
+ * Incident_Numbers, so they are 10 174 separate tickets that were never given a CST complaint number, not
+ * duplicates of one another. Grouping them by Service_RequestID alone folded all of them into a single
+ * phantom "ticket" and reported the whole lot as duplicate rows. The key is therefore the complaint number
+ * when there is one and the Remedy incident when there is not, and the two populations are counted apart. */
+const HAS_SRID = `NULLIF(LTRIM(RTRIM(${'Service_RequestID'})), '') IS NOT NULL`;
+const TICKET_KEY = `COALESCE(NULLIF(LTRIM(RTRIM(Service_RequestID)), ''), 'INC:' + Incident_Number)`;
 const LAG_BUCKETS = [[0, 5, '0–5 days'], [6, 15, '6–15 days'], [16, 30, '16–30 days'], [31, 60, '31–60 days'], [61, 99999, 'over 60 days']];
 async function kpis({ days = 90 } = {}) {
   const d = Math.min(3650, Math.max(1, Number(days) || 90));
@@ -355,14 +363,14 @@ async function kpis({ days = 90 } = {}) {
   const t0 = Date.now();
   const rows = await query(
     `WITH t AS (
-       SELECT ${ident(COL.key)} AS K, MIN(${ident(COL.created)}) AS CREATED, MAX(${ident(COL.resolved)}) AS RESOLVED,
+       SELECT ${TICKET_KEY} AS K, MIN(${ident(COL.created)}) AS CREATED, MAX(${ident(COL.resolved)}) AS RESOLVED,
               MAX(${ident(COL.status)}) AS STATUS, MAX(${ident(COL.t1)}) AS TIER1, MAX(${ident(COL.source)}) AS SOURCE,
-              COUNT(*) AS RAW_ROWS
+              MAX(CASE WHEN ${HAS_SRID} THEN 0 ELSE 1 END) AS NO_SRID, COUNT(*) AS RAW_ROWS
          FROM ${ident(cfg().view)}
         WHERE ${ident(COL.created)} >= DATEADD(day, -${d}, GETDATE())
-        GROUP BY ${ident(COL.key)})
+        GROUP BY ${TICKET_KEY})
      SELECT CAST(CREATED AS date) AS DAY, STATUS, TIER1, SOURCE,
-            COUNT(*) AS TICKETS, SUM(RAW_ROWS) AS RAW_ROWS,
+            COUNT(*) AS TICKETS, SUM(RAW_ROWS) AS RAW_ROWS, SUM(NO_SRID) AS NO_SRID,
             SUM(CASE WHEN RESOLVED IS NULL THEN 1 ELSE 0 END) AS STILL_OPEN,
             SUM(CASE WHEN RESOLVED IS NOT NULL THEN 1 ELSE 0 END) AS CLOSED,
             SUM(CASE WHEN RESOLVED IS NOT NULL THEN DATEDIFF(day, CREATED, RESOLVED) ELSE 0 END) AS LAG_SUM,
@@ -372,11 +380,11 @@ async function kpis({ days = 90 } = {}) {
        FROM t GROUP BY CAST(CREATED AS date), STATUS, TIER1, SOURCE`, [], 120000);
   const ms = Date.now() - t0;
   const N = v => Number(v) || 0;
-  const tot = { tickets: 0, rawRows: 0, open: 0, closed: 0, lagSum: 0, closedLate: 0, openLate: 0, lag: LAG_BUCKETS.map(() => 0) };
+  const tot = { tickets: 0, rawRows: 0, noSrid: 0, open: 0, closed: 0, lagSum: 0, closedLate: 0, openLate: 0, lag: LAG_BUCKETS.map(() => 0) };
   const by = { status: new Map(), tier1: new Map(), source: new Map(), day: new Map() };
   const bump = (m, k, r) => { const x = m.get(k) || { key: k, tickets: 0, open: 0, closed: 0, late: 0 }; x.tickets += N(r.TICKETS); x.open += N(r.STILL_OPEN); x.closed += N(r.CLOSED); x.late += N(r.CLOSED_LATE) + N(r.OPEN_LATE); m.set(k, x); };
   for (const r of rows) {
-    tot.tickets += N(r.TICKETS); tot.rawRows += N(r.RAW_ROWS); tot.open += N(r.STILL_OPEN); tot.closed += N(r.CLOSED);
+    tot.tickets += N(r.TICKETS); tot.rawRows += N(r.RAW_ROWS); tot.noSrid += N(r.NO_SRID); tot.open += N(r.STILL_OPEN); tot.closed += N(r.CLOSED);
     tot.lagSum += N(r.LAG_SUM); tot.closedLate += N(r.CLOSED_LATE); tot.openLate += N(r.OPEN_LATE);
     LAG_BUCKETS.forEach((_, i) => { tot.lag[i] += N(r['LAG' + i]); });
     bump(by.status, r.STATUS || '—', r); bump(by.tier1, r.TIER1 || '—', r);
@@ -391,8 +399,10 @@ async function kpis({ days = 90 } = {}) {
   return {
     ok: true, days: d, ms, view: cfg().view, at: new Date().toISOString(),
     totals: {
-      tickets: tot.tickets, rawRows: tot.rawRows, duplicateRows: tot.rawRows - tot.tickets,
-      duplicatePct: pct(tot.rawRows - tot.tickets, tot.rawRows),
+      tickets: tot.tickets, rawRows: tot.rawRows,
+      complaints: tot.tickets - tot.noSrid, withoutComplaintNo: tot.noSrid,
+      withoutComplaintPct: pct(tot.noSrid, tot.tickets),
+      duplicateRows: tot.rawRows - tot.tickets, duplicatePct: pct(tot.rawRows - tot.tickets, tot.rawRows),
       open: tot.open, openPct: pct(tot.open, tot.tickets), closed: tot.closed,
       breaches: tot.closedLate + tot.openLate, breachPct: pct(tot.closedLate + tot.openLate, tot.tickets),
       closedLate: tot.closedLate, openLate: tot.openLate,
@@ -421,7 +431,7 @@ async function findings({ days = 90 } = {}) {
     `SELECT TOP 20 ${ident(COL.key)} AS SRID, COUNT(*) AS ROWS_IN_VIEW,
         COUNT(DISTINCT ${ident(COL.incident)}) AS INCIDENTS, COUNT(DISTINCT ${ident(COL.status)}) AS STATUSES,
         COUNT(DISTINCT ${ident(COL.t3)}) AS TIER3, COUNT(DISTINCT ${ident(COL.mainType)}) AS MAIN_CODES
-      FROM ${V} WHERE ${ident(COL.created)} >= DATEADD(day, -${d}, GETDATE())
+      FROM ${V} WHERE ${ident(COL.created)} >= DATEADD(day, -${d}, GETDATE()) AND ${HAS_SRID}
       GROUP BY ${ident(COL.key)} HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC`);
   await add('open_ageing', 'Open complaints by age',
     'Still unresolved, grouped by how long they have been open on the server\'s own clock.',
@@ -443,6 +453,12 @@ async function findings({ days = 90 } = {}) {
         FROM ${V} WHERE ${ident(COL.created)} >= DATEADD(day, -${d}, GETDATE()) GROUP BY ${ident(COL.key)})
      SELECT TOP 25 T1, T2, PROBLEM, COUNT(*) AS TICKETS, SUM(CASE WHEN RESOLVED IS NULL THEN 1 ELSE 0 END) AS STILL_OPEN
        FROM t GROUP BY T1, T2, PROBLEM ORDER BY COUNT(*) DESC`);
+  await add('no_complaint_no', 'Tickets with no CST complaint number',
+    'CTT tickets in Remedy that carry no Service_RequestID — never escalated to CST, or the number was never written back. Counted apart from complaints everywhere on this page.',
+    `SELECT CAST(${ident(COL.created)} AS date) AS DAY, COUNT(*) AS ROWS_IN_VIEW,
+            COUNT(DISTINCT ${ident(COL.incident)}) AS DISTINCT_INCIDENTS, COUNT(DISTINCT ${ident(COL.status)}) AS STATUSES
+       FROM ${V} WHERE ${ident(COL.created)} >= DATEADD(day, -${d}, GETDATE()) AND NOT (${HAS_SRID})
+      GROUP BY CAST(${ident(COL.created)} AS date) ORDER BY 1 DESC`);
   await add('unmapped_codes', 'Complaints carrying no CST code',
     'Rows whose CITC code columns are null — the regulator classification the mapping table is supposed to supply did not resolve.',
     `SELECT COUNT(DISTINCT ${ident(COL.key)}) AS TICKETS,

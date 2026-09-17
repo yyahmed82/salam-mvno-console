@@ -425,18 +425,22 @@ function mount(app, { requireSuper, audit }) {
       res.json({ ...out, unmaskAvailable: !!(req.caps && req.caps.unmaskPII) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
+  /* A window costs one scan of the view — 3.9 s for 90 days, proportionally more beyond that — so the answer is
+   * cached for as long as it stays useful: a short window is cheap and wants to be fresh, a year is expensive and
+   * barely moves between page loads. Findings hold twice as long again; nobody watches an ageing histogram tick. */
+  const ttlFor = days => days <= 7 ? 5 * 60000 : days <= 90 ? 15 * 60000 : days <= 180 ? 60 * 60000 : 3 * 3600000;
   app.get('/api/cst/remedy/kpis', gate, async (req, res) => {
     try {
       if (!remedy.configured()) return res.status(400).json({ error: 'Remedy connector not configured (CST_REMEDY_* in .env)' });
       const days = Math.min(3650, Math.max(1, n(req.query.days) || 90));
-      res.json(await remedy.cached('kpis:' + days, 10 * 60000, () => remedy.kpis({ days })));
+      res.json(await remedy.cached('kpis:' + days, ttlFor(days), () => remedy.kpis({ days })));
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
   app.get('/api/cst/remedy/findings', gate, async (req, res) => {
     try {
       if (!remedy.configured()) return res.status(400).json({ error: 'Remedy connector not configured (CST_REMEDY_* in .env)' });
       const days = Math.min(3650, Math.max(1, n(req.query.days) || 90));
-      res.json(await remedy.cached('findings:' + days, 30 * 60000, () => remedy.findings({ days })));
+      res.json(await remedy.cached('findings:' + days, 2 * ttlFor(days), () => remedy.findings({ days })));
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

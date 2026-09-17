@@ -171,7 +171,7 @@
       <div class="cs-ah">Open items</div>
       <div class="cs-oi">${board.openItems.map(o => `<label class="cs-oir ${o.done ? 'done' : ''}"><input type="checkbox" data-oi="${o.id}" ${o.done ? 'checked' : ''}><span>${esc(o.text)}</span></label>`).join('')}</div>
       <div class="cs-acts" style="margin-top:10px"><button type="button" class="cs-btn" data-act="save-board">Save board</button><span class="cs-dim" id="csBoardMsg"></span></div>`, 'workstreams A–F · runbook §4–§9, §13');
-    host.innerHTML = head + bannerHtml + kpis + `
+    host.innerHTML = head + `<div id="csRemedyMount"></div>` + bannerHtml + kpis + `
       <div class="cs-grid2">
         ${card('By domain — from «نوع شكوي رئيسي», IT scope highlighted', hbars(domItems, { total: d.total }), 'auditable by both sides: CST\'s own field, no re-interpretation')}
         ${card('Why CST escalated', hbars(d.reasons.map(r => ({ label: r.label, count: r.count, color: /خمسة|5/.test(r.label) ? T.bad : T.warn })), { total: d.total }) + `<div class="cs-ah">Closure lag (closed only)</div>` + hbars(lagItems, { total: lagTotal }), `${num(lagTotal)} closed`)}
@@ -186,7 +186,6 @@
       ${d.snapshot ? '' : `<div id="csOpenList">${card('Open cohort', `<div class="cs-loading">Loading open complaints…</div>`, 'sorted by escalation date · IDs only, never names')}</div>`}
       ${boardHtml}
       <div class="cs-grid2">${card('The three arguments that hold', `<ol class="cs-args"><li><b>53 % of escalations are a five-day-deadline breach</b>, not a bad resolution — commit to a fixed internal-intervention date, not a shorter final SLA.</li><li><b>Every open complaint is still winnable</b> — daily follow-up before they become adjudication decisions.</li><li><b>Never one SLA across categories</b> — cancellations are a desk action; network faults are governed by site-access time.</li></ol>`, 'runbook §10.2')}${card('Communication rules', `<ul class="cs-find"><li>External teams (DBA, vendors): findings and the ask only — no plan, scripts or SQL.</li><li>National IDs masked to the last 4 digits; names and phones never leave the workstation.</li><li>Never send the raw evidence workbook to CST — extract what serves the response.</li><li>Arabic, RTL for mails and reports; the WhatsApp group is semi-external.</li></ul>`, 'runbook §2 — hard constraints')}</div>
-      <div id="csRemedyMount"></div>
       ${importPanel('escalations')}${sourcePanel('escalations')}`;
     wire(host);
     /* live section: the same questions asked of ARSystem itself. Own fetches, own errors — it never blocks the
