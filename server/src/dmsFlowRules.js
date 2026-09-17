@@ -34,18 +34,71 @@ const CFG = () => ({
 const H = 3600e3, MIN = 60e3;
 const q = (schema, table) => `\`${schema}\`.\`${table}\``;
 
-/* ---- per-table facts: timezone (newest row vs now, same method as dmsJourneys.resolve) ---- */
-const _tz = new Map();
+/* ---- clock detection — CORRECTED 17 Sep 2026 after a false positive on S6.
+ *
+ * WHAT WENT WRONG. The first test was "is this table's newest row 2-4 h in the future when read as
+ * UTC?". That is only answerable on a BUSY table. transfer_ownership_logs holds a few rows a day; its
+ * newest row was ~2 h old, the test said "UTC", semati_logs (thousands an hour) said "KSA", and every
+ * comparison between the two was 3 h out. S6 reported a demonstrably clean ownership transfer as an
+ * orphan (semati 14:04:22, ledger 14:04:36, wallet debited — all correct).
+ *
+ * WHY A PER-TABLE TEST CANNOT WORK. A single old row carries no signal: under "stores local" it reads
+ * T+off, under "stores UTC" it reads T, and without knowing T you cannot tell which. Only a row young
+ * enough to compare against now is conclusive.
+ *
+ * WHAT IS DONE INSTEAD. The hypothesis is decided ONCE PER SCHEMA from a reference table that is
+ * always busy, then applied to every table in it; a table whose own newest row is fresh (< 30 min
+ * under either reading) may still override. `off` is the database's own offset from UTC, measured per
+ * connection, so nothing is hard-coded to KSA. Measured on this cluster: dms_audit_logs, dms_v1 and
+ * trms_wallet all store DB-local time — verified across four tables written by three services for one
+ * business event (semati_logs, cms_logs, transfer_ownership_logs, wallet_payment_initiate). ---- */
+const REF = {                                   // [table, timestamp column] — chosen for volume
+  [AUD]: ['cms_logs', 'insert_date_time'],
+  [WAL]: ['wallet_payment_initiate', 'created_on']
+};
+const _tz = new Map(), _sch = new Map();
+const _off = { t: 0, ms: null };
+async function dbOffsetMs() {
+  if (_off.ms != null && Date.now() - _off.t < 30 * MIN) return _off.ms;
+  try {
+    const r = await dms.q('SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW()) o');
+    _off.ms = Number((r[0] || {}).o || 0) * 1000;
+  } catch (_) { _off.ms = 0; }
+  _off.t = Date.now(); return _off.ms;
+}
+/* a FRESH row is conclusive: it sits either at now (UTC) or at now+off (local) */
+function verdict(rawMs, off) {
+  if (rawMs == null || !off) return null;
+  const now = Date.now();
+  const dUtc = Math.abs(rawMs - now), dLoc = Math.abs(rawMs - (now + off));
+  if (Math.min(dUtc, dLoc) > 30 * MIN) return null;          // too old to judge
+  return dLoc <= dUtc ? off : 0;
+}
+async function newestMs(schema, table, atCol) {
+  try {
+    const r = await dms.q(`SELECT \`${atCol}\` a FROM ${q(schema, table)} ORDER BY id DESC LIMIT 1`);
+    return r[0] && r[0].a != null ? new Date(r[0].a).getTime() : null;
+  } catch (_) { return null; }
+}
+async function schemaShift(schema) {
+  const c = _sch.get(schema);
+  if (c && Date.now() - c.t < 30 * MIN) return c.ms;
+  const off = await dbOffsetMs();
+  let ms = off;                                              // measured default: stores DB-local time
+  const ref = REF[schema];
+  if (off && ref) {
+    const v = verdict(await newestMs(schema, ref[0], ref[1]), off);
+    if (v != null) ms = v;
+  }
+  _sch.set(schema, { t: Date.now(), ms }); return ms;
+}
 async function tzShift(schema, table, atCol) {
   const k = `${schema}.${table}`; const c = _tz.get(k);
   if (c && Date.now() - c.t < 30 * MIN) return c.ms;
-  let ms = 0;
-  try {
-    const r = await dms.q(`SELECT \`${atCol}\` a FROM ${q(schema, table)} ORDER BY id DESC LIMIT 1`);
-    const a = r[0] && r[0].a != null ? new Date(r[0].a).getTime() : null;
-    const dh = a != null ? (a - Date.now()) / H : 0;
-    ms = (dh > 2 && dh < 4) ? 3 * H : 0;
-  } catch (_) { ms = 0; }
+  const off = await dbOffsetMs();
+  let ms = await schemaShift(schema);
+  const own = verdict(await newestMs(schema, table, atCol), off);   // a fresh table speaks for itself
+  if (own != null) ms = own;
   _tz.set(k, { t: Date.now(), ms }); return ms;
 }
 /* ---- id floor for a UTC instant: binary search on the PK ---- */
@@ -267,7 +320,7 @@ const RULES = {
       FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} mm, s.msisdn, s.person_id, s.employee_username dealer
             FROM ${s.ref} WHERE ${s.b} AND s.request_type='1' AND s.response_Code='600' AND s.employee_username LIKE 'ONLINE%' AND ${W(s)}) x
       LEFT JOIN (SELECT ${digits9('r.`' + msi + '`')} mm, ${U(r)} at FROM ${r.ref} WHERE ${r.b}) sa
-        ON sa.mm = x.mm AND sa.at BETWEEN x.at - INTERVAL 10 MINUTE AND x.at + INTERVAL 30 MINUTE
+        ON sa.mm = x.mm AND sa.at BETWEEN x.at - INTERVAL 10 MINUTE AND x.at + INTERVAL 120 MINUTE
       WHERE sa.mm IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
     return { rows, note: 'online-channel number registered at Semati with no self-activation report row' };
   } },
