@@ -68,16 +68,31 @@
      the engagement board are hidden: the live Remedy section answers the same questions off ARSystem itself, and
      the RA import that fed the snapshot retires with them. Nothing is deleted — flip the last flag to true and
      the three panels, their banner and their import come back, renumbered automatically. */
-  const SECS_ALL = [
-    ['remedy', 'What does Remedy hold right now?', 'Live from ARSystem (dbo.ITC_CITC_MOH on 172.30.1.14): the board\u2019s own KPIs on live rows, a search by any identifier an engineer holds, and the findings a dated extract cannot answer.', 'live \u00b7 read-only \u00b7 audited', true],
-    ['snapshot', 'What did CST actually escalate?', 'The verified figures of the engagement runbook \u00a710.2 \u2014 dated, frozen, and the ones quoted back to the regulator.', null, false],
-    ['board', 'Where does the engagement stand?', 'Workstreams A\u2013F with their current state, the open items, and the three arguments that hold in front of CST.', 'runbook \u00a74\u2013\u00a79, \u00a713', false],
-    ['api', 'What does CST receive when it asks?', 'The five regulator endpoints of spec CITC006001 v6.2, run from the console exactly as the Swagger runs them \u2014 the other side of every discrepancy above.', 'CITC006001 v6.2', true]
-  ];
-  const SECS = SECS_ALL.filter(x => x[4] !== false);
+  const SECS_ALL = {
+    /* [id, question, what it is made of, method on the right, shown?] — the snapshot (§10.2, frozen 8 Sep) and the
+       engagement board are hidden: the live Remedy section answers the same questions off ARSystem itself, and the
+       RA import that fed the snapshot retires with them. Nothing is deleted — flip a flag to true and the panels,
+       their banner and their import come back, renumbered automatically. */
+    escalations: [
+      ['remedy', 'What does Remedy hold right now?', 'Live from ARSystem (dbo.ITC_CITC_MOH on 172.30.1.14): the board\u2019s own KPIs on live rows, a search by any identifier an engineer holds, and the findings a dated extract cannot answer.', 'live \u00b7 read-only \u00b7 audited', true],
+      ['snapshot', 'What did CST actually escalate?', 'The verified figures of the engagement runbook \u00a710.2 \u2014 dated, frozen, and the ones quoted back to the regulator.', null, false],
+      ['board', 'Where does the engagement stand?', 'Workstreams A\u2013F with their current state, the open items, and the three arguments that hold in front of CST.', 'runbook \u00a74\u2013\u00a79, \u00a713', false],
+      ['api', 'What does CST receive when it asks?', 'The five regulator endpoints of spec CITC006001 v6.2, run from the console exactly as the Swagger runs them \u2014 the other side of every discrepancy above.', 'CITC006001 v6.2', true]
+    ],
+    /* Arqami reads the same way: how the service behaved, then what it actually answered. */
+    arqami: [
+      ['behaviour', 'How is the number-ownership service behaving?', 'Every request CST made, one row per minute from APPS.YY_REGISTER_NUMBER_AUDIT on EBPROD \u2014 volume, latency, the minutes that touched the timeout ceiling, and the minutes with no traffic at all.', 'Oracle EBPROD \u00b7 KSA minutes', true],
+      ['arqapi', 'What does CST receive when it asks?', 'The same endpoint CST calls, run from the console: one national id in, the customer\u2019s mobile and fixed services out. The audit rows above count these calls but cannot show what came back.', 'SALAM_TT_Webservice', true]
+    ]
+  };
+  let SECS = SECS_ALL.escalations.filter(x => x[4] !== false);
   const shown = id => SECS.some(x => x[0] === id);
-  /* the two sub-sections number themselves from this, so hiding a section renumbers 1.1 / 2.1 and the jump bar together */
-  window.CST_SEC = SECS.reduce((a, x, i) => (a[x[0]] = i + 1, a), {});
+  /* every sub-section numbers itself from this, so hiding a section renumbers 1.1 / 2.1 and the jump bar together */
+  const useSecs = which => {
+    SECS = SECS_ALL[which].filter(x => x[4] !== false);
+    window.CST_SEC = SECS.reduce((a, x, i) => (a[x[0]] = i + 1, a), {});
+  };
+  useSecs('escalations');
   const secIndex = id => SECS.findIndex(x => x[0] === id) + 1;
   const qsec = (id, right) => { const x = SECS.find(y => y[0] === id); if (!x) return '';
     const r = right === undefined ? x[3] : right;
@@ -91,6 +106,7 @@
 
   /* ================================================================ ARQAMI ================================================================ */
   async function arqami(host) {
+    useSecs('arqami');
     host.innerHTML = `<div class="cs-loading">Loading Arqami…</div>`;
     let d, days, daily, src;
     try { [d, days, daily, src] = await Promise.all([api(`/api/cst/arqami${state.day ? '?day=' + state.day : ''}`), api('/api/cst/arqami/days'), api(`/api/cst/arqami/daily?days=${state.range}`), api('/api/cst/arqami/source').catch(() => null)]); }
@@ -123,7 +139,7 @@
     if (s.cappedMinutes) findings.push(`<b>${s.cappedMinutes} minutes hit the ${ms(s.timeoutCapMs)} ceiling</b> — the service reports them as success, so timeouts are invisible in the failure count; a latency SLO (p95 < 1 s) is the honest measure here, not the error rate.`);
     if (s.gapMinutes) findings.push(`<b>${s.gapMinutes} silent minute${s.gapMinutes === 1 ? '' : 's'}</b> (${s.gaps.map(g => `${g.from}→${g.to}`).join(', ')}) with no request recorded — either no traffic reached the API or the export lost the rows; both deserve a look at the IIS / .NET logs for that window.`);
     if (!findings.length) findings.push('Nothing abnormal in this day: no failures, no slow minutes, no silent minutes.');
-    host.innerHTML = head + dailyHtml + `<div class="cs-ah" style="margin-top:4px">Day in detail · ${esc(d.day)}${d.day === days.today ? ' (today, so far)' : ''}</div>` + kpis + `
+    host.innerHTML = head + jumpBar() + qsec('behaviour', covered ? `${esc(d.day)} · ${esc(covered)}` : esc(d.day)) + dailyHtml + `<div class="cs-ah" style="margin-top:4px">Day in detail · ${esc(d.day)}${d.day === days.today ? ' (today, so far)' : ''}</div>` + kpis + `
       <div class="cs-grid2">
         ${card('Requests per minute', area(pts, { color: T.info }), covered)}
         ${card('Average latency per minute', area(lat, { color: T.warn, hline: { y: s.timeoutCapMs, label: 'timeout ceiling ' + ms(s.timeoutCapMs) }, ymax: 2700, band: bandColor, fmt: v => Math.round(v) + ' ms' }), 'green band = fast (< 150 ms) · red band = slow (> 1 s)')}
@@ -133,8 +149,11 @@
         ${card('What the day says', `<ul class="cs-find">${findings.map(f => `<li>${f}</li>`).join('')}</ul>`, 'derived from the minutes above')}
         ${card('By hour', `<div class="tscroll"><table class="cs-tbl"><thead><tr><th>Hour</th><th>Requests</th><th>Failed</th><th>Avg</th><th>Max</th><th>Minutes</th></tr></thead><tbody>${s.hours.map(h => `<tr><td>${h.hour}:00</td><td class="cs-num">${num(h.requests)}</td><td class="cs-num">${num(h.failed)}</td><td class="cs-num" style="color:${h.avg_ms > 1000 ? T.bad : h.avg_ms > 500 ? T.warn : 'inherit'}">${ms(h.avg_ms)}</td><td class="cs-num">${ms(h.max_ms)}</td><td class="cs-num">${h.minutes}${h.minutes < 60 ? `<span class="cs-dim"> / 60</span>` : ''}</td></tr>`).join('')}</tbody></table></div>`, 'KSA')}
       </div>
+      ` + qsec('arqapi') + `<div id="arqApiMount"></div>
       ${sourcePanel('arqami')}${importPanel('arqami')}`;
     wire(host);
+    /* the call itself: own fetches, own errors — it never blocks the charts above it */
+    if (window.arqamiApi) { try { window.arqamiApi.render($('#arqApiMount', host)); } catch (e) {} }
   }
 
   /* daily traffic — the history read from Oracle (or the CSV days), one column per KSA day; click a day to open it */
@@ -163,6 +182,7 @@
 
   /* ================================================================ ESCALATIONS ================================================================ */
   async function escalations(host) {
+    useSecs('escalations');
     host.innerHTML = `<div class="cs-loading">Loading CST escalations…</div>`;
     let d, board;
     try { [d, board] = await Promise.all([api('/api/cst/escalations/summary'), api('/api/cst/board')]); } catch (e) { host.innerHTML = `<div class="topo-card cs-err"><b>Could not load</b><div class="cs-dim">${esc(e.message)}</div></div>`; return; }
@@ -392,6 +412,55 @@
       .cs-h3t{flex:0 1 auto;min-width:0}
       .cs-h3 i{flex:1 1 auto;min-width:16px;height:1px;background:var(--line);display:block}
       .cs-h3d{font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.45;max-width:900px;padding-left:2px}
+      /* the API-console cards, shared by the CST endpoints section and the Arqami call */
+      .ax .ax-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+      .ax .ax-dot{width:8px;height:8px;border-radius:50%;background:var(--green,#0e9f5a);display:inline-block;flex:0 0 auto}
+      .ax .ax-dot.off{background:var(--muted)} .ax .ax-dot.bad{background:var(--xo-p1,#dc2626)}
+      .ax .ax-note{font-size:11.5px;color:var(--muted);line-height:1.5} .ax .ax-note b{color:var(--ink)}
+      .ax .ax-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+      .ax .ax-f{display:flex;flex-direction:column;gap:4px;flex:1 1 220px;min-width:0}
+      .ax .ax-f label{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+      .ax .ax-f label i{font-style:normal;color:var(--xo-p1,#dc2626);margin-left:3px}
+      .ax .ax-in{font:inherit;font-size:13px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card2,#f1f5f9);color:var(--ink);min-width:0;width:100%;box-sizing:border-box}
+      .ax .ax-in:focus{outline:none;border-color:var(--green,#0e9f5a);box-shadow:0 0 0 3px rgba(14,159,90,.15)}
+      .ax .ax-in::placeholder{color:var(--muted);opacity:.5;font-style:italic}
+      .ax .ax-ep{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--card,#fff)}
+      .ax .ax-eh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 13px;background:var(--card2,#f8fafc);border-bottom:1px solid var(--line);cursor:pointer}
+      .ax .ax-verb{font-size:10.5px;font-weight:900;letter-spacing:.6px;padding:3px 9px;border-radius:6px;background:var(--green,#0e9f5a);color:#fff;flex:0 0 auto}
+      .ax .ax-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;font-weight:700;color:var(--ink);word-break:break-all}
+      .ax .ax-title{font-size:12px;color:var(--muted);font-weight:600;margin-left:auto;text-align:right}
+      .ax .ax-body{padding:12px 13px 14px}
+      .ax .ax-sub{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin:12px 0 6px}
+      .ax .ax-sub:first-child{margin-top:0}
+      .ax .ax-sub code{text-transform:none;letter-spacing:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--ink);background:var(--card2,#f1f5f9);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+      .ax .ax-acts{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:11px}
+      .ax .ax-pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap}
+      .ax .ax-ok{background:rgba(14,159,90,.14);color:var(--green,#0e9f5a)}
+      .ax .ax-noo{background:rgba(220,38,38,.12);color:var(--xo-p1,#dc2626)}
+      .ax .ax-wrn{background:rgba(217,119,6,.14);color:var(--xo-p2,#d97706)}
+      .ax pre.ax-json{margin:6px 0 0;background:var(--card2,#f8fafc);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;color:var(--ink)}
+      .ax pre.ax-json.req{max-height:150px}
+      .ax .ax-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:10px}
+      .ax .ax-meta b{color:var(--ink);font-variant-numeric:tabular-nums}
+      .ax .ax-err{border-left:4px solid var(--xo-p1,#dc2626);background:rgba(220,38,38,.07);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-top:10px}
+      .ax .ax-ret{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--muted);word-break:break-word;line-height:1.6}
+      .ax .ax-ep.closed .ax-body{display:none}
+      .ax .ax-caret{font-size:11px;color:var(--muted);flex:0 0 auto;transition:transform .15s}
+      .ax .ax-ep.closed .ax-caret{transform:rotate(-90deg)}
+      @media (max-width:700px){.ax .ax-title{margin-left:0;text-align:left;width:100%} .ax .ax-f{flex:1 1 100%}}
+      .ax-status{font-size:11.5px;color:var(--muted);line-height:1.6;margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+      .ax-status b{color:var(--ink)}
+      .ax-lock{font-size:9.5px;font-weight:800;letter-spacing:.3px;padding:1px 6px;border-radius:5px;border:1px solid var(--line);color:var(--muted);text-transform:none}
+      .ax .ax-in:disabled{opacity:.72;cursor:not-allowed;background:var(--bg)}
+      .ax-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px;max-width:100%;margin-top:4px}
+      table.ax-tbl{width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px}
+      .ax-tbl th{text-align:left;padding:8px 12px;color:var(--muted);font-weight:700;font-size:10px;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--line);white-space:nowrap}
+      .ax-tbl td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:middle;overflow:hidden}
+      .ax-tbl tr:last-child td{border-bottom:0}
+      .ax-tbl td.ax-r{text-align:right;font-variant-numeric:tabular-nums}
+      .ax-cut{display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .ax-mob{background:color-mix(in srgb,#2563eb 14%,transparent);color:#2563eb}
+      .ax-fix{background:color-mix(in srgb,var(--green,#0e9f5a) 14%,transparent);color:var(--green,#0e9f5a)}
       .cs-loading,.cs-empty{padding:18px;color:var(--muted);font-size:13px}.cs-err{padding:14px;border-left:4px solid ${T.bad}}
       .cs-in-anim{animation:csIn .4s cubic-bezier(.2,.8,.2,1) both}@keyframes csIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
       html[dir=rtl] .cs-tbl th{text-align:right}html[dir=rtl] .cs-hbv{text-align:left}html[dir=rtl] .cs-banner{border-left:1px solid var(--line);border-right:5px solid var(--c)}

@@ -28,43 +28,6 @@
                   ['IdentificationNumber', 'National / Iqama id', '']];
   const S = { spec: null, shared: { SpTicketNumber: '', ServiceNumber: '', IdentificationNumber: '' }, vals: {}, res: {}, busy: {}, raw: {} };
 
-  const STYLE = `
-    #csApi .ax-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
-    #csApi .ax-dot{width:8px;height:8px;border-radius:50%;background:var(--green,#0e9f5a);display:inline-block;flex:0 0 auto}
-    #csApi .ax-dot.off{background:var(--muted)} #csApi .ax-dot.bad{background:var(--xo-p1,#dc2626)}
-    #csApi .ax-note{font-size:11.5px;color:var(--muted);line-height:1.5} #csApi .ax-note b{color:var(--ink)}
-    #csApi .ax-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-    #csApi .ax-f{display:flex;flex-direction:column;gap:4px;flex:1 1 220px;min-width:0}
-    #csApi .ax-f label{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
-    #csApi .ax-f label i{font-style:normal;color:var(--xo-p1,#dc2626);margin-left:3px}
-    #csApi .ax-in{font:inherit;font-size:13px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card2,#f1f5f9);color:var(--ink);min-width:0;width:100%;box-sizing:border-box}
-    #csApi .ax-in:focus{outline:none;border-color:var(--green,#0e9f5a);box-shadow:0 0 0 3px rgba(14,159,90,.15)}
-    #csApi .ax-in::placeholder{color:var(--muted);opacity:.5;font-style:italic}
-    #csApi .ax-ep{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--card,#fff)}
-    #csApi .ax-eh{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 13px;background:var(--card2,#f8fafc);border-bottom:1px solid var(--line);cursor:pointer}
-    #csApi .ax-verb{font-size:10.5px;font-weight:900;letter-spacing:.6px;padding:3px 9px;border-radius:6px;background:var(--green,#0e9f5a);color:#fff;flex:0 0 auto}
-    #csApi .ax-path{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;font-weight:700;color:var(--ink);word-break:break-all}
-    #csApi .ax-title{font-size:12px;color:var(--muted);font-weight:600;margin-left:auto;text-align:right}
-    #csApi .ax-body{padding:12px 13px 14px}
-    #csApi .ax-sub{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin:12px 0 6px}
-    #csApi .ax-sub:first-child{margin-top:0}
-    #csApi .ax-sub code{text-transform:none;letter-spacing:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--ink);background:var(--card2,#f1f5f9);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
-    #csApi .ax-acts{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:11px}
-    #csApi .ax-pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap}
-    #csApi .ax-ok{background:rgba(14,159,90,.14);color:var(--green,#0e9f5a)}
-    #csApi .ax-noo{background:rgba(220,38,38,.12);color:var(--xo-p1,#dc2626)}
-    #csApi .ax-wrn{background:rgba(217,119,6,.14);color:var(--xo-p2,#d97706)}
-    #csApi pre.ax-json{margin:6px 0 0;background:var(--card2,#f8fafc);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;color:var(--ink)}
-    #csApi pre.ax-json.req{max-height:150px}
-    #csApi .ax-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:10px}
-    #csApi .ax-meta b{color:var(--ink);font-variant-numeric:tabular-nums}
-    #csApi .ax-err{border-left:4px solid var(--xo-p1,#dc2626);background:rgba(220,38,38,.07);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-top:10px}
-    #csApi .ax-ret{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--muted);word-break:break-word;line-height:1.6}
-    #csApi .ax-ep.closed .ax-body{display:none}
-    #csApi .ax-caret{font-size:11px;color:var(--muted);flex:0 0 auto;transition:transform .15s}
-    #csApi .ax-ep.closed .ax-caret{transform:rotate(-90deg)}
-    @media (max-width:700px){#csApi .ax-title{margin-left:0;text-align:left;width:100%} #csApi .ax-f{flex:1 1 100%}}
-  `;
 
   const fieldBox = (ep, f) => {
     const v = (S.vals[ep.key] && S.vals[ep.key][f.name] != null) ? S.vals[ep.key][f.name] : (ep.template[f.name] || '');
@@ -94,7 +57,7 @@
 
   async function render(host) {
     if (!host) return;
-    host.innerHTML = `<div id="csApi"><style>${STYLE}</style>
+    host.innerHTML = `<div id="csApi" class="ax">
       ${h3(1, 'One ticket, all five endpoints', 'Type the complaint number and service number once and they fill every endpoint that declares them. Run all five answers, in one pass, what the regulator receives for that ticket — read it against what Remedy holds for the same ticket in the live section above.')}
       <div class="topo-card cs-card">
         <div class="cs-ch"><b>Ticket under examination</b><span class="cs-dim" id="axBar">loading…</span></div>

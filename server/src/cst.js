@@ -17,6 +17,8 @@
  *   GET  /api/cst/arqami/source                   live-connector status (Oracle EBPROD, see cstOracle.js) + a probe of the audit table when configured
  *   POST /api/cst/arqami/backfill {days, force}   read the last N days from Oracle into the minutes table (history)
  *   POST /api/cst/arqami/refresh {day}            re-read one day from Oracle · POST /api/cst/arqami/poll  run one poll now
+ *   GET  /api/cst/arqami/api/spec[?probe=1]      the SALAM_TT_Webservice operation CST calls; probe = can this host reach it
+ *   POST /api/cst/arqami/api/call {operation, fields}  run it for one national id — explicit operator action, audited, credentials from .env only
  *   GET  /api/cst/escalations/summary[?from&to]   aggregates from rows; when no rows: the runbook snapshot (flagged)
  *   GET  /api/cst/escalations/list?status=open    rows (masked: no names / phones are ever stored)
  *   POST /api/cst/escalations/import {rows,name}  rows = JSON objects keyed by the export's Arabic headers; mapping auto-detected
@@ -44,6 +46,7 @@ const settings = require('./settings');
 const oracle = require('./cstOracle');
 const remedy = require('./cstRemedy');
 const cstApi = require('./cstApi');
+const arqamiApi = require('./arqamiApi');
 
 const C = () => db.console;
 const n = v => Number(v) || 0;
@@ -250,6 +253,8 @@ const CONFIG_DEFAULT = {
 function mount(app, { requireSuper, audit }) {
   ensure().then(() => oracle.start()).catch(e => console.error('[cst] schema:', e.message));
   const gate = requireSuper;
+  /* identifiers reach the audit log masked to their last four digits — the runbook rule, applied everywhere */
+  const mask4 = v => { const t = String(v == null ? '' : v).trim(); return !t ? '' : t.length <= 4 ? '\u2022\u2022\u2022\u2022' : '\u2022'.repeat(Math.min(6, t.length - 4)) + t.slice(-4); };
 
   app.get('/api/cst/arqami/days', gate, async (req, res) => {
     try { const r = await C().query(`SELECT day::text AS day, count(*)::int AS minutes, sum(requests)::int AS requests, sum(failed)::int AS failed, max(imported_at) AS imported_at, bool_or(source = 'oracle') AS live FROM cst_arqami_minutes GROUP BY 1 ORDER BY 1 DESC LIMIT 400`); res.json({ days: r.rows, today: todayKsa() }); }
@@ -396,6 +401,29 @@ function mount(app, { requireSuper, audit }) {
     catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  /* ---- Arqami as CST calls it (SALAM_TT_Webservice.asmx) ----
+   * The minutes above say how the service behaved; this says what it answered. The service account and password
+   * are read from /apps/unified/.env inside arqamiApi.js and are never accepted from the request, so a browser
+   * cannot send credentials of its own; the echoed request masks the password. The national id is an operator
+   * action: audited with the id masked to its last four digits, answered, and stored nowhere. */
+  app.get('/api/cst/arqami/api/spec', gate, async (req, res) => {
+    try {
+      const out = arqamiApi.spec();
+      if (req.query.probe === '1') { try { out.tcp = await arqamiApi.reachable(); } catch (e) { out.tcp = { ok: false, error: e.message }; } }
+      res.json(out);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.post('/api/cst/arqami/api/call', gate, async (req, res) => {
+    try {
+      const b = req.body || {};
+      const op = arqamiApi.byKey(String(b.operation || ''));
+      if (!op) return res.status(400).json({ error: 'unknown operation: ' + String(b.operation || '').slice(0, 40) });
+      const fields = (b.fields && typeof b.fields === 'object' && !Array.isArray(b.fields)) ? b.fields : {};
+      if (audit) audit(req, 'ARQAMI_API_CALL', op.op + ' ' + mask4(fields.User_ID_Number), { operation: op.key }).catch(() => {});
+      res.json(await arqamiApi.call(op.key, fields));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   /* ---- Remedy: the live source behind CST Escalations (read-only, super admin, explicit action only) ---- */
   app.get('/api/cst/remedy/source', gate, async (req, res) => {
     const st = remedy.status();
@@ -451,7 +479,6 @@ function mount(app, { requireSuper, audit }) {
    * Remedy above answers what we hold; these answer what the regulator receives. The call is made server-side so
    * the api key never reaches a browser, the endpoint is chosen by key from a fixed table so nothing else can be
    * posted to, and every run is audited with a masked identifier. Nothing is stored and nothing is scheduled. */
-  const mask4 = v => { const t = String(v == null ? '' : v).trim(); return !t ? '' : t.length <= 4 ? '\u2022\u2022\u2022\u2022' : '\u2022'.repeat(Math.min(6, t.length - 4)) + t.slice(-4); };
   app.get('/api/cst/api/spec', gate, async (req, res) => {
     try {
       const out = cstApi.spec();
