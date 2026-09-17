@@ -6510,7 +6510,7 @@ app.get('/api/dms/journeys/dealer-activity', async (req, res) => {   // before /
     const to = req.query.to ? new Date(req.query.to) : new Date();
     const from = req.query.from ? new Date(req.query.from) : new Date(to.getTime() - days * 86400e3);
     const out = await require('./dmsJourneys').dealerActivity({ username: req.query.u, code: req.query.c, id: req.query.id, q: req.query.q, from, to, unmask: um,
-      limitPer: req.query.limit, journeys: req.query.j ? String(req.query.j).split(',').filter(Boolean) : null });
+      limitPer: req.query.limit, before: req.query.before || null, journeys: req.query.j ? String(req.query.j).split(',').filter(Boolean) : null });
     await audit(req, um ? 'pii.unmask' : 'dms.dealer.activity', String(req.query.u || req.query.c || req.query.q || req.query.id || '').slice(0, 40), { n: out.hits.length, flows: out.flows.length, from: out.window.from, to: out.window.to, unmask: um });
     res.json({ ...out, can_unmask: !!(req.caps && req.caps.unmaskPII) });
   } catch (e) { res.status(400).json({ error: e.message }); }

@@ -924,7 +924,11 @@ async function dealerActivity(opts) {
   const from = o.from ? new Date(o.from) : new Date(to.getTime() - 7 * DAY);
   if (isNaN(from) || isNaN(to) || from >= to) throw new Error('bad window');
   if (to - from > 92 * DAY) throw new Error('window too wide (max 92 days)');
-  const limitPer = Math.min(2000, Math.max(50, Number(o.limitPer) || 600));
+  const limitPer = Math.min(5000, Math.max(50, Number(o.limitPer) || 600));
+  const before = o.before ? new Date(o.before) : null;          // paging cursor: rows strictly older than this (per ledger)
+  const hiEdge = before && !isNaN(before) && before < to ? before : to;
+  const crypto = require('crypto');
+  const ck = v => v ? crypto.createHash('sha1').update('dms:' + v).digest('hex').slice(0, 12) : null;   // stable customer key, not reversible — lets the browser group pages
   const want = Array.isArray(o.journeys) && o.journeys.length ? new Set(o.journeys) : null;
   const scanned = [], skipped = [], truncated = [];
   const per = await Promise.all(Object.keys(JOURNEYS).filter(k => !want || want.has(k)).map(async key => {
@@ -945,7 +949,7 @@ async function dealerActivity(opts) {
         bound = `id > ${Math.max(0, Number((mx[0] || {}).m || 0) - 300000)} AND `;
       }
       const shift = r.tzShiftMs || 0;   // KSA-written ledgers: shift the bounds the same way the timestamps are shifted back
-      const lo = new Date(from.getTime() + shift), hi = new Date(to.getTime() + shift);
+      const lo = new Date(from.getTime() + shift), hi = new Date(hiEdge.getTime() + shift);
       const sel = [`id`, `\`${C.at}\` at`, C.code && `\`${C.code}\` code`, C.api && `\`${C.api}\` api`, C.message && `\`${C.message}\` message`,
         C.ref && `\`${C.ref}\` ref`, C.msisdn && `\`${C.msisdn}\` msisdn`, C.customer && `\`${C.customer}\` customer`, C.plan && `\`${C.plan}\` plan`,
         C.plan_id && `\`${C.plan_id}\` plan_id`, `\`${C.dealer}\` dealer_key`].filter(Boolean).join(', ');
@@ -963,7 +967,8 @@ async function dealerActivity(opts) {
         msisdn: pii(row.msisdn, 40), customer: pii(row.customer, 40),
         plan: row.plan == null ? null : String(row.plan).slice(0, 60), plan_id: row.plan_id == null ? null : String(row.plan_id).slice(0, 20),
         ref: row.ref == null ? null : String(row.ref).slice(0, 80), dealer_key: row.dealer_key == null ? null : String(row.dealer_key).slice(0, 60),
-        err: isFail(row.code, row.message), _m: digits(row.msisdn), _c: digits(row.customer)
+        err: isFail(row.code, row.message), _m: digits(row.msisdn), _c: digits(row.customer),
+        ck: ck(digits(row.msisdn).length >= 8 ? 'm' + digits(row.msisdn) : digits(row.customer).length >= 6 ? 'c' + digits(row.customer) : null)
       }));
     } catch (e) { skipped.push({ key, why: 'query: ' + e.message.slice(0, 80) }); return []; }
   }));
@@ -993,7 +998,8 @@ async function dealerActivity(opts) {
     if (h.msisdn) cust.add(h.msisdn); if (h.api) apis[h.api] = (apis[h.api] || 0) + 1;
   }
   const failed = hits.filter(h => h.err).length;
-  return { ok: true, keys, unmasked: um, window: { from: from.toISOString(), to: to.toISOString() },
+  const oldest = hits.length ? hits[hits.length - 1].at : null;
+  return { ok: true, keys, unmasked: um, window: { from: from.toISOString(), to: to.toISOString() }, before: before ? before.toISOString() : null, oldest, hasMore: truncated.length > 0,
     summary: { total: hits.length, failed, ok: hits.length - failed, customers: cust.size, flows: flows.length, customerFlows: flows.filter(f => f.kind === 'customer').length,
       failedFlows: flows.filter(f => f.outcome !== 'ok').length, first: hits.length ? hits[hits.length - 1].at : null, last: hits.length ? hits[0].at : null,
       byJourney: Object.values(byJourney).sort((a, z) => z.n - a.n), byDay: Object.values(byDay).sort((a, z) => a.day < z.day ? -1 : 1),

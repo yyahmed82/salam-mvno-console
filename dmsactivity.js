@@ -63,19 +63,75 @@
     if (!host) return; css();
     const o = Object.assign({ compact: false, days: 7 }, opts || {});
     const D = dealer || {};
-    const state = { days: o.days, from: null, to: null, view: 'flows', failed: false, journey: null, q: '', data: null, loading: false };
+    const state = { days: o.days, from: null, to: null, view: 'flows', failed: false, journey: null, q: '', data: null, loading: false, pages: 0, loadingMore: false, stopAll: false };
     const keysQs = () => [D.username && `u=${encodeURIComponent(D.username)}`, D.dealer_code && `c=${encodeURIComponent(D.dealer_code)}`, D.id != null && `id=${encodeURIComponent(D.id)}`, D.q && `q=${encodeURIComponent(D.q)}`].filter(Boolean).join('&');
     host.classList.add('da'); if (o.compact) host.classList.add('compact');
     const label = D.username || D.dealer_code || D.q || D.id;
 
+    const winQs = () => state.from && state.to ? `from=${encodeURIComponent(state.from)}&to=${encodeURIComponent(state.to)}` : `days=${state.days}`;
     async function load() {
-      state.loading = true; paint();
+      state.loading = true; state.pages = 0; state.stopAll = true; paint();
       try {
-        const win = state.from && state.to ? `from=${encodeURIComponent(state.from)}&to=${encodeURIComponent(state.to)}` : `days=${state.days}`;
-        state.data = await api(`/api/dms/journeys/dealer-activity?${keysQs()}&${win}${um() ? '&unmask=1' : ''}`);
+        state.data = await api(`/api/dms/journeys/dealer-activity?${keysQs()}&${winQs()}&limit=1000${um() ? '&unmask=1' : ''}`);
+        state.pages = 1; regroup(state.data);
         if (window.audit) window.audit(state.data.unmasked ? 'DEALER_ACTIVITY_UNMASK' : 'DEALER_ACTIVITY', String(label).slice(0, 40));
       } catch (e) { state.data = { error: e.message }; }
       state.loading = false; paint();
+    }
+    /* older pages: every capped ledger is re-read below the oldest row loaded so far; rows merge, journeys + totals are rebuilt over everything */
+    async function loadMore(all) {
+      const d = state.data; if (!d || !d.hasMore || state.loadingMore) return;
+      state.loadingMore = true; state.stopAll = false; paint();
+      try {
+        let guard = 0;
+        while (state.data.hasMore && guard++ < (all ? 40 : 1) && !state.stopAll) {
+          const cur = state.data;
+          /* each capped ledger continues below ITS OWN oldest loaded row (a shared cursor would skip rows in the others) */
+          const pages = await Promise.all(cur.truncated.map(async key => {
+            const mine = cur.hits.filter(h => h.journey === key); const oldest = mine.length ? mine[mine.length - 1].at : cur.oldest;
+            return api(`/api/dms/journeys/dealer-activity?${keysQs()}&${winQs()}&limit=1000&before=${encodeURIComponent(oldest)}&j=${encodeURIComponent(key)}${um() ? '&unmask=1' : ''}`);
+          }));
+          const seen = new Set(cur.hits.map(h => h.journey + ':' + h.src_id));
+          let fresh = 0; const still = [];
+          for (const nx of pages) {
+            const add = nx.hits.filter(h => !seen.has(h.journey + ':' + h.src_id)); add.forEach(h => seen.add(h.journey + ':' + h.src_id));
+            cur.hits = cur.hits.concat(add); fresh += add.length;
+            if (nx.hasMore && add.length) still.push(...nx.truncated);
+            (nx.scanned || []).forEach(sc => { const m = cur.scanned.find(x => x.key === sc.key); if (m) m.n += sc.n; else cur.scanned.push(sc); });
+          }
+          cur.hits.sort((a, z) => new Date(z.at) - new Date(a.at));
+          cur.oldest = cur.hits.length ? cur.hits[cur.hits.length - 1].at : cur.oldest;
+          cur.truncated = [...new Set(still)]; cur.hasMore = cur.truncated.length > 0 && fresh > 0;
+          state.pages++; regroup(cur); paint();
+        }
+      } catch (e) { state.data.pageError = e.message; }
+      state.loadingMore = false; paint();
+    }
+    /* group + summarize in the browser (mirrors the server) so merged pages stay one story */
+    function regroup(d) {
+      const hits = d.hits; const asc = hits.slice().sort((a, z) => new Date(a.at) - new Date(z.at));
+      const open = new Map(); const flows = [];
+      for (const h of asc) {
+        const k = h.ck || null; const t = new Date(h.at).getTime();
+        let f = k ? open.get(k) : null; if (f && t - f._last > 3600e3) f = null;
+        if (!f) { f = { id: flows.length + 1, key: k, msisdn: h.msisdn, customer: h.customer, from: h.at, to: h.at, steps: [], journeys: [], failed: 0, _last: t }; flows.push(f); if (k) open.set(k, f); }
+        f.steps.push(h); f.to = h.at; f._last = t; if (h.err) f.failed++; if (!f.journeys.includes(h.journey)) f.journeys.push(h.journey);
+        if (!f.msisdn && h.msisdn) f.msisdn = h.msisdn; if (!f.customer && h.customer) f.customer = h.customer;
+      }
+      flows.forEach(f => { delete f._last; f.n = f.steps.length; f.outcome = f.failed ? (f.failed === f.n ? 'failed' : 'partial') : 'ok'; f.kind = f.key ? 'customer' : 'dealer'; });
+      flows.sort((a, z) => new Date(z.to) - new Date(a.to));
+      const byJ = {}, byD = {}, cust = new Set(), apis = {};
+      for (const h of hits) {
+        const j = byJ[h.journey] || (byJ[h.journey] = { key: h.journey, label: h.label, icon: h.icon, n: 0, fail: 0 }); j.n++; if (h.err) j.fail++;
+        const day = new Date(new Date(h.at).getTime() + 3 * 3600e3).toISOString().slice(0, 10); const x = byD[day] || (byD[day] = { day, n: 0, fail: 0 }); x.n++; if (h.err) x.fail++;
+        if (h.msisdn) cust.add(h.msisdn); if (h.api) apis[h.api] = (apis[h.api] || 0) + 1;
+      }
+      const failed = hits.filter(h => h.err).length;
+      d.flows = flows;
+      d.summary = { total: hits.length, failed, ok: hits.length - failed, customers: cust.size, flows: flows.length, customerFlows: flows.filter(f => f.kind === 'customer').length,
+        failedFlows: flows.filter(f => f.outcome !== 'ok').length, first: hits.length ? hits[hits.length - 1].at : null, last: hits.length ? hits[0].at : null,
+        byJourney: Object.values(byJ).sort((a, z) => z.n - a.n), byDay: Object.values(byD).sort((a, z) => a.day < z.day ? -1 : 1),
+        topApis: Object.entries(apis).sort((a, z) => z[1] - a[1]).slice(0, 8).map(([api, n]) => ({ api, n })) };
     }
     const filtered = () => {
       const d = state.data; if (!d || !d.hits) return { hits: [], flows: [] };
@@ -123,7 +179,7 @@
         let content;
         if (!F.hits.length) content = `<div class="da-empty">${S.total ? 'Nothing matches the current filter.' : 'No DMS ledger rows for this dealer in the window — widen the range or check the coverage note below.'}</div>`;
         else if (state.view === 'flows') {
-          content = `<div class="da-scroll" style="border:0;padding:1px">${F.flows.slice(0, 300).map((f, i) => `<details class="da-flow ${f.outcome === 'ok' ? 'ok' : f.outcome === 'failed' ? 'bad' : 'part'}" ${i < 8 ? 'open' : ''}>
+          content = `<div class="da-scroll" style="border:0;padding:1px">${F.flows.slice(0, 800).map((f, i) => `<details class="da-flow ${f.outcome === 'ok' ? 'ok' : f.outcome === 'failed' ? 'bad' : 'part'}" ${i < 8 ? 'open' : ''}>
             <summary><span class="mono da-fwhen" style="font-size:10.5px;color:var(--muted)">${esc(k.md(f.from))}${f.n > 1 ? ` → ${esc(k.t(f.to))}` : ''}</span>
               <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:0"><b class="mono">${f.kind === 'customer' ? esc(f.msisdn || f.customer || '') : '<span style="color:var(--muted)">dealer action</span>'}</b><span class="da-fj">${f.journeys.map(j => { const jj = S.byJourney.find(x => x.key === j) || {}; return `<span>${jj.icon || ''} ${esc(jj.label || j)}</span>`; }).join('')}</span></span>
               <span style="display:flex;gap:8px;align-items:center"><span class="da-sub">${f.n} step${f.n === 1 ? '' : 's'}</span>${outBadge(f)}</span></summary>
@@ -131,13 +187,18 @@
               <span class="mono" style="color:var(--muted);font-size:10.5px">${esc(k.t(h.at, true))}</span><span>${h.icon || '•'}</span>
               <span><b>${esc(h.label)}</b>${h.api ? ` <span class="mono" style="color:var(--muted);font-size:10px">${esc(h.api)}</span>` : ''}</span>
               <span class="da-smsg" style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.plan ? h.plan + (h.message ? ' · ' + h.message : '') : h.message || '')}</span>
-              <span class="da-scode">${codeHtml(h)}</span></div>`).join('')}</div></details>`).join('')}${F.flows.length > 300 ? `<div class="da-sub">showing 300 of ${F.flows.length} journeys — narrow the range</div>` : ''}</div>`;
+              <span class="da-scode">${codeHtml(h)}</span></div>`).join('')}</div></details>`).join('')}${F.flows.length > 800 ? `<div class="da-sub">showing 800 of ${F.flows.length} journeys on screen — use the List view or the CSV for the rest</div>` : ''}</div>`;
         } else {
           content = `<div class="da-scroll"><table class="da-tbl"><thead><tr><th>At (KSA)</th><th>Journey</th><th>Endpoint</th><th>Code</th><th>Customer</th><th>ID</th><th>Plan</th><th>Message</th><th>Ref</th></tr></thead><tbody>
-            ${F.hits.slice(0, 2000).map(h => `<tr class="${h.err ? 'err' : ''}" data-j="${esc(h.journey)}" data-id="${h.src_id}" title="open the full ledger row"><td class="mono">${esc(k.md(h.at))}:${esc(String(k.t(h.at, true)).slice(-2))}</td><td>${h.icon || '•'} ${esc(h.label)}</td><td class="mono" title="${esc(h.api || '')}">${esc(h.api || '—')}</td><td>${codeHtml(h)}</td><td class="mono">${esc(h.msisdn || '')}</td><td class="mono">${esc(h.customer || '')}</td><td title="${esc(h.plan || '')}">${esc(h.plan || '')}</td><td title="${esc(h.message || '')}" style="color:var(--muted)">${esc(h.message || '')}</td><td class="mono" title="${esc(h.ref || '')}">${esc(h.ref || '')}</td></tr>`).join('')}
-          </tbody></table></div>${F.hits.length > 2000 ? `<div class="da-sub">showing 2 000 of ${F.hits.length} rows — narrow the range or use the CSV</div>` : ''}`;
+            ${F.hits.slice(0, 6000).map(h => `<tr class="${h.err ? 'err' : ''}" data-j="${esc(h.journey)}" data-id="${h.src_id}" title="open the full ledger row"><td class="mono">${esc(k.md(h.at))}:${esc(String(k.t(h.at, true)).slice(-2))}</td><td>${h.icon || '•'} ${esc(h.label)}</td><td class="mono" title="${esc(h.api || '')}">${esc(h.api || '—')}</td><td>${codeHtml(h)}</td><td class="mono">${esc(h.msisdn || '')}</td><td class="mono">${esc(h.customer || '')}</td><td title="${esc(h.plan || '')}">${esc(h.plan || '')}</td><td title="${esc(h.message || '')}" style="color:var(--muted)">${esc(h.message || '')}</td><td class="mono" title="${esc(h.ref || '')}">${esc(h.ref || '')}</td></tr>`).join('')}
+          </tbody></table></div>${F.hits.length > 6000 ? `<div class="da-sub">showing 6 000 of ${F.hits.length} rows on screen — the CSV carries all of them</div>` : ''}`;
         }
-        const cov = `<div class="da-foot">coverage: ${(d.scanned || []).map(s => `${esc(s.key)} (${s.n}${s.how === 'indexed' ? '' : ', ' + esc(s.how)})`).join(' · ') || '—'}${(d.truncated || []).length ? ` · <b style="color:${AMBER}">capped at ${d.limitPer} rows: ${esc(d.truncated.join(', '))} — narrow the range for the full picture</b>` : ''}${(d.skipped || []).length ? ` · not covered: ${d.skipped.map(x => `${esc(x.key)} (${esc(x.why)})`).join(' · ')}` : ''} · a step = one ledger row written by the DMS service that handled it; click any step or row for every field of that row and its cross-journey trace.</div>`;
+        const more = d.hasMore ? `<div class="da-bar" style="margin:8px 0 0"><span class="da-sub" style="color:${AMBER}"><b>Not everything yet</b> — ${esc(d.truncated.join(', '))} still ${d.truncated.length === 1 ? 'has' : 'have'} older rows in this window (oldest loaded ${esc(k.md(d.oldest))}).</span>
+            <button type="button" class="da-chip" data-act="more" ${state.loadingMore ? 'disabled' : ''}>${state.loadingMore ? '… loading' : '⇣ Load older'}</button>
+            <button type="button" class="da-chip on" data-act="all" ${state.loadingMore ? 'disabled' : ''}>${state.loadingMore && !state.stopAll ? '… loading everything (page ' + state.pages + ')' : '⇣⇣ Load everything'}</button>
+            ${state.loadingMore ? `<button type="button" class="da-chip" data-act="stop">stop</button>` : ''}${d.pageError ? `<span class="da-sub" style="color:${RED}">${esc(d.pageError)}</span>` : ''}</div>`
+          : (state.pages > 1 ? `<div class="da-sub" style="margin-top:8px;color:${GREEN}"><b>Complete</b> — every ledger row for this dealer in the window is loaded (${state.pages} pages).</div>` : '');
+        const cov = more + `<div class="da-foot">coverage: ${(d.scanned || []).map(s => `${esc(s.key)} (${s.n}${s.how === 'indexed' ? '' : ', ' + esc(s.how)})`).join(' · ') || '—'}${(d.skipped || []).length ? ` · not covered: ${d.skipped.map(x => `${esc(x.key)} (${esc(x.why)})`).join(' · ')}` : ''} · a step = one ledger row written by the DMS service that handled it; click any step or row for every field of that row and its cross-journey trace.</div>`;
         body = kpis + days + jchips + content + cov;
       }
       host.innerHTML = head + body;
@@ -151,6 +212,9 @@
       const act = a => host.querySelector(`[data-act="${a}"]`);
       if (act('failed')) act('failed').onclick = () => { state.failed = !state.failed; paint(); };
       if (act('reload')) act('reload').onclick = () => load();
+      if (act('more')) act('more').onclick = () => loadMore(false);
+      if (act('all')) act('all').onclick = () => loadMore(true);
+      if (act('stop')) act('stop').onclick = () => { state.stopAll = true; };
       if (act('apply')) act('apply').onclick = () => { const f = host.querySelector('#daFrom').value, t = host.querySelector('#daTo').value; if (!f || !t) return; state.from = f + 'T00:00:00+03:00'; state.to = t + 'T23:59:59+03:00'; load(); };
       const q = host.querySelector('#daQ'); if (q) { q.oninput = () => { state.q = q.value; const pos = q.selectionStart; paint(); const q2 = host.querySelector('#daQ'); if (q2) { q2.focus(); q2.setSelectionRange(pos, pos); } }; }
       if (act('csv')) act('csv').onclick = () => {
