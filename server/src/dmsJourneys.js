@@ -901,4 +901,104 @@ async function rowDetail(key, id, unmask) {
     fields };
 }
 
-module.exports = { start, status, board, drill, trace, home, browse, rowDetail, dealerTimeline, dealerActs, JOURNEYS };
+/* ---- DEALER ACTIVITY — everything one dealer did in DMS, every ledger, inside a window (17 Sep 2026).
+ * Differences from dealerTimeline (the popup's 25-per-ledger peek):
+ *   • window-bounded (from/to, default 7 days, max 92) instead of "latest 25";
+ *   • matches EVERY key the dealer is known by — username, dealer code and numeric id — because the
+ *     ledgers disagree on which one they store (channel_username vs dealer_code vs channel_user_id);
+ *   • no ledger is skipped: an unindexed big table is read through a bounded PK window (last ~300k
+ *     ids ≈ months) instead of being dropped from the answer, and the coverage note says so;
+ *   • rows come back both as a flat LIST (every column the ledger has for that action, masked) and
+ *     grouped into FLOWS: the same customer (msisdn / national id) touched within 60 min = one
+ *     journey (Semati → Nafath → activation → SMS …); dealer-own actions (wallet refill, CMS) stand alone.
+ * Identifiers are masked unless the route verified the unmask capability (audited there). ---- */
+const DAY = 86400e3;
+const digits = v => String(v == null ? '' : v).replace(/\D/g, '');
+async function dealerActivity(opts) {
+  const o = opts || {};
+  const um = !!o.unmask;
+  const keys = [...new Set([o.username, o.code, o.id, o.q].map(v => String(v == null ? '' : v).trim()).filter(v => v.length >= 2))].slice(0, 6);
+  if (!keys.length) throw new Error('dealer key required (username, code or id)');
+  const numKeys = keys.filter(k => /^\d+$/.test(k)).map(Number);
+  const to = o.to ? new Date(o.to) : new Date();
+  const from = o.from ? new Date(o.from) : new Date(to.getTime() - 7 * DAY);
+  if (isNaN(from) || isNaN(to) || from >= to) throw new Error('bad window');
+  if (to - from > 92 * DAY) throw new Error('window too wide (max 92 days)');
+  const limitPer = Math.min(2000, Math.max(50, Number(o.limitPer) || 600));
+  const want = Array.isArray(o.journeys) && o.journeys.length ? new Set(o.journeys) : null;
+  const scanned = [], skipped = [], truncated = [];
+  const per = await Promise.all(Object.keys(JOURNEYS).filter(k => !want || want.has(k)).map(async key => {
+    try {
+      const r = await resolve(key);
+      if (!r.ok) { skipped.push({ key, why: r.why || 'unresolved' }); return []; }
+      const C = r.cols;
+      if (!C.dealer) { skipped.push({ key, why: 'no dealer column in this ledger' }); return []; }
+      const numericCol = F.dealer2.includes(C.dealer);
+      const vals = numericCol ? numKeys : keys;
+      if (!vals.length) { skipped.push({ key, why: `ledger keys dealers by ${C.dealer} — no matching key for this dealer` }); return []; }
+      const idx = await dms.indexedCols(SC(key), JOURNEYS[key].table);
+      const stats = await dms.q(`SELECT table_rows n FROM information_schema.tables WHERE table_schema=? AND table_name=?`, [SC(key), JOURNEYS[key].table]).catch(() => [{ n: 9e9 }]);
+      const big = Number((stats[0] || {}).n || 9e9) >= 400000;
+      let bound = '', how = idx.has(C.dealer.toLowerCase()) ? 'indexed' : big ? 'recent-id window' : 'small table';
+      if (how === 'recent-id window') {
+        const mx = await dms.q(`SELECT max(id) m FROM \`${SC(key)}\`.\`${JOURNEYS[key].table}\``).catch(() => [{}]);
+        bound = `id > ${Math.max(0, Number((mx[0] || {}).m || 0) - 300000)} AND `;
+      }
+      const shift = r.tzShiftMs || 0;   // KSA-written ledgers: shift the bounds the same way the timestamps are shifted back
+      const lo = new Date(from.getTime() + shift), hi = new Date(to.getTime() + shift);
+      const sel = [`id`, `\`${C.at}\` at`, C.code && `\`${C.code}\` code`, C.api && `\`${C.api}\` api`, C.message && `\`${C.message}\` message`,
+        C.ref && `\`${C.ref}\` ref`, C.msisdn && `\`${C.msisdn}\` msisdn`, C.customer && `\`${C.customer}\` customer`, C.plan && `\`${C.plan}\` plan`,
+        C.plan_id && `\`${C.plan_id}\` plan_id`, `\`${C.dealer}\` dealer_key`].filter(Boolean).join(', ');
+      const rows = await dms.qSlow(
+        `SELECT ${sel} FROM \`${SC(key)}\`.\`${JOURNEYS[key].table}\`
+          WHERE ${bound}\`${C.dealer}\` IN (${vals.map(() => '?').join(',')}) AND \`${C.at}\` >= ? AND \`${C.at}\` < ?
+          ORDER BY \`${C.at}\` DESC LIMIT ${limitPer}`, [...vals, lo, hi], 30000);
+      scanned.push({ key, how, n: rows.length });
+      if (rows.length >= limitPer) truncated.push(key);
+      const pii = (v, n2) => v == null ? null : (um ? String(v).slice(0, n2) : maskNum(String(v).slice(0, n2)));
+      return rows.map(row => ({
+        journey: key, label: JOURNEYS[key].label, icon: JOURNEYS[key].icon, src_id: Number(row.id),
+        at: atFix(r, row.at), code: row.code == null ? null : String(row.code).slice(0, 40),
+        api: row.api == null ? null : String(row.api).slice(0, 120), message: pii(row.message, 200),
+        msisdn: pii(row.msisdn, 40), customer: pii(row.customer, 40),
+        plan: row.plan == null ? null : String(row.plan).slice(0, 60), plan_id: row.plan_id == null ? null : String(row.plan_id).slice(0, 20),
+        ref: row.ref == null ? null : String(row.ref).slice(0, 80), dealer_key: row.dealer_key == null ? null : String(row.dealer_key).slice(0, 60),
+        err: isFail(row.code, row.message), _m: digits(row.msisdn), _c: digits(row.customer)
+      }));
+    } catch (e) { skipped.push({ key, why: 'query: ' + e.message.slice(0, 80) }); return []; }
+  }));
+  const hits = per.flat().sort((a, z) => new Date(z.at) - new Date(a.at));
+  /* ---- flows: same customer within 60 min = one journey; rows without a customer key stand alone ---- */
+  const asc = hits.slice().sort((a, z) => new Date(a.at) - new Date(z.at));
+  const open = new Map(); const flows = [];
+  for (const h of asc) {
+    const k = h._m.length >= 8 ? 'm:' + h._m : h._c.length >= 6 ? 'c:' + h._c : null;
+    const t = new Date(h.at).getTime();
+    let f = k ? open.get(k) : null;
+    if (f && t - f._last > 60 * 60e3) f = null;
+    if (!f) { f = { id: flows.length + 1, key: k, msisdn: h.msisdn, customer: h.customer, from: h.at, to: h.at, steps: [], journeys: [], failed: 0, _last: t }; flows.push(f); if (k) open.set(k, f); }
+    f.steps.push(h); f.to = h.at; f._last = t; if (h.err) f.failed++;
+    if (!f.journeys.includes(h.journey)) f.journeys.push(h.journey);
+    if (!f.msisdn && h.msisdn) f.msisdn = h.msisdn; if (!f.customer && h.customer) f.customer = h.customer;
+  }
+  flows.forEach(f => { delete f._last; f.n = f.steps.length; f.outcome = f.failed ? (f.failed === f.n ? 'failed' : 'partial') : 'ok';
+    f.kind = f.key ? 'customer' : 'dealer'; f.steps.forEach(s => { delete s._m; delete s._c; }); });
+  flows.sort((a, z) => new Date(z.to) - new Date(a.to));
+  hits.forEach(h => { delete h._m; delete h._c; });
+  /* ---- summary ---- */
+  const byJourney = {}; const byDay = {}; const cust = new Set(); const apis = {};
+  for (const h of hits) {
+    const j = byJourney[h.journey] || (byJourney[h.journey] = { key: h.journey, label: h.label, icon: h.icon, n: 0, fail: 0 }); j.n++; if (h.err) j.fail++;
+    const d = new Date(new Date(h.at).getTime() + 3 * 3600e3).toISOString().slice(0, 10); const x = byDay[d] || (byDay[d] = { day: d, n: 0, fail: 0 }); x.n++; if (h.err) x.fail++;
+    if (h.msisdn) cust.add(h.msisdn); if (h.api) apis[h.api] = (apis[h.api] || 0) + 1;
+  }
+  const failed = hits.filter(h => h.err).length;
+  return { ok: true, keys, unmasked: um, window: { from: from.toISOString(), to: to.toISOString() },
+    summary: { total: hits.length, failed, ok: hits.length - failed, customers: cust.size, flows: flows.length, customerFlows: flows.filter(f => f.kind === 'customer').length,
+      failedFlows: flows.filter(f => f.outcome !== 'ok').length, first: hits.length ? hits[hits.length - 1].at : null, last: hits.length ? hits[0].at : null,
+      byJourney: Object.values(byJourney).sort((a, z) => z.n - a.n), byDay: Object.values(byDay).sort((a, z) => a.day < z.day ? -1 : 1),
+      topApis: Object.entries(apis).sort((a, z) => z[1] - a[1]).slice(0, 8).map(([api, n]) => ({ api, n })) },
+    hits, flows, scanned, skipped, truncated, limitPer };
+}
+
+module.exports = { start, status, board, drill, trace, home, browse, rowDetail, dealerTimeline, dealerActs, dealerActivity, JOURNEYS };

@@ -88,27 +88,11 @@
         body.innerHTML=(d.unmasked?`<div style="border:1px solid #dc2626;border-radius:9px;padding:6px 11px;margin-bottom:10px;background:rgba(220,38,38,.06);font-size:11px;font-weight:700;color:#dc2626">🔓 Identifiers shown in full — this reveal is recorded in the audit log.</div>`:"")
           +(window.renderDealerCardHtml?window.renderDealerCardHtml(d)
           :`<pre class="mono" style="font-size:11px;white-space:pre-wrap">${esc(JSON.stringify(d,null,2).slice(0,4000))}</pre>`)
-          +`<div style="margin-top:14px"><b style="font-size:12px">DMS API activity</b>
-             <span class="rl" style="font-size:10px;color:var(--muted)">· this dealer's latest calls across every DMS ledger — endpoint + outcome; click a row for the FULL request/response fields + trace</span>
-             <div id="djOvTl" style="margin-top:6px"><div class="rl" style="font-size:10.5px">Loading activity…</div></div></div>`;
+          +`<div id="djOvTl" style="margin-top:14px"></div>`;
         if(window.audit) window.audit(d.unmasked?"DEALER_360_UNMASK":"DEALER_360","popup:"+String(code).slice(0,40));
-        try{
-          const t=await api(`/api/dms/journeys/dealer-timeline?d=${encodeURIComponent(code)}${um()?"&unmask=1":""}`);
-          const el=ov.querySelector("#djOvTl"); if(!el) return;
-          const rows2=(t.hits||[]).slice(0,60).map(h=>`<tr class="djtl-row" data-j="${esc(h.journey)}" data-id="${h.src_id}" title="Full row + trace" style="cursor:pointer;border-top:1px solid var(--line);${h.err?"background:rgba(220,38,38,.05)":""}">
-              <td class="mono rl" style="padding:2px 6px;white-space:nowrap">${esc(KT.md(h.at))}Z</td>
-              <td style="white-space:nowrap">${h.icon||"•"} ${esc(h.label)}</td>
-              <td class="mono" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(h.api||"")}">${esc(h.api||"—")}</td>
-              <td class="mono" style="font-weight:700;color:${h.err?"#dc2626":"#16a34a"}">${esc(h.code||"—")}</td>
-              <td class="mono">${esc(h.msisdn||"")}</td>
-              <td class="rl" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)" title="${esc(h.message||"")}">${esc(h.plan||h.message||"")}</td></tr>`).join("");
-          el.innerHTML=rows2
-            ?`<div style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:9px"><table style="width:100%;border-collapse:collapse;font-size:10.5px">
-                <tr><th style="text-align:left;font-size:9.5px;color:var(--muted);padding:3px 6px">AT</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">JOURNEY</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">API / ENDPOINT</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">CODE</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">MSISDN</th><th style="text-align:left;font-size:9.5px;color:var(--muted)">PLAN / MESSAGE</th></tr>${rows2}</table></div>
-              <div class="rl" style="font-size:9px;color:var(--muted);margin-top:3px">scanned: ${esc((t.scanned||[]).join(", "))}${(t.skipped||[]).length?` · skipped (no index): ${esc(t.skipped.map(x=>x.key).join(", "))}`:""}</div>`
-            :`<div class="rl" style="font-size:10.5px">No DMS ledger rows found for this dealer code${(t.skipped||[]).length?` — skipped (no usable index): ${esc(t.skipped.map(x=>x.key).join(", "))}`:""}.</div>`;
-          el.querySelectorAll(".djtl-row").forEach(tr=>tr.addEventListener("click",()=>openRowPopup(tr.dataset.j,tr.dataset.id)));
-        }catch(e){ const el=ov.querySelector("#djOvTl"); if(el) el.innerHTML=`<div class="rl" style="font-size:10.5px;color:var(--warn-fg)">activity: ${esc(e.message)}</div>`; }
+        const el=ov.querySelector("#djOvTl");
+        if(el&&window.renderDealerActivity){ const P=d.found&&d.dealer?d.dealer:{};
+          window.renderDealerActivity(el,{username:P.username||null,dealer_code:P.dealer_code||null,id:P.id!=null?P.id:null,q:code},{compact:true,days:7}); }
       }catch(e){ body.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; }
     };
     wire(); load();
@@ -449,4 +433,5 @@
 
   window.renderDmsJourneys=render;
   window.openDealerPopup=openDealer360;   // used by the ③ commissioning board (dms.js)
+  window.openDmsRowPopup=openRowPopup;    // used by dmsactivity.js (dealer activity rows → full ledger row + trace)
 })();

@@ -250,6 +250,11 @@
       out.innerHTML=(d.unmasked?`<div style="border:1px solid #dc2626;border-radius:9px;padding:6px 11px;margin-bottom:9px;background:rgba(220,38,38,.06);font-size:11px;font-weight:700;color:#dc2626">🔓 Identifiers shown in full — this reveal is recorded in the audit log.</div>`:"")
         + d360Html(d);
       paintMaskBtn();
+      /* EVERYTHING THIS DEALER DID IN DMS — every audit ledger, window-bounded, journeys + list (dmsactivity.js, 17 Sep 2026) */
+      if(d.found && d.dealer && window.renderDealerActivity){
+        const h=document.createElement("div"); h.id="d360act"; out.appendChild(h);
+        window.renderDealerActivity(h,{username:d.dealer.username,dealer_code:d.dealer.dealer_code,id:d.dealer.id,q:q},{days:7});
+      }
       // the export row only makes sense once a dealer is on screen, and only if they have a wallet
       const exp=$("#d360exp");
       if(exp){
