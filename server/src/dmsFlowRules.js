@@ -93,6 +93,11 @@ async function makeCtx(fromUtc, toUtc) {
 }
 /* time-window predicate for a resolved table (local clock of that table) */
 const W = t => `${t.at} >= ? AND ${t.at} < ?`;
+/* SCOPE (measured 17 Sep 2026): employee_username ONLINE_000001 made 115 Semati type-1 registrations
+ * in a 2 h window and produced ZERO sim_activation_logs rows, while every real dealer made 1-2 and
+ * appears in the ledger. The online / self-activation channel does not write the DMS journey ledgers
+ * at all, so comparing it against them is meaningless — S14 watches that channel on its own terms. */
+const DEALER_ONLY = a => `${a}.employee_username NOT LIKE 'ONLINE%'`;
 const digits9 = col => `RIGHT(REGEXP_REPLACE(${col}, '[^0-9]', ''), 9)`;
 
 /* ---- CLOCK NORMALISATION (added after the first live run, 17 Sep 2026).
@@ -113,7 +118,7 @@ const RULES = {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'msisdn_req', 'response_Code']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.tcn, x.uil_transaction_id, x.logs_reference_id
       FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.tcn, s.uil_transaction_id, s.logs_reference_id
-            FROM ${s.ref} WHERE ${s.b} AND s.request_type='1' AND s.response_Code='600' AND ${W(s)}) x
+            FROM ${s.ref} WHERE ${s.b} AND s.request_type='1' AND s.response_Code='600' AND ${DEALER_ONLY('s')} AND ${W(s)}) x
       LEFT JOIN (SELECT ${digits9('a.mobile_number')} m, ${U(a)} at FROM ${a.ref} WHERE ${a.b}) act ON act.m = x.m AND act.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE
       ${r ? `LEFT JOIN (SELECT ${digits9('r.mobile_number')} m, ${U(r)} at FROM ${r.ref} WHERE ${r.b}) ra ON ra.m = x.m AND ra.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE` : ''}
       LEFT JOIN (SELECT ${digits9('cm.msisdn_req')} m, ${U(cm)} at FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%reauthenticate' AND cm.response_Code='00') rc ON rc.m = x.m AND rc.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE
@@ -128,7 +133,7 @@ const RULES = {
     const a = await c.T(AUD, 'sim_activation_logs', 'a', 'insert_date_time', ['api_name', 'customer_id_number']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.tcn, x.logs_reference_id
       FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.tcn, s.logs_reference_id
-            FROM ${s.ref} WHERE ${s.b} AND s.request_type='2' AND s.response_Code='600' AND ${W(s)}) x
+            FROM ${s.ref} WHERE ${s.b} AND s.request_type='2' AND s.response_Code='600' AND ${DEALER_ONLY('s')} AND ${W(s)}) x
       LEFT JOIN (SELECT a.customer_id_number pid, ${U(a)} at FROM ${a.ref} WHERE ${a.b} AND a.api_name LIKE '%activatedatasim') act ON act.pid = x.person_id AND act.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 30 MINUTE
       LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='5') sw ON sw.m = x.m AND sw.at BETWEEN x.at AND x.at + INTERVAL 10 MINUTE
       WHERE act.pid IS NULL AND sw.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
@@ -140,7 +145,7 @@ const RULES = {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.dealer, x.logs_reference_id, MAX(sc.swap_call) swap_call
       FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.employee_username dealer, s.logs_reference_id
-            FROM ${s.ref} WHERE ${s.b} AND s.request_type='2' AND s.response_Code='600' AND ${W(s)}) x
+            FROM ${s.ref} WHERE ${s.b} AND s.request_type='2' AND s.response_Code='600' AND ${DEALER_ONLY('s')} AND ${W(s)}) x
       JOIN (SELECT cm.logs_reference_id ref, CONCAT(cm.api_name,' → ',cm.response_Code) swap_call FROM ${cm.ref} WHERE ${cm.b} AND cm.api_name LIKE '%swap%' AND cm.logs_reference_id <> '') sc ON sc.ref = x.logs_reference_id
       LEFT JOIN (SELECT ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='5' AND s.response_Code='600') cn ON cn.m = x.m AND cn.at BETWEEN x.at AND x.at + INTERVAL 5 MINUTE
       WHERE cn.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
@@ -155,7 +160,7 @@ const RULES = {
      * written by the same consumer (mnp_logs, success only) is the honest counterpart. */
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.logs_reference_id
       FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} mm, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
-            FROM ${s.ref} WHERE ${s.b} AND s.request_type='18' AND s.response_Code='600' AND ${W(s)}) x
+            FROM ${s.ref} WHERE ${s.b} AND s.request_type='18' AND s.response_Code='600' AND ${DEALER_ONLY('s')} AND ${W(s)}) x
       LEFT JOIN (SELECT ${digits9('m.mobile_number')} mm, ${U(m)} at FROM ${m.ref} WHERE ${m.b}) p
         ON p.mm = x.mm AND p.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 15 MINUTE
       LEFT JOIN (SELECT ${digits9('s.msisdn')} mm, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='4') cn
@@ -169,7 +174,7 @@ const RULES = {
     const t = await c.T(AUD, 'transfer_ownership_logs', 't', 'insert_date_time', ['mobile_number']);
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.logs_reference_id
       FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} m, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
-            FROM ${s.ref} WHERE ${s.b} AND s.request_type='17' AND s.response_Code='600' AND ${W(s)}) x
+            FROM ${s.ref} WHERE ${s.b} AND s.request_type='17' AND s.response_Code='600' AND ${DEALER_ONLY('s')} AND ${W(s)}) x
       LEFT JOIN (SELECT ${digits9('t.mobile_number')} m, ${U(t)} at FROM ${t.ref} WHERE ${t.b}) tr ON tr.m = x.m AND tr.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 15 MINUTE
       LEFT JOIN (SELECT s.id sid, ${digits9('s.msisdn')} m, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='17') rv ON rv.m = x.m AND rv.sid <> x.id AND rv.at BETWEEN x.at AND x.at + INTERVAL 60 MINUTE
       WHERE tr.m IS NULL AND rv.m IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
@@ -183,7 +188,7 @@ const RULES = {
      * a uil_logs row the trace cannot reach. */
     const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer, x.logs_reference_id
       FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} mm, s.msisdn, s.person_id, s.employee_username dealer, s.logs_reference_id
-            FROM ${s.ref} WHERE ${s.b} AND s.request_type='6' AND s.response_Code='600' AND ${W(s)}) x
+            FROM ${s.ref} WHERE ${s.b} AND s.request_type='6' AND s.response_Code='600' AND ${DEALER_ONLY('s')} AND ${W(s)}) x
       LEFT JOIN (SELECT ${digits9('pp.mobile_number')} mm, ${U(pp)} at FROM ${pp.ref} WHERE ${pp.b}) c2
         ON c2.mm = x.mm AND c2.at BETWEEN x.at - INTERVAL 5 MINUTE AND x.at + INTERVAL 15 MINUTE
       LEFT JOIN (SELECT s.id sid, ${digits9('s.msisdn')} mm, ${U(s)} at FROM ${s.ref} WHERE ${s.b} AND s.request_type='6') rv
@@ -243,6 +248,27 @@ const RULES = {
       FROM ${s.ref} WHERE ${s.b} AND ${W(s)} HAVING n >= 5 AND (avg_ms > 20000 OR over_60s >= 3)`, [s.lo, s.hi], c.budget);
     return { rows };
   } },
+  /* The online / self-activation channel at the regulator. It has no journey ledger, so its only
+   * counterpart is dms_v1.report_request_self_activation. Degrades to a note if that table's shape
+   * differs — we do not own this schema. */
+  S14: { grace: 30 * MIN, run: async c => {
+    const s = await c.T(AUD, 'semati_logs', 's', 'insert_date_time', ['request_type', 'response_Code', 'msisdn']);
+    const at = await dms.pick(V1, 'report_request_self_activation', ['insert_date_time', 'created_at', 'created_date', 'creation_time', 'date_time']);
+    const msi = await dms.pick(V1, 'report_request_self_activation', ['mobile_number', 'msisdn', 'number']);
+    if (!at || !msi) {
+      const n = await dms.qSlow(`SELECT COUNT(*) online_registrations FROM ${s.ref} WHERE ${s.b} AND s.request_type='1' AND s.response_Code='600' AND s.employee_username LIKE 'ONLINE%' AND ${W(s)}`, [s.lo, s.hi], c.budget);
+      return { rows: n, note: `report_request_self_activation has no recognised ${at ? 'msisdn' : 'timestamp'} column — the online channel is counted, not reconciled` };
+    }
+    const r = await c.T(V1, 'report_request_self_activation', 'r', at, [msi]);
+    const rows = await dms.qSlow(`SELECT x.id, x.at, x.msisdn, x.person_id, x.dealer
+      FROM (SELECT s.id, ${U(s)} at, ${digits9('s.msisdn')} mm, s.msisdn, s.person_id, s.employee_username dealer
+            FROM ${s.ref} WHERE ${s.b} AND s.request_type='1' AND s.response_Code='600' AND s.employee_username LIKE 'ONLINE%' AND ${W(s)}) x
+      LEFT JOIN (SELECT ${digits9('r.`' + msi + '`')} mm, ${U(r)} at FROM ${r.ref} WHERE ${r.b}) sa
+        ON sa.mm = x.mm AND sa.at BETWEEN x.at - INTERVAL 10 MINUTE AND x.at + INTERVAL 30 MINUTE
+      WHERE sa.mm IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [s.lo, s.hi], c.budget);
+    return { rows, note: 'online-channel number registered at Semati with no self-activation report row' };
+  } },
+
   /* Integrity: a 00 call on a ledgered URI whose journey row is missing (mapper/DB error in the consumer) */
   J2: { grace: 10 * MIN, run: async c => {
     const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['api_name', 'response_Code', 'logs_reference_id']);
@@ -261,10 +287,18 @@ const RULES = {
   } },
   /* Integrity: share of cms_logs rows without channel attribution */
   J4: { grace: 0, run: async c => {
-    const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['channel_id']);
-    const rows = await dms.qSlow(`SELECT COUNT(*) n, SUM(cm.channel_id IS NULL OR cm.channel_id='') unattributed, ROUND(100*SUM(cm.channel_id IS NULL OR cm.channel_id='')/COUNT(*),1) pct
-      FROM ${cm.ref} WHERE ${cm.b} AND ${W(cm)} HAVING n >= 20 AND pct > 5`, [cm.lo, cm.hi], c.budget);
-    return { rows };
+    const cm = await c.T(AUD, 'cms_logs', 'cm', 'insert_date_time', ['channel_id', 'api_name']);
+    /* measured 17 Sep: of 2392 rows, 1003 had no channel_id — and they are the portal / visitor-plan /
+     * price-lookup URIs, which have no dealer session by design. Excluded, so what remains is a real
+     * enrichment failure on a dealer transaction (channel service down during HttpLoggingFilter). */
+    const rows = await dms.qSlow(`SELECT cm.api_name, COUNT(*) n, SUM(cm.channel_id IS NULL OR cm.channel_id='') unattributed,
+        ROUND(100*SUM(cm.channel_id IS NULL OR cm.channel_id='')/COUNT(*),1) pct
+      FROM ${cm.ref} WHERE ${cm.b} AND ${W(cm)}
+        AND cm.api_name NOT LIKE '%/self-activtion-portal/%' AND cm.api_name NOT LIKE '%/visitorplan/%'
+        AND cm.api_name NOT LIKE '%dealerexemptedoverride' AND cm.api_name NOT LIKE '%getownerfromiccid'
+        AND cm.api_name NOT LIKE '%getrefillrequestsbystatus'
+      GROUP BY cm.api_name HAVING n >= 20 AND pct > 5 ORDER BY unattributed DESC LIMIT ${LIMIT}`, [cm.lo, cm.hi], c.budget);
+    return { rows, note: 'dealer-transaction rows the filter could not attribute to a channel' };
   } },
   /* Integrity: ledger silence — age of the newest row per ledger (PK lookup, instant) */
   J5: { grace: 0, run: async c => {
@@ -394,13 +428,13 @@ const RULES = {
     await c.have(V1, 'dms_users', ['username', 'account_number']);
     /* both sides are materialised ONCE (the first run timed out at 25 s re-scanning cms_logs per
      * wallet row); the renewal side is tiny because it is filtered to the one URI. */
-    const rows = await dms.qSlow(`SELECT x.id, x.at, x.account_from, x.dealer, x.amount, x.comments
-      FROM (SELECT w.id, ${U(w)} at, w.account_from, w.amount, w.comments, u.username dealer
-            FROM ${w.ref} LEFT JOIN ${q(V1, 'dms_users')} u ON u.account_number = w.account_from
-            WHERE ${w.b} AND w.status='PAID' AND w.comments LIKE 'Renew%' AND ${W(w)}) x
+    const rows = await dms.qSlow(`SELECT x.id, x.at, x.account_from, u.username dealer, x.amount, x.comments
+      FROM (SELECT w.id, ${U(w)} at, w.account_from, w.amount, w.comments
+            FROM ${w.ref} WHERE ${w.b} AND w.status='PAID' AND w.comments LIKE 'Renew%' AND ${W(w)}) x
+      LEFT JOIN ${q(V1, 'dms_users')} u ON u.account_number = x.account_from
       LEFT JOIN (SELECT cm.username dealer, ${U(cm)} at FROM ${cm.ref}
                  WHERE ${cm.b} AND cm.api_name LIKE '%/priceplan/renew' AND cm.response_Code='00') r
-        ON r.dealer = x.dealer AND r.at BETWEEN x.at - INTERVAL 1 MINUTE AND x.at + INTERVAL 5 MINUTE
+        ON r.dealer = u.username AND r.at BETWEEN x.at - INTERVAL 1 MINUTE AND x.at + INTERVAL 5 MINUTE
       WHERE r.dealer IS NULL GROUP BY x.id ORDER BY x.id DESC LIMIT ${LIMIT}`, [w.lo, w.hi, cm.lo, cm.hi], c.budget);
     return { rows, note: 'no refund path exists in the service — each hit is a manual reconciliation' };
   } },
