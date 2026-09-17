@@ -19,7 +19,8 @@
   const api = (p, opt) => fetch((window.API_BASE || window.CONSOLE_BASE || '') + p, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opt || {}))
     .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; });
   const bytes = n => n == null ? '—' : n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(2) + ' MB';
-  const h3 = (title, desc) => `<div class="cs-h3">${esc(title)}</div>${desc ? `<div class="cs-h3d">${esc(desc)}</div>` : ''}`;
+  const SN = () => (window.CST_SEC && window.CST_SEC.api) || 2;    // renumbers itself if a section above is hidden
+  const h3 = (n, title, desc) => `<div class="cs-h3"><span class="cs-h3n">${esc(SN() + '.' + n)}</span><span class="cs-h3t">${esc(title)}</span><i></i></div>${desc ? `<div class="cs-h3d">${esc(desc)}</div>` : ''}`;
 
   /* the three identifiers every endpoint draws from — typed once at the top, applied to all five */
   const SHARED = [['SpTicketNumber', 'Complaint number (REQ)', 'REQ000003020009'],
@@ -94,7 +95,7 @@
   async function render(host) {
     if (!host) return;
     host.innerHTML = `<div id="csApi"><style>${STYLE}</style>
-      ${h3('4.1 — One ticket, all five endpoints', 'Type the complaint number and service number once and they fill every endpoint that declares them. Run all five answers, in one pass, what the regulator receives for that ticket — read it against what Remedy holds for the same ticket in section 1.')}
+      ${h3(1, 'One ticket, all five endpoints', 'Type the complaint number and service number once and they fill every endpoint that declares them. Run all five answers, in one pass, what the regulator receives for that ticket — read it against what Remedy holds for the same ticket in the live section above.')}
       <div class="topo-card cs-card">
         <div class="cs-ch"><b>Ticket under examination</b><span class="cs-dim" id="axBar">loading…</span></div>
         <div class="ax-note" style="margin-bottom:10px">Spec <b>CITC006001 v6.2</b>, the same five POST endpoints as the Salam Swagger. Calls run from the console server, so the api key never reaches this browser, and every Run is written to the audit log. Nothing typed here is stored.</div>
@@ -108,7 +109,7 @@
           <span class="ax-note" id="axMsg"></span>
         </div>
       </div>
-      ${h3('4.2 — The five endpoints, one at a time', 'Each card is the Swagger operation as published: the body the endpoint declares, the fields it accepts, and the raw answer with its status, time and size. A header collapses its card.')}
+      ${h3(2, 'The five endpoints, one at a time', 'Each card is the Swagger operation as published: the body the endpoint declares, the fields it accepts, and the raw answer with its status, time and size. A header collapses its card.')}
       <div id="axEps"><div class="cs-loading">Loading the endpoint contracts…</div></div></div>`;
     const $ = s => host.querySelector(s);
     host.querySelectorAll('[data-shared]').forEach(i => i.oninput = e => {

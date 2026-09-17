@@ -21,7 +21,8 @@
   const kpi = (label, value, sub, tone) => `<div class="cs-kpi" style="--t:${tone || T.line}"><div class="cs-kl">${esc(label)}</div><div class="cs-kv">${value}</div><div class="cs-ks">${sub || ''}</div></div>`;
   const card = (title, body, right) => `<div class="topo-card cs-card"><div class="cs-ch"><b>${title}</b>${right ? `<span class="cs-dim">${right}</span>` : ''}</div>${body}</div>`;
   const dt = v => { if (!v) return '—'; const s = String(v).replace('T', ' '); return esc(s.slice(0, 19)); };
-  const h3 = (title, desc) => `<div class="cs-h3">${esc(title)}</div>${desc ? `<div class="cs-h3d">${esc(desc)}</div>` : ''}`;
+  const SN = () => (window.CST_SEC && window.CST_SEC.remedy) || 1;   // renumbers itself if a section above is hidden
+  const h3 = (n, title, desc) => `<div class="cs-h3"><span class="cs-h3n">${esc(SN() + '.' + n)}</span><span class="cs-h3t">${esc(title)}</span><i></i></div>${desc ? `<div class="cs-h3d">${esc(desc)}</div>` : ''}`;
   const FIELDS = [['', 'Any identifier'], ['req', 'Complaint number (REQ / SRID)'], ['incident', 'Remedy incident / work order'],
     ['custId', 'Customer number'], ['serviceId', 'Service id'], ['orderNo', 'Order number'], ['idNumber', 'National / Iqama id']];
   /* Windows. 1 / 3 / 7 answer "what is happening right now", 30 / 90 are the operating view (90 is also the
@@ -66,28 +67,34 @@
     #csRemedy .rx-note{font-size:11.5px;color:var(--muted)} #csRemedy .rx-note b{color:var(--ink)}
     #csRemedy .rx-warn{border-left:4px solid var(--xo-p1,#dc2626);background:rgba(220,76,76,.07);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-bottom:10px}
     #csRemedy .rx-bars{display:flex;flex-direction:column;gap:6px;margin-top:4px}
-    #csRemedy .rx-b{display:grid;grid-template-columns:minmax(90px,1.6fr) 1fr auto;gap:10px;align-items:center;font-size:12.5px}
-    #csRemedy .rx-b i{display:block;height:8px;border-radius:999px;background:var(--line)} #csRemedy .rx-b i span{display:block;height:100%;border-radius:999px}
-    #csRemedy .rx-b b{font-variant-numeric:tabular-nums}
-    @media (max-width:700px){#csRemedy table.rx-tbl{min-width:600px} #csRemedy .rx-x .rx-in2{position:sticky;left:0;width:calc(100vw - 96px);max-width:calc(100vw - 96px)}}
+    #csRemedy .rx-bars{--rx-lbl:172px;--rx-val:62px;--rx-sub:82px}
+    #csRemedy .rx-b{display:grid;grid-template-columns:var(--rx-lbl) minmax(0,1fr) var(--rx-val) var(--rx-sub);gap:10px;align-items:center;font-size:12.5px}
+    #csRemedy .rx-b i{display:block;height:8px;border-radius:999px;background:var(--line)} #csRemedy .rx-b i span{display:block;height:100%;border-radius:999px;transition:width .45s cubic-bezier(.2,.8,.2,1)}
+    #csRemedy .rx-b b{font-variant-numeric:tabular-nums;text-align:right}
+    #csRemedy .rx-b em{font-style:normal;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+    @media (max-width:980px){#csRemedy .rx-bars{--rx-lbl:132px;--rx-sub:66px}}
+    @media (max-width:700px){#csRemedy table.rx-tbl{min-width:600px} #csRemedy .rx-x .rx-in2{position:sticky;left:0;width:calc(100vw - 96px);max-width:calc(100vw - 96px)} #csRemedy .rx-bars{--rx-lbl:104px;--rx-val:52px;--rx-sub:0px;gap:7px} #csRemedy .rx-b{gap:8px;font-size:12px} #csRemedy .rx-b em{display:none}}
   `;
+  /* One grid for every bar block on the page: the label column, the value column and the note column are all
+     fixed, so the tracks start on the same vertical line and the numbers end on the same one — which is the
+     only way two cards side by side can be read against each other. */
   const bars = items => { const max = Math.max(1, ...items.map(i => i.n)); return `<div class="rx-bars">${items.map(i =>
-    `<div class="rx-b"><span class="rx-cut" title="${esc(i.label)}">${esc(i.label)}</span><i><span style="width:${Math.round(i.n / max * 100)}%;background:${i.color || T.info}"></span></i><b>${num(i.n)}${i.sub ? ` <span class="rx-note">${esc(i.sub)}</span>` : ''}</b></div>`).join('')}</div>`; };
+    `<div class="rx-b"><span class="rx-cut" title="${esc(i.label)}">${esc(i.label)}</span><i><span style="width:${Math.round(i.n / max * 100)}%;background:${i.color || T.info}"></span></i><b>${num(i.n)}</b><em>${i.sub ? esc(i.sub) : ''}</em></div>`).join('')}</div>`; };
 
   async function render(host) {
     if (!host) return;
     host.innerHTML = `<div id="csRemedy"><style>${STYLE}</style>
       <div class="rx-bar" style="margin-bottom:10px"><span class="rx-note" id="rxBar">connecting…</span></div>
-      ${h3('1.1 — The window you are looking at', 'Every figure below is counted over this window, as complaints rather than rows. A window costs one scan of the view, so the answer is cached server-side and a window already read is free to return to.')}
+      ${h3(1, 'The window you are looking at', 'Every figure below is counted over this window, as complaints rather than rows. A window costs one scan of the view, so the answer is cached server-side and a window already read is free to return to.')}
       <div class="rx-row" style="margin-bottom:12px">
         <span class="rx-note" style="margin-right:2px">Window:</span>
         ${WINDOWS.map(([d, l]) => `<button type="button" class="rx-chip${S.days === d ? ' on' : ''}" data-days="${d}">${l}</button>`).join('')}
         <span class="rx-note" id="rxCost" style="margin-left:auto"></span>
       </div>
       <div id="rxKpis"></div>
-      ${h3('1.2 — Find one complaint', 'Search any identifier an engineer actually holds — a CST complaint number, a Remedy incident, a customer or service id, an order number or a national id. Rows are read from ARSystem, shown once and never stored; names and ids arrive masked.')}
+      ${h3(2, 'Find one complaint', 'Search any identifier an engineer actually holds — a CST complaint number, a Remedy incident, a customer or service id, an order number or a national id. Rows are read from ARSystem, shown once and never stored; names and ids arrive masked.')}
       <div class="topo-card cs-card">
-        <div class="cs-ch"><b>Find a complaint</b><span class="cs-dim">any identifier · queried on ARSystem, never stored · every search is audited</span></div>
+        <div class="cs-ch" style="justify-content:flex-end;margin-bottom:2px"><span class="cs-dim">any identifier · queried on ARSystem, never stored · every search is audited</span></div>
         <div class="rx-row">
           <input id="rxQ" class="rx-in" placeholder="REQ / SRID · Remedy incident · customer number · service id · order no · national id" autocomplete="off" spellcheck="false" value="${esc(S.term)}">
           <select id="rxField" class="rx-in">${FIELDS.map(([v, l]) => `<option value="${v}"${S.field === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
@@ -96,7 +103,7 @@
         </div>
         <div id="rxOut"></div>
       </div>
-      ${h3('1.3 — What the window says that the snapshot cannot', 'Asked of ARSystem directly, and unanswerable from the dated snapshot: what the duplicate rows really are, how long the open complaints have been open, where they concentrate, which tickets carry no CST complaint number and which carry no CST code. Each one says how it was counted.')}
+      ${h3(3, 'What the window says that a dated extract cannot', 'Asked of ARSystem directly, and unanswerable from the dated snapshot: what the duplicate rows really are, how long the open complaints have been open, where they concentrate, which tickets carry no CST complaint number and which carry no CST code. Each one says how it was counted.')}
       <div id="rxFindings"></div></div>`;
     const $ = s => host.querySelector(s);
     $('#rxGo').onclick = () => run(host);
@@ -234,9 +241,9 @@
     CITC_SERVICE_MAINTYPECODE: 'CST service code', CITC_SERVICE_SUBTYPECODE: 'CST service sub-code', RAW_ROWS: 'Rows in the view' };
   function detail(cell, r) {
     const keys = Object.keys(r).filter(k => !LONG.includes(k));
-    /* the same ticket, asked of CST: section 4 answers what the regulator receives for it */
+    /* the same ticket, asked of CST: the API section answers what the regulator receives for it */
     const ask = window.cstApi && (r.SERVICE_REQUESTID || r.ITC_SERVICE_ID)
-      ? `<div class="rx-row" style="margin:0 0 10px"><button type="button" class="cs-btn ghost" data-ask="1">Ask the CST APIs about this complaint ↓</button><span class="rx-note">fills section 4 with ${esc(r.SERVICE_REQUESTID || r.ITC_SERVICE_ID)}</span></div>` : '';
+      ? `<div class="rx-row" style="margin:0 0 10px"><button type="button" class="cs-btn ghost" data-ask="1">Ask the CST APIs about this complaint ↓</button><span class="rx-note">fills the CST API section with ${esc(r.SERVICE_REQUESTID || r.ITC_SERVICE_ID)}</span></div>` : '';
     cell.innerHTML = `<div class="rx-in2">${ask}<div class="rx-kv">${keys.map(k => `<div><span class="k">${esc(LABEL[k] || k)}</span><span class="v">${/DATE$/.test(k) ? dt(r[k]) : (r[k] == null || r[k] === '' ? '—' : esc(r[k]))}</span></div>`).join('')}</div>
       ${LONG.filter(k => r[k]).map(k => `<div class="rx-long"><span class="k rx-note">${esc(LABEL[k] || k)}</span><pre>${esc(r[k])}</pre></div>`).join('')}</div>`;
     const b = cell.querySelector('[data-ask]');
