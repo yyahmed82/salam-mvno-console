@@ -31,7 +31,8 @@
     SETTINGS:'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
     AI:'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3"/></svg>',
     'IT GOVERNANCE':'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>',
-    'REGULATORY AFFAIRS':'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 7h18M6 7l-3 7a3 3 0 0 0 6 0L6 7zM18 7l-3 7a3 3 0 0 0 6 0l-3-7"/></svg>'
+    'REGULATORY AFFAIRS':'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 7h18M6 7l-3 7a3 3 0 0 0 6 0L6 7zM18 7l-3 7a3 3 0 0 0 6 0l-3-7"/></svg>',
+    'NOC WALL':'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>'
   };
   const SECT_DEFAULT={ SETTINGS:true };
   const skey=g=>`settsect:${g}`;
@@ -71,7 +72,7 @@
     });
     /* the group holding the current page opens itself, once per page change */
     const h=(location.hash||"").replace(/^#/,"").split("?")[0];
-    const map={ "arqami":"REGULATORY AFFAIRS","cst-escalations":"REGULATORY AFFAIRS","cst":"REGULATORY AFFAIRS","sla":"IT GOVERNANCE","slo":"IT GOVERNANCE","slo-settings":"IT GOVERNANCE","vendor-contracts":"IT GOVERNANCE","vendors":"IT GOVERNANCE","agents":"AI","settings-agents":"AI","settings-assist":"AI","settings-assist-clone":"AI" };
+    const map={ "noc":"NOC WALL","arqami":"REGULATORY AFFAIRS","cst-escalations":"REGULATORY AFFAIRS","cst":"REGULATORY AFFAIRS","sla":"IT GOVERNANCE","slo":"IT GOVERNANCE","slo-settings":"IT GOVERNANCE","vendor-contracts":"IT GOVERNANCE","vendors":"IT GOVERNANCE","agents":"AI","settings-agents":"AI","settings-assist":"AI","settings-assist-clone":"AI" };
     const want=map[h]; if(want && menu.dataset.auto!==h){ menu.dataset.auto=h; menu.querySelectorAll(".navgroup[data-collapse]").forEach(g=>setSect(g, g.dataset.gkey===want)); }
     if(![...menu.querySelectorAll(".navsect")].some(s=>s.classList.contains("open")&&!s.hidden)){ const first=menu.querySelector(".navgroup[data-collapse]:not([hidden])"); if(first) setSect(first,true); }
   }
@@ -98,6 +99,10 @@
   const vendorContracts=menu.querySelector("[data-vendor-contracts]"); if(vendorContracts) vendorContracts.addEventListener("click", ()=>{ if(window.openVendorContracts){ window.openVendorContracts(); if(location.hash!=="#vendor-contracts") location.hash="#vendor-contracts"; } closeMenu(); });
   const sloSettings=menu.querySelector("[data-slo-settings]"); if(sloSettings) sloSettings.addEventListener("click", ()=>{ if(window.openSloSettings){ window.openSloSettings(); if(location.hash!=="#slo-settings") location.hash="#slo-settings"; } closeMenu(); });
   menu.querySelectorAll("[data-cst]").forEach(b=>b.addEventListener("click", ()=>{ const h=b.dataset.cst==="arqami"?"arqami":"cst-escalations"; if(window.setConsoleHash) window.setConsoleHash(h); else location.hash="#"+h; if(window.openCst) window.openCst(b.dataset.cst); closeMenu(); }));
+  /* NOC WALL (18 Sep 2026): the two wall entries are real .navtab buttons — router.js routes them and
+   * app.js activates the view, so all this menu owes them is to get out of the way. The gear does not
+   * light up for them: the wall is a page, not a settings segment. */
+  menu.querySelectorAll(".navtab").forEach(b=>b.addEventListener("click", ()=>{ gear.classList.remove("on"); closeMenu(); }));
   document.addEventListener("click", e=>{ if(!e.target.closest(".setwrap")) closeMenu(); });
   document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeMenu(); });
   // leaving settings via a nav tab clears the gear highlight

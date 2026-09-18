@@ -253,10 +253,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const am = document.getElementById("auditMenuItem"); if(am) am.style.display = (SES.me && SES.me.realRole==="super_admin" && SES.me.root!==false)?"":"none";
     // Tickets & feedback board — manageUsers (super_admins / admins). Raising a ticket stays open to all.
     const tm = document.getElementById("ticketsMenuItem"); if(tm) tm.style.display = can("manageUsers")?"":"none";
-    // On-call view — an incident tool: only roles that work incidents (Troubleshoot or Alerts
-    // pages) see it. A Call Center agent has no on-call duty (Yosri, 2 Sep).
-    const oc = document.getElementById("hmOncall");
-    if(oc) oc.style.display = (views.includes("errors")||views.includes("alerts")) ? "" : "none";
+    // On-call view — removed from the "?" menu on 18 Sep 2026. It is the "On-call" tab of each Alerts
+    // page (alertsview.js → renderOncallInto), and #oncall / #fixed-oncall still open it full screen.
     // L2 Workbench menu item — only roles holding the 'workbench' view see it (server requireView gates access)
     const wm = document.getElementById("workbenchMenuItem"); if(wm) wm.style.display = "none";   // 16 Sep 2026: removed from the gear menu by design (#workbench stays reachable by hash)
     // Yusr config page — root tier only once ROOT_ADMINS is set (root stays true for all when unset)

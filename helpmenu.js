@@ -4,13 +4,14 @@
   const btn=document.getElementById("tourBtn");
   const menu=document.getElementById("helpMenu");
   if(!btn||!menu) return;
-  const EXPLORE=new Set(["topology","explorer","integrations"]);
+  const EXPLORE=new Set(["topology","explorer","integrations"]);   // NOC wall moved to the gear menu (18 Sep 2026)
 
   function open(){
-    // close the sibling settings (gear) menu so only one popover is open at a time
-    const sm=document.getElementById("settingsMenu"); if(sm) sm.classList.remove("open");
+    // one popover at a time: the business dropdowns and the ⚙ menu close themselves on this event
+    document.dispatchEvent(new CustomEvent("navpop",{detail:"help"}));
     menu.classList.add("open"); btn.classList.add("on");
   }
+  document.addEventListener("navpop", e=>{ if(e.detail!=="help" && menu.classList.contains("open")) close(); });
   function close(){ menu.classList.remove("open"); syncBtn(); }
   function toggle(e){ e.stopPropagation(); menu.classList.contains("open")?close():open(); }
   // reflect whether an EXPLORE view is the current one

@@ -8,7 +8,14 @@
   "use strict";
   const drops=()=>Array.from(document.querySelectorAll(".navdrop"));
   const closeAll=()=>drops().forEach(d=>{ d.classList.remove("open"); const b=d.querySelector(".navdrop-btn"); if(b) b.setAttribute("aria-expanded","false"); });
-  const openOne=d=>{ closeAll(); d.classList.add("open"); const b=d.querySelector(".navdrop-btn"); if(b) b.setAttribute("aria-expanded","true"); };
+  /* ONE popover at a time (16 Sep 2026): the two business dropdowns, the ⚙ settings menu and the ? menu all
+   * announce themselves on `navpop`; every other popover closes itself on hearing it. Before this, ⚙ and Fixed
+   * could sit open on top of each other (the gear button stops click propagation, so the outside-click close
+   * never reached the dropdown). */
+  const announce=who=>document.dispatchEvent(new CustomEvent("navpop",{detail:who}));
+  document.addEventListener("navpop", e=>{ if(e.detail!=="navdrop") closeAll(); });
+  const openOne=d=>{ announce("navdrop"); closeAll(); d.classList.add("open"); const b=d.querySelector(".navdrop-btn"); if(b) b.setAttribute("aria-expanded","true");
+    if(window.navSectReveal) window.navSectReveal(d); };
   function pageName(t){ const sp=t.querySelector("span:not(.num)"); if(!sp) return t.textContent.trim(); const tn=Array.from(sp.childNodes).find(n=>n.nodeType===3&&n.textContent.trim()); return tn?tn.textContent.trim():sp.textContent.trim(); }
   function sync(){
     if(window.FIXED_PAGES) document.querySelectorAll('.navtab[data-fxtab]').forEach(b=>{ if(!window.FIXED_PAGES[b.dataset.fxtab]) b.classList.add("hidden"); });

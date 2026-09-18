@@ -3,6 +3,51 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.40] — 2026-09-18 — Monitoring is a level of its own; the NOC wall moves to ⚙
+### Changed
+- **The business menus have a second level.** A section (OPERATE / EXPLORE) can now hold a named family of pages
+  that folds on its own, one indent in, with its own page count — same disclosure behaviour, remembered per
+  business, and folding one family never folds the section around it (`adaptive.js`, built from a
+  `<div class="navsubg" data-sub="k">` label plus the `.navtab[data-sub="k"]` rows below it in `index.html`).
+- **Mobile › OPERATE › MONITORING** now holds **Connectivity & APIs** (the page formerly listed as "Monitoring")
+  and **DMS**. The two are the same thing seen from two sides — the rails and providers, and the dealers riding
+  them — so they read as one family instead of two unrelated rows.
+- **Fixed › OPERATE › MONITORING** now holds the four digital channels — **Epurchase**, **Salam Home**,
+  **SDA map**, **QR codes** — so Fixed opens the same way Mobile does: dashboard, then what you watch, then
+  Troubleshoot / Alerts / Reports.
+- **NOC WALL left the "?" menu for ⚙ Settings**, where it is a collapsible group of its own (Alert radar · Key
+  indicators) between SETTINGS and AI. `#noc` and `#noc?w=kpi` are unchanged, the group opens itself when one of
+  the walls is the current page, and the "?" button no longer lights up for them.
+### Removed
+- **On-call view is gone from the "?" menu.** It was never its own destination: the same snapshot is the **On-call**
+  tab of each Alerts page, and `#oncall` / `#fixed-oncall` still open it full screen for the on-call phone.
+
+## [2.0.0-alpha.39] — 2026-09-16 — NOC walls, top nav: one popover at a time, sectioned business menus
+### Added
+- **NOC walls** under ? › NOC WALL (`nocwall.js`, permission `dashboard`): `#noc` = the Executive **alert radar**
+  alone, `#noc?w=kpi` = the **North-star key indicators** alone — the same `EXECOPS.render` sections the
+  Executive Dashboard draws, framed for a TV: no header / chrome, a strip with the live KSA clock and the open
+  counts (total · P1 · P2 · P3 · Mobile / Fixed), refresh every 60 s, **F** = fullscreen, **Esc** / Exit wall back to
+  `#exec`, a switch between the two walls, sizes in `vh`/`vw` so a 4K screen fills.
+  The wall re-draws only when the payload changed (signature of the radar / KPI data), ignores `opsdatarefresh`
+  and the 5-min self-refresh, so the sweep, pings and typewriter run uninterrupted.
+- **Executive Dashboard no longer carries the radar** — it moved to the NOC wall; a **◉ NOC wall** button sits in
+  the page header next to the executive brief.
+### Fixed
+- **Two menus open at once.** The Mobile / Fixed dropdowns, the ⚙ settings menu and the ? menu did not know about
+  each other (the gear button stops click propagation, so the dropdown's outside-click close never fired), so a Fixed
+  panel could sit on top of an open settings menu on the Executive page. They now share one `navpop` event: opening
+  any of them closes the others (`navdrop.js`, `settingsmenu.js`, `helpmenu.js`).
+### Changed
+- **Mobile / Fixed menus are two-level menus** on the desktop and in the phone drawer (`adaptive.js` builds them from
+  the plain OPERATE / EXPLORE labels; the items are the same `.navtab` buttons, so roles, routing and the tour are
+  untouched). A head names the business (icon · name · tagline); OPERATE and EXPLORE are disclosure rows with a
+  page count that fold with an animated height; they behave as an accordion (opening one folds the other, so the
+  panel is never taller than its biggest level); the level holding the current page opens itself once per page
+  change; the choice is remembered per business; a level a role cannot see disappears with its header. Items
+  enter with a staggered slide each time the menu opens; folded rows are not focusable. Panel capped to the
+  viewport with a thin scrollbar; rows tightened (28 px icons).
+
 ## [2.0.0-alpha.38] — 2026-09-16 — Exec radar: Fixed alerts on the face, 12-hour clock
 ### Fixed
 - **Executive dashboard › Alert radar showed `Fixed 0 open / 0` while Fixed › Alerts had 12 open.** The radar's Fixed

@@ -40,49 +40,121 @@
   window.addEventListener("hashchange",closeDrawer);
   document.addEventListener("click",e=>{ if(!document.body.classList.contains("nav-open")) return; const h=e.target.closest("header"); if(h&&!e.target.closest("nav")&&!e.target.closest("#navBurger")) closeDrawer(); },true);
 
-  /* ---------- collapsible EXPLORE inside each business group ----------
-   * A phone drawer that lists 12 Mobile rows buries the Fixed group below the fold. Each group's OPERATE rows stay
-   * open (the daily pages); its EXPLORE rows (docs, topology, journeys…) fold behind their own label, so Mobile and
-   * Fixed are both reachable without scrolling. Opens itself when the current page lives inside it. Drawer only —
-   * the desktop dropdown ignores .exp-open entirely. */
+  /* ---------- sectioned business menus: OPERATE / EXPLORE as collapsible levels ----------
+   * (16 Sep 2026) Each business dropdown is a small two-level menu, on the desktop AND in the phone drawer:
+   *   head      the business (icon · name · tagline) — the panel says what it is
+   *   section   OPERATE (the daily pages, open by default) · EXPLORE (docs, topology, journeys — folded behind its
+   *             label with a count), each a disclosure row that remembers its state per business
+   *   items     staggered entrance on open, hover slide, active row with the green rail
+   * The section holding the current page opens itself. A section a role cannot see (every item .hidden) vanishes
+   * with its header, so nobody gets an empty disclosure. Markup is built once from the plain OPERATE/EXPLORE
+   * labels in index.html, so role scoping (ops.js), routing (router.js, navdrop.js) and the tour are untouched:
+   * the items are still the same .navtab buttons, only wrapped. */
+  const SECT_DEFAULT={OPERATE:true,"OPERATE/MON":true};
+  /* both levels answer to the same disclosure code: a top-level .navgroup (OPERATE / EXPLORE) and a
+   * second-level .navsubg (MONITORING). SIBS keeps the accordion inside one level — folding OPERATE
+   * must not fold the MONITORING row that lives inside it, and vice versa. */
+  const GSEL=".navgroup[data-collapse],.navsubg[data-collapse]";
+  const SIBS=g=>Array.from(g.parentElement.querySelectorAll(":scope > .navgroup[data-collapse], :scope > .navsubg[data-collapse]"));
+  const sectKey=(drop,g)=>`navsect:${drop}:${g}`;
+  const sectWanted=(drop,g)=>{ try{ const v=localStorage.getItem(sectKey(drop,g)); if(v==="1") return true; if(v==="0") return false; }catch(_){} return !!SECT_DEFAULT[g]; };
+  const sectRemember=(drop,g,open)=>{ try{ localStorage.setItem(sectKey(drop,g), open?"1":"0"); }catch(_){} };
+  const SECT_ICON={
+    OPERATE:'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6 4 4 6-6"/></svg>',
+    EXPLORE:'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-2 6-4 2 2-6z"/></svg>'
+  };
+  const SUB_ICON={
+    mon:'<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3.2l2-5 3.4 10 2.4-7 1.4 2H21"/></svg>'
+  };
+  const titleCase=k=>k.charAt(0)+k.slice(1).toLowerCase();
   function markGroups(){
-    document.querySelectorAll(".navdrop-panel").forEach(panel=>{
-      let key="";
+    document.querySelectorAll(".navdrop").forEach(drop=>{
+      const panel=drop.querySelector(".navdrop-panel"); if(!panel||panel.dataset.sect) return;
+      panel.dataset.sect="1";
+      const dkey=drop.dataset.drop||"";
+      /* head: the business itself, taken from its own button so the two never drift apart */
+      const btn=drop.querySelector(".navdrop-btn");
+      if(btn){
+        const ic=btn.querySelector(".num"), lab=btn.querySelector("span:not(.num)");
+        const name=lab?Array.from(lab.childNodes).filter(n=>n.nodeType===3).map(n=>n.textContent).join("").trim():"";
+        const tag=lab&&lab.querySelector("small")?lab.querySelector("small").textContent.trim():"";
+        const head=document.createElement("div"); head.className="navdrop-head";
+        head.innerHTML=`<span class="nh-ic">${ic?ic.innerHTML:""}</span><span class="nh-t"><b>${name}</b><small>${tag}</small></span>`;
+        panel.insertBefore(head, panel.firstChild);
+      }
+      /* sections: every OPERATE / EXPLORE label becomes a disclosure row followed by a wrapper of its items */
+      let sect=null, key="", i=0, subs={};
       Array.from(panel.children).forEach(el=>{
         if(el.classList.contains("navgroup")){
-          // gkey is stamped once: rewriting the label adds the chevron, so textContent is not a stable key
-          key=el.dataset.gkey||(el.textContent||"").trim().toUpperCase();
-          if(!el.dataset.gkey){
-            el.dataset.gkey=key;
-            if(key==="EXPLORE"){
-              el.dataset.collapse="1"; el.setAttribute("role","button"); el.tabIndex=0;
-              el.innerHTML=`<span>${el.textContent.trim()}</span><b class="ngn"></b><i class="ngc" aria-hidden="true">▾</i>`;
-            }
-          }
-        } else if(el.classList.contains("navtab")) el.dataset.navgroup=key;
+          key=(el.textContent||"").trim().toUpperCase(); i=0; subs={};
+          el.dataset.gkey=key; el.dataset.collapse="1"; el.setAttribute("role","button"); el.tabIndex=0;
+          el.innerHTML=`<span class="ngi">${SECT_ICON[key]||""}</span><span class="ngl">${titleCase(key)}</span><b class="ngn"></b><i class="ngc" aria-hidden="true">▾</i>`;
+          sect=document.createElement("div"); sect.className="navsect"; sect.dataset.gkey=key;
+          sect.innerHTML='<div class="navsect-in"></div>';
+          el.after(sect);
+          const open=sectWanted(dkey,key); sect.classList.toggle("open",open); el.setAttribute("aria-expanded",open?"true":"false");
+        } else if(el.classList.contains("navsubg")&&sect){
+          /* second level: the label row plus a wrapper that collects the .navtab[data-sub=<k>] rows below it */
+          const sk=(el.dataset.sub||"").toLowerCase(), lab=(el.textContent||"").trim();
+          const gk=`${key}/${sk.toUpperCase()}`;
+          el.dataset.gkey=gk; el.dataset.collapse="1"; el.setAttribute("role","button"); el.tabIndex=0;
+          el.innerHTML=`<span class="ngi">${SUB_ICON[sk]||""}</span><span class="ngl">${lab}</span><b class="ngn"></b><i class="ngc" aria-hidden="true">▾</i>`;
+          const wrap=document.createElement("div"); wrap.className="navsect navsub"; wrap.dataset.gkey=gk;
+          wrap.innerHTML='<div class="navsect-in"></div>';
+          const host=sect.querySelector(".navsect-in"); host.appendChild(el); host.appendChild(wrap);
+          const open=sectWanted(dkey,gk); wrap.classList.toggle("open",open); el.setAttribute("aria-expanded",open?"true":"false");
+          subs[sk]=wrap;
+        } else if(el.classList.contains("navtab")&&sect){
+          el.dataset.navgroup=key; el.style.setProperty("--i", i++);
+          const sk=(el.dataset.sub||"").toLowerCase(), into=(sk&&subs[sk])?subs[sk]:sect;
+          into.querySelector(".navsect-in").appendChild(el);
+        }
       });
     });
   }
+  const setSect=(g,open)=>{ const sect=g.nextElementSibling; if(!sect||!sect.classList.contains("navsect")) return;
+    sect.classList.toggle("open",open); g.setAttribute("aria-expanded",open?"true":"false"); };
+  /* accordion: opening a level folds its siblings, so the panel is never taller than its biggest level */
+  function sectToggle(g){
+    const sect=g.nextElementSibling; if(!sect||!sect.classList.contains("navsect")) return;
+    const open=!sect.classList.contains("open"), drop=g.closest(".navdrop"), dkey=drop?drop.dataset.drop:"";
+    if(open) SIBS(g).forEach(o=>{ if(o!==g){ setSect(o,false); sectRemember(dkey,o.dataset.gkey,false); } });
+    setSect(g,open); sectRemember(dkey, g.dataset.gkey, open);
+  }
   // capture phase: navdrop.js stops click propagation inside .navdrop-panel, so a bubble listener never sees this
   document.addEventListener("click",e=>{
-    const g=e.target.closest&&e.target.closest(".navdrop-panel .navgroup[data-collapse]"); if(!g||!mqDrawer.matches) return;
-    e.stopPropagation(); e.preventDefault(); g.parentElement.classList.toggle("exp-open");
+    const g=e.target.closest&&e.target.closest(".navdrop-panel .navgroup[data-collapse],.navdrop-panel .navsubg[data-collapse]"); if(!g) return;
+    e.stopPropagation(); e.preventDefault(); sectToggle(g);
   },true);
   document.addEventListener("keydown",e=>{
     if(e.key!=="Enter"&&e.key!==" ") return;
-    const g=e.target.closest&&e.target.closest(".navdrop-panel .navgroup[data-collapse]"); if(!g||!mqDrawer.matches) return;
-    e.preventDefault(); g.parentElement.classList.toggle("exp-open");
+    const g=e.target.closest&&e.target.closest(".navdrop-panel .navgroup[data-collapse],.navdrop-panel .navsubg[data-collapse]"); if(!g) return;
+    e.preventDefault(); sectToggle(g);
   },true);
   function syncGroups(){
     markGroups();
     document.querySelectorAll(".navdrop-panel").forEach(panel=>{
-      const act=panel.querySelector(".navtab.active");
-      if(act&&act.dataset.navgroup==="EXPLORE") panel.classList.add("exp-open");
-      const g=panel.querySelector('.navgroup[data-collapse] .ngn');
-      if(g){ const n=panel.querySelectorAll('.navtab[data-navgroup="EXPLORE"]:not(.hidden)').length; g.textContent=n||""; g.hidden=!n;
-             panel.querySelector('.navgroup[data-collapse]').hidden=!n; }   // role sees no Explore page → no empty disclosure
+      panel.querySelectorAll(GSEL).forEach(g=>{
+        const sect=g.nextElementSibling; if(!sect) return;
+        const items=Array.from(sect.querySelectorAll(".navtab")).filter(t=>!t.classList.contains("hidden")&&t.style.display!=="none");
+        items.forEach((t,i)=>t.style.setProperty("--i",i));
+        const n=items.length, ngn=g.querySelector(".ngn"); if(ngn){ ngn.textContent=n||""; ngn.hidden=!n; }
+        g.hidden=!n; sect.hidden=!n;                                   // role sees no page here → no empty disclosure
+        /* the section holding the current page opens itself — once per page change, so a user who folds it
+         * by hand is not fought by the next sync tick */
+        const act=items.find(t=>t.classList.contains("active"));
+        const id=act?`${act.dataset.view||""}:${act.dataset.fxtab||""}`:"";
+        if(act&&sect.dataset.auto!==id){ sect.dataset.auto=id; if(!sect.classList.contains("open")){
+          SIBS(g).forEach(o=>{ if(o!==g) setSect(o,false); });
+          setSect(g,true); } }
+      });
     });
   }
+  /* re-run the staggered entrance each time a dropdown opens (navdrop.js calls this) */
+  window.navSectReveal=function(drop){
+    const panel=drop.querySelector(".navdrop-panel"); if(!panel) return;
+    panel.classList.remove("reveal"); void panel.offsetWidth; panel.classList.add("reveal");
+  };
 
   /* ---------- bottom tab bar ---------- */
   const ICON={
