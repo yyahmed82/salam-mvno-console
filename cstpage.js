@@ -139,7 +139,11 @@
     if (s.cappedMinutes) findings.push(`<b>${s.cappedMinutes} minutes hit the ${ms(s.timeoutCapMs)} ceiling</b> — the service reports them as success, so timeouts are invisible in the failure count; a latency SLO (p95 < 1 s) is the honest measure here, not the error rate.`);
     if (s.gapMinutes) findings.push(`<b>${s.gapMinutes} silent minute${s.gapMinutes === 1 ? '' : 's'}</b> (${s.gaps.map(g => `${g.from}→${g.to}`).join(', ')}) with no request recorded — either no traffic reached the API or the export lost the rows; both deserve a look at the IIS / .NET logs for that window.`);
     if (!findings.length) findings.push('Nothing abnormal in this day: no failures, no slow minutes, no silent minutes.');
-    host.innerHTML = head + jumpBar() + qsec('behaviour', covered ? `${esc(d.day)} · ${esc(covered)}` : esc(d.day)) + dailyHtml + `<div class="cs-ah" style="margin-top:4px">Day in detail · ${esc(d.day)}${d.day === days.today ? ' (today, so far)' : ''}</div>` + kpis + `
+    const dayRow = (daily.rows || []).find(x => x.day === d.day);
+    const dayWarn = dayRow && dayRow.incomplete
+      ? banner(T.bad, `<b>This day was never fully read.</b> Oracle holds <b>${num(dayRow.oracle_requests)}</b> requests for ${esc(d.day)}; the console has ${num(dayRow.requests)} across ${num(dayRow.minutes)} minutes. Everything below describes the part that was read — the missing minutes are unread, not quiet. Use <b>Verify &amp; repair</b> in the Source panel.`)
+      : '';
+    host.innerHTML = head + jumpBar() + qsec('behaviour', covered ? `${esc(d.day)} · ${esc(covered)}` : esc(d.day)) + dailyHtml + `<div class="cs-ah" style="margin-top:4px">Day in detail · ${esc(d.day)}${d.day === days.today ? ' (today, so far)' : ''}</div>` + dayWarn + kpis + `
       <div class="cs-grid2">
         ${card('Requests per minute', area(pts, { color: T.info }), covered)}
         ${card('Average latency per minute', area(lat, { color: T.warn, hline: { y: s.timeoutCapMs, label: 'timeout ceiling ' + ms(s.timeoutCapMs) }, ymax: 2700, band: bandColor, fmt: v => Math.round(v) + ' ms' }), 'green band = fast (< 150 ms) · red band = slow (> 1 s)')}
@@ -169,15 +173,22 @@
       ${kpi('Failed', num(t.failed), t.failed ? `${(t.failed / Math.max(1, t.requests) * 100).toFixed(3)}% of requests` : 'the service reports every request as success — timeouts hide in latency', t.failed ? T.bad : T.ok)}
       ${kpi('Avg latency', ms(t.avg_ms), t.slowest ? `slowest day ${t.slowest.day.slice(5)} · ${ms(t.slowest.avg_ms)}` : '', t.avg_ms > 1000 ? T.bad : t.avg_ms > 500 ? T.warn : T.ok)}
       ${kpi('Timeout-cap minutes', num(t.capped_minutes), `${num(t.slow_minutes)} slow minutes (avg > 1 s) over the period`, t.capped_minutes ? T.warn : T.ok)}
-      ${kpi('Silent minutes', num(t.silent_minutes), 'minutes with no request in complete days', t.silent_minutes > 30 ? T.bad : t.silent_minutes ? T.warn : T.ok)}
+      ${(() => { const bad = R.filter(x => x.incomplete); return bad.length
+        ? kpi('Days not fully read', num(bad.length), `${num(bad.reduce((a, x) => a + (x.missing_requests || 0), 0))} requests Oracle holds that the console has not — Verify &amp; repair below`, T.bad)
+        : kpi('Silent minutes', num(t.silent_minutes), 'minutes with no request in fully-read days', t.silent_minutes > 30 ? T.bad : t.silent_minutes ? T.warn : T.ok); })()}
     </div>`;
-    const tbl = `<div class="tscroll"><table class="cs-tbl cs-daily"><thead><tr><th>Day</th><th>Requests</th><th>Failed</th><th>Success</th><th>Avg</th><th>p90</th><th>Max</th><th>Peak /min</th><th>Cap min</th><th>Slow min</th><th>Silent</th><th>Src</th></tr></thead><tbody>${R.slice().reverse().map(x => `<tr class="cs-row ${x.day === selDay ? 'on' : ''}" data-day="${x.day}" title="open ${x.day}"><td class="cs-num"><b>${x.day === daily.today ? 'today' : x.day.slice(5)}</b>${x.complete ? '' : '<span class="cs-dim"> partial</span>'}</td><td class="cs-num">${num(x.requests)}</td><td class="cs-num" style="color:${x.failed ? T.bad : 'inherit'}">${num(x.failed)}</td><td class="cs-num">${x.successPct == null ? '—' : x.successPct.toFixed(2) + '%'}</td><td class="cs-num" style="color:${x.avg_ms > 1000 ? T.bad : x.avg_ms > 500 ? T.warn : 'inherit'}">${ms(x.avg_ms)}</td><td class="cs-num">${ms(x.p90_ms)}</td><td class="cs-num">${ms(x.max_ms)}</td><td class="cs-num">${num(x.peak)}</td><td class="cs-num" style="color:${x.capped_minutes > 20 ? T.bad : x.capped_minutes ? T.warn : 'inherit'}">${num(x.capped_minutes)}</td><td class="cs-num" style="color:${x.slow_minutes > 10 ? T.bad : x.slow_minutes ? T.warn : 'inherit'}">${num(x.slow_minutes)}</td><td class="cs-num" style="color:${x.silent_minutes > 5 ? T.bad : x.silent_minutes ? T.warn : 'inherit'}">${x.complete ? num(x.silent_minutes) : '—'}</td><td><span class="cs-code ${x.live ? 'it' : ''}">${x.live ? 'Oracle' : 'CSV'}</span></td></tr>`).join('')}</tbody></table></div>`;
+    const tbl = `<div class="tscroll"><table class="cs-tbl cs-daily"><thead><tr><th>Day</th><th>Requests</th><th>Failed</th><th>Success</th><th>Avg</th><th>p90</th><th>Max</th><th>Peak /min</th><th>Cap min</th><th>Slow min</th><th>Silent</th><th>Src</th></tr></thead><tbody>${R.slice().reverse().map(x => `<tr class="cs-row ${x.day === selDay ? 'on' : ''}" data-day="${x.day}" title="open ${x.day}"><td class="cs-num"><b>${x.day === daily.today ? 'today' : x.day.slice(5)}</b>${x.incomplete ? `<span class="cs-code" style="color:${T.bad};border-color:color-mix(in srgb,${T.bad} 45%,transparent);margin-left:6px">INCOMPLETE</span>` : x.day === daily.today ? '<span class="cs-dim"> partial</span>' : ''}</td><td class="cs-num"${x.incomplete ? ` style="color:${T.bad}" title="Oracle holds ${num(x.oracle_requests)} requests for this day — the console has read ${num(x.requests)}. Use Verify &amp; repair in the Source panel."` : ''}>${num(x.requests)}${x.incomplete ? `<span class="cs-dim"> of ${num(x.oracle_requests)}</span>` : ''}</td><td class="cs-num" style="color:${x.failed ? T.bad : 'inherit'}">${num(x.failed)}</td><td class="cs-num">${x.successPct == null ? '—' : x.successPct.toFixed(2) + '%'}</td><td class="cs-num" style="color:${x.avg_ms > 1000 ? T.bad : x.avg_ms > 500 ? T.warn : 'inherit'}">${ms(x.avg_ms)}</td><td class="cs-num">${ms(x.p90_ms)}</td><td class="cs-num">${ms(x.max_ms)}</td><td class="cs-num">${num(x.peak)}</td><td class="cs-num" style="color:${x.capped_minutes > 20 ? T.bad : x.capped_minutes ? T.warn : 'inherit'}">${num(x.capped_minutes)}</td><td class="cs-num" style="color:${x.slow_minutes > 10 ? T.bad : x.slow_minutes ? T.warn : 'inherit'}">${num(x.slow_minutes)}</td><td class="cs-num" style="color:${x.silent_minutes > 5 ? T.bad : x.silent_minutes ? T.warn : 'inherit'}" title="${x.incomplete ? 'not counted: this day was not fully read, so an empty minute cannot be told from an unread one' : ''}">${x.incomplete ? '<span class="cs-dim">n/a</span>' : x.complete ? num(x.silent_minutes) : '—'}</td><td><span class="cs-code ${x.live ? 'it' : ''}">${x.live ? 'Oracle' : 'CSV'}</span></td></tr>`).join('')}</tbody></table></div>`;
     return `<div class="cs-ah" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><span>Daily traffic · APPS.YY_REGISTER_NUMBER_AUDIT</span><span class="cs-chips">${rangeChips}</span></div>` + kpis + `
       <div class="cs-grid2">
         ${card('Requests per day <span class="cs-dim">· line = average latency</span>', cols(reqPts, { color: T.info, sel: selDay, line: latLine, lineColor: T.warn, lineMax: 1200, fmt: v => num(Math.round(v)) }), 'click a day to open it · red column = failures that day · light = partial')}
         ${card('Minutes at the 2.5 s timeout ceiling per day', cols(capPts, { color: T.warn, sel: selDay, fmt: v => Math.round(v) }), 'timeouts are reported as success — this is where they show')}
       </div>
-      ${card(`Day by day · last ${daily.days} days`, tbl, 'KSA days · rolled up from the per-minute rows', 'cs-dailycard')}`;
+      ${card(`Day by day · last ${daily.days} days`, tbl, (() => {
+        const bad = R.filter(x => x.incomplete), unver = R.filter(x => !x.verified);
+        if (bad.length) return `<span style="color:${T.bad}">${bad.length} day${bad.length === 1 ? '' : 's'} incomplete — use <b>Verify &amp; repair</b> below</span>`;
+        if (unver.length === R.length) return 'KSA days · rolled up from the per-minute rows · not yet checked against Oracle';
+        return 'KSA days · rolled up from the per-minute rows · totals match Oracle';
+      })(), 'cs-dailycard')}`;
   }
 
   /* ================================================================ ESCALATIONS ================================================================ */
@@ -274,12 +285,14 @@
           <div><span class="cs-kl">Oracle</span><b>${esc(s.user)}@${esc(s.host)}:${s.port}/${esc(s.service)}</b><span class="cs-dim">${esc(s.table)} · ${esc(s.columns.time)} / ${esc(s.columns.success)} / ${esc(s.columns.duration)} · driver ${esc(s.mode || '—')}${s.jvmInfo ? ` · JVM ${esc(s.jvmInfo.java)} up since ${ago(s.jvmInfo.since)}${s.jvmRestarts ? ` · ${s.jvmRestarts} restarts` : ''}` : ''}</span></div>
           ${s.clientError ? `<div><span class="cs-kl">Instant Client</span><b style="color:${T.bad}">${esc(s.clientError)}</b></div>` : ''}
           <div><span class="cs-kl">Poll</span><b style="color:${s.lastError ? T.bad : s.lastPoll ? T.ok : T.warn}">${s.lastError ? 'error' : s.lastPoll ? 'live' : 'waiting'}</b><span class="cs-dim">every ${s.pollSec} s · window ${s.windowMin} min · last ${ago(s.lastPoll)}${s.lastPollMs != null ? ` in ${s.lastPollMs} ms` : ''} · ${num(s.polls)} polls</span></div>
+          <div><span class="cs-kl">Verify</span><b>${(() => { const v = s.verify; if (!v) return 'not run'; return v.running ? `${v.done} / ${v.days} days…` : `${v.checked.length} checked`; })()}</b><span class="cs-dim">${(() => { const v = s.verify; if (!v) return 'compares every day against Oracle\u2019s own count and re-reads the ones that do not add up'; const rep = v.repaired || []; return rep.length ? `${rep.length} day(s) repaired: ${rep.slice(0, 4).map(r => `${r.day} ${num(r.from)}→${num(r.to)}`).join(', ')}${rep.length > 4 ? '…' : ''}` : v.running ? `checking ${esc(v.current || '')}` : 'every day matched'; })()}</span></div>
           <div><span class="cs-kl">Backfill</span><b>${bf ? (bf.running ? `${bf.done} / ${bf.days} days…` : `${bf.days} days done`) : 'not run'}</b><span class="cs-dim">${bf ? `${num(bf.minutes)} minutes · ${num(bf.requests)} requests${bf.current ? ` · reading ${bf.current}` : ''}${bf.errors.length ? ` · ${bf.errors.length} errors: ${esc(bf.errors[0].error)}` : ''}` : `default ${s.backfillDays} days at start-up`}</span></div>
           ${s.lastError ? `<div><span class="cs-kl">Last error</span><b style="color:${T.bad}">${esc(s.lastError)}</b><span class="cs-dim">${ago(s.lastErrorAt)}</span></div>` : ''}
           ${s.probe ? `<div><span class="cs-kl">Probe</span><b>${esc(s.probe.db)} · ${esc(s.probe.oracleNow)}</b><span class="cs-dim">${esc(s.probe.version || '')} · last request ${esc(s.probe.lastRequest || '—')} · ${num(s.probe.todayRows)} rows today</span></div>` : s.probeError ? `<div><span class="cs-kl">Probe</span><b style="color:${T.bad}">${esc(s.probeError)}</b></div>` : ''}
         </div>
         <div class="cs-acts" style="margin-top:10px">
-          <button type="button" class="cs-btn" data-act="backfill" data-days="30">⟲ Backfill 30 days</button>
+          <button type="button" class="cs-btn" data-act="verify" data-days="30">✓ Verify &amp; repair 30 days</button>
+          <button type="button" class="cs-btn ghost" data-act="backfill" data-days="30">⟲ Backfill 30 days</button>
           <button type="button" class="cs-btn ghost" data-act="backfill" data-days="90">⟲ 90 days</button>
           <button type="button" class="cs-btn ghost" data-act="poll">Poll now</button>
           <button type="button" class="cs-btn ghost" data-act="probe">Probe table</button>
@@ -302,6 +315,25 @@
     host.querySelectorAll('[data-act="refresh-day"]').forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = '↻ reading…'; try { const r = await api('/api/cst/arqami/refresh', { method: 'POST', body: JSON.stringify({ day: b.dataset.day }) }); b.textContent = `↻ ${r.minutes} min · ${num(r.requests)} req · ${r.ms} ms`; setTimeout(() => arqami(host), 900); } catch (e) { b.textContent = '↻ ' + e.message; b.disabled = false; } });
     host.querySelectorAll('[data-act="backfill"]').forEach(b => b.onclick = async () => { try { const r = await api('/api/cst/arqami/backfill', { method: 'POST', body: JSON.stringify({ days: Number(b.dataset.days) }) }); srcMsg().textContent = r.job.running ? `backfill started: ${r.job.days} days to read` : 'nothing to read — every day is already in'; setTimeout(() => arqami(host), 2500); } catch (e) { srcMsg().textContent = e.message; } });
     host.querySelectorAll('[data-act="poll"]').forEach(b => b.onclick = async () => { try { const r = await api('/api/cst/arqami/poll', { method: 'POST', body: '{}' }); srcMsg().textContent = r.ok ? `polled ${r.result.rows} minutes in ${r.result.ms} ms` : ('poll failed: ' + (r.status.lastError || '')); setTimeout(() => arqami(host), 800); } catch (e) { srcMsg().textContent = e.message; } });
+    /* Verify walks the window, compares each day with Oracle and re-reads the ones that disagree. It is the
+       repair path for a read model that was silently short — and the button that proves it is no longer. */
+    host.querySelectorAll('[data-act="verify"]').forEach(b => b.onclick = async () => {
+      const days = Number(b.dataset.days) || 30;
+      const old = b.textContent; b.disabled = true; b.textContent = '✓ checking ' + days + ' days…';
+      srcMsg().textContent = 'asking Oracle what each day really holds…';
+      try {
+        await api('/api/cst/arqami/verify', { method: 'POST', body: JSON.stringify({ days }) });
+        const tick = setInterval(async () => {
+          try {
+            const st = await api('/api/cst/arqami/source');
+            state.src = st; const v = st.verify;
+            if (!v) { clearInterval(tick); b.disabled = false; b.textContent = old; return; }
+            srcMsg().textContent = v.running ? `checking ${v.current || ''} — ${v.done} / ${v.days}` : `${v.checked.length} day(s) checked, ${v.repaired.length} repaired`;
+            if (!v.running) { clearInterval(tick); b.disabled = false; b.textContent = old; arqami(host); }
+          } catch (e) { clearInterval(tick); b.disabled = false; b.textContent = old; srcMsg().textContent = e.message; }
+        }, 2500);
+      } catch (e) { b.disabled = false; b.textContent = old; srcMsg().textContent = e.message; }
+    });
     host.querySelectorAll('[data-act="probe"]').forEach(b => b.onclick = async () => { srcMsg().textContent = 'probing…'; try { state.src = await api('/api/cst/arqami/source?probe=1'); const el = host.querySelector('.cs-srccard'); if (el) el.outerHTML = sourcePanel('arqami'); wire(host); } catch (e) { srcMsg().textContent = e.message; } });
     host.querySelectorAll('[data-act="import-arqami"],[data-act="import-esc"]').forEach(b => b.onclick = () => { const el = host.querySelector('.cs-impcard'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
     host.querySelectorAll('[data-act="cfg"]').forEach(b => b.onclick = () => { const el = host.querySelector('.cs-srccard'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); });

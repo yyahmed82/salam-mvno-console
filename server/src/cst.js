@@ -59,6 +59,11 @@ async function ensure() {
       day date NOT NULL, slot char(5) NOT NULL, requests int NOT NULL DEFAULT 0, success int NOT NULL DEFAULT 0, failed int NOT NULL DEFAULT 0,
       avg_ms int, max_ms int, imported_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (day, slot))`);
   await C().query(`ALTER TABLE cst_arqami_minutes ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'csv'`);   // 'csv' (import) | 'oracle' (live connector)
+  /* One row per day: what the minute rows add up to, and what Oracle says the day really holds. A day whose
+     two numbers disagree is drawn as incomplete rather than as a confident figure — 18 Sep 2026, after
+     2026-09-16 showed 624 requests against 38,533 in the source. */
+  await C().query(`CREATE TABLE IF NOT EXISTS cst_arqami_days (
+      day date PRIMARY KEY, stored_requests int, oracle_requests int, checked_at timestamptz NOT NULL DEFAULT now())`);
   await C().query(`CREATE TABLE IF NOT EXISTS cst_escalations (
       id bigserial PRIMARY KEY, req text UNIQUE, main_type text, sub_type text, domain text, domain_ar text, it_scope boolean NOT NULL DEFAULT false,
       status text, stage text, region text, city text, escalation_reason text, escalation_desc text, escalated_at timestamptz, closed_at timestamptz,
@@ -275,14 +280,23 @@ function mount(app, { requireSuper, audit }) {
   app.get('/api/cst/arqami/daily', gate, async (req, res) => {
     try {
       const days = Math.min(365, Math.max(1, n(req.query.days) || 30)); const today = todayKsa();
-      const r = await C().query(`SELECT day::text AS day, count(*)::int AS minutes, sum(requests)::int AS requests, sum(success)::int AS success, sum(failed)::int AS failed,
-          CASE WHEN sum(requests) > 0 THEN round(sum(coalesce(avg_ms,0)::numeric * requests) / sum(requests))::int END AS avg_ms,
-          percentile_cont(0.9) WITHIN GROUP (ORDER BY avg_ms)::int AS p90_ms, max(max_ms)::int AS max_ms,
-          count(*) FILTER (WHERE max_ms >= ${TIMEOUT_CAP_MS})::int AS capped_minutes, count(*) FILTER (WHERE avg_ms > 1000)::int AS slow_minutes,
-          max(requests)::int AS peak, min(slot) AS first, max(slot) AS last, bool_or(source = 'oracle') AS live
-        FROM cst_arqami_minutes WHERE day >= ($1::date - $2::int) AND day <= $1::date GROUP BY day ORDER BY day`, [today, days]);
+      const r = await C().query(`SELECT m.day::text AS day, count(*)::int AS minutes, sum(m.requests)::int AS requests, sum(m.success)::int AS success, sum(m.failed)::int AS failed,
+          CASE WHEN sum(m.requests) > 0 THEN round(sum(coalesce(m.avg_ms,0)::numeric * m.requests) / sum(m.requests))::int END AS avg_ms,
+          percentile_cont(0.9) WITHIN GROUP (ORDER BY m.avg_ms)::int AS p90_ms, max(m.max_ms)::int AS max_ms,
+          count(*) FILTER (WHERE m.max_ms >= ${TIMEOUT_CAP_MS})::int AS capped_minutes, count(*) FILTER (WHERE m.avg_ms > 1000)::int AS slow_minutes,
+          max(m.requests)::int AS peak, min(m.slot) AS first, max(m.slot) AS last, bool_or(m.source = 'oracle') AS live,
+          max(v.oracle_requests)::int AS oracle_requests, max(v.checked_at) AS checked_at
+        FROM cst_arqami_minutes m LEFT JOIN cst_arqami_days v ON v.day = m.day
+        WHERE m.day >= ($1::date - $2::int) AND m.day <= $1::date GROUP BY m.day ORDER BY m.day`, [today, days]);
+      /* `complete` used to mean only "this day is in the past". It now also means the stored total matches
+         what Oracle holds — without that, a day the connector only partly read was drawn as fact, and its
+         missing minutes were reported to the operator as SILENCE. */
       const rows = r.rows.map(x => { const full = x.day < today; const span = full ? 1440 : (x.first && x.last ? mOf(x.last) - mOf(x.first) + 1 : x.minutes);
-        return { ...x, successPct: x.requests ? Math.round(x.success / x.requests * 10000) / 100 : null, silent_minutes: Math.max(0, span - x.minutes), complete: full, peakSlot: null }; });
+        const missing = x.oracle_requests == null ? null : Math.max(0, x.oracle_requests - x.requests);
+        return { ...x, successPct: x.requests ? Math.round(x.success / x.requests * 10000) / 100 : null,
+          silent_minutes: missing ? null : Math.max(0, span - x.minutes),
+          missing_requests: missing, verified: x.oracle_requests != null, incomplete: !!missing,
+          complete: full && !missing, peakSlot: null }; });
       const tot = rows.reduce((a, x) => { a.requests += x.requests; a.failed += x.failed; a.capped += x.capped_minutes; a.slow += x.slow_minutes; a.silent += x.silent_minutes; a.wsum += n(x.avg_ms) * x.requests; return a; }, { requests: 0, failed: 0, capped: 0, slow: 0, silent: 0, wsum: 0 });
       const past = rows.filter(x => x.complete);
       res.json({ days, today, rows, totals: { days: rows.length, requests: tot.requests, failed: tot.failed, avg_ms: tot.requests ? Math.round(tot.wsum / tot.requests) : null, capped_minutes: tot.capped, slow_minutes: tot.slow, silent_minutes: tot.silent,
@@ -293,6 +307,16 @@ function mount(app, { requireSuper, audit }) {
     const st = oracle.status();
     if (st.configured && req.query.probe === '1') { try { st.probe = await oracle.probe(); } catch (e) { st.probeError = e.message; } }
     res.json(st);
+  });
+  /* Ask Oracle what each day in the window really holds, and re-read the days that do not add up. One cheap
+     COUNT per day, a full re-read only where it is needed. reportOnly=1 checks without repairing. */
+  app.post('/api/cst/arqami/verify', gate, async (req, res) => {
+    try {
+      if (!oracle.configured()) return res.status(400).json({ error: 'Oracle connector not configured (CST_ORACLE_* in .env)' });
+      const b = req.body || {};
+      if (audit) audit(req, 'CST_ARQAMI_VERIFY', String(n(b.days) || 30) + 'd', { reportOnly: !!b.reportOnly }).catch(() => {});
+      res.json(await oracle.verify(b.days, { reportOnly: !!b.reportOnly }));
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
   app.post('/api/cst/arqami/backfill', gate, async (req, res) => {
     try { if (!oracle.configured()) return res.status(400).json({ error: 'Oracle connector not configured (CST_ORACLE_* in .env)' });

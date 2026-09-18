@@ -92,8 +92,9 @@ function jvmStart() {
   if (!jar) return Promise.reject(new Error('no ojdbc*.jar in ' + c.jdbcDir));
   jvm.starting = new Promise((ok, ko) => {
     const cp = require('child_process');
-    const p = cp.spawn(c.java, ['-Xmx160m', '-XX:+UseSerialGC', '-Djava.awt.headless=true', '-cp', path.join(c.jdbcDir, jar) + ':' + c.jdbcDir, 'ArqamiBridge'],
-      { env: Object.assign({}, process.env, { CST_ORACLE_HOST: c.host, CST_ORACLE_PORT: String(c.port), CST_ORACLE_SERVICE: c.service, CST_ORACLE_USER: c.user, CST_ORACLE_PASSWORD: c.password, CST_ORACLE_CONNECT: c.connect, JAVA_TOOL_OPTIONS: '' }), stdio: ['pipe', 'pipe', 'pipe'] });
+    const env = Object.assign({}, process.env, { CST_ORACLE_HOST: c.host, CST_ORACLE_PORT: String(c.port), CST_ORACLE_SERVICE: c.service, CST_ORACLE_USER: c.user, CST_ORACLE_PASSWORD: c.password, CST_ORACLE_CONNECT: c.connect });
+    delete env.JAVA_TOOL_OPTIONS;   // an empty value still makes the JVM print "Picked up JAVA_TOOL_OPTIONS:" on stderr
+    const p = cp.spawn(c.java, ['-Xmx160m', '-XX:+UseSerialGC', '-Djava.awt.headless=true', '-cp', path.join(c.jdbcDir, jar) + ':' + c.jdbcDir, 'ArqamiBridge'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let settled = false;
     p.stdout.setEncoding('utf8');
     p.stdout.on('data', chunk => {
@@ -155,11 +156,31 @@ function aggSql(where) {
 }
 const rowsOf = r => (r.rows || []).map(x => ({ day: x.DAY, slot: x.MINUTE_SLOT, requests: n(x.REQUESTS), success: n(x.SUCCESS), failed: n(x.FAILED), avg_ms: x.AVG_MS == null ? null : n(x.AVG_MS), max_ms: x.MAX_MS == null ? null : n(x.MAX_MS) }));
 
-/* one KSA calendar day, by the table's own clock */
+/* One KSA calendar day, by the table's own clock.
+ *
+ * 18 Sep 2026 — this used to SELECT with a raw range on the time column while GROUPing by
+ * TRUNC(CAST(<col> AS DATE)). Those two expressions do not have to agree: if the column carries a zone,
+ * the range is resolved one way and the bucket another, so part of the day is never fetched and what IS
+ * fetched can be written into a neighbouring day. The console read 624 requests for 2026-09-16 while
+ * Oracle held 38,533.
+ *
+ * The scan is now widened a day either side — still a plain range on the raw column, so the execution
+ * plan and any index on it are unchanged — and the grouped rows are filtered to the requested day in
+ * Node with the same expression that produced them. Whatever the session zone is, the day comes back
+ * whole and nothing bleeds into its neighbours. */
 async function fetchDay(day) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('day must be YYYY-MM-DD');
   const tc = ident(cfg().timeCol);
-  return rowsOf({ rows: await query(aggSql(`${tc} >= TO_DATE(?, 'YYYY-MM-DD') AND ${tc} < TO_DATE(?, 'YYYY-MM-DD') + 1`), [day, day], 180000) });
+  const rows = rowsOf({ rows: await query(aggSql(`${tc} >= TO_DATE(?, 'YYYY-MM-DD') - 1 AND ${tc} < TO_DATE(?, 'YYYY-MM-DD') + 2`), [day, day], 300000) });
+  return rows.filter(r => r.day === day);
+}
+/* What Oracle itself says the day holds — the number every stored figure has to match. Counted with the
+ * bucket expression, so it is the same question the aggregation answers, asked without the aggregation. */
+async function countDay(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('day must be YYYY-MM-DD');
+  const c = cfg(); const t = ident(c.table), tc = ident(c.timeCol);
+  const r = await query(`SELECT COUNT(*) AS N FROM ${t} WHERE TRUNC(CAST(${tc} AS DATE)) = TO_DATE(?, 'YYYY-MM-DD')`, [day], 300000);
+  return n(r[0] && r[0].N);
 }
 /* the last N minutes by Oracle's SYSDATE — crosses midnight correctly because DAY comes from the row */
 async function fetchRecent(minutes) {
@@ -193,10 +214,56 @@ async function upsert(rows, source) {
 }
 
 /* ---------------------------------------------------------------- jobs */
+/* A day is not "read" until it matches. refreshDay writes the minutes, then asks Oracle how many rows that
+ * day really holds and records the pair: a day that does not add up says so on the page instead of drawing a
+ * confident wrong number, and `verify` knows which days to re-read. */
 async function refreshDay(day) {
   const t0 = Date.now(); const rows = await fetchDay(day); const u = await upsert(rows, 'oracle');
+  const got = rows.reduce((s, r) => s + r.requests, 0);
+  let expected = null;
+  try { expected = await countDay(day); } catch (e) { console.error(`[cst-oracle] count ${day}:`, e.message); }
+  await noteDay(day, got, expected);
+  if (expected != null && expected !== got)
+    console.error(`[cst-oracle] ${day} INCOMPLETE — stored ${got} of ${expected} requests in ${rows.length} minutes`);
   await C().query(`INSERT INTO cst_imports (kind, name, rows, inserted, updated, by_user) VALUES ('arqami', $1, $2, $3, $4, 'oracle')`, [`oracle ${day}`, rows.length, u.inserted, u.updated]).catch(() => {});
-  return { day, minutes: rows.length, requests: rows.reduce((s, r) => s + r.requests, 0), ...u, ms: Date.now() - t0 };
+  return { day, minutes: rows.length, requests: got, expected, complete: expected == null ? null : expected === got, ...u, ms: Date.now() - t0 };
+}
+/* one row per day: what we stored, what Oracle holds, when we last asked */
+async function noteDay(day, stored, expected) {
+  try {
+    await C().query(`INSERT INTO cst_arqami_days (day, stored_requests, oracle_requests, checked_at) VALUES ($1,$2,$3,now())
+      ON CONFLICT (day) DO UPDATE SET stored_requests = EXCLUDED.stored_requests, oracle_requests = EXCLUDED.oracle_requests, checked_at = now()`,
+      [day, stored, expected]);
+  } catch (e) { /* the table is created by ensure(); a miss here must never fail a read */ }
+}
+/* Compare every day in the window against Oracle and re-read the ones that do not add up. This is the
+ * repair path: one cheap COUNT per day, then a full re-read only where it is needed. */
+async function verify(days, opts) {
+  const o = opts || {}; const want = Math.min(365, Math.max(1, n(days) || 30));
+  if (state.verify && state.verify.running) return state.verify;
+  const today = todayKsa(); const list = [];
+  for (let i = want; i >= 0; i--) list.push(new Date(new Date(today).getTime() - i * 864e5).toISOString().slice(0, 10));
+  const job = state.verify = { running: true, startedAt: new Date().toISOString(), days: list.length, done: 0, checked: [], repaired: [], errors: [], finishedAt: null, current: null };
+  (async () => {
+    for (const d of list) {
+      job.current = d;
+      try {
+        const expected = await countDay(d);
+        const r = await C().query(`SELECT COALESCE(SUM(requests),0)::int AS n FROM cst_arqami_minutes WHERE day = $1`, [d]);
+        const stored = r.rows[0].n;
+        job.checked.push({ day: d, stored, expected });
+        if (expected !== stored && !o.reportOnly) {
+          const fixed = await refreshDay(d);
+          job.repaired.push({ day: d, from: stored, to: fixed.requests, expected: fixed.expected, complete: fixed.complete });
+        } else if (expected !== stored) { await noteDay(d, stored, expected); }
+      } catch (e) { job.errors.push({ day: d, error: e.message }); }
+      job.done++;
+      await new Promise(r => setTimeout(r, 250));
+    }
+    job.running = false; job.current = null; job.finishedAt = new Date().toISOString();
+    console.log(`[cst-oracle] verify: ${job.checked.length} day(s) checked, ${job.repaired.length} repaired, ${job.errors.length} error(s)`);
+  })();
+  return job;
 }
 async function poll() {
   if (!configured() || state.busy) return null;
@@ -215,14 +282,29 @@ async function backfill(days, opts) {
   if (state.backfill && state.backfill.running) return state.backfill;
   const today = todayKsa(); const list = [];
   for (let i = want; i >= 0; i--) list.push(new Date(new Date(today).getTime() - i * 864e5).toISOString().slice(0, 10));
-  const have = o.force ? new Set() : new Set((await C().query(`SELECT day::text AS d FROM cst_arqami_minutes WHERE source = 'oracle' AND day < $1 GROUP BY 1 HAVING count(*) >= 1000`, [today])).rows.map(r => r.d));
+  /* A day counts as already read only if it looks like a whole day AND its stored total matches Oracle's
+     own count. The old guard asked only for 1000+ minutes, so a day the poll had partly filled was skipped
+     for ever — which is how 2026-09-16 kept its 69 minutes. */
+  const have = o.force ? new Set() : new Set((await C().query(
+    `SELECT m.day::text AS d FROM cst_arqami_minutes m
+       LEFT JOIN cst_arqami_days v ON v.day = m.day
+      WHERE m.source = 'oracle' AND m.day < $1
+      GROUP BY m.day, v.oracle_requests
+     HAVING count(*) >= 1000 AND (v.oracle_requests IS NULL OR v.oracle_requests = SUM(m.requests))`, [today])).rows.map(r => r.d));
   const todo = list.filter(d => !have.has(d));
   const job = state.backfill = { running: true, startedAt: new Date().toISOString(), days: todo.length, done: 0, minutes: 0, requests: 0, current: null, errors: [], finishedAt: null };
   (async () => {
     for (const d of todo) {
       job.current = d;
       try { const r = await refreshDay(d); job.minutes += r.minutes; job.requests += r.requests; console.log(`[cst-oracle] backfill ${d}: ${r.minutes} minutes · ${r.requests} requests · ${r.ms} ms`); }
-      catch (e) { job.errors.push({ day: d, error: e.message }); console.error(`[cst-oracle] backfill ${d}:`, e.message); if (job.errors.length >= 3) break; }
+      /* One unreadable day must not end the run: the old `break` after three errors is why 09-14 and 09-15
+         never arrived — the oldest days in the window failed first and took the rest of the backfill with
+         them. Failures are recorded and the run continues; only a dead connection stops it. */
+      catch (e) {
+        if (job.errors.length < 40) job.errors.push({ day: d, error: e.message });
+        console.error(`[cst-oracle] backfill ${d}:`, e.message);
+        if (/not configured|bridge|ECONNREFUSED|ORA-01017|ORA-12541/i.test(e.message)) { job.stopped = 'connection unusable: ' + e.message; break; }
+      }
       job.done++;
       await new Promise(r => setTimeout(r, 400));   // be gentle with EBPROD
     }
@@ -236,7 +318,7 @@ function status() {
   const be = configured() ? backend() : null;
   return { configured: configured(), disabled: c.disabled, backend: be, driver: be === 'jdbc' ? jdbcReady() : !!driver(), driverError: be === 'jdbc' ? (jdbcReady() ? null : `JDBC bridge not ready: need ${c.java}, ${c.jdbcDir}/ArqamiBridge.class and ojdbc*.jar`) : state.driverError, mode: state.mode, clientError: state.clientError, jvm: state.jvm, jvmInfo: state.jvmInfo, jvmRestarts: state.jvmRestarts, host: c.host, port: c.port, service: c.service, user: c.user, table: c.table,
     columns: { time: c.timeCol, success: c.okCol, duration: c.durCol }, pollSec: c.pollSec, windowMin: c.windowMin, backfillDays: c.backfillDays,
-    lastPoll: state.lastPoll, lastPollMs: state.lastPollMs, lastPollRows: state.lastPollRows, polls: state.polls, lastError: state.lastError, lastErrorAt: state.lastErrorAt, backfill: state.backfill, busy: state.busy };
+    lastPoll: state.lastPoll, lastPollMs: state.lastPollMs, lastPollRows: state.lastPollRows, polls: state.polls, lastError: state.lastError, lastErrorAt: state.lastErrorAt, backfill: state.backfill, verify: state.verify, busy: state.busy };
 }
 
 function start() {
@@ -248,8 +330,17 @@ function start() {
   console.log(`[cst-oracle] ${c.user}@${c.host}:${c.port}/${c.service} ${c.table} — ${state.mode} — poll every ${c.pollSec} s (window ${c.windowMin} min), backfill ${c.backfillDays} days`);
   setTimeout(() => { poll().then(() => backfill(c.backfillDays)).catch(e => console.error('[cst-oracle] start:', e.message)); }, 8000);
   state.timer = setInterval(() => poll(), c.pollSec * 1000);
-  state.healTimer = setInterval(() => { if (!state.busy && !(state.backfill && state.backfill.running)) refreshDay(todayKsa()).catch(e => console.error('[cst-oracle] heal:', e.message)); }, 3600e3);   // hourly full re-read of today
+  state.healTimer = setInterval(() => { if (!state.busy && !(state.backfill && state.backfill.running)) refreshDay(todayKsa()).catch(e => console.error('[cst-oracle] heal:', e.message)); }, 3600e3);
+  /* The hourly heal only ever touched TODAY, so a day whose minutes the poll had filled in piecemeal was
+     never read as a whole day once it became yesterday. Re-read yesterday once an hour as well: it is one
+     scan, and it is what makes a completed day trustworthy. */
+  state.yestTimer = setInterval(() => {
+    if (state.busy || (state.backfill && state.backfill.running)) return;
+    const y = new Date(new Date(todayKsa()).getTime() - 864e5).toISOString().slice(0, 10);
+    refreshDay(y).catch(e => console.error('[cst-oracle] heal yesterday:', e.message));
+  }, 3600e3 + 90e3);   // hourly full re-read of today
   if (state.timer.unref) state.timer.unref(); if (state.healTimer.unref) state.healTimer.unref();
+  if (state.yestTimer.unref) state.yestTimer.unref();
 }
 
-module.exports = { start, poll, backfill, refreshDay, fetchDay, probe, status, configured, query };
+module.exports = { start, poll, backfill, refreshDay, fetchDay, countDay, verify, probe, status, configured, query };
