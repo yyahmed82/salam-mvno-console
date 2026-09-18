@@ -6,6 +6,7 @@
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
   const API = window.API_BASE;
   const api=(p)=>window.fetch(API+p).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
+  const api2=(p,opt)=>window.fetch(API+p,Object.assign({headers:{'Content-Type':'application/json'}},opt||{})).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
   let curKey=null, unmasked=false, curLines=[];
   const SES=()=>(window.opsSession?window.opsSession():{});
   const canUnmask=()=>{ const s=SES(); return !!(s.me&&s.me.caps&&s.me.caps.unmaskPII); };
@@ -57,8 +58,13 @@
       + `<div class="sbt-pane" data-tab="usage" hidden>${liveCard('usage')}</div>`
       + `<div class="sbt-pane" data-tab="journey" hidden>${onboardingCard()+linesCard(d.lines)+timelineCard(d.events)}</div>`
       + `<div class="sbt-pane" data-tab="diag" hidden>${logsCard()+liveCard('diag')}</div>`
-      + (hasFixed?`<div class="sbt-pane" data-tab="fixed" hidden>${fixedPane(curFixed)}</div>`:'');
-    wireTabs(box); wireTimeline(box); wireLines(box); wireLogs(box); wireLive(box); wireOnboarding(box); if(hasFixed) wireFixed(box);
+      + (hasFixed?`<div class="sbt-pane" data-tab="fixed" hidden>${fixedPane(curFixed)}</div>`:'')
+      + `<div class="sbt-pane" data-tab="cst" hidden id="sbCst">${cstPane()}</div>`;
+    wireTabs(box);
+    /* complaints load with the profile; the Arqami call never does \u2014 see cstPane() */
+    cstState = { loaded:false, busy:false, data:null, error:null, svc:null, svcBusy:false, svcErr:null, avail:cstState.avail,
+      nid: (d.identity && (d.identity.nationality_id_number || d.identity.national_id || d.identity.nid)) || (/^[12]\d{9}$/.test(String(curKey).replace(/\D/g,'')) ? String(curKey).replace(/\D/g,'') : '') };
+    cstLoad(); wireTimeline(box); wireLines(box); wireLogs(box); wireLive(box); wireOnboarding(box); if(hasFixed) wireFixed(box);
     if(!hasFixed&&curFixed){ const l=curFixed.link; const note=document.createElement("div"); note.className="rl"; note.style.cssText="font-size:11px;color:var(--muted);margin:6px 0 10px";
       note.textContent="Fixed services: "+(curFixed.error?"lookup failed — "+curFixed.error:(l&&l.reason?"could not link through nexus — "+l.reason:(l?"none found for this customer (nexus checked "+(l.ids?l.ids.length:0)+" workflow(s))":"none found for this key")));
       const head=box.querySelector(".sbt-head"); if(head) head.insertAdjacentElement("afterend",note); }
@@ -74,7 +80,11 @@
     {k:'diag',     ic:'🩺', name:'Logs & Diagnostics'}
   ];
   let curTab='overview', curFixed=null, hasFixed=false;
-  const tabsNow=()=>hasFixed?TABS.concat([{k:'fixed',ic:'🏠',name:'Fixed services'}]):TABS;
+  /* CST tab (18 Sep 2026). Complaints load with the profile — Remedy is our own read-only database and an agent
+     needs to know before they speak whether the regulator already has a case open. The Arqami call does NOT:
+     every one writes a row into the audit table CST's own traffic is measured from, so it stays behind a button. */
+  let cstState = { loaded: false, busy: false, data: null, error: null, svc: null, svcBusy: false, svcErr: null, avail: null };
+  const tabsNow=()=>(hasFixed?TABS.concat([{k:'fixed',ic:'🏠',name:'Fixed services'}]):TABS).concat([{k:'cst',ic:'⚖',name:'CST'}]);
   function headCard(i){
     i=i||{};
     const unmaskBtn = canUnmask()? `<button class="pill" id="sbUnmask" style="border-left-color:var(--purple)">${unmasked?'Mask PII':'Unmask PII'}</button>` : '';
@@ -91,7 +101,7 @@
         ${unmaskBtn}
       </div>
       <div id="lvLineBar" class="sbt-linebar"></div>
-      <div class="sbt-tabs">${tabsNow().map(t=>`<button class="sbt-tab${t.k===curTab?' on':''}" data-sbt="${t.k}">${t.ic} ${esc(t.name)}${t.k==='journey'&&nJourney?` <span class="sbt-n">${nJourney}</span>`:''}${t.k==='fixed'&&curFixed?` <span class="sbt-n">${curFixed.inventory_summary?curFixed.inventory_summary.active:(curFixed.services||[]).length}</span>`:''}</button>`).join('')}</div>
+      <div class="sbt-tabs">${tabsNow().map(t=>`<button class="sbt-tab${t.k===curTab?' on':''}" data-sbt="${t.k}">${t.ic} ${esc(t.name)}${t.k==='journey'&&nJourney?` <span class="sbt-n">${nJourney}</span>`:''}${t.k==='fixed'&&curFixed?` <span class="sbt-n">${curFixed.inventory_summary?curFixed.inventory_summary.active:(curFixed.services||[]).length}</span>`:''}${t.k==='cst'&&cstState.data&&cstState.data.summary&&cstState.data.summary.open?` <span class="sbt-n sbt-warn">${cstState.data.summary.open}</span>`:''}</button>`).join('')}</div>
     </div>`;
   }
   function wireTabs(box){
@@ -917,11 +927,97 @@
       .sbt-tab.on{background:var(--green,#0e9f5a);border-color:var(--green,#0e9f5a);color:#fff;box-shadow:0 2px 8px rgba(14,159,90,.35)}
       .sbt-n{background:var(--panel2,#eef2f0);color:var(--muted,#64748b);border-radius:8px;padding:0 6px;font-size:10px;font-weight:800}
       .sbt-tab.on .sbt-n{background:rgba(255,255,255,.28);color:#fff}
+      .sbt-n.sbt-warn{background:rgba(217,119,6,.16);color:var(--warn-fg,#b45309)}
+      .sbt-tab.on .sbt-n.sbt-warn{background:rgba(255,255,255,.3);color:#fff}
+      [data-theme="dark"] .sbt-n.sbt-warn{background:rgba(217,119,6,.26);color:#fcd34d}
+      .sb-tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;border:1px solid var(--line,#e2e8f0);border-radius:10px}
+      table.sb-tbl{width:100%;border-collapse:collapse;font-size:12.5px;min-width:620px}
+      .sb-tbl th{text-align:left;padding:8px 11px;color:var(--muted,#64748b);font-size:10px;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--line,#e2e8f0);white-space:nowrap}
+      .sb-tbl td{padding:8px 11px;border-bottom:1px solid var(--line,#eef2f0);vertical-align:middle}
+      .sb-tbl tr:last-child td{border-bottom:0}
+      .sb-tbl tr.sb-open-row td{background:rgba(217,119,6,.06)}
       .sbt-pane[hidden]{display:none}
       .sbt-pane{animation:sbtIn .16s ease}
       @keyframes sbtIn{from{opacity:.4;transform:translateY(3px)}to{opacity:1;transform:none}}`;
     document.head.appendChild(st);
   })();
+
+  /* ---- CST: what the regulator has on this customer ------------------------------------------------ */
+  function cstPane(){
+    return `<div class="sb-id">
+        <div class="sb-id-h"><b>CST complaints</b><span class="sub" style="margin-left:auto;font-size:11px">Remedy \u00b7 ARSystem on 172.30.1.14 \u00b7 read-only, never stored</span></div>
+        <div id="sbCstBody"><div class="sub">Loading complaints\u2026</div></div>
+      </div>
+      <div class="sb-id">
+        <div class="sb-id-h"><b>What CST is shown for this identity</b><span class="sub" style="margin-left:auto;font-size:11px">one call to the Arqami service \u00b7 audited</span></div>
+        <div id="sbCstSvc"></div>
+      </div>`;
+  }
+  const cstPill=(txt,tone)=>`<span class="svc-st ${tone||''}" style="margin-left:0">${esc(txt)}</span>`;
+  function cstComplaintsHtml(){
+    if(cstState.error) return `<div class="albanner">${esc(cstState.error)}</div>`;
+    const d=cstState.data;
+    if(!d) return `<div class="sub">Loading complaints\u2026</div>`;
+    if(d.configured===false) return `<div class="sub">The Remedy connector is not configured \u2014 set <code>CST_REMEDY_*</code> in <code>/apps/unified/.env</code>.</div>`;
+    if(!d.count) return `<div class="okbox">No CST complaint on this customer in ARSystem.</div>`;
+    const sm=d.summary||{};
+    const head=`<div class="sub" style="margin-bottom:8px">${esc(sm.line||'')} \u00b7 matched on <b>${esc(d.matchedOn||'')}</b> \u00b7 ${d.ms?(d.ms/1000).toFixed(1)+' s':''}${d.unmasked?' \u00b7 <span style="color:var(--warn-fg)">PII unmasked \u2014 audited</span>':' \u00b7 names and ids masked'}</div>`;
+    const rows=d.complaints.map(t=>`<tr class="${t.open?'sb-open-row':''}">
+        <td><b>${esc(t.req||t.incident||'\u2014')}</b>${t.incident&&t.req?`<span class="sub" style="display:block;font-size:10.5px">${esc(t.incident)}</span>`:''}</td>
+        <td style="white-space:nowrap">${esc(String(t.created||'\u2014').slice(0,19).replace('T',' '))}</td>
+        <td>${t.open?cstPill(t.ageDays!=null?`open \u00b7 ${t.ageDays} d`:'open','warn'):cstPill('closed','ok')}</td>
+        <td>${esc(t.status||'\u2014')}</td>
+        <td>${esc(t.category||'\u2014')}</td>
+        <td>${esc(t.serviceId||'\u2014')}</td>
+      </tr>${t.resolution||t.actionTaken?`<tr><td colspan="6" class="sub" style="padding-top:0;font-size:11.5px">${esc(String(t.resolution||t.actionTaken).slice(0,400))}</td></tr>`:''}`).join('');
+    return head+`<div class="sb-tblwrap"><table class="sb-tbl"><thead><tr><th>Complaint</th><th>Created</th><th>State</th><th>Status</th><th>Category</th><th>Service</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  function cstServicesHtml(){
+    if(cstState.avail && cstState.avail.services===false)
+      return `<div class="sub">The Arqami service is not configured here \u2014 set <code>ARQAMI_API_*</code> in <code>/apps/unified/.env</code>.</div>`;
+    const nid=(cstState.nid||'').trim();
+    const btn=`<button class="pill" id="sbCstRun" ${nid?'':'disabled'} style="border-left-color:var(--green)">${cstState.svcBusy?'Asking the service\u2026':'Ask the CST service'}</button>`;
+    const why=`<div class="sub" style="margin:6px 0 10px;font-size:11.5px">This calls the same endpoint CST calls, with the same service account. It is one deliberate click because every call is recorded in the audit table CST\u2019s own traffic is measured from \u2014 loading a customer profile must not add to it.${nid?'':' <b>No national id on this profile</b>, so there is nothing to ask about.'}</div>`;
+    const r=cstState.svc;
+    let out='';
+    if(cstState.svcErr) out=`<div class="albanner">${esc(cstState.svcErr)}</div>`;
+    else if(r&&r.ok===false) out=`<div class="albanner">${esc(r.error||'the call did not complete')}</div>`;
+    else if(r&&r.services){
+      const mob=r.services.filter(x=>/mobile/i.test(x.kind)).length, fix=r.services.filter(x=>/fixed/i.test(x.kind)).length;
+      out=`<div class="sub" style="margin-bottom:8px">HTTP ${esc(r.status)} \u00b7 ${esc(r.message||'')} \u00b7 ${r.ms} ms \u00b7 <b>${r.serviceCount}</b> service${r.serviceCount===1?'':'s'} (${mob} mobile, ${fix} fixed)</div>`
+        + (r.serviceCount?`<div class="sb-tblwrap"><table class="sb-tbl"><thead><tr><th>Type</th><th>Number</th><th>Account</th><th>Package</th><th>Outstanding</th></tr></thead><tbody>${
+          r.services.map(x=>`<tr><td>${/mobile/i.test(x.kind)?`<span class="svc-st" style="margin-left:0;color:#2563eb;background:rgba(37,99,235,.14)">${esc(x.kind)}</span>`:cstPill(x.kind,'ok')}</td><td><b>${esc(x.number||'\u2014')}</b></td><td>${esc(x.account||'\u2014')}</td><td>${esc(x.packageEn||x.packageAr||'\u2014')}</td><td style="text-align:right">${x.outstanding==null?'\u2014':`<b>${esc(x.outstanding)}</b>`}</td></tr>`).join('')
+        }</tbody></table></div>`
+        : `<div class="okbox">The service answered, and this identity holds no registered service \u2014 which is itself what CST is shown.</div>`);
+    }
+    return why+`<div class="sb-actions" style="margin-bottom:4px">${btn}</div>`+out;
+  }
+  function cstRender(){
+    const b=document.getElementById('sbCstBody'); if(b) b.innerHTML=cstComplaintsHtml();
+    const v=document.getElementById('sbCstSvc'); if(v){ v.innerHTML=cstServicesHtml();
+      const btn=document.getElementById('sbCstRun');
+      if(btn) btn.addEventListener('click',cstRunServices);
+    }
+    const tab=document.querySelector('.sbt-tab[data-sbt="cst"]');
+    if(tab){ const n=cstState.data&&cstState.data.summary?cstState.data.summary.open:0;
+      const old=tab.querySelector('.sbt-n'); if(old) old.remove();
+      if(n){ const sp=document.createElement('span'); sp.className='sbt-n sbt-warn'; sp.textContent=n; tab.appendChild(sp); } }
+  }
+  async function cstLoad(){
+    if(cstState.busy) return; cstState.busy=true; cstState.error=null;
+    try{
+      cstState.avail=await api('/api/customer/cst/status').catch(()=>null);
+      cstState.data=await api('/api/customer/cst/complaints?key='+encodeURIComponent(curKey)+(unmasked?'&unmask=1':''));
+    }catch(e){ cstState.error=e.message; }
+    finally{ cstState.busy=false; cstState.loaded=true; cstRender(); }
+  }
+  async function cstRunServices(){
+    if(cstState.svcBusy||!cstState.nid) return;
+    cstState.svcBusy=true; cstState.svcErr=null; cstRender();
+    try{ cstState.svc=await api2('/api/customer/cst/services',{method:'POST',body:JSON.stringify({nid:cstState.nid})}); }
+    catch(e){ cstState.svcErr=e.message; }
+    finally{ cstState.svcBusy=false; cstRender(); }
+  }
 
   function wireTimeline(box){
     box.querySelectorAll('.sb-click').forEach(r=>{

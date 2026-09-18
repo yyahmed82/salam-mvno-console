@@ -427,6 +427,44 @@ async function customerContext(q, allowUnmask) {
       recent_failures = roles.maskDeep((rf || []).map(r => ({ category: r.category, when: r.when, detail: r.detail, gateway: r.gw || null })), allowUnmask);
     }
   } catch (e) {}
+  /* CST complaints from Remedy (18 Sep 2026). ARSystem is our own read-only database, so this joins the context
+   * on every customer question: an agent asking Yusr about a customer needs to know before they speak that the
+   * regulator already has a case open. The Arqami call is NOT here — it is external, audited, and counted in
+   * CST's own traffic figures, so Yusr only makes it when the question is actually about services (see below). */
+  let cst_complaints = null;
+  try {
+    const cc = require('./custCst');
+    if (cc.configured()) {
+      const keys = cc.keysOf({ key, identity: raw.identity || null });
+      if (nid) keys.push({ value: String(nid), kind: 'idNumber' });
+      const r = await cc.complaints(key, { unmask: allowUnmask, limit: 10, extraKeys: keys });
+      if (r && r.ok) {
+        const sum = cc.summarise(r);
+        cst_complaints = { summary: sum ? sum.line : null, open: sum ? sum.open : 0, total: r.count,
+          matched_on: r.matchedOn,
+          complaints: (r.complaints || []).slice(0, 6).map(t => ({ req: t.req, created: t.created, open: t.open,
+            age_days: t.ageDays, status: t.status, category: t.category, service: t.serviceId })) };
+      } else if (r && r.error) cst_complaints = { error: r.error };
+    }
+  } catch (e) { cst_complaints = { error: e.message }; }
+  /* Services as CST is shown them — ON ASK ONLY. This is a real call to the regulator-facing Arqami endpoint and
+   * it writes a row into APPS.YY_REGISTER_NUMBER_AUDIT, the table CST's own traffic is measured from. Yusr makes
+   * it when the question is about what the customer holds or about CST, and never merely because a customer was
+   * named. It needs a national id: the service is keyed on identity, and a guess is a wasted regulator call. */
+  let cst_services = null;
+  if (nid && /\b(cst|citc|regulator|arqami|registered|services?|subscriptions?|what does .* have|lines? (does|do)|شكوى|الخدمات|هيئة)\b/i.test(String(q || ''))) {
+    try {
+      const cc = require('./custCst');
+      if (cc.servicesAvailable()) {
+        const r = await cc.services(nid);
+        cst_services = r && r.ok
+          ? { asked: true, status: r.status, message: r.message, count: r.serviceCount, ms: r.ms,
+              services: (r.services || []).map(x => ({ kind: x.kind, number: allowUnmask ? x.number : String(x.number || '').replace(/^(\d{4})\d+(\d{3})$/, '$1*****$2'),
+                package: x.packageEn || x.packageAr || null, outstanding: x.outstanding })) }
+          : { asked: true, error: (r && r.error) || 'the call did not complete' };
+      }
+    } catch (e) { cst_services = { asked: true, error: e.message }; }
+  }
   try {
     const sn = require('./servicenow');
     if (sn.snConfigured()) {
@@ -442,8 +480,8 @@ async function customerContext(q, allowUnmask) {
   if (!raw.found) {
     // No onboarding profile — but if the number shows up in failures or CST tickets it IS a real
     // (existing) subscriber; return a lightweight pack so Yusr helps instead of saying "not found".
-    if (recent_failures.length || cst_tickets.length) {
-      return { key, found: true, existing_no_onboarding: true, identity: null, lines: [], stage_summary: {}, recent_events: [], recent_failures, cst_tickets, cst_configured };
+    if (recent_failures.length || cst_tickets.length || (cst_complaints && cst_complaints.total)) {
+      return { key, found: true, existing_no_onboarding: true, identity: null, lines: [], stage_summary: {}, recent_events: [], recent_failures, cst_tickets, cst_configured, cst_complaints, cst_services };
     }
     return { key, found: false };
   }
@@ -453,6 +491,10 @@ async function customerContext(q, allowUnmask) {
   const pack = {
     key, found: true,
     identity: p.identity,
+    /* what the REGULATOR has on this customer — read from ARSystem, never stored */
+    cst_complaints,
+    /* what the regulator is SHOWN for this identity — present only when the question asked for it */
+    cst_services,
     /* ACTIVE SERVICE LINES — the authoritative answer to "what does this customer HAVE". Resolved by
      * the same chain Customer 360 uses (app account → activation → MNP → partner DMS → live BSS).
      * Yusr used to see only onboarding attempts and concluded "none activated" for customers whose
@@ -592,6 +634,7 @@ IF case_analysis IS PRESENT IN CONTEXT, NEVER refuse — this is always in scope
   · A message type shown as "not recorded" is NOT a fault: the type lives in the app cache for 10 minutes only, so anything older simply cannot be identified. Where type_source is "inferred", say it was deduced from surrounding activity, not recorded.
   · NEVER reveal or guess a verification code. The code is deliberately absent from the context.
   A number that received 3+ OTPs in a short span usually means NON-DELIVERY (the customer kept requesting a new code because none arrived), not that they mistyped.
+10. CST (the regulator, هيئة الاتصالات): CONTEXT.cst_complaints holds the complaints CST raised on this customer, read live from Remedy/ARSystem — REQ number, when it was created, whether it is still open and for how long, status and category. Lead with an OPEN complaint whenever there is one: the agent is about to speak to a customer the regulator already has a case on, and a complaint past day five is the escalation the whole CST engagement turns on. CONTEXT.cst_services, when present, is what CST is SHOWN for this identity (mobile and fixed services with package and outstanding bill) — it appears only when the question asked about services or CST, because each one is a real call to the regulator-facing endpoint. Where the two disagree — a complaint about a service CST is not shown, or a service with no complaint — say so plainly; that disagreement is the finding, not an error.
 IF THE CONTEXT CONTAINS kb SECTIONS THAT ANSWER THE QUESTION, NEVER REFUSE — answer from them and cite the doc section. Refusing while quoting sources is always wrong.
 Anything else (project features, console development, documentation status, general questions) → reply exactly: "That's outside my scope — I only help with customer journeys, integrations and troubleshooting. Ask me about a subscriber, a failed step, an integration, or an open incident."
 Rules:
@@ -666,6 +709,9 @@ function fallbackAnswer(intent, ctx, hint) {
   if (intent === 'smalltalk') return 'أهلاً! I\'m Yusr — I can look up a customer on Mobile (MSISDN 05xxxxxxxx or National ID) or Fixed (FTTH account, order number, customer code), check open incidents on either side ("fixed issues today"), search a log reference ID, or search the runbooks. How can I help?';
   if (intent === 'customer') {
     const fx = fixedLines(ctx.fixed_customer);
+    /* the regulator line goes first when there is one: it changes how the agent opens the call */
+    const cc = ctx.customer && ctx.customer.cst_complaints;
+    const cstLine = cc && cc.open ? `\u26a0 CST: ${cc.summary}${cc.complaints && cc.complaints[0] ? ` Latest ${cc.complaints[0].req || ''}${cc.complaints[0].status ? ' \u00b7 ' + cc.complaints[0].status : ''}.` : ''}\n` : '';
     if (!ctx.customer || ctx.customer.found === false) {
       const os = ctx.osb_customer && ctx.osb_customer.summary;
       if (os && (os.pipeline_records || os.direct_backend_hits)) {
@@ -701,7 +747,7 @@ function fallbackAnswer(intent, ctx, hint) {
       (os.first_seen ? ` · ${String(os.first_seen).slice(0, 10)} → ${String(os.last_seen || os.first_seen).slice(0, 10)}` : '') + `.${osStories} Digital/APIGW trace is not exact in the current OSB archive.` : '';
     const note = c.existing_no_onboarding ? ' (existing subscriber — no onboarding order in the console)' : '';
     const fxTxt = fx ? `\n🏠 Fixed services for the same person:\n${fx}` : (db.opsConfigured ? '\n🏠 No Fixed services found for this person.' : '');
-    return `Mobile subscriber found${note}.\n${active}\n${lines}${failTxt}${tixTxt}${osbTxt}${fxTxt}\n(LLM offline — showing raw profile. Open Customer 360 for the full timeline.)`;
+    return cstLine + `Mobile subscriber found${note}.\n${active}\n${lines}${failTxt}${tixTxt}${osbTxt}${fxTxt}\n(LLM offline — showing raw profile. Open Customer 360 for the full timeline.)`;
   }
   /* SMS answers must survive the LLM being offline — this is a support question asked under
    * time pressure, and the facts are already assembled. */
@@ -761,6 +807,7 @@ function fallbackAnswer(intent, ctx, hint) {
 
 function suggestionsFor(intent, ctx) {
   if (intent === 'customer' && ctx.customer && ctx.customer.found) {
+    if (ctx.customer.cst_complaints && ctx.customer.cst_complaints.open) return ['What is the open CST complaint about?', 'What services is CST shown for this customer?', 'Why did the last attempt fail?'];
     return ctx.fixed_customer && ctx.fixed_customer.found
       ? ['Why did the last step fail?', 'Show the fixed services for this customer', 'Show payment history']
       : ['Why did the last step fail?', 'Show payment history', 'Is this subscriber eligible?'];

@@ -32,6 +32,7 @@ const gateways = require('./gateways');   // payment-gateway registry (Settings 
 const segment = require('./segment');   // Mobile ↔ Fixed segregation of rules / alerts / digests
 const reliability = require('./reliability');
 const subscriber = require('./subscriber');
+const custCst = require('./custCst');
 const rolePerms = require('./rolePerms');
 const { simulate, dataBounds } = require('./simulate');
 const roles = require('./roles');
@@ -3105,6 +3106,38 @@ app.get('/api/subscriber/live', async (req, res) => {
     if (allowUnmask) await audit(req, 'pii.unmask', 'live ' + name + ' ' + key, {});
     res.json(roles.maskDeep(out, allowUnmask));
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+/* ---- The regulator's view of one customer, for Customer 360 and Yusr (18 Sep 2026) ----
+ * Narrower than the CST section on purpose: one customer key, capped, masked by the same rule as the rest of
+ * Customer 360, and nothing written to unified_console. See server/src/custCst.js for why the Arqami call is an
+ * explicit action rather than part of loading a profile. */
+app.get('/api/customer/cst/complaints', async (req, res) => {
+  try {
+    const key = String(req.query.key || '').trim();
+    if (!key) return res.status(400).json({ error: 'missing key' });
+    const allowUnmask = !!(req.caps && req.caps.unmaskPII) && req.query.unmask === '1';
+    let extra = [];
+    try { const p = await subscriber.profile({ key }); extra = custCst.keysOf(Object.assign({ key }, p)); } catch (_) { extra = [{ value: key, kind: 'any' }]; }
+    const out = await custCst.complaints(key, { unmask: allowUnmask, limit: Math.min(50, Number(req.query.limit) || 20), extraKeys: extra });
+    await audit(req, allowUnmask ? 'pii.unmask' : 'customer.cst.complaints', 'cst ' + key, { found: out.count || 0 });
+    res.json(Object.assign({}, out, { summary: custCst.summarise(out), unmaskAvailable: !!(req.caps && req.caps.unmaskPII) }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+/* Explicit operator action: one call to the CST-facing Arqami service for one identity. Each one writes a row
+ * into the audit table the Arqami page measures, which is exactly why nothing calls this on page load. */
+app.post('/api/customer/cst/services', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const nid = String(b.nid || b.key || '').trim();
+    if (!nid) return res.status(400).json({ error: 'missing national id' });
+    const m = nid.length <= 4 ? '\u2022\u2022\u2022\u2022' : '\u2022'.repeat(Math.min(6, nid.length - 4)) + nid.slice(-4);
+    await audit(req, 'customer.cst.services', 'arqami ' + m, {});
+    res.json(await custCst.services(nid));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/customer/cst/status', async (req, res) => {
+  try { res.json({ complaints: custCst.configured(), services: custCst.servicesAvailable() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/subscriber', async (req, res) => {
   try {
