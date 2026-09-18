@@ -79,6 +79,51 @@ const DEFAULT_DEFS = [
       at_risk: 'CITC denials are elevated; review eligibility mix before escalating.',
       breached: 'CITC denials exceeded the configured business threshold; check policy/campaign mix.'
     } },
+  /* ── Fixed app-experience objectives (18 Sep 2026) ────────────────────────────────────────────
+   * These carry the absolute, customer-facing numbers that the Fixed alert thresholds used to stand
+   * in for. On 18 Sep the app-log alert thresholds were re-anchored on each signal's own
+   * distribution, because a threshold below the median is not a detector; the numbers below are what
+   * we actually owe a customer, tracked as 30-day attainment instead of as a permanent alarm.
+   * TARGETS ARE PROPOSED, NOT AGREED. Measured over the 14 days to 18 Sep the app-log technical rate
+   * had a MEDIAN of 30 % and step p95 a median of 7.1 s, so these will read near-zero attainment
+   * until the open question on app-log technical classification is settled — the board lane reports
+   * 1.2 % over the same hours, a 25x disagreement. Showing that gap is the point. */
+  { key: 'fixed_app_technical_rate', business: 'fixed', group: 'Fixed app experience',
+    label: 'App steps — technical failures', direction: 'gte', unit: 'percent', target: 0.97, warnBand: 0.02, windowDays: 30, enabled: true,
+    metric: { key: 'fixed_applog_fail_rate', dim: { channel: 'all', cls: 'technical' }, windowHours: 1, direction: 'lte', threshold: 0.02, label: 'with under 2 % of app steps failing technically' },
+    note: 'Proposed target, not yet agreed. Attainment is the share of hours inside the 2 % ceiling.',
+    messages: {
+      met: 'App steps stay inside the 2 % technical-failure ceiling.',
+      at_risk: 'App step technical failures are eating the error budget for the month.',
+      breached: 'App steps exceed the technical-failure ceiling for more hours than the objective allows — check the app-log classification before reading this as a platform fault.'
+    } },
+  { key: 'fixed_app_step_latency', business: 'fixed', group: 'Fixed app experience',
+    label: 'App step latency p95', direction: 'gte', unit: 'percent', target: 0.95, warnBand: 0.02, windowDays: 30, enabled: true,
+    metric: { key: 'fixed_applog_latency_p95_ms', dim: { channel: 'all' }, windowHours: 1, direction: 'lte', threshold: 3000, label: 'with step p95 under 3 s' },
+    note: 'Proposed target, not yet agreed. 3 s p95 is the point past which customers start abandoning a step.',
+    messages: {
+      met: 'App step latency stays under 3 s at p95.',
+      at_risk: 'App step latency is spending its error budget for the month.',
+      breached: 'App steps are over 3 s at p95 for more hours than the objective allows; customers are waiting.'
+    } },
+  { key: 'fixed_app_payment_reliability', business: 'fixed', group: 'Fixed app experience',
+    label: 'Payment steps — technical failures', direction: 'gte', unit: 'percent', target: 0.99, warnBand: 0.01, windowDays: 30, enabled: true,
+    metric: { key: 'fixed_applog_payment_fail_rate', dim: { channel: 'all', cls: 'technical' }, windowHours: 1, direction: 'lte', threshold: 0.02, label: 'with under 2 % of payment steps failing technically' },
+    note: 'Proposed target, not yet agreed. The money path earns a tighter objective than the rest of the app.',
+    messages: {
+      met: 'The payment path stays inside its technical-failure ceiling.',
+      at_risk: 'Payment technical failures are eating the month\u2019s error budget.',
+      breached: 'The payment path breaches its ceiling for more hours than the objective allows — money is at stake, treat as a standing incident.'
+    } },
+  { key: 'fixed_board_technical_rate', business: 'fixed', group: 'Fixed app experience',
+    label: 'Journey errors — technical', direction: 'gte', unit: 'percent', target: 0.97, warnBand: 0.02, windowDays: 30, enabled: true,
+    metric: { key: 'fixed_board_fail_rate', dim: { channel: 'all', cls: 'technical' }, windowHours: 1, direction: 'lte', threshold: 0.02, label: 'with under 2 % of journey attempts ending in a technical error' },
+    note: 'The same objective as the app-step one, measured on the error board instead of the app log. The two lanes disagreeing is itself the signal.',
+    messages: {
+      met: 'Journey attempts stay inside the 2 % technical-error ceiling.',
+      at_risk: 'Journey technical errors are eating the error budget for the month.',
+      breached: 'Journey attempts exceed the technical-error ceiling for more hours than the objective allows.'
+    } },
   { key: 'fixed_api_error_budget', business: 'fixed', group: 'Fixed error budgets',
     label: 'API error budget', direction: 'lte', unit: 'count_per_day', target: 50, warnBand: 10, windowDays: 1, enabled: true,
     messages: {
@@ -176,6 +221,10 @@ function normalizeDef(raw, base) {
   d.messages.at_risk = cleanText(d.messages.at_risk, 240, 'Close to target.');
   d.messages.breached = cleanText(d.messages.breached, 240, 'Target breached.');
   if (base && base.journey) d.journey = base.journey;
+  /* `metric` is plumbing, not configuration: it names the signal and the ceiling the objective is
+   * measured against. Pin it from the code definition so a round-trip through the editor can never
+   * corrupt or drop it — the editor owns the target, the window, the band and the wording. */
+  if (base && base.metric) d.metric = clone(base.metric); else delete d.metric;
   return d;
 }
 
@@ -289,6 +338,61 @@ async function seedDefaults() {
 
 const rate = (ok, fail) => (ok + fail) > 0 ? ok / (ok + fail) : null;
 
+/* ── METRIC-BACKED SLOs (18 Sep 2026) ───────────────────────────────────────────────────────────
+ * A journey SLO measures outcomes in rollup_hourly. Most Fixed objectives are not journeys — they
+ * are thresholds on a live signal ("app steps fail technically under 2 %", "step p95 under 3 s") —
+ * and until now a definition without a `journey` was configuration the console never evaluated:
+ * editable on #slo-settings, never measured, never a card. Half the Fixed definitions were decorative.
+ *
+ * These are measured the standard way for a threshold objective: attainment is the share of
+ * measurement intervals in the window that COMPLIED, and the error budget is the number of
+ * non-compliant intervals the objective still allows. The signal is metric_snapshots, which the alert
+ * lane already writes every tick, so this needs one query per definition and no new plumbing. */
+async function metricSlos(now, cfg) {
+  const C = db.console;
+  const out = [];
+  for (const d of (cfg.slos || [])) {
+    if (!d.metric || !d.metric.key || d.enabled === false) continue;
+    const win = Number(d.windowDays) || 30;
+    const from = new Date(new Date(now).getTime() - win * 86400e3).toISOString();
+    const cmp = d.metric.direction === 'gte' ? '>=' : '<=';        // our own config, never user input
+    const dim = JSON.stringify(d.metric.dim || {});
+    let row;
+    try {
+      row = (await C.query(
+        `SELECT count(*)::int AS ticks, count(*) FILTER (WHERE value ${cmp} $4) ::int AS ok
+           FROM metric_snapshots
+          WHERE metric_key = $1 AND window_hours = $2 AND dim @> $3::jsonb
+            AND value IS NOT NULL AND sim_now >= $5 AND sim_now < $6`,
+        [d.metric.key, Number(d.metric.windowHours) || 1, dim, Number(d.metric.threshold), from, now])).rows[0];
+    } catch (e) { continue; }
+    const tot = Number(row.ticks) || 0, ok = Number(row.ok) || 0, fail = tot - ok;
+    const attain = tot ? ok / tot : null;
+    const target = Number(d.target);
+    const allowed = tot * (1 - target);
+    const remaining = allowed - fail;
+    const verdict = assess(d, attain, {}, target);
+    const days = (await C.query(
+      `SELECT (sim_now AT TIME ZONE 'Asia/Riyadh')::date d,
+              count(*) FILTER (WHERE value ${cmp} $4)::int ok, count(*)::int n
+         FROM metric_snapshots
+        WHERE metric_key = $1 AND window_hours = $2 AND dim @> $3::jsonb
+          AND value IS NOT NULL AND sim_now >= $5 GROUP BY 1 ORDER BY 1`,
+      [d.metric.key, Number(d.metric.windowHours) || 1, dim, Number(d.metric.threshold),
+       new Date(new Date(now).getTime() - 7 * 86400e3).toISOString()])).rows;
+    out.push({
+      journey: null, key: d.key, label: d.label, target, business: d.business, group: d.group,
+      targetText: `${fmtValue(d, target)} of hours ${d.metric.label || `${cmp} ${d.metric.threshold}`}`,
+      window_days: win, message: tot ? verdict.message : (d.note || 'No measurements in the window yet.'),
+      attainment: attain, total: tot, ok, fail, allowed: Math.round(allowed),
+      budgetRemaining: Math.round(remaining), budgetPct: allowed > 0 ? remaining / allowed : (fail === 0 ? 1 : -1),
+      status: attain == null ? 'nodata' : verdict.status,
+      spark: days.map(x => (Number(x.n) > 0 ? Number(x.ok) / Number(x.n) : null))
+    });
+  }
+  return out;
+}
+
 // evaluate every enabled SLO at board-now
 async function evaluate(now) {
   const C = db.console;
@@ -325,7 +429,9 @@ async function evaluate(now) {
       attainment: attain, total: tot, ok, fail, allowed: Math.round(allowed),
       budgetRemaining: Math.round(remaining), budgetPct, status, spark });
   }
-  return { now: n, slos: out };
+  let metricOut = [];
+  try { metricOut = await metricSlos(n, cfg); } catch (e) { metricOut = []; }
+  return { now: n, slos: out.concat(metricOut) };
 }
 
 // vendor/integration health over a window (default 24h)

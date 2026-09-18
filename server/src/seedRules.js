@@ -505,20 +505,20 @@ const FIXED_RULES = [
    * seen before is its own alert, a worker looping on the same failure is its own alert, and Yakeen/ELM has both
    * a passive rate and the synthetic probe. Incident text carries the signature (dim.note). ---- */
   { key: 'fixed_applog_anomaly_technical', name: 'App log · technical failure anomaly', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
-    metric_key: 'fixed_applog_anomaly_technical', operator: 'gte', threshold: 3.5, window_hours: 1, min_sample: 10,
-    description: 'The worst TECHNICAL failing signature in the Fixed app log (SDA · Salam Home app · Epurchase) is ≥ 3.5 robust z above its own 14-day baseline for this hour of day.',
+    metric_key: 'fixed_applog_anomaly_technical', operator: 'gte', threshold: 150, window_hours: 1, min_sample: 10,
+    description: 'The worst TECHNICAL failing signature in the Fixed app log (SDA · Salam Home app · Epurchase) is ≥ 150 robust z above its own 14-day baseline for this hour of day. STOPGAP THRESHOLD (18 Sep 2026): measured over 14 days this z-score has a MEDIAN of 5.6, where a robust z should sit near 0 — the baseline is systematically under-estimating, so the designed 3.5 fired on 55 % of ticks. 150 is p99 of the broken series and holds some detection until the baseline is fixed; it is not a considered value. Fix the baseline, then put this back to 3.5.',
     runbook: '1) Fixed → Troubleshoot → From the app log: the signature is in the incident text; open the channel card for the step and reason. 2) Impact check with the reason text: ongoing / recovering, since when, how many customers. 3) Provider named (Yakeen, Absher, Nafath, Semati)? Run the probe / check with the provider. 4) 5xx or timeout on an app step → platform team with the request ids from the lane.' },
   { key: 'fixed_applog_anomaly_business', name: 'App log · business refusal anomaly', severity: 'P3', team: 'Digital Ops', segment: 'fixed', alert_class: 'business',
-    metric_key: 'fixed_applog_anomaly_business', operator: 'gte', threshold: 3.5, window_hours: 1, min_sample: 20,
-    description: 'The worst BUSINESS refusal signature (no coverage, NIC mismatch, blacklist, wrong OTP…) is ≥ 3.5 robust z above its own baseline — a refusal that suddenly multiplies is usually a data or configuration problem, not customers.',
+    metric_key: 'fixed_applog_anomaly_business', operator: 'gte', threshold: 120, window_hours: 1, min_sample: 20,
+    description: 'The worst BUSINESS refusal signature (no coverage, NIC mismatch, blacklist, wrong OTP…) is ≥ 120 robust z above its own baseline — a refusal that suddenly multiplies is usually a data or configuration problem, not customers. STOPGAP THRESHOLD (18 Sep 2026): the measured median of this z-score is 9.4, so the baseline is wrong and the designed 3.5 fired on 38 % of ticks. Same treatment as the technical twin: fix the baseline, then restore 3.5.',
     runbook: '1) Troubleshoot → From the app log: which step and reason. 2) A refusal spike on one step = check what changed (plan, ODB data, provider rules) with Sales Ops / OSS. 3) If it is one dealer or one region, it is behaviour, not a fault.' },
   { key: 'fixed_applog_new_signature', name: 'App log · new error never seen before', severity: 'P3', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
-    metric_key: 'fixed_applog_new_signature', operator: 'gte', threshold: 1, window_hours: 1, min_sample: 0,
-    description: 'A failing signature (channel · step · class) that never appeared in the last 14 days, ≥ 5 times in the last hour — a release, a config change or a new provider behaviour.',
+    metric_key: 'fixed_applog_new_signature', operator: 'gte', threshold: 3, window_hours: 1, min_sample: 0,
+    description: 'THREE OR MORE failing signatures (channel · step · class) that never appeared in the last 14 days, in the same hour — a release, a config change or a new provider behaviour. One new signature an hour is normal here (measured p90 = 1 over 14 days), so a single one is logged, not paged.',
     runbook: '1) The incident text names the signature(s). 2) Troubleshoot → From the app log → channel card → reason text. 3) Was there a deploy? Ask the app team; the Log Intelligence agent has a first triage for the new signature.' },
   { key: 'fixed_applog_retry_loop', name: 'App log · retry loop (worker failing on a schedule)', severity: 'P3', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
-    metric_key: 'fixed_applog_retry_loop', operator: 'gte', threshold: 1, window_hours: 3, min_sample: 0,
-    description: 'The same path + reason ≥ 30 times over ≥ 20 min on a flat cadence with no customer request behind it — a worker (e.g. invoices.voidInvoice → 500) that will never succeed on its own.',
+    metric_key: 'fixed_applog_retry_loop', operator: 'gte', threshold: 2, window_hours: 3, min_sample: 0,
+    description: 'TWO OR MORE workers each failing the same way ≥ 30 times over ≥ 20 min on a flat cadence with no customer request behind them. One such loop is permanently running (invoices.voidInvoice → 500; measured p99 = 1 over 14 days), so the rule fires when a SECOND appears. The standing loop is a platform fix, not an alert.',
     runbook: '1) The incident text names the worker and reason. 2) One ticket to the app / payments team with the ids from the log — do not treat as N customer errors. 3) Resolves itself once the worker stops failing for 20 min.' },
   { key: 'fixed_yakeen_technical_rate', name: 'Yakeen / ELM technical failure rate', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
     metric_key: 'fixed_yakeen_technical_rate', operator: 'gte', threshold: 0.30, window_hours: 1, min_sample: 5,
@@ -549,9 +549,27 @@ const BOARD_CH = ['salamhome', 'web', 'qr', 'sda', 'all'];
 const APP_CH = ['salamhome', 'web', 'sda', 'all'];
 const R = (o) => ({ team: 'Digital Ops', segment: 'fixed', window_hours: 1, min_sample: 0, ...o });
 const bizTeam = ch => (ch === 'sda' || ch === 'qr' ? 'Sales Ops' : 'Digital Ops');
+/* THRESHOLDS TUNED FROM 14 DAYS OF SNAPSHOTS (18 Sep 2026) — see claude/FIXED-ALERTS-TUNING.md.
+ * The seed values were written before any series existed and landed BELOW the median: the web
+ * technical rate fired at 15 % against a median of 33 %, so it was true on 93 % of ticks and simply
+ * stayed open; web latency fired at 5 s against a median p95 of 7.3 s. A threshold under the median
+ * is not a detector, it is a description of normal.
+ * Each pair below is anchored on that signal's OWN distribution — P2 at about p95, P1 at about p99 —
+ * so a P2 is true on roughly 5 % of ticks and a P1 on 1 %. The absolute, customer-facing numbers
+ * these used to stand in for now live as Fixed SLO definitions (#slo-settings), which is the honest
+ * split: an SLO says what we owe the customer, an alert says something changed. */
+const TUNED = {
+  applog_tech:    { salamhome: [0.40, 0.50], web: [0.65, 0.75], sda: [0.65, 0.90], all: [0.60, 0.70] },
+  applog_latency: { salamhome: [14000, 22000], web: [12000, 15000], sda: [11000, 14000], all: [11500, 13000] },
+  applog_otp:     { salamhome: 0.70, web: 0.35, sda: 0.45, all: 0.35 },
+  applog_payment: { salamhome: 0.40, web: 0.40, sda: 0.40, all: 0.40 },
+  board_tech:     { sda: [0.45, 0.90] },
+  volume_floor:   { salamhome: 0.25, web: 0.15 },      // sda's ratio has a median of 0.11 — its baseline is wrong, rule seeded OFF below
+};
 const CH_RULES = [];
 for (const ch of BOARD_CH) {
-  const c = FXCH[ch], p2 = c.consumer ? 0.15 : 0.20, p1 = c.consumer ? 0.40 : 0.50;
+  const c = FXCH[ch];
+  const [p2, p1] = TUNED.board_tech[ch] || [c.consumer ? 0.15 : 0.20, c.consumer ? 0.40 : 0.50];
   CH_RULES.push(
     R({ key: `fixed_board_tech_rate_${ch}`, name: `${c.label} · technical error rate (P2)`, severity: 'P2', alert_class: 'technical', channel: ch,
       metric_key: 'fixed_board_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p2, min_sample: 20,
@@ -596,8 +614,9 @@ CH_RULES.push(
     runbook: '1) On 152: opsb-ingest-watch (crash-loop since 22 Aug 2026 — ticket). 2) Nothing to do on the board: the fallback is automatic. 3) Clears when beta writes again.' }),
 );
 for (const ch of APP_CH) {
-  const c = FXCH[ch], p2 = c.consumer ? 0.15 : 0.20, p1 = c.consumer ? 0.40 : 0.50;
-  const lat = { salamhome: [4000, 8000], web: [5000, 10000], sda: [6000, 12000], all: [6000, 12000] }[ch];
+  const c = FXCH[ch];
+  const [p2, p1] = TUNED.applog_tech[ch] || [c.consumer ? 0.15 : 0.20, c.consumer ? 0.40 : 0.50];
+  const lat = TUNED.applog_latency[ch] || [6000, 12000];
   CH_RULES.push(
     R({ key: `fixed_applog_tech_rate_${ch}`, name: `${c.label} · app steps failing technically (P2)`, severity: 'P2', alert_class: 'technical', channel: ch,
       metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p2, min_sample: 20,
@@ -620,7 +639,7 @@ for (const ch of APP_CH) {
       description: `${c.label}: p95 step duration ≥ ${lat[1]} ms — customers are timing out in the app, not just waiting.`,
       runbook: `1) Page Digital Ops L2 + the app team (146 / DB). 2) Slowest step in the incident text → its dependency first. 3) Watch the technical-rate rule for the same channel: timeouts follow latency.` }),
     R({ key: `fixed_applog_otp_tech_${ch}`, name: `${c.label} · OTP / verification failing technically`, severity: 'P2', alert_class: 'technical', channel: ch,
-      metric_key: 'fixed_applog_otp_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: 0.3, min_sample: 10,
+      metric_key: 'fixed_applog_otp_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: TUNED.applog_otp[ch] || 0.3, min_sample: 10,
       description: `${c.label}: OTP / verification steps (sendOTP, validateCode, verifyOtp, Absher checkValidateCode) failing TECHNICALLY ≥ 30 % in the last 60 min — SMS gateway, Absher or DRM not answering; nobody can log in or confirm.`,
       runbook: `1) From the app log → providers: Absher / DRM rows and the reason. 2) SMS gateway (Unifonic) balance / connectivity; Absher = provider. 3) Announce to CX: OTP delivery affected.` }),
     R({ key: `fixed_applog_otp_biz_${ch}`, name: `${c.label} · OTP / verification refused`, severity: 'P3', team: bizTeam(ch), alert_class: 'business', channel: ch,
@@ -628,7 +647,7 @@ for (const ch of APP_CH) {
       description: `${c.label}: ≥ 50 % of OTP / verification steps refused (wrong code, expired, "too many requests", no mobile registered) — rate limiting or a broken retry loop in the app, or an attack pattern.`,
       runbook: `1) From the app log: the reason ("Too many requests…" = the app's own rate limit — check for a retry loop in the client). 2) Many refusals from one number / dealer = abuse → Fraud. 3) Otherwise informational.` }),
     R({ key: `fixed_applog_payment_tech_${ch}`, name: `${c.label} · payment / checkout failing technically (P1)`, severity: 'P1', team: 'BSS Ops', alert_class: 'technical', channel: ch,
-      metric_key: 'fixed_applog_payment_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: 0.2, min_sample: 10,
+      metric_key: 'fixed_applog_payment_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: TUNED.applog_payment[ch] || 0.2, min_sample: 10,
       description: `${c.label}: payment / checkout / invoice steps failing TECHNICALLY ≥ 20 % in the last 60 min (≥ 10 steps) — money path broken: gateway, payment service or BSS invoice call.`,
       runbook: `1) From the app log → ${c.page}: checkPayment / payment steps and reason. 2) Payment gateway status; BSS invoice API; the payments worker lane (voidInvoice loop?). 3) Cross-check the "paid but stuck" board rule for the same channel — customers may have paid.` }),
     R({ key: `fixed_applog_payment_biz_${ch}`, name: `${c.label} · payment / checkout refused`, severity: 'P3', team: 'BSS Ops', alert_class: 'business', channel: ch,
@@ -642,8 +661,8 @@ CH_RULES.push(
     metric_key: 'fixed_applog_fail_rate', dim: { channel: 'payments', cls: 'technical' }, operator: 'gte', threshold: 0.5, min_sample: 10,
     description: 'The payments service worker lines in combined.log (invoices.voidInvoice, notifications…) are failing ≥ 50 % in the last 60 min — a background job that will not succeed on its own (see also the retry-loop rule).',
     runbook: '1) From the app log → Payments worker card: the job and reason. 2) One ticket to the payments / app team with the invoice ids. 3) Not customer-facing by itself; check the paid-but-stuck rules for the customer impact.' }),
-  R({ key: 'fixed_applog_step_latency_worst', name: 'Slowest app step p95 over 10 s', severity: 'P2', alert_class: 'technical',
-    metric_key: 'fixed_applog_step_latency_p95_ms', operator: 'gte', threshold: 10000, min_sample: 20,
+  R({ key: 'fixed_applog_step_latency_worst', name: 'Slowest app step p95 over 25 s', severity: 'P2', alert_class: 'technical',
+    metric_key: 'fixed_applog_step_latency_p95_ms', operator: 'gte', threshold: 25000, min_sample: 20,
     description: 'The single slowest tRPC step (≥ 20 calls in the last 60 min) has a p95 ≥ 10 s — one dependency is crawling even if the channel average looks fine (feasibility to a provider, Yakeen, an OSS call).',
     runbook: '1) The incident text names the step, channel and p95. 2) Map the step to its dependency: validateIndividualCustomer → Yakeen; feasibility → TLS / DAWIYAT / STC; checkPayment → gateway / BSS. 3) Check that provider\'s own latency / failure alert; raise with the provider or the app team.' }),
   R({ key: 'fixed_applog_collector_stale', name: 'App-log collector stale (lane + app-log alerts blind)', severity: 'P2', alert_class: 'technical', window_hours: 24,
@@ -654,8 +673,8 @@ CH_RULES.push(
 for (const ch of ['salamhome', 'web', 'sda']) {
   const c = FXCH[ch];
   CH_RULES.push(R({ key: `fixed_applog_volume_collapse_${ch}`, name: `${c.label} · traffic collapsed (silent outage)`, severity: c.consumer ? 'P1' : 'P2', alert_class: 'technical', channel: ch,
-    metric_key: 'fixed_applog_volume_ratio', dim: { channel: ch }, operator: 'lte', threshold: c.consumer ? 0.3 : 0.25, active_from: c.consumer ? 9 : 10, active_to: c.consumer ? 23 : 22,
-    description: `${c.label}: app-log lines in the last 60 min are ≤ ${c.consumer ? 30 : 25} % of the same-hour 7-day median (KSA ${c.consumer ? '09–23' : '10–22'}) — the channel went quiet: an outage BEFORE the app (store, CDN, gateway, login page) shows up as silence, not as errors. Needs 3 days of log history.`,
+    metric_key: 'fixed_applog_volume_ratio', dim: { channel: ch }, operator: 'lte', threshold: TUNED.volume_floor[ch] || 0.25, enabled: ch !== 'sda', active_from: c.consumer ? 9 : 10, active_to: c.consumer ? 23 : 22,
+    description: `${c.label}: app-log lines in the last 60 min are ≤ ${Math.round((TUNED.volume_floor[ch] || 0.25) * 100)} % of the same-hour 7-day median (KSA ${c.consumer ? '09–23' : '10–22'}) — the channel went quiet: an outage BEFORE the app (store, CDN, gateway, login page) shows up as silence, not as errors. Needs 3 days of log history. Measured 18 Sep 2026: this ratio's median is 0.76 here (Salam Home), 0.40 (web) and 0.11 (SDA) where a ratio against its own median should sit near 1.0 — the 7-day median is inflated, so the floors below are provisional and SDA is seeded OFF until the baseline is corrected.`,
     runbook: `1) Open the ${c.page} yourself (or ask CX): does it load / log in? 2) Check the app-log collector rule (stale collector = same symptom) and the gateway / 146 health. 3) Compare the board ingest lag rule — both silent = platform-wide. 4) Clears when traffic returns.` }));
 }
 const KIND_LABEL = { yakeen: 'Yakeen / ELM (NIC record)', yakeen_address: 'Yakeen address (ELM)', absher: 'Absher OTP (DRM)', nafath: 'Nafath', semati: 'Semati (CITC)', manafith: 'Manafith', drm: 'DRM' };

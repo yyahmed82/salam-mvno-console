@@ -107,20 +107,26 @@ function mount(app, { audit, requireCap, boardNow }) {
                 count(a.id) FILTER (WHERE a.resolve_reason='cleared' OR (a.status='resolved' AND a.resolve_reason IS NULL))::int AS cleared,
                 coalesce(sum(a.reopen_count),0)::int AS reopens,
                 count(a.id) FILTER (WHERE a.status='resolved' AND a.ack_at IS NULL)::int AS untouched,
-                max(a.fired_at) AS last_fired
+                count(a.id) FILTER (WHERE (a.status='resolved' AND a.ack_at IS NULL)
+                                       OR a.resolve_reason IN ('false_positive','single_customer','duplicate'))::int AS noise_any,
+                max(a.fired_at) AS last_fired,
+                EXISTS (SELECT 1 FROM metric_snapshots m
+                         WHERE m.metric_key = r.metric_key AND m.window_hours = r.window_hours
+                           AND m.dim @> r.dim AND m.sim_now >= now() - ($1||' days')::interval) AS has_data
          FROM alert_rules r
          LEFT JOIN alerts a ON a.rule_key = r.key AND a.fired_at >= now() - ($1||' days')::interval
          WHERE ${segment.sqlWhere('r', 'key', seg)}
          GROUP BY r.id ORDER BY fires DESC, r.name`, [String(days)])).rows;
       for (const r of rows) {
-        /* noise score 0..100: share of firings nobody acted on or that were closed as noise, weighted by volume */
-        const noisy = r.untouched + r.false_positive + r.closed_single + r.duplicate;
-        r.noise_share = r.fires ? Math.round(100 * noisy / r.fires) : 0;
+        /* noise score 0..100: share of firings nobody acted on or that were closed as noise. The buckets
+         * OVERLAP — an incident nobody acknowledged and then closed as a false positive is in two of
+         * them — so this counts the union, not the sum, which used to push the share past 100 %. */
+        r.noise_share = r.fires ? Math.round(100 * r.noise_any / r.fires) : 0;
         r.single_share = r.with_identity ? Math.round(100 * r.single_customer / r.with_identity) : null;
-        r.verdict = !r.fires ? 'quiet' : r.noise_share >= 60 && r.fires >= 3 ? 'noisy' : r.single_share != null && r.single_share >= 50 && r.fires >= 3 ? 'retry-storms' : r.acked === 0 && r.fires >= 5 ? 'ignored' : 'healthy';
-        r.hint = r.verdict === 'noisy' ? 'Raise the threshold or the min sample, or count by customers' : r.verdict === 'retry-storms' ? `Set a customer floor (min customers ≥ 2 → P4) or count by customers` : r.verdict === 'ignored' ? 'Nobody acknowledges it — lower severity, re-route the team or disable' : r.verdict === 'quiet' ? 'Did not fire in the period' : '';
+        r.verdict = !r.fires ? (r.has_data ? 'quiet' : 'no-data') : r.noise_share >= 60 && r.fires >= 3 ? 'noisy' : r.single_share != null && r.single_share >= 50 && r.fires >= 3 ? 'retry-storms' : r.acked === 0 && r.fires >= 5 ? 'ignored' : 'healthy';
+        r.hint = r.verdict === 'noisy' ? 'Raise the threshold or the min sample, or count by customers' : r.verdict === 'retry-storms' ? `Set a customer floor (min customers ≥ 2 → P4) or count by customers` : r.verdict === 'ignored' ? 'Nobody acknowledges it — lower severity, re-route the team or disable' : r.verdict === 'quiet' ? 'Did not fire in the period' : r.verdict === 'no-data' ? 'The metric has never produced a row for this dimension — there is nothing to measure, so no threshold will help. Check the source, not the rule.' : '';
       }
-      const totals = rows.reduce((t, r) => { t.fires += r.fires; t.acked += r.acked; t.noisy += r.untouched + r.false_positive + r.closed_single + r.duplicate; t.single += r.single_customer; return t; }, { fires: 0, acked: 0, noisy: 0, single: 0 });
+      const totals = rows.reduce((t, r) => { t.fires += r.fires; t.acked += r.acked; t.noisy += r.noise_any; t.single += r.single_customer; return t; }, { fires: 0, acked: 0, noisy: 0, single: 0 });
       res.json({ segment: seg, days, rules: rows, totals, reasons: REASONS });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });

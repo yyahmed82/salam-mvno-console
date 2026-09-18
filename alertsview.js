@@ -98,12 +98,14 @@
       }).catch(()=>{});
     }
     // #alerts?tab=rules (e.g. the "Configure…" link from Monitoring › Gateway) forces that sub-tab once
-    const _mt=/[?&]tab=(open|all|rules|metrics|oncall|activity|noise)/.exec(location.hash||""); if(_mt && _mt[1]!==window.__alertTabDeep){ window.__alertTabDeep=_mt[1]; atab=_mt[1]; if(window.pf) window.pf.set('alerts_tab',atab); }
+    const _mt=/[?&]tab=(open|all|rules|metrics|metricdefs|sources|oncall|activity|noise)/.exec(location.hash||""); if(_mt && _mt[1]!==window.__alertTabDeep){ window.__alertTabDeep=_mt[1]; atab=_mt[1]; if(window.pf) window.pf.set('alerts_tab',atab); }
     const _tabs=$("#alTabs"); if(_tabs) _tabs.querySelectorAll(".pill").forEach(p=>p.classList.toggle("active", p.dataset.atab===atab));
     if(atab==="rules") renderRules();
     else if(atab==="activity") renderActivity();
     else if(atab==="noise") renderNoise();
     else if(atab==="metrics") renderMetrics();
+    else if(atab==="metricdefs"){ const b=$("#alBody"); b.innerHTML=""; if(window.renderMetricDefsInto) window.renderMetricDefsInto(b, SEG); else b.innerHTML='<div class="albanner">metric builder module not loaded</div>'; }
+    else if(atab==="sources"){ const b=$("#alBody"); b.innerHTML=""; if(window.renderSourcesInto) window.renderSourcesInto(b, SEG); else b.innerHTML='<div class="albanner">data sources module not loaded</div>'; }
     else if(atab==="oncall"){ const b=$("#alBody"); b.innerHTML=""; if(window.renderOncallInto) window.renderOncallInto(b, SEG); else b.innerHTML='<div class="albanner">on-call module not loaded</div>';
       b.insertAdjacentHTML("afterbegin",`<div class="rl" style="max-width:640px;margin:0 auto 10px;color:var(--muted)">Share this snapshot with the on-call phone: <a href="#${SEG==="fixed"?"fixed-oncall":"oncall"}" style="color:var(--green)">${location.origin+location.pathname}#${SEG==="fixed"?"fixed-oncall":"oncall"}</a> — full-screen, single column, refreshes with the live sync.</div>`); }
     else renderAlerts();
@@ -1044,7 +1046,7 @@
       h += `<tr class="rule-row${r.enabled?'':' off'}">
         <td><label class="switch"><input type="checkbox" data-rid="${r.id}" ${r.enabled?"checked":""} ${canEdit?'':'disabled'}><span class="slider"></span></label></td>
         <td style="border-left:4px solid ${sevColor(r.severity)}"><span class="sevpill" style="background:${sevColor(r.severity)}">${esc(r.severity)}</span></td>
-        <td><b>${esc(r.name)}</b>${clsChip(r.alert_class)}${r.builtin?' <span class="rl" style="font-size:10px">builtin</span>':''}${r.paused?` <span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#d97706;color:#d97706" title="${esc(r.paused)}">⏸ paused · gateway disabled</span>`:''}<br><span class="mono" style="color:var(--muted);font-size:11px">${esc(r.metric_key)}</span>${r.description?`<div style="color:var(--muted);font-size:11px;max-width:420px">${esc(r.description)}</div>`:""}${badges}</td>
+        <td><b>${esc(r.name)}</b>${clsChip(r.alert_class)}${r.builtin?' <span class="rl" style="font-size:10px">builtin</span>':''}${r.operator_edited?` <span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#2563eb;color:#2563eb" title="Edited in the console — the boot seed keeps these values. Click to reset to the seeded values at the next restart." data-resetseed="${r.id}">✎ edited · seed-protected</span>`:''}${r.paused?` <span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#d97706;color:#d97706" title="${esc(r.paused)}">⏸ paused · gateway disabled</span>`:''}<br><span class="mono" style="color:var(--muted);font-size:11px">${esc(r.metric_key)}</span>${r.description?`<div style="color:var(--muted);font-size:11px;max-width:420px">${esc(r.description)}</div>`:""}${badges}</td>
         <td>${countCell}</td>
         <td class="mono">${esc(cond)}</td>
         <td>${esc(r.window_hours)}h</td>
@@ -1098,7 +1100,7 @@
     let d; try{ d=await api(`/api/alerts/noise?segment=${SEG}&days=${NZ.days}`); }catch(e){ b.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
     const rules=d.rules||[], T=d.totals||{};
     const canEdit=window.opsCan&&window.opsCan("editRules");
-    const V={noisy:["#dc2626","NOISY"],"retry-storms":["#7c3aed","RETRY STORMS"],ignored:["#d97706","IGNORED"],healthy:["var(--good)","HEALTHY"],quiet:["var(--muted)","QUIET"]};
+    const V={noisy:["#dc2626","NOISY"],"retry-storms":["#7c3aed","RETRY STORMS"],ignored:["#d97706","IGNORED"],healthy:["var(--good)","HEALTHY"],quiet:["var(--muted)","QUIET"],"no-data":["#0891b2","NO DATA"]};
     const cnt=v=>rules.filter(r=>r.verdict===v).length;
     let h=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       <select id="nzDays" class="jsearch" style="padding-left:12px;background-image:none;flex:0 0 140px">${[7,14,30,90].map(n=>`<option value="${n}" ${NZ.days==n?"selected":""}>last ${n} days</option>`).join("")}</select>
@@ -1557,6 +1559,8 @@
   // controls
   document.addEventListener("click", async (e)=>{
     if(!e.target.closest(".actmenu,[data-more]")) closeActMenus();
+    const rs = e.target.closest("[data-resetseed]");
+    if(rs && window.opsCan && window.opsCan("editRules")){ if(confirm("Reset this rule to its seeded values at the next restart? Your edited threshold / severity stay in place until then.")) api("/api/rules/"+rs.dataset.resetseed,{method:"PATCH",body:JSON.stringify({operator_edited:false})}).then(()=>renderRules()).catch(err=>alert(err.message)); return; }
     const t = e.target.closest("[data-atab]");
     if(t){ atab=t.dataset.atab; if(window.pf) window.pf.set('alerts_tab',atab); $("#alTabs").querySelectorAll(".pill").forEach(p=>p.classList.toggle("active",p===t)); load(); return; }
   });
