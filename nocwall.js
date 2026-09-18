@@ -21,6 +21,30 @@
     kpi:   { key: 'kpi', sections: ['kpisExec'], title: 'NOC · KEY INDICATORS', sub: 'Mobile + Fixed · north-star · 24 h',
              foot: 'colour = tone of the indicator · delta vs the previous 24 h' },
   };
+  /* THE SALAM MARK (18 Sep 2026). The wall used to show the bare word "salam" in mid-green on a dark green
+     field — low contrast, no logo. It now carries the real brand mark, CLONED from the console header that
+     body.noc-wall hides, rather than a second copy of the path data that would drift the first time the brand
+     changes. The clone's gradient gets a fresh id: two elements sharing one id would both paint from whichever
+     the document found first, which is the hidden original. */
+  function brandMark() {
+    const src = document.querySelector('header .brand-mark');
+    if (!src) return '';
+    let g;
+    try { g = src.cloneNode(true); } catch (_) { return ''; }
+    g.setAttribute('class', 'noc-leaf');
+    g.removeAttribute('style');
+    const uid = 'nocLeaf' + Math.random().toString(36).slice(2, 8);
+    g.querySelectorAll('[id]').forEach(node => {
+      const was = node.id;
+      if (!was) return;
+      node.id = uid;
+      g.querySelectorAll('*').forEach(el => ['fill', 'stroke', 'filter', 'mask', 'clip-path'].forEach(a => {
+        const v = el.getAttribute(a);
+        if (v && v.indexOf('#' + was) !== -1) el.setAttribute(a, v.split('#' + was).join('#' + uid));
+      }));
+    });
+    return g.outerHTML;
+  }
   const wallOf = () => { const m = /^#noc(?:\?(.*))?$/.exec(location.hash || ''); const q = m && m[1] ? /(?:^|&)w=([a-z]+)/.exec(m[1]) : null; return WALLS[q ? q[1] : 'radar'] || WALLS.radar; };
 
   const pad = n => String(n).padStart(2, '0');
@@ -32,7 +56,7 @@
     host.dataset.wall = w.key;
     host.innerHTML = `
       <div class="noc-top">
-        <div class="noc-brand"><span class="noc-mark">salam</span><span class="noc-ttl">${esc(w.title)}<small>${esc(w.sub)}</small></span></div>
+        <div class="noc-brand">${brandMark()}<span class="noc-mark">salam</span><span class="noc-ttl">${esc(w.title)}<small>${esc(w.sub)}</small></span></div>
         <div class="noc-clock"><b id="nocHms">--:--:--</b><small id="nocDate"></small></div>
         <div class="noc-kpis" id="nocKpis"></div>
       </div>

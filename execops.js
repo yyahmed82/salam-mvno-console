@@ -153,6 +153,19 @@
     const at = (sl, r, off) => [cx + r * Math.cos(angOf(sl, off)), cy + r * Math.sin(angOf(sl, off))];
     /* seconds into the loop at which the beam crosses a contact: the wedge's leading edge starts at
      * 3 o'clock (90 deg clockwise from 12), so a blip at theta is reached after theta-90 of turn */
+    /* THE SWEEP (18 Sep 2026). It used to be one quarter-wedge filled with a horizontal linear gradient: a
+       linear ramp across a bounding box cannot follow an arc, so the bright part sat in a corner, the trail
+       read as a flat block and the beam was invisible. SVG has no conic gradient, and adjacent wedges leave
+       anti-aliasing seams whatever the step — so the trail is NESTED sectors: every wedge runs from its own
+       tail angle all the way to the beam, so each edge is interior to a larger shape and nothing abuts. The
+       alpha accumulates toward the beam the way a phosphor afterglow decays, with no banding and no hairlines.
+       The whole group is one promoted layer (will-change), so the rotation costs a composite, not a repaint. */
+    const SWEEP_DEG = 120, SWEEP_SEGS = 22, SWEEP_STEP = 0.034, SWEEP_Q = 1.9;
+    const sPt = d => [cx + R * Math.cos(d * Math.PI / 180), cy + R * Math.sin(d * Math.PI / 180)];
+    const sWedge = (d0, d1) => { const [x0, y0] = sPt(d0), [x1, y1] = sPt(d1);
+      return `M${cx},${cy} L${x0.toFixed(2)},${y0.toFixed(2)} A${R},${R} 0 0,1 ${x1.toFixed(2)},${y1.toFixed(2)} Z`; };
+    const sweepTrail = Array.from({ length: SWEEP_SEGS }, (_, i) =>
+      `<path d="${sWedge(-SWEEP_DEG * Math.pow((SWEEP_SEGS - i) / SWEEP_SEGS, SWEEP_Q), 0.4)}" fill="url(#xoTrail)" fill-opacity="${SWEEP_STEP}"/>`).join('');
     const tAt = (sl, off) => { const deg = degOf(sl) + (off || 0) * 180 / Math.PI; return (((deg % 360) + 360) % 360) / 360 * SWEEP_S; };
     const G = 'var(--xo-grid,#37d39a)';
 
@@ -246,15 +259,18 @@
           <button type="button" class="xo-tty-b" data-tty="back" hidden>◂ all open</button></div>
         <div class="xo-tty-out" role="log" aria-live="polite" aria-label="Open alert contacts"></div>
       </div>
-      <svg viewBox="0 0 ${VB} ${VB}" class="xo-radar" role="img" aria-label="Alert radar: a 12-hour clock, P1 to P3 severity rings by hour, open contacts and cleared history">
+      <svg viewBox="0 0 ${VB} ${VB}" class="xo-radar" style="--xo-sweep-dur:${SWEEP_S}s" role="img" aria-label="Alert radar: a 12-hour clock, P1 to P3 severity rings by hour, open contacts and cleared history">
         <defs>
           <radialGradient id="xoFace" cx="50%" cy="46%" r="58%">
             <stop offset="0%" stop-color="var(--xo-face1,#123a2a)"/><stop offset="55%" stop-color="var(--xo-face2,#0a2419)"/><stop offset="100%" stop-color="var(--xo-face3,#05130d)"/></radialGradient>
           <radialGradient id="xoBloom" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stop-color="${G}" stop-opacity=".16"/><stop offset="70%" stop-color="${G}" stop-opacity=".03"/><stop offset="100%" stop-color="${G}" stop-opacity="0"/></radialGradient>
-          <linearGradient id="xoSweep" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="${G}" stop-opacity="0"/><stop offset="45%" stop-color="${G}" stop-opacity=".12"/>
-            <stop offset="80%" stop-color="${G}" stop-opacity=".34"/><stop offset="100%" stop-color="${G}" stop-opacity=".8"/></linearGradient>
+          <radialGradient id="xoTrail" gradientUnits="userSpaceOnUse" cx="${cx}" cy="${cy}" r="${R}">
+            <stop offset="0%" stop-color="${G}" stop-opacity=".18"/><stop offset="50%" stop-color="${G}" stop-opacity=".62"/>
+            <stop offset="100%" stop-color="${G}" stop-opacity="1"/></radialGradient>
+          <linearGradient id="xoBeamF" gradientUnits="userSpaceOnUse" x1="${cx}" y1="${cy}" x2="${cx + R}" y2="${cy}">
+            <stop offset="0%" stop-color="var(--xo-beam,#8affd0)" stop-opacity=".25"/><stop offset="70%" stop-color="var(--xo-beam,#8affd0)" stop-opacity=".95"/>
+            <stop offset="100%" stop-color="#eafff5" stop-opacity="1"/></linearGradient>
           <pattern id="xoScan" width="3" height="3" patternUnits="userSpaceOnUse"><rect width="3" height="1.2" fill="#000" opacity=".22"/></pattern>
           <filter id="xoGlow" x="-120%" y="-120%" width="340%" height="340%">
             <feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -264,8 +280,9 @@
         <circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#xoBloom)"/>
         <g clip-path="url(#xoFaceClip)">
           ${nowWedge}${spokes}${ticks}${rings}
-          <g class="xo-sweepg"><path class="xo-sweep" d="M${cx},${cy} L${cx},${cy - R} A${R},${R} 0 0,1 ${cx + R},${cy} Z" fill="url(#xoSweep)"/>
-            <line class="xo-beam" x1="${cx}" y1="${cy}" x2="${cx + R}" y2="${cy}" stroke="var(--xo-beam,#8affd0)" stroke-width="2.2" filter="url(#xoGlow)"/></g>
+          <g class="xo-sweepg">${sweepTrail}
+            <line class="xo-beam" x1="${cx}" y1="${cy}" x2="${cx + R}" y2="${cy}" stroke="url(#xoBeamF)" stroke-width="2.6" stroke-linecap="round" filter="url(#xoGlow)"/>
+            <circle class="xo-beamtip" cx="${cx + R - 3}" cy="${cy}" r="3.2" fill="#eafff5" filter="url(#xoGlow)"/></g>
           <rect x="${cx - R}" y="${cy - R}" width="${2 * R}" height="${2 * R}" fill="url(#xoScan)" class="xo-scan"/>
           ${ringLab}${blips}
         </g>
@@ -736,13 +753,15 @@
       .xo-scope .xo-biz{border-color:rgba(55,211,154,.35)}
       .xo-radarwrap{display:flex;gap:22px;align-items:center;flex-wrap:wrap;justify-content:center}
       .xo-radar{width:min(520px,100%);height:auto;flex:1 1 360px;max-width:520px;overflow:visible}
-      .xo-sweepg{transform-origin:210px 210px;animation:xoSweep 8s linear infinite}
+      /* transform-box is stated rather than inherited, and the origin is the face centre (RD.cx/cy) */
+      .xo-sweepg{transform-box:view-box;transform-origin:210px 210px;animation:xoSweep var(--xo-sweep-dur,8s) linear infinite;will-change:transform}
       @keyframes xoSweep{from{transform:rotate(0)}to{transform:rotate(360deg)}}
-      .xo-sweep{opacity:1}.xo-scan{pointer-events:none;mix-blend-mode:multiply;opacity:.5}
-      .xo-live .xo-dot{animation:xoFound 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
-      .xo-live .xo-halo{opacity:0;animation:xoHalo 8s linear infinite backwards;animation-delay:var(--d,0s)}
-      .xo-live .xo-ping{opacity:0;animation:xoPing 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
-      .xo-live .xo-lock{animation:xoLock 8s linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
+      .xo-beam{opacity:.95}.xo-beamtip{opacity:.9}
+      .xo-scan{pointer-events:none;mix-blend-mode:multiply;opacity:.38}
+      .xo-live .xo-dot{animation:xoFound var(--xo-sweep-dur,8s) linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
+      .xo-live .xo-halo{opacity:0;animation:xoHalo var(--xo-sweep-dur,8s) linear infinite backwards;animation-delay:var(--d,0s)}
+      .xo-live .xo-ping{opacity:0;animation:xoPing var(--xo-sweep-dur,8s) linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
+      .xo-live .xo-lock{animation:xoLock var(--xo-sweep-dur,8s) linear infinite backwards;animation-delay:var(--d,0s);transform-box:fill-box;transform-origin:50% 50%}
       /* an OPEN contact never fades below legible - the sweep adds the pop, it does not gate
        * visibility. Only cleared rules (dead stars) live in the dark. */
       @keyframes xoFound{0%{opacity:.82;transform:scale(1)}3%{opacity:1;transform:scale(1.45)}9%{opacity:1;transform:scale(1)}60%{opacity:.94}100%{opacity:.82;transform:scale(1)}}
@@ -750,11 +769,11 @@
       @keyframes xoPing{0%{opacity:0;transform:scale(.5)}2%{opacity:.85;transform:scale(.7)}14%{opacity:0;transform:scale(2.6)}100%{opacity:0;transform:scale(2.6)}}
       @keyframes xoLock{0%{opacity:.45;transform:scale(1)}2%{opacity:.9;transform:scale(1.3)}8%{opacity:.8;transform:scale(1)}100%{opacity:.45;transform:scale(1)}}
       /* cleared rules are dead stars: hollow, dim, no ping - the beam only glints off them */
-      .xo-dead .xo-dot{opacity:.18;animation:xoDead 8s linear infinite backwards;animation-delay:var(--d,0s)}
+      .xo-dead .xo-dot{opacity:.18;animation:xoDead var(--xo-sweep-dur,8s) linear infinite backwards;animation-delay:var(--d,0s)}
       .xo-dead .xo-core{opacity:.26}
       .xo-dead:hover .xo-dot,.xo-dead:hover .xo-core{opacity:.9}
       @keyframes xoDead{0%{opacity:.13}3%{opacity:.48}16%{opacity:.2}100%{opacity:.13}}
-      @media (prefers-reduced-motion:reduce){.xo-sweepg{animation:none}.xo-blip .xo-dot{animation:none;opacity:1}
+      @media (prefers-reduced-motion:reduce){.xo-sweepg{animation:none;will-change:auto}.xo-blip .xo-dot{animation:none;opacity:1}
         .xo-live .xo-lock{animation:none;opacity:.5}.xo-dead .xo-dot{opacity:.3}
         .xo-blip .xo-halo{animation:none;opacity:.16}.xo-blip .xo-ping{animation:none;opacity:0}}
       .xo-radarlegend{min-width:210px;flex:1 1 210px;max-width:320px;font-size:12px}

@@ -146,8 +146,13 @@
   #view-nocwall{display:none}
   #view-nocwall.active{min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(120% 90% at 50% 0%,#0b2a1c 0%,#06160f 45%,#03100a 100%);color:#e3f6ec;--ink:#e3f6ec;--muted:#79ab95;--line:rgba(55,211,154,.20);--card:#082016;--bg:#06180f;--green-bg:rgba(55,211,154,.12)}
   .noc-top{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:18px 34px 10px;border-bottom:1px solid rgba(55,211,154,.18)}
-  .noc-brand{display:flex;align-items:center;gap:16px}
-  .noc-mark{font-weight:900;font-size:26px;letter-spacing:-.02em;color:#37d39a;text-shadow:0 0 18px rgba(55,211,154,.45)}
+  .noc-brand{display:flex;align-items:center;gap:13px}
+  /* the real brand mark, cloned from the (hidden) console header by nocwall.js */
+  .noc-leaf{height:clamp(30px,2.6vw,40px);width:auto;display:block;flex:0 0 auto;filter:drop-shadow(0 0 12px rgba(1,194,17,.42))}
+  /* white wordmark, not mid-green: green-on-dark-green is what made the brand disappear on the wall. The glow
+     is small on purpose — a heavy shadow on a heavy weight reads as blur at TV distance, not as light. */
+  .noc-mark{font-weight:800;font-size:clamp(24px,2.1vw,32px);letter-spacing:-.02em;color:#eafff5;
+    text-shadow:0 0 13px rgba(138,255,208,.3);font-family:"Poppins","Nunito","Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif;line-height:1;margin-right:3px}
   .noc-ttl{display:flex;flex-direction:column;gap:2px;font-size:15px;font-weight:800;letter-spacing:.18em;color:#cdeedd}
   .noc-ttl small{font-size:11px;font-weight:600;letter-spacing:.08em;color:#79ab95;text-transform:none}
   .noc-clock{display:flex;flex-direction:column;align-items:center;gap:0;font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace)}
@@ -2035,13 +2040,13 @@
 <script src="fixed-alerts.js?v=20260911s"></script>
 <script src="fixed-playbook.js?v=20260910c"></script>
 <script src="fixed-diagrams.js?v=20260911x"></script>
-<script src="execops.js?v=20260916c"></script>
+<script src="execops.js?v=20260918i"></script>
 <script src="execbrief.js?v=20260916d"></script>
 <script src="cst-remedy.js?v=20260918f"></script>
 <script src="cst-api.js?v=20260918f"></script>
 <script src="arqami-api.js?v=20260918f"></script>
 <script src="cstpage.js?v=20260918f"></script>
-<script src="nocwall.js?v=20260916b"></script>
+<script src="nocwall.js?v=20260918i"></script>
 <script src="fixed-report.js?v=20260910c"></script>
 <script src="otodocs.js?v=20260910c"></script>
 <script src="salamdocs.js?v=20260910c"></script>
