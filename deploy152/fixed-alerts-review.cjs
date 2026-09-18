@@ -103,7 +103,7 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
 
   /* ---------- 2. per-rule scorecard ---------- */
   hr(`2 · PER-RULE SCORECARD, ${DAYS} d — rules that actually fired, worst first`);
-  console.log(pad('RULE KEY', 40) + pad('SEV', 4) + rpad('AGEd', 5) + rpad('FIRE', 5) + rpad('/DAY', 6) + rpad('ACK', 5) + rpad('UNTCH', 6) + rpad('FALSE', 6) + rpad('SNGL', 5) + rpad('DUP', 4) + rpad('REOP', 5) + rpad('<15m', 5) + rpad('MTTRm', 6) + rpad('NOISE%', 7) + '  ' + pad('VERDICT', 13) + 'CONDITION');
+  console.log(pad('RULE KEY', 40) + pad('SEV', 4) + rpad('AGEd', 5) + rpad('FIRE', 5) + rpad('/DAY', 6) + rpad('ACK', 5) + rpad('UNTCH', 6) + rpad('FALSE', 6) + rpad('SNGL', 5) + rpad('DUP', 4) + rpad('REOP', 5) + rpad('<15m', 5) + rpad('MTTRm', 6) + rpad('NOISE%', 8) + pad('LAST FIRED', 14) + pad('VERDICT', 13) + 'CONDITION');
   const score = await q(`
     SELECT r.key, r.name, r.severity, r.enabled, r.metric_key, r.operator, r.threshold, r.window_hours, r.min_sample, r.dim, r.count_by, r.min_customers, r.created_at,
            count(a.id)::int fires,
@@ -133,7 +133,7 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
     const ageD = Math.max(0.1, (Date.now() - new Date(r.created_at).getTime()) / 864e5);
     const perDay = (r.fires / Math.min(ageD, Number(DAYS))).toFixed(1);
     console.log(pad(r.key, 40) + pad(r.severity, 4) + rpad(ageD.toFixed(1), 5) + rpad(r.fires, 5) + rpad(perDay, 6) + rpad(r.acked, 5) + rpad(r.untouched, 6) + rpad(r.false_positive, 6) +
-      rpad(r.single_customer, 5) + rpad(r.duplicate, 4) + rpad(r.reopens, 5) + rpad(r.lt15, 5) + rpad(r.mttr_min, 6) + rpad(share + '%', 7) + '  ' + pad(verdict, 13) + cond);
+      rpad(r.single_customer, 5) + rpad(r.duplicate, 4) + rpad(r.reopens, 5) + rpad(r.lt15, 5) + rpad(r.mttr_min, 6) + rpad(share + '%', 8) + pad(iso(r.last_fired), 14) + pad(verdict, 13) + cond);
   }
   console.log(`\n${fired.length} of ${score.length} ${SEG_LABEL} rules fired in ${DAYS} d; ${score.length - fired.length} were silent.`);
 
@@ -332,6 +332,28 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
       rpad(r.min_br, 8) + rpad(r.breach, 8) + '  ' + verdict);
   }
   if (!samp.length) console.log('  no rule breached in the window.');
+
+  /* ---------- 11. alerts with no rule behind them ---------- */
+  hr(`11 · UNGOVERNED — alerts whose rule_key has no row in alert_rules (${DAYS} d)`);
+  console.log('These cannot be opened, tuned or disabled from the Alert rules tab, and the rule scorecard in');
+  console.log('section 2 cannot see them at all because it joins from alert_rules. They still page people.');
+  const orphan = await q(`
+    SELECT a.rule_key, count(*)::int fires, count(*) FILTER (WHERE a.ack_at IS NOT NULL)::int acked,
+           count(*) FILTER (WHERE a.status='resolved' AND a.ack_at IS NULL)::int untouched,
+           count(*) FILTER (WHERE a.status='open')::int open_now,
+           min(a.severity) sev, max(a.fired_at) last_fired
+      FROM alerts a
+     WHERE ${FIXED_A} AND a.fired_at >= now() - ($1||' days')::interval
+       AND NOT EXISTS (SELECT 1 FROM alert_rules r WHERE r.key = a.rule_key)
+     GROUP BY a.rule_key ORDER BY fires DESC`, [DAYS]);
+  if (!orphan.length) console.log('  none — every alert traces back to a rule.');
+  else {
+    console.log('  ' + pad('RULE KEY', 40) + pad('SEV', 5) + rpad('FIRES', 7) + rpad('ACK', 6) + rpad('UNTCH', 7) + rpad('OPEN', 7) + 'LAST FIRED');
+    let tot = 0, unt = 0;
+    for (const o of orphan) { tot += o.fires; unt += o.untouched;
+      console.log('  ' + pad(o.rule_key, 40) + pad(o.sev, 5) + rpad(o.fires, 7) + rpad(o.acked, 6) + rpad(o.untouched, 7) + rpad(o.open_now, 7) + iso(o.last_fired)); }
+    console.log(`\n  ${orphan.length} ungoverned source(s), ${tot} fires, ${unt} of them never acknowledged.`);
+  }
 
   /* ---------- 7. silent rules ---------- */
   hr(`7 · SILENT — enabled ${SEG_LABEL} rules with zero fires in ${DAYS} d`);
