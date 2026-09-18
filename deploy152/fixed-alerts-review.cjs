@@ -8,7 +8,7 @@
  * it is describing normal Tuesday. This script puts the two side by side.
  *
  * Run ON 152 AS USER yosri (pm2/node live under yosri's nvm; sudo -i loses that PATH):
- *   cd /apps/unified/server && node /tmp/fixed-alerts-review.cjs --days 30
+ *   cd /apps/unified/server && node /tmp/fixed-alerts-review.cjs --segment mvno --days 30
  *
  * Reads CONSOLE_DATABASE_URL out of /apps/unified/.env by parsing it IN NODE. Never `set -a; . .env`
  * on this box — values contain spaces and angle brackets and that pattern has broken a cron here before.
@@ -37,8 +37,19 @@ const args = process.argv.slice(2);
 const argv = (f, d) => { const i = args.indexOf(f); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
 const DAYS = String(Math.max(1, Math.min(180, Number(argv('--days', 30)) || 30)));
 const SNAPD = String(Math.max(1, Math.min(60, Number(argv('--snap-days', 14)) || 14)));
-const FIXED_R = `(r.segment = 'fixed' OR r.key LIKE 'fixed\\_%')`;
-const FIXED_A = `(a.segment = 'fixed' OR a.rule_key LIKE 'fixed\\_%')`;
+/* Which business this run is about. segment.js is the single definition and this mirrors it exactly:
+ * a rule belongs to Fixed if its segment column says so OR its key carries the fixed_ prefix. */
+const SEG = (argv('--segment', 'fixed') || 'fixed').toLowerCase();
+if (!['fixed', 'mvno', 'all'].includes(SEG)) { console.error(`✗ --segment must be fixed | mvno | all (got ${SEG})`); process.exit(1); }
+const SEG_LABEL = SEG === 'fixed' ? 'Fixed' : SEG === 'mvno' ? 'Mobile (MVNO)' : 'Fixed + Mobile';
+const segSql = (alias, keyCol) => SEG === 'all' ? 'TRUE'
+  : SEG === 'fixed' ? `(${alias}.segment = 'fixed' OR ${alias}.${keyCol} LIKE 'fixed\\_%')`
+  : `(${alias}.segment <> 'fixed' AND ${alias}.${keyCol} NOT LIKE 'fixed\\_%')`;
+const FIXED_R = segSql('r', 'key');
+const FIXED_A = segSql('a', 'rule_key');
+/* snapshots belonging to this segment: the metrics its rules actually reference (the mvno metric keys
+ * carry no prefix, so a LIKE on the metric name only works for Fixed) */
+const SEG_METRICS = `metric_key IN (SELECT r.metric_key FROM alert_rules r WHERE ${FIXED_R})`;
 
 const pad = (s, n) => { s = s == null ? '' : String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s.padEnd(n); };
 const rpad = (s, n) => String(s == null ? '' : s).padStart(n);
@@ -53,22 +64,22 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
   const q = (sql, p) => c.query(sql, p).then(r => r.rows);
 
   /* ---------- 0. context ---------- */
-  hr('0 · CONTEXT — unified_console on 172.31.15.121');
+  hr(`0 · CONTEXT — ${SEG_LABEL} · unified_console on 172.31.15.121`);
   const ctx = (await q(`
     SELECT (SELECT count(*) FROM alert_rules r WHERE ${FIXED_R})::int AS rules,
            (SELECT count(*) FROM alert_rules r WHERE ${FIXED_R} AND r.enabled)::int AS enabled,
            (SELECT count(DISTINCT r.metric_key) FROM alert_rules r WHERE ${FIXED_R})::int AS metrics,
-           (SELECT min(sim_now) FROM metric_snapshots WHERE metric_key LIKE 'fixed\\_%') AS snap_from,
-           (SELECT max(sim_now) FROM metric_snapshots WHERE metric_key LIKE 'fixed\\_%') AS snap_to,
-           (SELECT count(*) FROM metric_snapshots WHERE metric_key LIKE 'fixed\\_%')::int AS snaps,
+           (SELECT min(sim_now) FROM metric_snapshots WHERE ${SEG_METRICS}) AS snap_from,
+           (SELECT max(sim_now) FROM metric_snapshots WHERE ${SEG_METRICS}) AS snap_to,
+           (SELECT count(*) FROM metric_snapshots WHERE ${SEG_METRICS})::int AS snaps,
            (SELECT count(*) FROM alerts a WHERE ${FIXED_A})::int AS alerts_all,
            (SELECT count(*) FROM alerts a WHERE ${FIXED_A} AND a.status='open')::int AS open_now`))[0];
-  console.log(`rules ${ctx.rules} (enabled ${ctx.enabled}) over ${ctx.metrics} metrics · alerts all-time ${ctx.alerts_all} · open now ${ctx.open_now}`);
-  console.log(`metric_snapshots for fixed_*: ${ctx.snaps} rows, ${iso(ctx.snap_from)} → ${iso(ctx.snap_to)} UTC`);
+  console.log(`${SEG_LABEL} rules ${ctx.rules} (enabled ${ctx.enabled}) over ${ctx.metrics} metrics · alerts all-time ${ctx.alerts_all} · open now ${ctx.open_now}`);
+  console.log(`metric_snapshots for this segment: ${ctx.snaps} rows, ${iso(ctx.snap_from)} → ${iso(ctx.snap_to)} UTC`);
   console.log(`census window: alerts ${DAYS} d · snapshots ${SNAPD} d`);
 
   /* ---------- 1. headline ---------- */
-  hr(`1 · HEADLINE — what Fixed fired, 7 d vs ${DAYS} d`);
+  hr(`1 · HEADLINE — what ${SEG_LABEL} fired, 7 d vs ${DAYS} d`);
   for (const d of ['7', DAYS]) {
     const t = (await q(`
       SELECT count(*)::int fires,
@@ -124,7 +135,7 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
     console.log(pad(r.key, 40) + pad(r.severity, 4) + rpad(ageD.toFixed(1), 5) + rpad(r.fires, 5) + rpad(perDay, 6) + rpad(r.acked, 5) + rpad(r.untouched, 6) + rpad(r.false_positive, 6) +
       rpad(r.single_customer, 5) + rpad(r.duplicate, 4) + rpad(r.reopens, 5) + rpad(r.lt15, 5) + rpad(r.mttr_min, 6) + rpad(share + '%', 7) + '  ' + pad(verdict, 13) + cond);
   }
-  console.log(`\n${fired.length} of ${score.length} Fixed rules fired in ${DAYS} d; ${score.length - fired.length} were silent.`);
+  console.log(`\n${fired.length} of ${score.length} ${SEG_LABEL} rules fired in ${DAYS} d; ${score.length - fired.length} were silent.`);
 
   /* ---------- 3. threshold vs reality ---------- */
   hr(`3 · THRESHOLD vs REALITY — how often each enabled rule's CONDITION is already true (${SNAPD} d of snapshots)`);
@@ -323,7 +334,7 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
   if (!samp.length) console.log('  no rule breached in the window.');
 
   /* ---------- 7. silent rules ---------- */
-  hr(`7 · SILENT — enabled Fixed rules with zero fires in ${DAYS} d`);
+  hr(`7 · SILENT — enabled ${SEG_LABEL} rules with zero fires in ${DAYS} d`);
   const silent = score.filter(r => r.fires === 0 && r.enabled);
   console.log(silent.map(r => r.key).join('  ') || '  none');
   console.log(`\n${silent.length} enabled rules never fired. Disabled rules: ${score.filter(r => !r.enabled).length}.`);
