@@ -210,11 +210,25 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
   console.log('open incident on a signal means the collapse is not working.');
   const openSig = await q(`
     SELECT a.metric_key, a.window_hours, a.dim::text dim, count(*)::int n,
-           string_agg(a.rule_key || ' [' || a.severity || ']', ', ' ORDER BY a.rule_key) keys
+           string_agg(a.rule_key || ' [' || a.severity || ']', ', ' ORDER BY a.rule_key) keys,
+           round(extract(epoch from (now() - min(a.fired_at)))/60)::int age_min,
+           round(extract(epoch from (now() - max(a.last_seen_at)))/60)::int seen_min,
+           count(*) FILTER (WHERE a.ack_at IS NOT NULL)::int acked,
+           coalesce(sum(a.breach_count),0)::int breaches, coalesce(sum(a.reopen_count),0)::int reopens
       FROM alerts a WHERE ${FIXED_A} AND a.status='open'
      GROUP BY a.metric_key, a.window_hours, a.dim ORDER BY n DESC, a.metric_key`);
   const bad = openSig.filter(r => r.n > 1);
-  for (const r of openSig) console.log(`  ${r.n > 1 ? '✗' : '·'} ${rpad(r.n, 2)}  ${pad(r.metric_key, 38)}${pad(r.dim, 44)}${r.keys}`);
+  console.log('\nLIVE = the condition was true within the clear-hold, so the incident is correctly open.');
+  console.log('STALE = it has been quiet longer than the hold and should already have resolved — that is a bug, not a signal.\n');
+  console.log('  ' + pad('SIGNAL', 38) + pad('DIM', 40) + rpad('AGEm', 7) + rpad('SEENm', 7) + rpad('BRCH', 6) + rpad('REOP', 7) + pad('ACK', 6) + 'STATE');
+  const HOLD = 15;
+  for (const r of openSig) {
+    const state = r.seen_min > HOLD * 2 ? 'STALE?' : 'live';
+    console.log(`  ${pad(r.metric_key, 38)}${pad(r.dim, 40)}${rpad(r.age_min, 7)}${rpad(r.seen_min, 7)}${rpad(r.breaches, 6)}${rpad(r.reopens, 7)}${pad(r.acked ? 'yes' : 'no', 6)}${state}${r.n > 1 ? '  ✗ ' + r.keys : ''}`);
+  }
+  const stale = openSig.filter(r => r.seen_min > HOLD * 2);
+  console.log(stale.length ? `\n  ${stale.length} incident(s) quiet for over ${HOLD * 2} min and still open — investigate the resolve path.`
+                           : `\n  every open incident saw its condition true within the last ${HOLD * 2} min: all correctly open.`);
   console.log(bad.length ? `\n  ✗ ${bad.length} signal(s) carrying more than one open incident — collapse NOT working.`
                          : `\n  ✓ every open signal carries exactly one incident.`);
   const dup = await q(`
@@ -231,6 +245,45 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
   console.log(`  severity moves within a collapsed incident (newest ${moves.length}):`);
   for (const m of moves) console.log(`      ${iso(m.created_at)}  ${m.body}`);
   if (!moves.length) console.log('      none yet — a twin has to cross its second threshold first.');
+
+  /* ---------- 9. time of day ---------- */
+  hr(`9 · DAILY SHAPE — breach % by hour of day, KSA, for the rules that are open right now`);
+  console.log('A flat threshold on a metric with a strong daily cycle is on every afternoon and off every night:');
+  console.log('it becomes a dashboard, not an alert. This is the test. Bars are KSA 00..23; · none  ▁<5%  ▃<15%  ▅<30%  ▆<50%  █ more.');
+  const openKeys = [...new Set(openSig.flatMap(r => String(r.keys).split(', ').map(k => k.replace(/ \[.*$/, ''))))];
+  if (!openKeys.length) console.log('  nothing open.');
+  else {
+    const hours = await q(`
+      WITH r AS (SELECT r.key, r.metric_key, r.operator, r.threshold, r.window_hours, r.min_sample, r.dim
+                   FROM alert_rules r WHERE ${FIXED_R} AND r.key = ANY($2))
+      SELECT r.key, extract(hour from (m.sim_now AT TIME ZONE 'Asia/Riyadh'))::int hh,
+             count(m.id)::int ticks,
+             count(m.id) FILTER (WHERE m.value IS NOT NULL AND m.sample >= r.min_sample AND
+               CASE r.operator WHEN 'gte' THEN m.value >= r.threshold WHEN 'gt'  THEN m.value >  r.threshold
+                               WHEN 'lte' THEN m.value <= r.threshold WHEN 'lt'  THEN m.value <  r.threshold
+                               ELSE m.value = r.threshold END)::int breach
+        FROM r JOIN metric_snapshots m
+          ON m.metric_key = r.metric_key AND m.window_hours = r.window_hours AND m.dim @> r.dim
+         AND m.sim_now >= now() - ($1||' days')::interval
+       GROUP BY r.key, hh ORDER BY r.key, hh`, [SNAPD, openKeys]);
+    const by = {};
+    for (const h of hours) { (by[h.key] = by[h.key] || {})[h.hh] = h.ticks ? h.breach / h.ticks : 0; }
+    const glyph = v => v === 0 ? '·' : v < 0.05 ? '▁' : v < 0.15 ? '▃' : v < 0.30 ? '▅' : v < 0.50 ? '▆' : '█';
+    const ruler = Array.from({ length: 24 }, (_, i) => (i % 6 === 0 ? String(i).padStart(2, '0')[0] : i % 6 === 1 ? String(i).padStart(2, '0')[1] : ' ')).join('');
+    console.log('  ' + pad('KSA hour', 40) + ruler + '   PEAK       DAY   NIGHT');
+    console.log('  ' + pad('RULE', 40) + '─'.repeat(24));
+    for (const k of Object.keys(by).sort()) {
+      const h = by[k];
+      const bars = Array.from({ length: 24 }, (_, i) => glyph(h[i] || 0)).join('');
+      let peakH = 0, peakV = 0;
+      for (let i = 0; i < 24; i++) if ((h[i] || 0) > peakV) { peakV = h[i]; peakH = i; }
+      const mean = rs => { const v = rs.map(i => h[i] || 0); return v.reduce((a, b) => a + b, 0) / v.length; };
+      const day = mean([9,10,11,12,13,14,15,16,17,18,19,20]), night = mean([0,1,2,3,4,5,6,7,23]);
+      console.log('  ' + pad(k, 40) + bars + '  ' + rpad(String(peakH).padStart(2,'0') + 'h', 5) + rpad((peakV*100).toFixed(0)+'%', 5)
+        + rpad((day*100).toFixed(0)+'%', 6) + rpad((night*100).toFixed(0)+'%', 6)
+        + (night > 0 && day / Math.max(night, 0.001) >= 3 ? '  ← daily cycle' : night === 0 && day > 0.02 ? '  ← daytime only' : ''));
+    }
+  }
 
   /* ---------- 7. silent rules ---------- */
   hr(`7 · SILENT — enabled Fixed rules with zero fires in ${DAYS} d`);
