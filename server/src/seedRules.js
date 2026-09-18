@@ -103,7 +103,7 @@ const RULES = [
     runbook: '1) Troubleshoot → Semati: separate provider errors (715 / transport — see the Semati provider alerts) from business failures (MOBILE_EXISTS / SEMATI_FAILED). 2) 715/transport dominate → provider-down path (contact TCC). 3) MOBILE_EXISTS dominates → number-pool / duplicate issue, not an outage. 4) Correlate with the CITC composite alert. 5) Page Digital Ops L2.' },
   { key: 'nafath_fail_storm', name: 'Nafath abandonment storm (P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'business',  // EXPIRED/REJECTED/DENIED are well-formed \"no\"s from Nafath (errclass BIZ_TEXT)
-    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.60, window_hours: 1, min_sample: 60,
+    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.55, window_hours: 1, min_sample: 40,
     description: 'Identity verification (Nafath) failing above 50% within the hour — blocks new-line onboarding; page on-call.',
     runbook: '1) Troubleshoot → Nafath/identity: confirm the failure type (timeout, rejected, provider 5xx). 2) Check the CITC composite alert — if Semati is also breaching, it is a shared CITC/Absher upstream issue. 3) If Nafath-only, verify our IAM/Absher integration (token/cert). 4) Nafath gates new-line onboarding — open a P1 and page on-call.' },
 
@@ -172,7 +172,7 @@ const RULES = [
     alert_class: 'business',  // Nafath EXPIRED/REJECTED/DENIED — well-formed refusal outcomes
     // PROVISIONAL — calibrate against live: inherits the composite's 0.40 (between nafath_fail_spike
     // 0.25 and nafath_fail_storm 0.50, but on a 30-min window).
-    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.65, window_hours: 0.5, min_sample: 40,
+    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.60, window_hours: 0.5, min_sample: 25,
     description: 'Nafath verification failing ≥40% over 30 min — the Nafath half of the old CITC composite. If the Semati twin (citc_upstream_down_technical) is open at the same time, the shared TCC/CITC path is degraded: provider-side, not ours — one incident, not per-endpoint pages.',
     runbook: '1) Check the Semati twin rule — BOTH open = shared TCC/CITC upstream, almost certainly not the DMS. 2) If Nafath-only, verify our IAM/Absher integration (token/cert) and the failure type (expired vs rejected). 3) Confirm with TCC Customer Success (customersuccess@tcc-ict.com) if upstream. 4) Watch for recovery before closing.' },
 
@@ -216,9 +216,9 @@ const RULES = [
     metric_key: 'payment_fail_rate', operator: 'gte', threshold: 0.60, window_hours: 3, min_sample: 50,
     dim: { platform: 'web' }, description: 'Epurchase payment failures elevated — isolate from app.',
     runbook: '1) Web checkout failures elevated (isolated from app). 2) Troubleshoot → Payment, filter platform=web: check the web gateway / 3DS redirect flow. 3) Compare with the app failure rate — if app is healthy, it is a web-checkout/redirect issue. 4) Engage the web/checkout owner.' },
-  { key: 'nafath_fail_spike', name: 'Nafath failure spike (P2)', severity: 'P2', team: 'Digital Ops',
+  { key: 'nafath_fail_spike', name: 'Nafath abandonment rising (P3)', severity: 'P3', team: 'Digital Ops',
     alert_class: 'business',  // Nafath refusal outcomes (expired/rejected)
-    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.40, window_hours: 1, min_sample: 60,
+    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.40, window_hours: 1, min_sample: 40,
     description: 'Identity verification (Nafath) failing ≥25% in the last hour — early degradation on the onboarding-critical path.',
     runbook: '1) Nafath failing ≥25%/1h — early degradation on the onboarding path. 2) Troubleshoot → Nafath: confirm the failure type. 3) Watch toward the 50% storm threshold; correlate with the CITC composite. 4) Pre-warn the IAM/Absher owner if it is climbing.' },
   { key: 'semati_fail_spike', name: 'Semati provisioning failure spike (P2)', severity: 'P2', team: 'Digital Ops',
@@ -228,7 +228,7 @@ const RULES = [
     runbook: '1) Semati provisioning above baseline over 24h — mostly MOBILE_EXISTS / SEMATI_FAILED business failures. 2) Troubleshoot → Semati: confirm it is business (not 715/transport). 3) If MOBILE_EXISTS dominates, review the number pool / duplicate-order logic. 4) Not a provider outage unless the Semati provider alerts also fire.' },
   { key: 'eligibility_deny_spike', name: 'Eligibility denials (P2)', severity: 'P2', team: 'Sales Ops',
     alert_class: 'business',  // CITC answered DENIED — provider errors are already excluded from the metric
-    metric_key: 'eligibility_deny_rate', operator: 'gte', threshold: 0.62, window_hours: 24, min_sample: 50,
+    metric_key: 'eligibility_deny_rate', operator: 'gte', threshold: 0.59, window_hours: 24, min_sample: 50,
     description: 'CITC eligibility DENIED above the ~37% baseline (real spike, not the chronic denial level).',
     runbook: '1) Troubleshoot → Eligibility: check the denial reasons — legitimate CITC policy (max lines / ID) vs a systemic error. 2) If one reason surges, engage the CITC/eligibility owner. 3) Sales Ops to review whether genuine customers are affected. 4) Distinguish from a Semati provider outage (that path shows 715/transport, not DENIED).' },
   // SPLIT 2026-08-11 (was: change_plan_fail_spike, alert_class 'mixed'). change_plan_logs carries
@@ -341,7 +341,7 @@ const RULES = [
   // ---------- P3 : watch ----------
   { key: 'abandoned_orders', name: 'Abandoned onboarding surge (P3)', severity: 'P3', team: 'Sales Ops',
     alert_class: 'business',  // abandonment = customer outcome; the platform answered every step it was asked
-    metric_key: 'onboarding_abandoned', operator: 'gte', threshold: 12000, window_hours: 24, min_sample: 0,
+    metric_key: 'onboarding_abandoned', operator: 'gte', threshold: 15000, window_hours: 24, min_sample: 0,
     description: 'Abandoned (never completed/activated) onboarding surging past the ~9.5k daily baseline.',
     runbook: '1) Abandoned onboarding surging past baseline. 2) Troubleshoot: check where users drop (eligibility / payment). 3) If one step failure rate rose, that is the cause — link to the matching alert. 4) Watch-level; act if a specific step is breaking.' },
   { key: 'volume_drop', name: 'Payment volume drop (P3)', severity: 'P3', team: 'Digital Ops',
