@@ -3124,13 +3124,34 @@ app.get('/api/customer/cst/complaints', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 /* Explicit operator action: one call to the CST-facing Arqami service for one identity. Each one writes a row
- * into the audit table the Arqami page measures, which is exactly why nothing calls this on page load. */
+ * into the audit table the Arqami page measures, which is exactly why nothing calls this on page load.
+ *
+ * 18 Sep 2026 — the browser used to send the national id, taken from the profile it had been shown. That profile
+ * is MASKED (NID *******450), so the masker's output was being handed to a validator and every call failed with
+ * "a national / iqama id is required". It is also the wrong shape: an agent without unmaskPII should be able to
+ * make this call without the console ever putting an unmasked national id in their browser. So the browser now
+ * sends the search key and the SERVER resolves the id from the raw profile, before masking. */
 app.post('/api/customer/cst/services', async (req, res) => {
   try {
     const b = req.body || {};
-    const nid = String(b.nid || b.key || '').trim();
-    if (!nid) return res.status(400).json({ error: 'missing national id' });
-    const m = nid.length <= 4 ? '\u2022\u2022\u2022\u2022' : '\u2022'.repeat(Math.min(6, nid.length - 4)) + nid.slice(-4);
+    let nid = String(b.nid || '').trim();
+    /* a value carrying mask characters is the masker's output, not an identifier — it is never used as either */
+    const clean = v => /[\u2022*]/.test(String(v || '')) ? '' : String(v || '').trim();
+    nid = clean(nid);
+    const key = clean(b.key) || nid;
+    if (!key && !nid) return res.status(400).json({ error: 'missing customer key' });
+    if (!custCst.isNid(nid)) {
+      nid = custCst.isNid(key) ? custCst.digits(key) : '';
+      if (!nid) {
+        try {
+          const raw = await subscriber.profile({ key });            // RAW — masking happens on the way out of /api/subscriber, not here
+          const id = raw && raw.identity && (raw.identity.nationality_id_number || raw.identity.national_id || raw.identity.nid);
+          if (custCst.isNid(id)) nid = custCst.digits(id);
+        } catch (_) { /* fall through to the explicit error below */ }
+      }
+    }
+    if (!nid) return res.status(400).json({ error: 'no national / iqama id on this customer \u2014 the Arqami service is keyed on identity, so there is nothing to ask about' });
+    const m = '\u2022'.repeat(6) + nid.slice(-4);
     await audit(req, 'customer.cst.services', 'arqami ' + m, {});
     res.json(await custCst.services(nid));
   } catch (e) { res.status(500).json({ error: e.message }); }

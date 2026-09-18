@@ -62,8 +62,10 @@
       + `<div class="sbt-pane" data-tab="cst" hidden id="sbCst">${cstPane()}</div>`;
     wireTabs(box);
     /* complaints load with the profile; the Arqami call never does \u2014 see cstPane() */
-    cstState = { loaded:false, busy:false, data:null, error:null, svc:null, svcBusy:false, svcErr:null, avail:cstState.avail,
-      nid: (d.identity && (d.identity.nationality_id_number || d.identity.national_id || d.identity.nid)) || (/^[12]\d{9}$/.test(String(curKey).replace(/\D/g,'')) ? String(curKey).replace(/\D/g,'') : '') };
+    /* The national id is NOT derived here. What this page holds is the MASKED profile (NID *******450), and an
+       agent without unmaskPII should never need an unmasked id in their browser to make this call. The server
+       resolves it from the raw profile \u2014 see /api/customer/cst/services. */
+    cstState = { loaded:false, busy:false, data:null, error:null, svc:null, svcBusy:false, svcErr:null, avail:cstState.avail };
     cstLoad(); wireTimeline(box); wireLines(box); wireLogs(box); wireLive(box); wireOnboarding(box); if(hasFixed) wireFixed(box);
     if(!hasFixed&&curFixed){ const l=curFixed.link; const note=document.createElement("div"); note.className="rl"; note.style.cssText="font-size:11px;color:var(--muted);margin:6px 0 10px";
       note.textContent="Fixed services: "+(curFixed.error?"lookup failed — "+curFixed.error:(l&&l.reason?"could not link through nexus — "+l.reason:(l?"none found for this customer (nexus checked "+(l.ids?l.ids.length:0)+" workflow(s))":"none found for this key")));
@@ -969,15 +971,14 @@
         <td>${esc(t.status||'\u2014')}</td>
         <td>${esc(t.category||'\u2014')}</td>
         <td>${esc(t.serviceId||'\u2014')}</td>
-      </tr>${t.resolution||t.actionTaken?`<tr><td colspan="6" class="sub" style="padding-top:0;font-size:11.5px">${esc(String(t.resolution||t.actionTaken).slice(0,400))}</td></tr>`:''}`).join('');
+      </tr>${(()=>{const dt=String(t.resolution||t.actionTaken||'').trim(); return dt.length>3?`<tr><td colspan="6" class="sub" style="padding-top:0;font-size:11.5px">${esc(dt.slice(0,400))}</td></tr>`:'';})()}`).join('');
     return head+`<div class="sb-tblwrap"><table class="sb-tbl"><thead><tr><th>Complaint</th><th>Created</th><th>State</th><th>Status</th><th>Category</th><th>Service</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   function cstServicesHtml(){
     if(cstState.avail && cstState.avail.services===false)
       return `<div class="sub">The Arqami service is not configured here \u2014 set <code>ARQAMI_API_*</code> in <code>/apps/unified/.env</code>.</div>`;
-    const nid=(cstState.nid||'').trim();
-    const btn=`<button class="pill" id="sbCstRun" ${nid?'':'disabled'} style="border-left-color:var(--green)">${cstState.svcBusy?'Asking the service\u2026':'Ask the CST service'}</button>`;
-    const why=`<div class="sub" style="margin:6px 0 10px;font-size:11.5px">This calls the same endpoint CST calls, with the same service account. It is one deliberate click because every call is recorded in the audit table CST\u2019s own traffic is measured from \u2014 loading a customer profile must not add to it.${nid?'':' <b>No national id on this profile</b>, so there is nothing to ask about.'}</div>`;
+    const btn=`<button class="pill" id="sbCstRun" ${cstState.svcBusy?'disabled':''} style="border-left-color:var(--green)">${cstState.svcBusy?'Asking the service\u2026':'Ask the CST service'}</button>`;
+    const why=`<div class="sub" style="margin:6px 0 10px;font-size:11.5px">This calls the same endpoint CST calls, with the same service account. It is one deliberate click because every call is recorded in the audit table CST\u2019s own traffic is measured from \u2014 loading a customer profile must not add to it. The identity is resolved on the server, so no unmasked national id passes through this page.</div>`;
     const r=cstState.svc;
     let out='';
     if(cstState.svcErr) out=`<div class="albanner">${esc(cstState.svcErr)}</div>`;
@@ -1012,9 +1013,9 @@
     finally{ cstState.busy=false; cstState.loaded=true; cstRender(); }
   }
   async function cstRunServices(){
-    if(cstState.svcBusy||!cstState.nid) return;
+    if(cstState.svcBusy||!curKey) return;
     cstState.svcBusy=true; cstState.svcErr=null; cstRender();
-    try{ cstState.svc=await api2('/api/customer/cst/services',{method:'POST',body:JSON.stringify({nid:cstState.nid})}); }
+    try{ cstState.svc=await api2('/api/customer/cst/services',{method:'POST',body:JSON.stringify({key:curKey})}); }
     catch(e){ cstState.svcErr=e.message; }
     finally{ cstState.svcBusy=false; cstRender(); }
   }
