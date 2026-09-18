@@ -20,6 +20,9 @@ async function init({ reset = false } = {}) {
          higher_is_bad=EXCLUDED.higher_is_bad, source_tables=EXCLUDED.source_tables`,
       [m.key, m.label, m.description || null, m.unit, m.higher_is_bad, m.source_tables]);
   }
+  /* OPERATOR OVERRIDE (16 Sep 2026): a builtin rule edited in the console keeps its values across restarts — the seed
+   * only re-applies its numbers to rows the operator never touched. "Reset to seed" clears the flag (PATCH operator_edited=false). */
+  await c.query(`ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS operator_edited boolean NOT NULL DEFAULT false`);
   let n = 0;
   for (const r of RULES) {
     await c.query(
@@ -27,11 +30,20 @@ async function init({ reset = false } = {}) {
         (key,name,description,metric_key,operator,threshold,window_hours,min_sample,team,severity,channel,dim,active_from,active_to,params,runbook,alert_class,segment,enabled,builtin)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,true)
        ON CONFLICT (key) DO UPDATE SET
-         name=EXCLUDED.name, description=EXCLUDED.description, metric_key=EXCLUDED.metric_key,
-         operator=EXCLUDED.operator, threshold=EXCLUDED.threshold, window_hours=EXCLUDED.window_hours,
-         min_sample=EXCLUDED.min_sample, team=EXCLUDED.team, severity=EXCLUDED.severity,
-         channel=EXCLUDED.channel, dim=EXCLUDED.dim, active_from=EXCLUDED.active_from,
-         active_to=EXCLUDED.active_to, runbook=COALESCE(EXCLUDED.runbook, alert_rules.runbook),
+         name=CASE WHEN alert_rules.operator_edited THEN alert_rules.name ELSE EXCLUDED.name END,
+         description=CASE WHEN alert_rules.operator_edited THEN alert_rules.description ELSE EXCLUDED.description END,
+         metric_key=EXCLUDED.metric_key,
+         operator=CASE WHEN alert_rules.operator_edited THEN alert_rules.operator ELSE EXCLUDED.operator END,
+         threshold=CASE WHEN alert_rules.operator_edited THEN alert_rules.threshold ELSE EXCLUDED.threshold END,
+         window_hours=CASE WHEN alert_rules.operator_edited THEN alert_rules.window_hours ELSE EXCLUDED.window_hours END,
+         min_sample=CASE WHEN alert_rules.operator_edited THEN alert_rules.min_sample ELSE EXCLUDED.min_sample END,
+         team=CASE WHEN alert_rules.operator_edited THEN alert_rules.team ELSE EXCLUDED.team END,
+         severity=CASE WHEN alert_rules.operator_edited THEN alert_rules.severity ELSE EXCLUDED.severity END,
+         channel=CASE WHEN alert_rules.operator_edited THEN alert_rules.channel ELSE EXCLUDED.channel END,
+         dim=CASE WHEN alert_rules.operator_edited THEN alert_rules.dim ELSE EXCLUDED.dim END,
+         active_from=CASE WHEN alert_rules.operator_edited THEN alert_rules.active_from ELSE EXCLUDED.active_from END,
+         active_to=CASE WHEN alert_rules.operator_edited THEN alert_rules.active_to ELSE EXCLUDED.active_to END,
+         runbook=CASE WHEN alert_rules.operator_edited THEN alert_rules.runbook ELSE COALESCE(EXCLUDED.runbook, alert_rules.runbook) END,
          alert_class=EXCLUDED.alert_class, segment=EXCLUDED.segment, updated_at=now()`,
       [r.key, r.name, r.description || null, r.metric_key, r.operator, r.threshold,
        r.window_hours || 1, r.min_sample || 0, r.team || null, r.severity || 'P3',
