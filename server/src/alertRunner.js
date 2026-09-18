@@ -114,9 +114,10 @@ async function evaluate(simNow) {
  * Now every group of rules sharing (metric_key, window_hours, dim) owns ONE incident, carried by
  * the LEAST severe rule in the group — the threshold that is crossed first and released last, so it
  * spans the whole event. Severity and name follow the most severe rule currently breached and move
- * back down as it recovers. A severity RISE resets esc_level so the paging ladder restarts at the
- * new severity; escalation.js skips acknowledged incidents, so an owned incident is not re-paged.
- * Rules in a group all read the same snapshot, so value and sample are identical across it. */
+ * back down as it recovers. A severity rise is recorded on the incident and the higher severity's
+ * escalation ladder applies from the next tick; esc_level is deliberately left alone (see the note at
+ * the severity-change branch). Rules in a group all read the same snapshot, so value and sample are
+ * identical across it. */
 const SEV_RANK = { P1: 1, P2: 2, P3: 3, P4: 4 };
 const rank = sev => SEV_RANK[sev] || 4;
 const stableDim = d => { const o = d || {}; return JSON.stringify(Object.keys(o).sort().reduce((a, k) => (a[k] = o[k], a), {})); };
@@ -188,7 +189,11 @@ async function runAlerts(simNow) {
           /* the severity moved: either a twin threshold was crossed / released, or the customer floor
            * applied. A RISE restarts the paging ladder at the new severity. */
           const rose = rank(sig.severity) < rank(openRow.severity);
-          if (rose) await c.query(`UPDATE alerts SET esc_level=0, esc_last_at=NULL WHERE id=$1`, [openRow.id]);
+          /* Do NOT reset esc_level here. escalation.js computes the due tier from elapsed time since
+           * opened_wall and then pages every tier from esc_level up to it, so zeroing esc_level on an
+           * hours-old unacknowledged incident makes it page L1, L2 and L3 in the same pass. Leaving it
+           * alone gives the right behaviour on its own: the new severity's ladder is consulted from the
+           * next tick, and if it is faster or longer than the old one the next due tier pages normally. */
           /* A twin group always explains itself by which threshold is breached. The customer floor only
            * owns the wording when it actually applied, or when the rule has no twin to explain it. */
           const why = sig.downgraded
@@ -198,7 +203,7 @@ async function runAlerts(simNow) {
             : sig.customers != null ? `${sig.customers} customer(s) affected — rule severity restored`
             : 'rule severity restored';
           await c.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`,
-            [openRow.id, `Severity ${openRow.severity} → ${sig.severity}: ${why}${rose ? ' — paging ladder restarted.' : '.'}`]).catch(() => {});
+            [openRow.id, `Severity ${openRow.severity} → ${sig.severity}: ${why}${rose ? ' — the higher severity\u2019s escalation ladder now applies.' : '.'}`]).catch(() => {});
         }
         updated++;
       } else if (await reopenRecent(c, rule, sig, now, msg)) {
