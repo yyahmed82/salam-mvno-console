@@ -518,7 +518,7 @@
      is true, and the numbers below are the same numbers for both, live from the same systems. */
   const PACT = [
     ['Regulatory Affairs', 'answers CST · owns the commitment, the deadline and the statement'],
-    ['IT · Digital Operations', 'runs the service · owns the evidence behind every answer'],
+    ['IT · Operations', 'runs the service · owns the evidence behind every answer'],
     ['Together', 'one set of numbers — live from Remedy, EBPROD and the CST endpoints themselves']
   ];
   const pact = () => `<div class="cs-pact">${PACT.map(([who, what], i) =>
