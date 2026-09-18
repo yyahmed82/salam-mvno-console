@@ -101,9 +101,9 @@ const RULES = [
     metric_key: 'semati_fail_rate', operator: 'gte', threshold: 0.75, window_hours: 1, min_sample: 20,
     description: 'MSISDN provisioning failing well above the ~55% baseline (SEMATI_FAILED / MOBILE_EXISTS) — real deterioration.',
     runbook: '1) Troubleshoot → Semati: separate provider errors (715 / transport — see the Semati provider alerts) from business failures (MOBILE_EXISTS / SEMATI_FAILED). 2) 715/transport dominate → provider-down path (contact TCC). 3) MOBILE_EXISTS dominates → number-pool / duplicate issue, not an outage. 4) Correlate with the CITC composite alert. 5) Page Digital Ops L2.' },
-  { key: 'nafath_fail_storm', name: 'Nafath failure storm (P1)', severity: 'P1', team: 'Digital Ops',
+  { key: 'nafath_fail_storm', name: 'Nafath abandonment storm (P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'business',  // EXPIRED/REJECTED/DENIED are well-formed \"no\"s from Nafath (errclass BIZ_TEXT)
-    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.50, window_hours: 1, min_sample: 20,
+    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.60, window_hours: 1, min_sample: 60,
     description: 'Identity verification (Nafath) failing above 50% within the hour — blocks new-line onboarding; page on-call.',
     runbook: '1) Troubleshoot → Nafath/identity: confirm the failure type (timeout, rejected, provider 5xx). 2) Check the CITC composite alert — if Semati is also breaching, it is a shared CITC/Absher upstream issue. 3) If Nafath-only, verify our IAM/Absher integration (token/cert). 4) Nafath gates new-line onboarding — open a P1 and page on-call.' },
 
@@ -168,11 +168,11 @@ const RULES = [
     metric_key: 'semati_provider_error_rate', operator: 'gte', threshold: 0.40, window_hours: 0.5, min_sample: 10,
     description: 'Semati provider errors (715 / transport) ≥40% over 30 min — the Semati half of the old CITC composite. If the Nafath twin (citc_upstream_down_business) is open at the same time, the shared TCC/CITC path is degraded: provider-side, not ours — one incident, not per-endpoint pages.',
     runbook: '1) Check the Nafath twin rule — BOTH open = shared TCC/CITC upstream, almost certainly not the DMS. 2) Confirm with TCC Customer Success (customersuccess@tcc-ict.com) — ask if a restart/maintenance is in progress on the source. 3) Post a single incident + status update; do not chase each endpoint separately. 4) Watch for recovery on both providers before closing.' },
-  { key: 'citc_upstream_down_business', name: 'CITC upstream degraded — Nafath side (P1)', severity: 'P1', team: 'Digital Ops',
+  { key: 'citc_upstream_down_business', name: 'Nafath verification abandonment high (P3)', severity: 'P3', team: 'Digital Ops',
     alert_class: 'business',  // Nafath EXPIRED/REJECTED/DENIED — well-formed refusal outcomes
     // PROVISIONAL — calibrate against live: inherits the composite's 0.40 (between nafath_fail_spike
     // 0.25 and nafath_fail_storm 0.50, but on a 30-min window).
-    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.40, window_hours: 0.5, min_sample: 10,
+    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.65, window_hours: 0.5, min_sample: 40,
     description: 'Nafath verification failing ≥40% over 30 min — the Nafath half of the old CITC composite. If the Semati twin (citc_upstream_down_technical) is open at the same time, the shared TCC/CITC path is degraded: provider-side, not ours — one incident, not per-endpoint pages.',
     runbook: '1) Check the Semati twin rule — BOTH open = shared TCC/CITC upstream, almost certainly not the DMS. 2) If Nafath-only, verify our IAM/Absher integration (token/cert) and the failure type (expired vs rejected). 3) Confirm with TCC Customer Success (customersuccess@tcc-ict.com) if upstream. 4) Watch for recovery before closing.' },
 
@@ -208,17 +208,17 @@ const RULES = [
   // ---------- P2 : degradations (journeys) ----------
   { key: 'payment_fail_spike', name: 'Payment failure spike (P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'business',  // decline-rate: the gateway answered \"no\"
-    metric_key: 'payment_fail_rate', operator: 'gte', threshold: 0.30, window_hours: 3, min_sample: 40,
+    metric_key: 'payment_fail_rate', operator: 'gte', threshold: 0.55, window_hours: 3, min_sample: 40,
     description: 'Payment failure rate elevated above the ~19% baseline over 3h (early degradation).',
     runbook: '1) Payment failures elevated over 3h — early degradation, not yet a storm. 2) Troubleshoot → Payment: check the leading gateway and top decline code. 3) Watch for it crossing the P1 storm threshold. 4) Sample a few declines to rule out a systemic code.' },
   { key: 'payment_web_fail', name: 'Web checkout failure spike (P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'business',  // web decline-rate — gateway answered \"no\"
-    metric_key: 'payment_fail_rate', operator: 'gte', threshold: 0.35, window_hours: 3, min_sample: 50,
+    metric_key: 'payment_fail_rate', operator: 'gte', threshold: 0.60, window_hours: 3, min_sample: 50,
     dim: { platform: 'web' }, description: 'Epurchase payment failures elevated — isolate from app.',
     runbook: '1) Web checkout failures elevated (isolated from app). 2) Troubleshoot → Payment, filter platform=web: check the web gateway / 3DS redirect flow. 3) Compare with the app failure rate — if app is healthy, it is a web-checkout/redirect issue. 4) Engage the web/checkout owner.' },
   { key: 'nafath_fail_spike', name: 'Nafath failure spike (P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'business',  // Nafath refusal outcomes (expired/rejected)
-    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.25, window_hours: 1, min_sample: 40,
+    metric_key: 'nafath_fail_rate', operator: 'gte', threshold: 0.40, window_hours: 1, min_sample: 60,
     description: 'Identity verification (Nafath) failing ≥25% in the last hour — early degradation on the onboarding-critical path.',
     runbook: '1) Nafath failing ≥25%/1h — early degradation on the onboarding path. 2) Troubleshoot → Nafath: confirm the failure type. 3) Watch toward the 50% storm threshold; correlate with the CITC composite. 4) Pre-warn the IAM/Absher owner if it is climbing.' },
   { key: 'semati_fail_spike', name: 'Semati provisioning failure spike (P2)', severity: 'P2', team: 'Digital Ops',
@@ -228,7 +228,7 @@ const RULES = [
     runbook: '1) Semati provisioning above baseline over 24h — mostly MOBILE_EXISTS / SEMATI_FAILED business failures. 2) Troubleshoot → Semati: confirm it is business (not 715/transport). 3) If MOBILE_EXISTS dominates, review the number pool / duplicate-order logic. 4) Not a provider outage unless the Semati provider alerts also fire.' },
   { key: 'eligibility_deny_spike', name: 'Eligibility denials (P2)', severity: 'P2', team: 'Sales Ops',
     alert_class: 'business',  // CITC answered DENIED — provider errors are already excluded from the metric
-    metric_key: 'eligibility_deny_rate', operator: 'gte', threshold: 0.50, window_hours: 24, min_sample: 50,
+    metric_key: 'eligibility_deny_rate', operator: 'gte', threshold: 0.62, window_hours: 24, min_sample: 50,
     description: 'CITC eligibility DENIED above the ~37% baseline (real spike, not the chronic denial level).',
     runbook: '1) Troubleshoot → Eligibility: check the denial reasons — legitimate CITC policy (max lines / ID) vs a systemic error. 2) If one reason surges, engage the CITC/eligibility owner. 3) Sales Ops to review whether genuine customers are affected. 4) Distinguish from a Semati provider outage (that path shows 715/transport, not DENIED).' },
   // SPLIT 2026-08-11 (was: change_plan_fail_spike, alert_class 'mixed'). change_plan_logs carries
@@ -308,7 +308,7 @@ const RULES = [
     runbook: '1) Troubleshoot → Change Ownership: read the refusal detail — this class means the step answered with a reason. 2) Nafath transfer_ownership authorize rejections dominating → check the identity path and whether customers are declining/expiring the authorize. 3) Policy reasons → engage the ownership-flow owner. 4) Cross-check the technical twin before escalating to L2.' },
   { key: 'recharge_fail_spike', name: 'Recharge / renewal failure spike (P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'business',  // renewal payment declines — gateway answered \"no\"
-    metric_key: 'recharge_fail_rate', operator: 'gte', threshold: 0.30, window_hours: 3, min_sample: 40,
+    metric_key: 'recharge_fail_rate', operator: 'gte', threshold: 0.55, window_hours: 3, min_sample: 40,
     description: 'Plan renewal / recharge payments (checkout_type 6) failing above threshold over 3h — existing customers cannot top up / renew.',
     runbook: '1) Troubleshoot → Payment: filter to the renewal flow and check the leading gateway + top decline code. 2) Compare with the overall payment failure rate — renewal-only spike points at the renewal checkout/plan, not all payments. 3) Check the renewal plan catalogue / pricing service if declines are systemic. 4) Escalate to Payments/BSS L2.' },
   { key: 'courier_partner_down', name: 'Courier partner failing (P2)', severity: 'P2', team: 'Digital Ops',
@@ -329,12 +329,12 @@ const RULES = [
     runbook: '1) Completed/created conversion near zero. 2) Caveat: partly reflects the completed-flag replica lag — verify against a live source before escalating. 3) If genuinely low, walk the funnel (order → eligibility → payment → activation) for the breaking step and link the matching alert. 4) Sales Ops + Digital Ops jointly.' },
   { key: 'offhours_orders', name: 'Off-hours unusual activity (P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'business',  // activity anomaly (test/automation/fraud) — not an error class at all
-    metric_key: 'offhours_orders', operator: 'gte', threshold: 30, window_hours: 3, min_sample: 0,
+    metric_key: 'offhours_orders', operator: 'gte', threshold: 700, window_hours: 3, min_sample: 0,
     active_from: 1, active_to: 6, description: 'Order attempts during the 01:00–06:00 KSA dead window (test/automation/fraud).',
     runbook: '1) Order attempts in the KSA dead window — usually test/automation, occasionally fraud. 2) Troubleshoot: inspect the sources/IPs and whether the orders complete. 3) A burst from one source → flag for fraud/security review. 4) Benign if it is known automation.' },
-  { key: 'dealer_activity_drop', name: 'Working-hours dealer activity drop (P2)', severity: 'P2', team: 'Sales Ops',
+  { key: 'dealer_activity_drop', name: 'Dealer commissioning stalled in working hours (P2)', severity: 'P2', team: 'Sales Ops',
     alert_class: 'technical',  // channel-silence watchdog — a feed/platform outage is the actionable cause (demand drop is the caveat)
-    metric_key: 'dealer_activity', operator: 'lte', threshold: 2, window_hours: 6, min_sample: 0,
+    metric_key: 'dealer_activity', operator: 'lte', threshold: 2, window_hours: 6, min_sample: 1,
     active_from: 9, active_to: 22, description: 'Dealer (DMS) completed-order volume collapsed during dealer hours (data-dependent — dealer feed may be absent in the replica).',
     runbook: '1) Dealer (DMS) completed-order volume collapsed in dealer hours. 2) First check data: the dealer feed may be absent/lagged in the replica (known caveat) — confirm against a live source. 3) If real, contact dealer-channel ops. 4) Do not page if it is a known feed gap.' },
 
