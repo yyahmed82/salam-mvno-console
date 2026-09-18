@@ -44,6 +44,7 @@ const pad = (s, n) => { s = s == null ? '' : String(s); return s.length > n ? s.
 const rpad = (s, n) => String(s == null ? '' : s).padStart(n);
 const pc = v => v == null ? '  — ' : (Number(v) * 100).toFixed(1).padStart(5) + '%';
 const num = (v, d = 2) => v == null ? '—' : (Math.abs(Number(v)) < 1 && Number(v) !== 0 ? Number(v).toFixed(4) : Number(v).toFixed(d));
+const iso = d => d ? new Date(d).toISOString().replace('T', ' ').slice(0, 16) : '—';
 const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repeat(118));
 
 (async () => {
@@ -63,7 +64,6 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
            (SELECT count(*) FROM alerts a WHERE ${FIXED_A})::int AS alerts_all,
            (SELECT count(*) FROM alerts a WHERE ${FIXED_A} AND a.status='open')::int AS open_now`))[0];
   console.log(`rules ${ctx.rules} (enabled ${ctx.enabled}) over ${ctx.metrics} metrics · alerts all-time ${ctx.alerts_all} · open now ${ctx.open_now}`);
-  const iso = d => d ? new Date(d).toISOString().replace('T',' ').slice(0,16) : '—';
   console.log(`metric_snapshots for fixed_*: ${ctx.snaps} rows, ${iso(ctx.snap_from)} → ${iso(ctx.snap_to)} UTC`);
   console.log(`census window: alerts ${DAYS} d · snapshots ${SNAPD} d`);
 
@@ -203,6 +203,34 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
   console.log(pad('RULE KEY', 40) + rpad('FIRES', 6) + rpad('<15m', 6) + rpad('<60m', 6) + rpad('REOPEN', 7) + rpad('AVG m', 6));
   for (const r of flap) console.log(pad(r.rule_key, 40) + rpad(r.fires, 6) + rpad(r.lt15, 6) + rpad(r.lt60, 6) + rpad(r.reopens, 7) + rpad(r.avg_min, 6));
   if (!flap.length) console.log('  no rule resolves under 15 min on 40%+ of its fires');
+
+  /* ---------- 8. twin collapse ---------- */
+  hr('8 · COLLAPSE — is each signal carrying exactly ONE incident?');
+  console.log('After the 18 Sep runner change, rules sharing metric+window+dim share one incident. More than one');
+  console.log('open incident on a signal means the collapse is not working.');
+  const openSig = await q(`
+    SELECT a.metric_key, a.window_hours, a.dim::text dim, count(*)::int n,
+           string_agg(a.rule_key || ' [' || a.severity || ']', ', ' ORDER BY a.rule_key) keys
+      FROM alerts a WHERE ${FIXED_A} AND a.status='open'
+     GROUP BY a.metric_key, a.window_hours, a.dim ORDER BY n DESC, a.metric_key`);
+  const bad = openSig.filter(r => r.n > 1);
+  for (const r of openSig) console.log(`  ${r.n > 1 ? '✗' : '·'} ${rpad(r.n, 2)}  ${pad(r.metric_key, 38)}${pad(r.dim, 44)}${r.keys}`);
+  console.log(bad.length ? `\n  ✗ ${bad.length} signal(s) carrying more than one open incident — collapse NOT working.`
+                         : `\n  ✓ every open signal carries exactly one incident.`);
+  const dup = await q(`
+    SELECT a.rule_key, count(*)::int n, max(a.resolved_at) last
+      FROM alerts a WHERE ${FIXED_A} AND a.resolve_reason='duplicate' AND a.resolved_at >= now() - ($1||' days')::interval
+     GROUP BY a.rule_key ORDER BY n DESC`, [DAYS]);
+  console.log(`\n  twins closed as duplicate in ${DAYS} d: ${dup.length ? dup.map(d => `${d.rule_key} ×${d.n}`).join(', ') : 'none yet (they close on the first tick after a twin incident exists)'}`);
+  const moves = await q(`
+    SELECT c.body, c.created_at FROM incident_comments c
+      JOIN alerts a ON a.id = c.alert_id
+     WHERE ${FIXED_A} AND c.author='system' AND c.body LIKE 'Severity %'
+       AND c.created_at >= now() - ($1||' days')::interval
+     ORDER BY c.created_at DESC LIMIT 12`, [DAYS]);
+  console.log(`  severity moves within a collapsed incident (newest ${moves.length}):`);
+  for (const m of moves) console.log(`      ${iso(m.created_at)}  ${m.body}`);
+  if (!moves.length) console.log('      none yet — a twin has to cross its second threshold first.');
 
   /* ---------- 7. silent rules ---------- */
   hr(`7 · SILENT — enabled Fixed rules with zero fires in ${DAYS} d`);

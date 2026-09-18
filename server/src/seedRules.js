@@ -564,7 +564,7 @@ const TUNED = {
   applog_otp:     { salamhome: 0.70, web: 0.35, sda: 0.45, all: 0.35 },
   applog_payment: { salamhome: 0.40, web: 0.40, sda: 0.40, all: 0.40 },
   board_tech:     { sda: [0.45, 0.90] },
-  volume_floor:   { salamhome: 0.25, web: 0.15 },      // sda's ratio has a median of 0.11 — its baseline is wrong, rule seeded OFF below
+  volume_floor:   { salamhome: 0.15, web: 0.15 },      // sda's ratio has a median of 0.11 — its baseline is wrong, rule seeded OFF below
 };
 const CH_RULES = [];
 for (const ch of BOARD_CH) {
@@ -661,8 +661,8 @@ CH_RULES.push(
     metric_key: 'fixed_applog_fail_rate', dim: { channel: 'payments', cls: 'technical' }, operator: 'gte', threshold: 0.5, min_sample: 10,
     description: 'The payments service worker lines in combined.log (invoices.voidInvoice, notifications…) are failing ≥ 50 % in the last 60 min — a background job that will not succeed on its own (see also the retry-loop rule).',
     runbook: '1) From the app log → Payments worker card: the job and reason. 2) One ticket to the payments / app team with the invoice ids. 3) Not customer-facing by itself; check the paid-but-stuck rules for the customer impact.' }),
-  R({ key: 'fixed_applog_step_latency_worst', name: 'Slowest app step p95 over 25 s', severity: 'P2', alert_class: 'technical',
-    metric_key: 'fixed_applog_step_latency_p95_ms', operator: 'gte', threshold: 25000, min_sample: 20,
+  R({ key: 'fixed_applog_step_latency_worst', name: 'Slowest app step p95 over 32 s', severity: 'P2', alert_class: 'technical',
+    metric_key: 'fixed_applog_step_latency_p95_ms', operator: 'gte', threshold: 32000, min_sample: 20,
     description: 'The single slowest tRPC step (≥ 20 calls in the last 60 min) has a p95 ≥ 10 s — one dependency is crawling even if the channel average looks fine (feasibility to a provider, Yakeen, an OSS call).',
     runbook: '1) The incident text names the step, channel and p95. 2) Map the step to its dependency: validateIndividualCustomer → Yakeen; feasibility → TLS / DAWIYAT / STC; checkPayment → gateway / BSS. 3) Check that provider\'s own latency / failure alert; raise with the provider or the app team.' }),
   R({ key: 'fixed_applog_collector_stale', name: 'App-log collector stale (lane + app-log alerts blind)', severity: 'P2', alert_class: 'technical', window_hours: 24,
