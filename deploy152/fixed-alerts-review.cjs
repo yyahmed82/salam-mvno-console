@@ -285,6 +285,43 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
     }
   }
 
+  /* ---------- 10. sample size behind the breaches ---------- */
+  hr(`10 · SAMPLE SIZE — is the rule breaching because the platform moved, or because n was tiny?`);
+  console.log('A p95 over 30 calls is interpolated from its top two values: one slow call moves it enormously.');
+  console.log('If the median sample on BREACHING ticks is far below the median on all ticks, the rule is measuring');
+  console.log('noise at low traffic, and min_sample is the fix — not the threshold.');
+  console.log('  ' + pad('RULE', 40) + rpad('MIN_N', 7) + rpad('n p50', 8) + rpad('n p50', 8) + rpad('n min', 8) + rpad('BREACH', 8) + '  VERDICT');
+  console.log('  ' + pad('', 40) + rpad('set', 7) + rpad('all', 8) + rpad('breach', 8) + rpad('breach', 8) + rpad('ticks', 8));
+  const samp = await q(`
+    WITH r AS (SELECT r.key, r.metric_key, r.operator, r.threshold, r.window_hours, r.min_sample, r.dim
+                 FROM alert_rules r WHERE ${FIXED_R} AND r.enabled),
+    s AS (SELECT r.key, r.min_sample, m.sample,
+                 (m.value IS NOT NULL AND m.sample >= r.min_sample AND
+                  CASE r.operator WHEN 'gte' THEN m.value >= r.threshold WHEN 'gt'  THEN m.value >  r.threshold
+                                  WHEN 'lte' THEN m.value <= r.threshold WHEN 'lt'  THEN m.value <  r.threshold
+                                  ELSE m.value = r.threshold END) AS br
+            FROM r JOIN metric_snapshots m
+              ON m.metric_key = r.metric_key AND m.window_hours = r.window_hours AND m.dim @> r.dim
+             AND m.sim_now >= now() - ($1||' days')::interval)
+    SELECT key, min_sample,
+           percentile_disc(0.5) WITHIN GROUP (ORDER BY sample)::int p50_all,
+           (percentile_disc(0.5) WITHIN GROUP (ORDER BY sample) FILTER (WHERE br))::int p50_br,
+           (min(sample) FILTER (WHERE br))::int min_br,
+           count(*) FILTER (WHERE br)::int breach, count(*)::int ticks
+      FROM s GROUP BY key, min_sample HAVING count(*) FILTER (WHERE br) > 0
+     ORDER BY (percentile_disc(0.5) WITHIN GROUP (ORDER BY sample) FILTER (WHERE br))::numeric
+              / NULLIF(percentile_disc(0.5) WITHIN GROUP (ORDER BY sample), 0) ASC NULLS LAST`, [SNAPD]);
+  for (const r of samp) {
+    const ratio = r.p50_all ? r.p50_br / r.p50_all : null;
+    const verdict = ratio == null ? ''
+      : ratio <= 0.5 ? `small-sample noise — breaches at ${Math.round(ratio * 100)}% of normal traffic`
+      : ratio <= 0.8 ? 'leans low-traffic'
+      : ratio >= 1.5 ? 'breaches under HEAVY load — real' : 'sample-independent — real';
+    console.log('  ' + pad(r.key, 40) + rpad(r.min_sample, 7) + rpad(r.p50_all, 8) + rpad(r.p50_br, 8) +
+      rpad(r.min_br, 8) + rpad(r.breach, 8) + '  ' + verdict);
+  }
+  if (!samp.length) console.log('  no rule breached in the window.');
+
   /* ---------- 7. silent rules ---------- */
   hr(`7 · SILENT — enabled Fixed rules with zero fires in ${DAYS} d`);
   const silent = score.filter(r => r.fires === 0 && r.enabled);
