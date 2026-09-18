@@ -237,7 +237,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const slaMi = document.getElementById("slaMenuItem"); if(slaMi) slaMi.style.display = isSuper?"":"none";
     const sloMi = document.getElementById("sloSettingsMenuItem"); if(sloMi) sloMi.style.display = isSuper?"":"none";
     const vcMi = document.getElementById("vendorContractsMenuItem"); if(vcMi) vcMi.style.display = isSuper?"":"none";
-    ["governGroup","cstGroup","cstArqamiMenuItem","cstEscMenuItem"].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display = isSuper?"":"none"; });   // GOVERN + CST groups (16 Sep 2026): super admin only
+    ["governGroup","cstGroup","cstArqamiMenuItem","cstEscMenuItem"].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display = isSuper?"":"none"; });   // GOVERN + REGULATORY AFFAIRS groups (16 Sep 2026): super admin only
     const agMi = document.getElementById("agentsMenuItem"); if(agMi) agMi.style.display = (SES.me && SES.me.root!==false && SES.me.realRole==="super_admin")?"":"none";
     // if current active tab is hidden, jump to first visible
     const active = document.querySelector(".navtab.active");

@@ -493,6 +493,13 @@
       .ax-cut{display:block;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .ax-mob{background:color-mix(in srgb,#2563eb 14%,transparent);color:#2563eb}
       .ax-fix{background:color-mix(in srgb,var(--green,#0e9f5a) 14%,transparent);color:var(--green,#0e9f5a)}
+      .cs-pact{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:0 0 14px}
+      .cs-pactr{background:var(--card);padding:9px 13px;display:flex;flex-direction:column;gap:2px;min-width:0}
+      .cs-pactr b{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);font-weight:800}
+      .cs-pactr span{font-size:12.5px;line-height:1.4}
+      .cs-pactr.both{background:color-mix(in srgb,var(--green,#0e9f5a) 8%,var(--card))}
+      .cs-pactr.both b{color:var(--green,#0e9f5a)}
+      @media (max-width:760px){.cs-pact{grid-template-columns:1fr}}
       .cs-loading,.cs-empty{padding:18px;color:var(--muted);font-size:13px}.cs-err{padding:14px;border-left:4px solid ${T.bad}}
       .cs-in-anim{animation:csIn .4s cubic-bezier(.2,.8,.2,1) both}@keyframes csIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
       html[dir=rtl] .cs-tbl th{text-align:right}html[dir=rtl] .cs-hbv{text-align:left}html[dir=rtl] .cs-banner{border-left:1px solid var(--line);border-right:5px solid var(--c)}
@@ -502,14 +509,27 @@
     `; document.head.appendChild(st);
   }
   const PAGES = {
-    arqami: { title: 'Arqami', sub: 'Health of the number-ownership API Salam exposes to CST\'s Arqami portal (.NET 8, replacing the legacy .asmx): daily traffic from the Oracle audit table, then each day per KSA minute — latency, silent minutes, timeout ceiling.', icon: '◎', run: arqami },
-    escalations: { title: 'CST Escalations', sub: 'Complaints CST escalates to Salam (REQ = SRID in Remedy): classification by CST\'s own field, IT scope, closure lag, the open cohort, the Remedy traceability proof and the engagement board.', icon: '⇄', run: escalations },
+    arqami: { title: 'CST Arqami', sub: 'The number-ownership API IT runs for CST\'s Arqami portal (.NET 8, replacing the legacy .asmx) — how it behaves, and what the regulator is actually shown. Regulatory Affairs answers to CST for this service; IT is what makes the answer true.', icon: '◎', run: arqami },
+    escalations: { title: 'CST Escalations', sub: 'Complaints CST escalates to Salam (REQ = SRID in Remedy), read live from Remedy — and the five regulator endpoints run against the same ticket. The evidence Regulatory Affairs answers CST with, produced by IT.', icon: '⇄', run: escalations },
   };
+  /* WHO OWNS WHAT (18 Sep 2026). This section is not an IT dashboard that happens to mention the regulator, and
+     it is not a Regulatory Affairs report that happens to contain metrics — it is the one surface both teams
+     read. Saying so at the top is the point: RA carries the commitment to CST, IT carries whether the commitment
+     is true, and the numbers below are the same numbers for both, live from the same systems. */
+  const PACT = [
+    ['Regulatory Affairs', 'answers CST · owns the commitment, the deadline and the statement'],
+    ['IT · Digital Operations', 'runs the service · owns the evidence behind every answer'],
+    ['Together', 'one set of numbers — live from Remedy, EBPROD and the CST endpoints themselves']
+  ];
+  const pact = () => `<div class="cs-pact">${PACT.map(([who, what], i) =>
+    `<div class="cs-pactr${i === 2 ? ' both' : ''}"><b>${esc(who)}</b><span>${esc(what)}</span></div>`).join('')}</div>`;
+
   function frame(host, page) {
     const p = PAGES[page] || PAGES.arqami;
     host.innerHTML = `<div class="cs-wrap cs-in-anim">
-      <div class="cs-head"><div><div class="cs-kick">CST · super admin</div><h2 class="cs-h">${esc(p.title)}</h2><div class="cs-sub">${esc(p.sub)}</div></div>
+      <div class="cs-head"><div><div class="cs-kick">Regulatory Affairs × IT · super admin</div><h2 class="cs-h">${esc(p.title)}</h2><div class="cs-sub">${esc(p.sub)}</div></div>
         <div class="cs-tabs">${Object.entries(PAGES).map(([k, x]) => `<button type="button" class="cs-tab ${k === page ? 'on' : ''}" data-page="${k}"><i>${x.icon}</i>${esc(x.title)}</button>`).join('')}</div></div>
+      ${pact()}
       <div id="csBody"></div></div>`;
     host.querySelectorAll('[data-page]').forEach(b => b.onclick = () => { const h = b.dataset.page === 'arqami' ? 'arqami' : 'cst-escalations'; if (window.setConsoleHash) window.setConsoleHash(h); else location.hash = '#' + h; });
     return $('#csBody', host);
@@ -522,7 +542,7 @@
     const gear = document.getElementById('settingsBtn'); if (gear) gear.classList.add('on');
     const ob = document.getElementById('opsBar'); if (ob) ob.classList.remove('show');
     state.page = page === 'escalations' ? 'escalations' : 'arqami';
-    if (!isSuper()) { host.innerHTML = `<div class="cs-wrap"><div class="topo-card cs-err" style="text-align:center;padding:34px 20px"><div style="font-size:26px">Locked</div><h2 style="margin:8px 0 4px">Super Admin Only</h2><div class="cs-dim">The CST section carries regulator-facing data and is restricted to super users.</div></div></div>`; return; }
+    if (!isSuper()) { host.innerHTML = `<div class="cs-wrap"><div class="topo-card cs-err" style="text-align:center;padding:34px 20px"><div style="font-size:26px">Locked</div><h2 style="margin:8px 0 4px">Super Admin Only</h2><div class="cs-dim">Regulatory Affairs carries regulator-facing data and is restricted to super users.</div></div></div>`; return; }
     const body = frame(host, state.page);
     if (!state.cfg) { try { state.cfg = await api('/api/cst/config'); } catch (_) { state.cfg = null; } }
     PAGES[state.page].run(body);

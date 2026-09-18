@@ -24,14 +24,14 @@
   };
 
   /* ---- collapsible sections (16 Sep 2026): the gear menu folds like the Mobile / Fixed dropdowns ----
-   * Every .hm-group label (SETTINGS · AI · GOVERNANCE · CST) becomes a disclosure row followed by a wrapper of its
+   * Every .hm-group label (SETTINGS · AI · GOVERNANCE · REGULATORY AFFAIRS) becomes a disclosure row followed by a wrapper of its
    * items; accordion (opening one folds the others); state remembered per group; a group with no visible item for
    * this role disappears with its row; the group holding the active page opens itself once per page change. */
   const SECT_ICON={
     SETTINGS:'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
     AI:'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3"/></svg>',
     GOVERNANCE:'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/></svg>',
-    CST:'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 7h18M6 7l-3 7a3 3 0 0 0 6 0L6 7zM18 7l-3 7a3 3 0 0 0 6 0l-3-7"/></svg>'
+    'REGULATORY AFFAIRS':'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 7h18M6 7l-3 7a3 3 0 0 0 6 0L6 7zM18 7l-3 7a3 3 0 0 0 6 0l-3-7"/></svg>'
   };
   const SECT_DEFAULT={ SETTINGS:true };
   const skey=g=>`settsect:${g}`;
@@ -71,7 +71,7 @@
     });
     /* the group holding the current page opens itself, once per page change */
     const h=(location.hash||"").replace(/^#/,"").split("?")[0];
-    const map={ "arqami":"CST","cst-escalations":"CST","cst":"CST","sla":"GOVERNANCE","slo":"GOVERNANCE","slo-settings":"GOVERNANCE","vendor-contracts":"GOVERNANCE","vendors":"GOVERNANCE","agents":"AI","settings-agents":"AI","settings-assist":"AI","settings-assist-clone":"AI" };
+    const map={ "arqami":"REGULATORY AFFAIRS","cst-escalations":"REGULATORY AFFAIRS","cst":"REGULATORY AFFAIRS","sla":"GOVERNANCE","slo":"GOVERNANCE","slo-settings":"GOVERNANCE","vendor-contracts":"GOVERNANCE","vendors":"GOVERNANCE","agents":"AI","settings-agents":"AI","settings-assist":"AI","settings-assist-clone":"AI" };
     const want=map[h]; if(want && menu.dataset.auto!==h){ menu.dataset.auto=h; menu.querySelectorAll(".navgroup[data-collapse]").forEach(g=>setSect(g, g.dataset.gkey===want)); }
     if(![...menu.querySelectorAll(".navsect")].some(s=>s.classList.contains("open")&&!s.hidden)){ const first=menu.querySelector(".navgroup[data-collapse]:not([hidden])"); if(first) setSect(first,true); }
   }
