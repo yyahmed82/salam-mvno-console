@@ -119,7 +119,10 @@
         </div>
         <div class="sm-actions">
           ${chip}
-          ${h.configured && h.tlsInsecure ? `<span class="sm-chip warn" title="SEMATI_CLEAR_TLS_INSECURE=1 — the certificate on this hop is not verified. Put it back to 0 once the intercepting CA is installed on the curl host."><i></i>TLS not verified</span>` : ""}
+          ${!h.configured ? "" : h.tlsPinned
+            ? `<span class="sm-chip ok" title="TCC serves a self-signed certificate, so the chain proves nothing — SEMATI_CLEAR_TLS_PIN_SHA256 pins their public key instead. A different key fails the call rather than being trusted."><i></i>TLS pinned to TCC</span>`
+            : h.tlsInsecure
+            ? `<span class="sm-chip warn" title="SEMATI_CLEAR_TLS_INSECURE=1 with no pin: the hop to a national registry is unverified. TCC's certificate is self-signed so there is no CA to install — set SEMATI_CLEAR_TLS_PIN_SHA256 to their public key instead."><i></i>TLS not verified</span>` : ""}
           ${biz.length > 1 ? `<span class="sm-seg" id="smBiz">${biz.map(b => `<button type="button" data-b="${esc(b.key)}" class="${S.business === b.key ? "on" : ""}">${esc(b.label)}</button>`).join("")}</span>` : biz.length === 1 ? `<span class="sm-chip">${esc(biz[0].label)}</span>` : ""}
           <button class="pill" id="smTabRun" style="border-left-color:var(--green)">Run a list</button>
           <button class="pill" id="smTabHist" style="border-left-color:var(--blue)">History</button>

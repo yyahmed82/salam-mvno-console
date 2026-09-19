@@ -3,6 +3,36 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.51] — 2026-09-19 — Semati: TCC's certificate is self-signed, so pin their key instead of trusting the path
+### Fixed
+- **The TLS diagnosis in alpha.50 was wrong and is corrected everywhere.** `openssl s_client` from `172.31.43.17`
+  returned `issuer == subject == C=SA, O=Technology Control Company, OU=Semati, CN=semati.tcc-ict.com`. That is not
+  an interception proxy — **TCC serves a self-signed certificate on its own production endpoint**. There is no CA to
+  install and strict validation will never pass, so the hint no longer sends anyone hunting for a proxy.
+### Added
+- **`SEMATI_CLEAR_TLS_PIN_SHA256` — public-key pinning.** `SEMATI_CLEAR_TLS_INSECURE=1` alone means trusting whatever
+  answers on that address. With the pin set, the chain is skipped but TCC's exact key must match or the call fails:
+  `curl --pinnedpubkey sha256//…` on the ssh path, an SPKI check on the socket for the direct path (Node skips
+  `checkServerIdentity` entirely when `rejectUnauthorized` is false, so the check has to be explicit). A `sha256//`
+  prefix in the value is accepted. Unset leaves alpha.50 behaviour, so it can be adopted without a flag day.
+  `deploy152/env.template` carries the one-liner that reads the pin off the API host.
+- **A wrong key is reported as a decision, not a glitch** — curl's `(90)` and the socket mismatch both resolve to a
+  hint that says the presented key is not the pinned one, that TCC may have rotated, and not to clear the pin to make
+  it go away without finding out which. Nothing is sent when the pin fails.
+- **The page states the posture**: `TLS pinned to TCC` (green) when a pin is set, `TLS not verified` (amber) when
+  `SEMATI_CLEAR_TLS_INSECURE=1` stands alone.
+### Fixed (found while testing the above)
+- **A pooled TLS socket handshakes once, so a pin checked only on `secureConnect` was enforced on the first call and
+  silently skipped on every reuse** — worse than no pin, because it reads as protection. Every direct request now
+  gets its own connection (`agent: false`) and the check also covers a socket that arrives already secured. Caught by
+  a test that pinned correctly, then pinned wrongly, and watched the wrong pin pass.
+### Verified
+7 pin checks against a real self-signed HTTPS endpoint — Node's SPKI equals what `openssl dgst` prints, correct pin
+passes, `sha256//`-prefixed pin passes, wrong pin refuses with the hint, curl's `(90)` classifies, no pin is
+unchanged — run twice to catch reuse, plus the 32 end-to-end checks green again in both transports, and the
+`--pinnedpubkey` flag confirmed in the exact curl the ssh path builds.
+
+
 ## [2.0.0-alpha.50] — 2026-09-19 — Semati: the health check now says what to do about a failure
 ### Changed
 - **The reachability check turns an error into the next action** (`server/src/semati.js`). The first production probe

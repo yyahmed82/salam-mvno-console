@@ -38,7 +38,13 @@
  *   SEMATI_CLEAR_TRANSPORT          ssh (default when a host is known) | direct
  *   SEMATI_CLEAR_HOST               host that runs curl; default: first of API_LOG_HOSTS
  *   SEMATI_CLEAR_SSH_USER / _KEY    default API_LOG_USER / API_LOG_KEY
- *   SEMATI_CLEAR_TLS_INSECURE=1     mirrors the script's `curl -k`; default strict
+ *   SEMATI_CLEAR_TLS_INSECURE=1     required on this integration — TCC serves a SELF-SIGNED certificate on
+ *                                   semati.tcc-ict.com (issuer == subject == O=Technology Control Company,
+ *                                   OU=Semati), which is why the operations script carried `curl -k`
+ *   SEMATI_CLEAR_TLS_PIN_SHA256     base64 SHA-256 of TCC's public key (SPKI). Set it and the chain is no
+ *                                   longer trusted blindly: the exact key must match or the call fails —
+ *                                   `curl --pinnedpubkey` on the ssh path, a socket check on the direct one.
+ *                                   This is what makes -k safe; without it any box on the path could answer.
  *   SEMATI_CLEAR_REQUEST_TYPE (4) · SEMATI_CLEAR_MSISDN_TYPE (N) · SEMATI_CLEAR_TIMEOUT_S (20)
  *   SEMATI_CLEAR_DELAY_MS (250)     pause between rows — this is a national registry, not a load test
  *   SEMATI_CLEAR_MAX_ROWS (5000) · SEMATI_CLEAR_RESULT_TTL_MIN (120) · SEMATI_CLEAR_HASH_SECRET (pepper)
@@ -76,7 +82,8 @@ function CFG() {
     requestType: Number(env.SEMATI_CLEAR_REQUEST_TYPE) || 4,
     resultTtlMin: Math.max(5, Number(env.SEMATI_CLEAR_RESULT_TTL_MIN) || 120),
     maxRows: Math.max(1, Number(env.SEMATI_CLEAR_MAX_ROWS) || 5000),
-    pepper: String(env.SEMATI_CLEAR_HASH_SECRET || '')
+    pepper: String(env.SEMATI_CLEAR_HASH_SECRET || ''),
+    pin: String(env.SEMATI_CLEAR_TLS_PIN_SHA256 || '').replace(/^sha256\/\//, '').trim()
   };
 }
 function operatorFor(business) {
@@ -227,6 +234,31 @@ function payload(row, business) {
   });
 }
 const shq = s => `'` + String(s).replace(/'/g, `'\\''`) + `'`;
+/* Pin the server's public key. TCC's certificate is self-signed, so the CA chain proves nothing — but the KEY
+ * is still theirs, and pinning it is what turns `-k` from "trust the network" back into "trust TCC". curl does
+ * it natively; the direct path checks the SPKI on the socket, because Node skips checkServerIdentity entirely
+ * when rejectUnauthorized is false. Unset = old behaviour, so this can be adopted without a flag day. */
+const pinArg = c => (c.pin ? `--pinnedpubkey ${shq('sha256//' + c.pin)} ` : '');
+const spkiOf = sock => { try { const cert = sock.getPeerCertificate(); return cert && cert.pubkey ? crypto.createHash('sha256').update(cert.pubkey).digest('base64') : null; } catch (_) { return null; } };
+/* A pooled TLS socket handshakes once, so a pin checked only on 'secureConnect' is enforced on the FIRST call
+ * and silently skipped on every reuse — which is worse than no pin at all, because it reads as protection.
+ * Every request therefore gets its own connection (`agent: false`), and the check still covers the case where
+ * a socket arrives already secured. Production goes through ssh+curl, one process per row, so this is the
+ * dev/direct path only — but it has to be honest there too. */
+function pinSocket(req, c) {
+  if (!c.pin) return;
+  let done = false;
+  const check = sock => {
+    if (done) return; done = true;
+    const got = spkiOf(sock);
+    if (got === c.pin) return;
+    req.destroy(new Error(`pinned public key mismatch — SEMATI_CLEAR_TLS_PIN_SHA256 expects sha256//${c.pin}, the server presented sha256//${got || 'an unreadable key'}`));
+  };
+  req.on('socket', sock => {
+    if (sock.encrypted && spkiOf(sock)) check(sock);          // already handshaked
+    else sock.once('secureConnect', () => check(sock));
+  });
+}
 function sshArgs(c) {
   const a = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'StrictHostKeyChecking=accept-new'];
   if (c.sshKey) a.push('-i', c.sshKey);
@@ -237,7 +269,7 @@ function sshArgs(c) {
 function callSsh(body) {
   const c = CFG();
   // curl on the remote host; the JSON (with the api key) arrives on its stdin, so it is in no argv and no shell history
-  const remote = `curl -sS -m ${c.timeoutS} ${c.insecure ? '-k ' : ''}-X POST -H 'Accept: application/json' -H 'Content-Type: application/json' --data-binary @- -w '\\n%{http_code}' ${shq(c.url)} 2>&1`;
+  const remote = `curl -sS -m ${c.timeoutS} ${c.insecure ? '-k ' : ''}${pinArg(c)}-X POST -H 'Accept: application/json' -H 'Content-Type: application/json' --data-binary @- -w '\\n%{http_code}' ${shq(c.url)} 2>&1`;
   return new Promise(resolve => {
     const t0 = Date.now(); let out = '', err = '', done = false;
     const fin = r => { if (!done) { done = true; resolve(Object.assign({ ms: Date.now() - t0 }, r)); } };
@@ -266,11 +298,12 @@ function callDirect(body) {
     const t0 = Date.now(); let u;
     try { u = new URL(c.url); } catch (e) { return resolve({ http: 0, body: '', ms: 0, error: 'bad SEMATI_CLEAR_URL' }); }
     const mod = u.protocol === 'http:' ? http : https;
-    const req = mod.request(u, { method: 'POST', timeout: c.timeoutS * 1000, rejectUnauthorized: !c.insecure,
+    const req = mod.request(u, { method: 'POST', agent: false, timeout: c.timeoutS * 1000, rejectUnauthorized: !c.insecure,
       headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, res => {
       let text = ''; res.setEncoding('utf8'); res.on('data', d => { text += d; });
       res.on('end', () => resolve({ http: res.statusCode || 0, body: text.trim(), ms: Date.now() - t0, error: null }));
     });
+    pinSocket(req, c);
     req.on('timeout', () => { req.destroy(new Error(`timeout after ${c.timeoutS}s`)); });
     req.on('error', e => resolve({ http: 0, body: '', ms: Date.now() - t0, error: String(e.message || e).slice(0, 300) }));
     req.end(body);
@@ -278,17 +311,20 @@ function callDirect(body) {
 }
 const call = body => (CFG().transport === 'ssh' ? callSsh(body) : callDirect(body));
 
-/* Turn the transport error into the next action. The first production check (19 Sep 2026, from
- * 172.31.43.17) came back `strict 000 — SSL certificate problem: self signed certificate` while
- * `-k` got a clean 405: something terminates TLS between the API hosts and TCC, which is exactly
- * why the operations script carried `curl -k`. Without this hint an operator reads a raw curl
- * string and has no idea which switch to reach for. */
+/* Turn the transport error into the next action. Measured from 172.31.43.17 on 19 Sep 2026:
+ * `strict 000 — SSL certificate problem: self signed certificate`, `-k` a clean 405, and
+ * `openssl s_client` showed issuer == subject == `O=Technology Control Company, OU=Semati,
+ * CN=semati.tcc-ict.com`. So this is NOT an interception proxy — TCC serves a self-signed
+ * certificate on its own production endpoint. There is no CA to install; the honest fix is to
+ * skip chain validation and PIN their public key instead. Without this hint an operator reads a
+ * raw curl string and has no idea which switch to reach for. */
 const TLS_RE = /self[- ]signed|unable to get local issuer|certificate verify failed|SSL certificate problem|CERT_|DEPTH_ZERO|unable to verify/i;
 function hintFor(err, insecure) {
   const e = String(err || ''); if (!e) return null;
+  if (/pinned public key|--pinnedpubkey|\(90\)/i.test(e)) return 'The key Semati presented is NOT the one pinned in SEMATI_CLEAR_TLS_PIN_SHA256. Either TCC rotated their certificate — re-read the pin and update it — or something is answering in their place. Nothing was sent; do not clear the pin to make this go away without checking which.';
   if (TLS_RE.test(e)) return insecure
-    ? 'The certificate still does not verify even with verification off — that is unusual; check the URL and the proxy in front of this host.'
-    : 'The certificate chain does not verify from this host — something is terminating TLS in the path. Either set SEMATI_CLEAR_TLS_INSECURE=1 in /apps/unified/.env and restart (what the operations script did with curl -k), or install the intercepting CA on that host and keep verification on. Nothing has been sent to Semati.';
+    ? 'The certificate still does not verify even with chain validation off — check SEMATI_CLEAR_URL and whether anything sits in front of that host.'
+    : 'The certificate chain does not verify — TCC serves a SELF-SIGNED certificate on semati.tcc-ict.com, so there is no CA to install and this will never pass strict validation. Set SEMATI_CLEAR_TLS_INSECURE=1 in /apps/unified/.env (what the operations script did with curl -k) and pin their key with SEMATI_CLEAR_TLS_PIN_SHA256 so the hop is still verified. Nothing has been sent to Semati.';
   if (/Could not resolve host|Name or service not known|getaddrinfo|ENOTFOUND|EAI_AGAIN/i.test(e)) return 'DNS does not resolve that host name from there — check the resolver on the box making the call.';
   if (/Connection refused|No route to host|Network is unreachable|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|ECONNRESET|EPIPE/i.test(e)) return 'That host cannot reach Semati — check its egress/firewall rule to TCC (152 itself has no internet, which is why the call is made from an API host).';
   if (/timed? ?out|ETIMEDOUT|ESOCKETTIMEDOUT|aborted/i.test(e)) return 'The request timed out. Semati is slow or the path is blocked — retry before reading anything into it.';
@@ -301,7 +337,7 @@ function probe() {
   if (c.transport === 'ssh') {
     return new Promise(resolve => {
       if (!c.host) return resolve({ reachable: false, http: null, ms: null, error: 'no host configured', hint: 'Set SEMATI_CLEAR_HOST (or API_LOG_HOSTS) to the API host that should issue the request.' });
-      const remote = `curl -sS -o /dev/null -m 8 ${c.insecure ? '-k ' : ''}-w '%{http_code} %{time_total}' ${shq(c.url)} 2>&1 || true`;
+      const remote = `curl -sS -o /dev/null -m 8 ${c.insecure ? '-k ' : ''}${pinArg(c)}-w '%{http_code} %{time_total}' ${shq(c.url)} 2>&1 || true`;
       execFile('ssh', [...sshArgs(c), remote], { timeout: 20000, encoding: 'utf8' }, (err, stdout, stderr) => {
         const out = String(stdout || '').trim(); const m = /(\d{3})\s+([\d.]+)\s*$/.exec(out);
         if (m && m[1] !== '000') return resolve({ reachable: true, http: Number(m[1]), ms: Math.round(Number(m[2]) * 1000), error: null, hint: null });
@@ -313,7 +349,8 @@ function probe() {
   return new Promise(resolve => {
     let u; try { u = new URL(c.url); } catch (_) { return resolve({ reachable: false, http: null, ms: null, error: 'bad SEMATI_CLEAR_URL', hint: 'SEMATI_CLEAR_URL is not a URL.' }); }
     const t0 = Date.now(); const mod = u.protocol === 'http:' ? http : https;
-    const req = mod.request(u, { method: 'GET', timeout: 8000, rejectUnauthorized: !c.insecure }, res => { res.resume(); resolve({ reachable: true, http: res.statusCode, ms: Date.now() - t0, error: null, hint: null }); });
+    const req = mod.request(u, { method: 'GET', agent: false, timeout: 8000, rejectUnauthorized: !c.insecure }, res => { res.resume(); resolve({ reachable: true, http: res.statusCode, ms: Date.now() - t0, error: null, hint: null }); });
+    pinSocket(req, c);
     req.on('timeout', () => req.destroy(new Error('timeout after 8s')));
     req.on('error', e => { const t = String(e.message || e).slice(0, 300); resolve({ reachable: false, http: null, ms: Date.now() - t0, error: t, hint: hintFor(t, c.insecure) }); });
     req.end();
@@ -453,7 +490,7 @@ function mount(app, { requireView, requireCap, audit } = {}) {
     const c = CFG(); const miss = missing();
     const p = miss.length ? { reachable: null, http: null, ms: null, error: null } : await probe();
     res.json({ configured: !miss.length, missing: miss, transport: c.transport, host: c.transport === 'ssh' ? c.host : null, sshUser: c.transport === 'ssh' ? c.sshUser : null,
-      url: c.url, tlsInsecure: c.insecure, requestType: c.requestType, delayMs: c.delayMs, timeoutS: c.timeoutS, maxRows: c.maxRows, resultTtlMin: c.resultTtlMin,
+      url: c.url, tlsInsecure: c.insecure, tlsPinned: !!c.pin, requestType: c.requestType, delayMs: c.delayMs, timeoutS: c.timeoutS, maxRows: c.maxRows, resultTtlMin: c.resultTtlMin,
       operator: { mobile: !!operatorFor('mobile'), fixed: !!operatorFor('fixed'), username: (operatorFor('mobile') || operatorFor('fixed') || {}).employeeUsername || null },
       running: RUNNING, probe: p, businesses: BUSINESSES.filter(b => bizOk(req, b)).map(b => ({ key: b, label: BIZ_LABEL[b] })) });
   });
