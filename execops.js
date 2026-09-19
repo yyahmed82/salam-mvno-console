@@ -422,21 +422,29 @@
     typeInto(out, lines);
   }
 
-  /* ---------- executive brief: the slide deck, in a modal, only if the file is deployed ---------- */
-  const BRIEF = 'exec-brief.html';
-  let briefKnown = null;
-  async function briefExists() {
-    if (briefKnown !== null) return briefKnown;
-    try { const r = await fetch(BRIEF, { method: 'HEAD' }); briefKnown = r.ok; }
-    catch (_) { briefKnown = false; }
-    return briefKnown;
+  /* ---------- the slide decks, in a modal, each only if its file is deployed ----------
+   * Two decks live beside the app: the executive brief (the story for leadership) and the product
+   * brief (what the console is, what every team gets from it). Same modal, same HEAD probe, so a
+   * deck that has not been deployed yet simply never shows its button. */
+  const DECKS = {
+    brief:   { file: 'exec-brief.html',    label: 'Executive brief', title: 'Salam Operations Console \u2014 executive brief' },
+    product: { file: 'product-brief.html', label: 'Product brief',   title: 'Salam Operations Console \u2014 the product' }
+  };
+  const deckKnown = {};
+  async function deckExists(key) {
+    const d = DECKS[key]; if (!d) return false;
+    if (deckKnown[key] !== undefined) return deckKnown[key];
+    try { const r = await fetch(d.file, { method: 'HEAD' }); deckKnown[key] = r.ok; }
+    catch (_) { deckKnown[key] = false; }
+    return deckKnown[key];
   }
-  function openBrief() {
+  function openDeck(key) {
+    const d = DECKS[key] || DECKS.brief;
     if ($('#xoBrief')) return;
     const m = document.createElement('div'); m.id = 'xoBrief'; m.className = 'xo-modal';
-    m.innerHTML = `<div class="xo-modal-in"><div class="xo-modal-bar"><b>Salam Observability Portal — executive brief</b>
-        <span class="xo-modal-tools"><a href="${BRIEF}" target="_blank" rel="noopener" class="xo-btn">open in a tab ↗</a><button type="button" class="xo-btn" data-x="close">✕ close</button></span></div>
-      <iframe src="${BRIEF}" title="Executive brief" loading="lazy"></iframe></div>`;
+    m.innerHTML = `<div class="xo-modal-in"><div class="xo-modal-bar"><b>${d.title}</b>
+        <span class="xo-modal-tools"><a href="${d.file}" target="_blank" rel="noopener" class="xo-btn">open in a tab \u2197</a><button type="button" class="xo-btn" data-x="close">\u2715 close</button></span></div>
+      <iframe src="${d.file}" title="${d.label}" loading="lazy"></iframe></div>`;
     document.body.appendChild(m);
     const close = () => { m.remove(); document.removeEventListener('keydown', esckey); };
     const esckey = e => { if (e.key === 'Escape') close(); };
@@ -444,6 +452,7 @@
     m.addEventListener('click', e => { if (e.target === m) close(); });
     document.addEventListener('keydown', esckey);
   }
+  const openBrief = () => openDeck('brief');
 
   /* ---------- pages ---------- */
   function head(title, sub, halves, opts) {
@@ -453,7 +462,7 @@
         ${title ? `<h2 class="xo-h">${esc(title)}</h2>` : ''}${sub ? `<div class="xo-meta">${esc(sub)}</div>` : ''}</div>
       <div class="xo-tools">${statusPill(status)}<span class="xo-dim">${c.critical} critical · ${c.warnings} warning · ${c.alerts24} alert(s) in 24 h</span>
         ${opts.range === false ? '' : `<span class="xo-range">${['7d', '30d'].map(r => `<button type="button" class="xo-r${state.range === r ? ' on' : ''}" data-r="${r}">${r}</button>`).join('')}</span>`}
-        ${opts.brief ? `<a href="#noc" class="xo-btn xo-noc" title="Alert radar on the NOC wall (F = fullscreen)">◉ NOC wall</a><button type="button" class="xo-btn xo-brief" data-act="brief" hidden>▶ Executive brief</button>` : ''}
+        ${opts.brief ? `<a href="#noc" class="xo-btn xo-noc" title="Alert radar on the NOC wall (F = fullscreen)">◉ NOC wall</a><button type="button" class="xo-btn xo-brief" data-act="brief" hidden>▶ Executive brief</button><button type="button" class="xo-btn xo-brief" data-act="product" hidden>▶ Product brief</button>` : ''}
         <button type="button" class="xo-btn" data-act="refresh" title="refresh now">↻ <span class="xo-upd">updated ${hm(new Date())}</span></button></div></div>`;
   }
 
@@ -558,7 +567,8 @@
       ttyLoad(host, halves, null);
     }
     const rb = host.querySelector('[data-act="refresh"]'); if (rb) rb.onclick = () => render(host, o, true);
-    const bb = host.querySelector('[data-act="brief"]'); if (bb) { bb.onclick = openBrief; briefExists().then(ok => { if (ok) bb.hidden = false; }); }
+    ['brief', 'product'].forEach(k => { const bb = host.querySelector(`[data-act="${k}"]`);
+      if (bb) { bb.onclick = () => openDeck(k); deckExists(k).then(ok => { if (ok) bb.hidden = false; }); } });
     host.setAttribute('data-xo-host', '1'); host._xo = o;
     clearTimeout(timers.get(host)); if (!o.noAutoRefresh) timers.set(host, setTimeout(() => { if (host.isConnected && !document.hidden) render(host, o, true); }, 300e3));   // the NOC wall paces itself
   }
@@ -574,7 +584,7 @@
     render(el, opts);
     return el;
   }
-  window.EXECOPS = { render, mountInto, openBrief, sections: SECTION };
+  window.EXECOPS = { render, mountInto, openBrief, openDeck, sections: SECTION };
 
   /* ---------- the Executive Dashboard view (top level, both businesses) ---------- */
   window.openExecOps = function () {

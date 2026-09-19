@@ -3,6 +3,24 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.45] — 2026-09-19 — A product brief: the console as a Salam product, for every team
+### Added
+- **`product-brief.html`** — a second deck, separate from the executive brief and leaving it untouched, at
+  `/unified-console/product-brief.html`. Fourteen slides that promote the console as a product rather than report on a
+  programme: what it is in one sentence; the seven teams that open it and what each one lands on; the four screens that
+  answer the four questions; the six capabilities behind twenty-four pages; why the alerts get read; the three AI
+  capabilities running on Salam's own hardware; Customer 360 on the front line; thirty-two integrations as
+  accountability; access and PII; built in-house with no licence; the added value as a before/after; what lands next;
+  and a close that asks teams to take a role. Same design system, timings and controls as the executive brief.
+- **A second deck button on the Executive Dashboard.** `DECKS` replaces the single `BRIEF` constant in `execops.js`:
+  each deck is probed with HEAD and its button appears only when the file is actually deployed, so neither deck can
+  show a broken modal. `openBrief()` is kept as an alias and `openDeck(key)` is exported.
+### Changed
+- **The decks read on a phone.** Below 760 px a slide scrolls instead of clipping, so the same file works on a
+  projector, on an iPad and in the hand during a rehearsal. Verified at 1600×900, 1024×768 and 390×844 — nothing
+  clipped, no horizontal scroll, no console errors on any of the fourteen slides.
+
+
 ## [2.0.0-alpha.44] — 2026-09-19 — Speaker notes for the executive brief
 ### Added
 - **`exec-script.html`** — the notes for presenting the brief, at `/unified-console/exec-script.html`. One opening line
