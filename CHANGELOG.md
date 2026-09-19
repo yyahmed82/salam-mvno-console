@@ -24,6 +24,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
 - **A source timestamp could be shifted three hours.** The writers ran every `*_at` column through `ksa()`. That is
   right for a `timestamptz` (pg returns a Date), wrong for a DMS flow sample, which carries the source system's own
   clock as a string — converting it again moved the case three hours. Strings now pass through as captured.
+### Changed
+- **`csql` reads the app's `.env` itself, in Node.** It took the connection string from the process environment only,
+  so its own help said `set -a; . ../.env; set +a` — the one pattern that must not be run on 152, because the file
+  holds values with spaces, parentheses and angle brackets and the shell evaluates them (it has broken a cron here
+  before; sourcing the current `.env` errors on the third line). It now parses `/apps/unified/.env` the way the
+  census scripts do, an exported variable still wins, and a missing one says which variable and which file.
+- **`csql --ops` / `--ops-beta`** reach the Fixed read models (`order_attempts`, `error_events`, `api_calls`). Those
+  URLs are Prisma-style, and node-pg ignores their `?schema=` — every query would have silently read `public`, the
+  PROD read model, instead of the beta one. The schema is stripped from the URL and pinned as `search_path`, the
+  footer names the pool and schema it actually read, and a URL that carries `?schema=` but cannot be parsed warns
+  instead of answering from the wrong schema.
+
 
 ## [2.0.0-alpha.40] — 2026-09-18 — Monitoring is a level of its own; the NOC wall moves to ⚙
 ### Changed
