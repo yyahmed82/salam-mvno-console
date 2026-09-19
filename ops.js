@@ -160,8 +160,42 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   // NOTE: goes through window.fetch (not _fetch) so it gets de-dupe + concurrency cap + cache
   async function api(path, opts){ const r=await window.fetch(API+path, Object.assign({headers:{"Content-Type":"application/json"}}, opts)); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||("HTTP "+r.status)); return r.json(); }
 
-  const ROLE_LABELS = {super_admin:"Super Admin",admin:"Admin",report_manager:"Report Manager",errors_manager:"Errors Manager",events_manager:"Events Manager",
-    l1_bss:"L1 BSS",l2_bss:"L2 BSS",l1_digital:"L1 Digital",l2_digital:"L2 Digital",l3_digital:"L3 Digital"};
+  /* Role labels for the account chip and the Super-Admin "preview as role" picker.
+   * Seeded with every role the server ships (26 since 19 Sep 2026) and hydrated from /api/roles so
+   * custom roles created in Settings > Users > Roles show up without a deploy. Before that the map
+   * held 10 of them, so anyone on a newer role saw the raw key ("l1_oss") as their job title and
+   * could not be previewed at all. */
+  let ROLE_LABELS = {super_admin:"Super Admin",admin:"Admin",report_manager:"Sales Ops",fixed_ops:"Fixed Ops",b2c_admin:"Salam Home (B2C)",
+    errors_manager:"Errors Manager",events_manager:"Events Manager",
+    l1_bss:"L1 BSS",l2_bss:"L2 BSS",l1_digital:"L1 Digital",l2_digital:"L2 Digital",l3_digital:"L3 Digital",
+    l1_oss:"L1 OSS",l2_oss:"L2 OSS",l3_oss:"L3 OSS",l1_infra:"L1 Infra",l2_infra:"L2 Infra",l3_infra:"L3 Infra",
+    l1_data:"L1 Data",l2_data:"L2 Data",l3_data:"L3 Data",
+    l1_enterprise:"L1 Enterprise",l2_enterprise:"L2 Enterprise",l3_enterprise:"L3 Enterprise",
+    cio:"CIO / Executive",call_center:"Call Center"};
+  let ROLE_TEAMS = {};
+  let ROLE_RANKS = {};
+  let rolesHydrated = false;
+  async function hydrateRoleLabels(){
+    try{
+      const rr = await api("/api/roles"); const m = rr.roles || {};
+      if(!Object.keys(m).length) return;
+      const L={}, T={}, R={};
+      for(const [k,v] of Object.entries(m)){ L[k]=v.label||k; T[k]=v.team||""; R[k]=typeof v.rank==="number"?v.rank:9; }
+      ROLE_LABELS=L; ROLE_TEAMS=T; ROLE_RANKS=R; rolesHydrated=true;
+      const sel=document.getElementById("rmRole"); if(sel){ const cur=sel.value; sel.innerHTML=roleOptions(cur); }
+    }catch(e){}
+  }
+  /* grouped by team, best rank first - 26 flat options in one list is a scroll, not a choice */
+  function roleOptions(current){
+    const keys=Object.keys(ROLE_LABELS);
+    const groups={};
+    for(const k of keys){ const t=ROLE_TEAMS[k]||"Roles"; (groups[t]=groups[t]||[]).push(k); }
+    const teamRank=t=>Math.min(...groups[t].map(k=>ROLE_RANKS[k]!=null?ROLE_RANKS[k]:9));
+    const opt=k=>`<option value="${k}" ${k===current?'selected':''}>${esc(ROLE_LABELS[k])}</option>`;
+    if(!rolesHydrated) return keys.map(opt).join("");
+    return Object.keys(groups).sort((a,b)=>teamRank(a)-teamRank(b)||a.localeCompare(b))
+      .map(t=>`<optgroup label="${esc(t)}">${groups[t].sort((a,b)=>(ROLE_RANKS[a]-ROLE_RANKS[b])||ROLE_LABELS[a].localeCompare(ROLE_LABELS[b])).map(opt).join("")}</optgroup>`).join("");
+  }
 
   // ---- export helper (CSV / JSON), shared globally ----
   function toCSV(rows){ const cols=[...new Set(rows.flatMap(r=>Object.keys(r)))];
@@ -277,6 +311,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
 
   // ---- role sign-in / switch modal ----
   function openRoleModal(){
+    hydrateRoleLabels();
     const card = $("#roleModalCard");
     const isSuper = SES.me && SES.me.realRole === 'super_admin';
     const nm = displayName();
@@ -294,7 +329,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <div style="text-align:right;margin-top:8px"><button class="pill" id="pfSave" style="border-left-color:var(--green)">Save profile</button> <span id="pfMsg" class="rl"></span></div>
         ${isSuper?`<h5 style="margin-top:16px">PREVIEW AS ROLE <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(Super Admin only)</span></h5>
         <select id="rmRole" class="jsearch" style="width:100%">
-          ${Object.keys(ROLE_LABELS).map(r=>`<option value="${r}" ${r===SES.role?'selected':''}>${ROLE_LABELS[r]}</option>`).join("")}
+          ${roleOptions(SES.role)}
         </select>`:''}
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
           <button class="pill" id="rmSignout" style="border-left-color:var(--red)">Sign out</button>

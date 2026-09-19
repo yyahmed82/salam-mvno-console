@@ -259,6 +259,24 @@ tr:last-child td{border-bottom:none}
 
 .s9-kl,.tvKl{white-space:nowrap}
 .s9-kpi{min-width:112px}
+
+/* Ten teams means twelve cards on the teams slide. Four columns is the projector layout; on a
+   tablet three columns with tighter cards keeps all twelve on one screen without scrolling, and
+   the "Opens on" line — a detail, not the point — steps aside to buy the height. */
+@media (max-width:1100px){
+  .teams{grid-template-columns:repeat(3,1fr);gap:9px}
+  .tcard{padding:11px 12px;gap:4px}
+  .tcard .tw{font-size:9px}
+  .tcard .tt{font-size:14px}
+  .tcard .td{font-size:11.5px;line-height:1.42}
+  .tcard .tl2{display:none}
+}
+@media (max-width:760px){
+  .teams{grid-template-columns:1fr}
+  .tcard{padding:13px 14px}
+  .tcard .td{font-size:13px;line-height:1.5}
+  .tcard .tl2{display:block}
+}
 </style>
 </head>
 <body>
@@ -297,7 +315,7 @@ tr:last-child td{border-bottom:none}
       <circle cx="80" cy="55" r="1.8" fill="#00E676" opacity="0.6"/>
       <circle cx="100" cy="100" r="3" fill="#00E676"/>
       <circle cx="100" cy="100" r="6" fill="none" stroke="#00E676" stroke-width="0.6" opacity="0.5"/>
-    </svg></div><div class="tvKpis"><div class="tvK"><div class="tvKl">TEAMS</div><div class="tvKv">7</div><div class="tvKs">one login each</div></div><div class="tvK"><div class="tvKl">BUSINESSES</div><div class="tvKv">2</div><div class="tvKs">Mobile and Fixed</div></div><div class="tvK"><div class="tvKl">ALERT RULES</div><div class="tvKv">177</div><div class="tvKs">each with a runbook</div></div><div class="tvK"><div class="tvKl">LICENCES</div><div class="tvKv">0</div><div class="tvKs">built in-house</div></div></div></div>
+    </svg></div><div class="tvKpis"><div class="tvK"><div class="tvKl">TEAMS</div><div class="tvKv">10</div><div class="tvKs">one login each</div></div><div class="tvK"><div class="tvKl">BUSINESSES</div><div class="tvKv">2</div><div class="tvKs">Mobile and Fixed</div></div><div class="tvK"><div class="tvKl">ALERT RULES</div><div class="tvKv">177</div><div class="tvKs">each with a runbook</div></div><div class="tvK"><div class="tvKl">LICENCES</div><div class="tvKv">0</div><div class="tvKs">built in-house</div></div></div></div>
   <div class="inner">
     <div class="eyebrow r">Salam &nbsp;&middot;&nbsp; built in-house</div>
     <h1 class="r">Salam<br/>Operations Console</h1>
@@ -331,32 +349,44 @@ tr:last-child td{border-bottom:none}
   <div class="inner">
     <div class="eyebrow r">One console, every team</div>
     <h2 class="wide r">Everybody opens the same console. Each one lands on their own job.</h2>
-    <div class="sub2 r">The role decides <em style="color:var(--ink);font-style:normal">what</em> a person can do. A second setting decides <em style="color:var(--ink);font-style:normal">which business</em> &mdash; Mobile, Fixed or both. Nobody is trained on a tool they do not need.</div>
-    <div class="teams r" style="margin-top:8px">
+    <div class="sub2 r">Ten teams, twenty-six roles. The role decides <em style="color:var(--ink);font-style:normal">what</em> a person can do across the 24 pages; a second setting decides <em style="color:var(--ink);font-style:normal">which business</em> &mdash; Mobile, Fixed or both. Nobody is trained on a tool they do not need.</div>
+    <div class="teams r" style="margin-top:6px">
       <div class="tcard"><div class="tw">Executive</div><div class="tt">CIO &amp; leadership</div>
-        <div class="td">The executive dashboard, the NOC walls and the AI assistant. One verdict per business, the breaching objective, the biggest open issue.</div>
+        <div class="td">One verdict per business, the breaching objective, the biggest open issue &mdash; and the assistant.</div>
         <div class="tl2">Opens on <b>Executive Dashboard</b></div></div>
       <div class="tcard"><div class="tw">Digital Ops</div><div class="tt">L1 &middot; L2 &middot; L3</div>
-        <div class="td">Journeys, alerts, the error board, the L2 workbench and Customer 360. The team that owns the incident from the first signal to the fix.</div>
+        <div class="td">Journeys, alerts, the error board, the workbench. Owns the incident from first signal to fix.</div>
         <div class="tl2">Opens on <b>Dashboard &rarr; Alerts</b></div></div>
       <div class="tcard"><div class="tw">Fixed Ops</div><div class="tt">FTTH &amp; 5G home</div>
-        <div class="td">Four digital channels with their own funnels, errors, providers and alerts &mdash; Epurchase, the Salam Home app, the SDA dealer map and QR referrals.</div>
+        <div class="td">Four digital channels with their own funnels, errors, providers and alerts.</div>
         <div class="tl2">Opens on <b>Fixed &rarr; Overview</b></div></div>
       <div class="tcard"><div class="tw">BSS Ops</div><div class="tt">L1 &amp; L2 BSS</div>
-        <div class="td">Activation, numbers, billing and wallet journeys traced through the BSS, with the DMS flow rules that catch a ledger that quietly never closed.</div>
+        <div class="td">Activation, numbers, billing and wallet, with the flow rules that catch a ledger that never closed.</div>
         <div class="tl2">Opens on <b>Monitoring &rarr; DMS</b></div></div>
-      <div class="tcard"><div class="tw">OSS Ops</div><div class="tt">Errors &amp; platforms</div>
-        <div class="td">API traffic, latency baselines, failing endpoints, application logs grepped across the app nodes and masked at source. Whose layer broke, with proof.</div>
+      <div class="tcard"><div class="tw">OSS Ops</div><div class="tt">L1 &middot; L2 &middot; L3</div>
+        <div class="td">API traffic, latency baselines, failing endpoints, application logs masked at source.</div>
         <div class="tl2">Opens on <b>Troubleshoot</b></div></div>
+      <div class="tcard"><div class="tw">Infra Ops</div><div class="tt">L1 &middot; L2 &middot; L3</div>
+        <div class="td">The layer under the journey &mdash; platform health, latency and the alerts that fire on it.</div>
+        <div class="tl2">Opens on <b>Monitoring</b></div></div>
+      <div class="tcard"><div class="tw">Data Ops</div><div class="tt">L1 &middot; L2 &middot; L3</div>
+        <div class="td">Reports on both businesses, and the journey behind any number that looks wrong.</div>
+        <div class="tl2">Opens on <b>Reports</b></div></div>
+      <div class="tcard"><div class="tw">Enterprise IT</div><div class="tt">L1 &middot; L2 &middot; L3</div>
+        <div class="td">RA hub, HR hub, Contracting, Jira, MSD. Onboarded now; their own pages arrive with the third scope.</div>
+        <div class="tl2">Opens on <b>Alerts</b></div></div>
       <div class="tcard"><div class="tw">Sales Ops</div><div class="tt">Channels &amp; dealers</div>
-        <div class="td">Orders and activations by channel and dealer, commissions, the dealer map, Dealer 360 and the reports they used to request from IT.</div>
+        <div class="td">Orders and activations by channel and dealer, commissions, the dealer map, Dealer 360.</div>
         <div class="tl2">Opens on <b>Reports</b></div></div>
       <div class="tcard"><div class="tw">Call Center</div><div class="tt">Front line</div>
-        <div class="td">Customer 360: one customer, their mobile line and their fibre line, the order, the payment, the delivery and the open tickets &mdash; identifiers masked.</div>
+        <div class="td">One customer, their mobile line and their fibre line, the order, the payment, the delivery.</div>
         <div class="tl2">Opens on <b>Customer 360</b></div></div>
+      <div class="tcard blue"><div class="tw">How a role is built</div><div class="tt">A ladder, not a list</div>
+        <div class="td">L1 reads and acknowledges, L2 adds the escalation page and rule tuning, L3 adds the deep page. The same rung means the same thing in every team.</div>
+        <div class="tl2">Reviewed in <b>one screen</b></div></div>
       <div class="tcard blue"><div class="tw">Shared spine</div><div class="tt">Built once, used by all</div>
-        <div class="td">Alerting, Customer 360, the AI layer, service objectives, exports, tickets, the audit trail and the role model are one implementation &mdash; not one per team, and not one per business.</div>
-        <div class="tl2">Serves <b>all seven</b></div></div>
+        <div class="td">Alerting, Customer 360, the AI layer, objectives, exports, tickets, audit and the role model are one implementation.</div>
+        <div class="tl2">Serves <b>all ten</b></div></div>
     </div>
   </div>
 </section>
@@ -417,14 +447,14 @@ tr:last-child td{border-bottom:none}
       <div class="card"><div class="tagline">Measure</div><div class="ct">Agreed in advance</div>
         <div class="cb">Service objectives with targets and measured attainment &middot; console-managed metrics &middot; analytics presets and scheduled reports &middot; XLSX and PDF exports of anything on screen, with the filters that produced it.</div></div>
       <div class="card"><div class="tagline">Govern</div><div class="ct">On the record</div>
-        <div class="cb">14 roles and 9 permissions over 24 pages &middot; PII masked by default, every reveal audited &middot; the ticket and feedback board &middot; Remedy and CST read-only &middot; SLA, vendor and contract governance.</div></div>
+        <div class="cb">26 roles across ten teams and 9 permissions over 24 pages &middot; PII masked by default, every reveal audited &middot; the ticket and feedback board &middot; Remedy and CST read-only &middot; SLA, vendor and contract governance.</div></div>
     </div>
     <div class="chips r" style="margin-top:10px">
       <span class="chip"><b>2</b> &nbsp;businesses</span>
       <span class="chip"><b>24</b> &nbsp;pages</span>
       <span class="chip"><b>177</b> &nbsp;alert rules</span>
       <span class="chip"><b>32</b> &nbsp;integrations mapped</span>
-      <span class="chip"><b>14</b> &nbsp;roles</span>
+      <span class="chip"><b>26</b> &nbsp;roles &middot; 10 teams</span>
       <span class="chip blue"><b>3</b> &nbsp;AI capabilities live</span>
       <span class="chip"><b>0</b> &nbsp;licences bought</span>
     </div>
@@ -546,7 +576,7 @@ tr:last-child td{border-bottom:none}
       <div class="r">
         <div class="ladder">
           <div class="step"><i>&middot;</i><div><div class="sh">Two axes, not one</div>
-            <div class="sd">The role says what a person may do across 24 pages and 9 permissions. The business says on which side &mdash; Mobile, Fixed or both. A Fixed engineer simply does not have Mobile pages, in the menu or on the API.</div></div></div>
+            <div class="sd">The role says what a person may do across 24 pages and 9 permissions &mdash; 26 of them, on one L1/L2/L3 ladder across ten teams. The business says on which side, Mobile or Fixed or both. A Fixed engineer simply does not have Mobile pages, in the menu or on the API.</div></div></div>
           <div class="step"><i>&middot;</i><div><div class="sh">Reviewable in one screen</div>
             <div class="sd">The permission matrix shows every role against every page, with a preview of the menu that role would actually see and how many people hold it. Changes are shown as a diff before they are saved.</div></div></div>
           <div class="step"><i>&middot;</i><div><div class="sh">User management is Super Admin only</div>
@@ -558,7 +588,7 @@ tr:last-child td{border-bottom:none}
       <div class="r">
         <div class="kstrip" style="grid-template-columns:repeat(2,1fr)">
           <div class="kbox"><div class="kn">24</div><div class="kt">pages, each individually gated</div></div>
-          <div class="kbox"><div class="kn">14</div><div class="kt">roles across seven teams</div></div>
+          <div class="kbox"><div class="kn">26</div><div class="kt">roles across ten teams, on one ladder</div></div>
           <div class="kbox blue"><div class="kn">9</div><div class="kt">capabilities, separated so one never implies another</div></div>
           <div class="kbox ink"><div class="kn">3</div><div class="kt">business scopes &mdash; Mobile, Fixed, both</div></div>
         </div>
@@ -611,7 +641,7 @@ tr:last-child td{border-bottom:none}
         <div class="drow"><span>Where are we losing orders?</span><b>the step, live, with the cause</b></div>
         <div class="drow"><span>Is it us or the partner?</span><b>the request and the response</b></div>
         <div class="drow"><span>Why did this alert fire?</span><b>the affected cases, exportable</b></div>
-        <div class="drow"><span>Who can see customer data?</span><b>14 roles, every reveal audited</b></div>
+        <div class="drow"><span>Who can see customer data?</span><b>26 roles, every reveal audited</b></div>
         <div class="drow"><span>A new capability for Fixed</span><b>built once, both the same day</b></div>
         <div class="drow"><span>A number for the regulator</span><b>already watched, already exported</b></div>
       </div>
@@ -704,7 +734,7 @@ tr:last-child td{border-bottom:none}
       <circle cx="100" cy="100" r="6" fill="none" stroke="#00E676" stroke-width="0.6" opacity="0.5"/>
     </svg></div>
       <div class="s9-kpis">
-        <div class="s9-kpi"><div class="s9-kl">TEAMS</div><div class="s9-kv">7</div><div class="s9-ks">one login each</div></div>
+        <div class="s9-kpi"><div class="s9-kl">TEAMS</div><div class="s9-kv">10</div><div class="s9-ks">one login each</div></div>
         <div class="s9-kpi"><div class="s9-kl">PAGES</div><div class="s9-kv">24</div><div class="s9-ks">individually gated</div></div>
         <div class="s9-kpi"><div class="s9-kl">ALERT RULES</div><div class="s9-kv">177</div><div class="s9-ks">each with a runbook</div></div>
         <div class="s9-kpi"><div class="s9-kl">LICENCES</div><div class="s9-kv">0</div><div class="s9-ks">built in-house</div></div>

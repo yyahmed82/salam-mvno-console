@@ -156,6 +156,98 @@ const ROLES = {
     caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
     note: 'Deep Digital escalation — Troubleshoot + Monitoring with audited PII unmask for end-to-end cases.'
   },
+
+  /* ---- OSS · Infra · Data · Enterprise escalation tiers (19 Sep 2026) ----------------------------
+   * Four more families on the same L1/L2/L3 ladder as BSS and Digital, so every team that operates
+   * something at Salam has a role instead of borrowing one. The ladder is identical everywhere:
+   *   L1  read the pages the team owns, acknowledge, export, ask Yusr
+   *   L2  + the escalation page for that team + tune its alert rules
+   *   L3  + the deep page (Workbench) + arrange its own dashboard; PII unmask ONLY where the job
+   *       genuinely needs the real identifier (OSS L3, same reasoning as L3 Digital)
+   * Nobody here gets manageUsers, adminTools or manageSync — those stay with Super Admin / Admin.
+   * Every one of these is a DEFAULT, not a contract: Settings › Users › Roles edits them live. */
+
+  l1_oss: {
+    label: 'L1 OSS', team: 'OSS Ops', rank: 5,
+    views: ['dashboard','monitoring','errors','noc','explore', ...(FIXED_ENABLED ? ['fixed_errors'] : [])],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'Frontline OSS — Monitoring and the error boards on both businesses. Acknowledge and export. PII masked.'
+  },
+  l2_oss: {
+    label: 'L2 OSS', team: 'OSS Ops', rank: 4,
+    views: ['dashboard','monitoring','errors','alerts','noc','explore', ...(FIXED_ENABLED ? ['fixed_errors','fixed_alerts'] : [])],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'OSS escalation — adds Alerts on both businesses and the tuning of OSS alert rules. PII masked.'
+  },
+  l3_oss: {
+    label: 'L3 OSS', team: 'OSS Ops', rank: 3,
+    views: ['dashboard','monitoring','errors','alerts','workbench','noc','explore', ...(FIXED_ENABLED ? ['fixed_errors','fixed_alerts'] : [])],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    note: 'Deep OSS escalation — adds the L2 Workbench and audited PII unmask for end-to-end cases, like L3 Digital.'
+  },
+
+  l1_infra: {
+    label: 'L1 Infra', team: 'Infra Ops', rank: 5,
+    views: ['dashboard','monitoring','alerts','noc','explore'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'Frontline Infrastructure — Monitoring, Alerts and the NOC walls. Acknowledge and export. PII masked.'
+  },
+  l2_infra: {
+    label: 'L2 Infra', team: 'Infra Ops', rank: 4,
+    views: ['dashboard','monitoring','alerts','errors','noc','explore', ...(FIXED_ENABLED ? ['fixed_alerts'] : [])],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'Infrastructure escalation — adds Troubleshoot and Fixed alerts, and tunes infrastructure alert rules. PII masked.'
+  },
+  l3_infra: {
+    label: 'L3 Infra', team: 'Infra Ops', rank: 3,
+    views: ['dashboard','monitoring','alerts','errors','workbench','noc','explore', ...(FIXED_ENABLED ? ['fixed_alerts'] : [])],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    note: 'Deep Infrastructure escalation — adds the L2 Workbench and its own dashboard layout. No PII: the layer below the customer record.'
+  },
+
+  l1_data: {
+    label: 'L1 Data', team: 'Data Ops', rank: 5,
+    views: ['dashboard','analytics','explore', ...(FIXED_ENABLED ? ['fixed_reports'] : [])],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false },
+    note: 'Frontline Data — Reports on both businesses and the Explore pages, with export. PII masked.'
+  },
+  l2_data: {
+    label: 'L2 Data', team: 'Data Ops', rank: 4,
+    views: ['dashboard','monitoring','analytics','explore', ...(FIXED_ENABLED ? ['fixed_reports'] : [])],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    note: 'Data escalation — adds Monitoring so a number can be traced to the journey behind it, and dashboard layout. PII masked.'
+  },
+  l3_data: {
+    label: 'L3 Data', team: 'Data Ops', rank: 3,
+    views: ['dashboard','monitoring','dms','errors','alerts','analytics','explore', ...(FIXED_ENABLED ? ['fixed_reports','fixed_errors'] : [])],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    note: 'Deep Data escalation — the operate pages a data quality case needs (DMS, Troubleshoot, Alerts) and rule tuning. PII masked.'
+  },
+
+  /* Enterprise = Salam internal systems (RA hub, HR hub, Contracting, Jira, MSD portals). Those systems
+   * are NOT yet a monitored business in this console — there are two business scopes, Mobile and Fixed.
+   * These roles exist so the Enterprise team can be onboarded, reviewed in the matrix and given the
+   * cross-business pages now; the Enterprise pages attach to them when the third scope is added, with
+   * no change to anybody's role. Until then they see the shared and cross-business pages only. */
+  l1_enterprise: {
+    label: 'L1 Enterprise', team: 'Enterprise IT', rank: 5,
+    views: ['dashboard','alerts','errors','noc','explore'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'Frontline Enterprise IT (RA hub · HR hub · Contracting · Jira · MSD) — Alerts, Troubleshoot and the NOC walls. Enterprise systems are not a monitored business yet. PII masked.'
+  },
+  l2_enterprise: {
+    label: 'L2 Enterprise', team: 'Enterprise IT', rank: 4,
+    views: ['dashboard','monitoring','alerts','errors','noc','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    note: 'Enterprise IT escalation — adds Monitoring and the tuning of its own alert rules. PII masked.'
+  },
+  l3_enterprise: {
+    label: 'L3 Enterprise', team: 'Enterprise IT', rank: 3,
+    views: ['dashboard','monitoring','alerts','errors','workbench','noc','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    note: 'Deep Enterprise IT escalation — adds the L2 Workbench and its own dashboard layout. PII masked.'
+  },
+
   /* CIO / Executive (19 Sep 2026) — the narrowest role in the console. Two pages and the assistant: the
    * Executive Dashboard, the NOC walls, and Yusr. Deliberately NO Customer 360 (that view carries PII), no
    * operate pages, no edit caps. This is the role the 'exec' and 'noc' views were created for — before them

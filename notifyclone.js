@@ -11,7 +11,12 @@
   const API = window.API_BASE;
   const api=(p,opts)=>window.fetch(API+p,Object.assign({headers:{"Content-Type":"application/json"}},opts)).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
   const SEVS=["P1","P2","P3"];
-  const TIERS=[["l1_bss","L1 BSS"],["l2_bss","L2 BSS"],["l1_digital","L1 Digital"],["l2_digital","L2 Digital"],["l3_digital","L3 Digital"]];
+  const TIERS=[["l1_bss","L1 BSS"],["l2_bss","L2 BSS"],
+    ["l1_digital","L1 Digital"],["l2_digital","L2 Digital"],["l3_digital","L3 Digital"],
+    ["l1_oss","L1 OSS"],["l2_oss","L2 OSS"],["l3_oss","L3 OSS"],
+    ["l1_infra","L1 Infra"],["l2_infra","L2 Infra"],["l3_infra","L3 Infra"],
+    ["l1_data","L1 Data"],["l2_data","L2 Data"],["l3_data","L3 Data"],
+    ["l1_enterprise","L1 Enterprise"],["l2_enterprise","L2 Enterprise"],["l3_enterprise","L3 Enterprise"]];
   let CH=null, ESC=null, SN=null, CM=null;
   const host=()=>document.getElementById("notifyCfgClone");
   const q=sel=>{ const h=host(); return h?[...h.querySelectorAll(sel)]:[]; };

@@ -3,6 +3,41 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.46] — 2026-09-19 — Twelve more roles, a quieter Executive Dashboard, and the gear and "?" behave like tabs
+### Added
+- **Twelve roles on one ladder — OSS, Infra, Data and Enterprise IT, each L1/L2/L3** (`server/src/roles.js`).
+  The console now has **26 roles across ten teams** instead of 14 across seven, so every team that operates
+  something at Salam has a role of its own rather than borrowing `l2_digital`. The rung means the same thing
+  everywhere: L1 reads the team's pages, acknowledges and exports; L2 adds its escalation page and alert-rule
+  tuning; L3 adds the L2 Workbench and its own dashboard layout. PII unmask is granted to **L3 OSS only**, on
+  the same reasoning as L3 Digital — an end-to-end case needs the real identifier. Nobody in the twelve gets
+  `manageUsers`, `adminTools` or `manageSync`. Every one is a default: Settings › Users › Roles edits them live.
+- **Enterprise IT is onboarded, not yet monitored.** RA hub, HR hub, Contracting, Jira and MSD are not a
+  business scope in this console — there are two, Mobile and Fixed. The three Enterprise roles exist so the
+  team can be created, reviewed in the matrix and given the cross-business pages now; Enterprise pages attach
+  to them when a third scope is added, with no change to anybody's role.
+- **The escalation ladder can route to all of them** — the tier picker in Notifications & escalation
+  (`notifycfg.js`, `notifyclone.js`) went from 5 tiers to 17.
+### Changed
+- **The alert radar leaves the Executive Dashboard** (`execops.js`). It stays on the NOC wall, which passes
+  `sections:['radar']` itself and is untouched; the `◉ NOC wall` button in the page header is how you reach it.
+  An executive reading the page wants the verdict, the numbers and what is still open — a 12-hour scope at the
+  bottom was a second, slower way of saying what *Top ongoing issues* already says. `SECTION.radar` is unchanged.
+- **The gear and the "?" answer like Mobile and Fixed do** (`index.html`). The glyph goes green on hover and
+  solid green while the menu is open or one of its pages is current. Until now hover turned the glyph *ink*, so
+  hovering read as less selected than resting, and the open state was a pale tint a projector washed out. An
+  older `#tourBtn.on` tint further down the sheet was winning on source order; it is gone. Checked in both themes.
+- **Role labels are no longer a hard-coded list of ten** (`ops.js`). `ROLE_LABELS` carries all 26 and is
+  hydrated from `/api/roles`, so a custom role shows its real name too. The Super-Admin "preview as role"
+  picker is grouped by team and ordered by rank — 26 flat options is a scroll, not a choice. Before this, anyone
+  on a newer role saw the raw key (`l1_oss`) as their job title and could not be previewed at all.
+- **Both decks carry the real numbers.** `exec-brief.html`: 24 pages / **26 roles**, and the access slide reads
+  26 across ten teams. `product-brief.html`: the teams slide is now **twelve cards** — the ten teams, how a role
+  is built, and the shared spine — with the chip strip, the access slide, the before/after row and the closing
+  KPI all moved to 26 roles and 10 teams. Verified at 1600×900, 1024×768, 768×1024 and 390×844: nothing clipped,
+  no horizontal scroll. On a tablet the teams grid drops to three columns and sets the "Opens on" line aside.
+
+
 ## [2.0.0-alpha.45] — 2026-09-19 — A product brief: the console as a Salam product, for every team
 ### Added
 - **`product-brief.html`** — a second deck, separate from the executive brief and leaving it untouched, at

@@ -425,13 +425,24 @@
   #langToggle{font-size:13px;font-weight:800}
   #langToggle:hover{color:var(--ink);border-color:var(--green)}
   #tourBtn{font-weight:800}
-  #themeToggle:hover,#tourBtn:hover,#settingsBtn:hover{color:var(--ink);border-color:var(--green)}
-  #settingsBtn.on{color:var(--green);border-color:var(--green);background:var(--green-bg)}
+  #themeToggle:hover{color:var(--ink);border-color:var(--green)}
+  /* The gear and the "?" are nav destinations like Mobile and Fixed, so they answer the same way:
+   * the glyph goes green on hover, and solid green with a white glyph while the menu is open or
+   * while one of its pages is the current view (helpmenu.js / settingsmenu.js own the .on class).
+   * Until 19 Sep 2026 hover turned the glyph INK, so hovering read as LESS selected than resting,
+   * and the open state was a pale tint that a projector washed out completely. The old #tourBtn.on
+   * tint that sat further down this sheet (after .setseg) is gone — it won on source order. */
+  #tourBtn,#settingsBtn{transition:color .18s ease,background .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+  #tourBtn:hover,#settingsBtn:hover{color:var(--green);border-color:var(--green);background:var(--green-bg);transform:translateY(-1px)}
+  #tourBtn.on,#settingsBtn.on{color:#fff;background:var(--green);border-color:var(--green);box-shadow:0 4px 12px rgba(14,159,90,.30)}
+  #tourBtn.on:hover,#settingsBtn.on:hover{color:#fff;background:var(--green-dark);border-color:var(--green-dark)}
+  [data-theme="dark"] #tourBtn.on,[data-theme="dark"] #settingsBtn.on{color:#04140d;box-shadow:0 4px 12px rgba(16,185,129,.26)}
+  [data-theme="dark"] #tourBtn.on:hover,[data-theme="dark"] #settingsBtn.on:hover{color:#04140d}
+  @media (prefers-reduced-motion:reduce){#tourBtn:hover,#settingsBtn:hover{transform:none}}
   /* help / explore dropdown */
   .helpwrap,.setwrap{position:relative}
   .setseg{display:none}
   .setseg.active{display:block}
-  #tourBtn.on{color:var(--green);border-color:var(--green);background:var(--green-bg)}
   .helpmenu{position:absolute;right:0;top:42px;z-index:120;min-width:262px;background:var(--card);border:1px solid var(--line);
     border-radius:14px;box-shadow:0 18px 44px rgba(15,23,42,.18);padding:8px;display:none;flex-direction:column;gap:4px}
   .helpmenu.open{display:flex}
@@ -2120,7 +2131,7 @@
 <script src="latencycfg.js?v=20260910c"></script>
 <script src="alertsview.js?v=20260918m"></script>
 <script src="metricdefs.js?v=20260916c"></script>
-<script src="ops.js?v=20260919a"></script>
+<script src="ops.js?v=20260919b"></script>
 <script src="opsbar.js?v=20260910c"></script>
 <script src="analytics.js?v=20260912d"></script>
 <script src="topo2data.js?v=20260910c"></script>
@@ -2166,8 +2177,8 @@
 <script src="slo.js?v=20260918m"></script>
 <script src="vendor-contracts.js?v=20260914f"></script>
 <script src="audit.js?v=20260912a"></script>
-<script src="notifycfg.js?v=20260910c"></script>
-<script src="notifyclone.js?v=20260910c"></script>
+<script src="notifycfg.js?v=20260919a"></script>
+<script src="notifyclone.js?v=20260919a"></script>
 <script src="democfg.js?v=20260910c"></script>
 <script src="sub360.js?v=20260918h"></script>
 <script src="rolesmatrix.js?v=20260919a"></script>

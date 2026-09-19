@@ -533,9 +533,12 @@
    * are trending, then the radar as the bridge from trend to what is still open, then the
    * issues themselves. The radar sits directly above Top ongoing issues because the contacts
    * it leaves lit ARE that list. */
-  /* The radar is on this page AND on the NOC wall (#noc, nocwall.js): the wall is the same section scaled for a
-   * TV, the header button opens it. Restored here on 16 Sep 2026 after a cut that moved it to the wall only. */
-  const EXEC_SECTIONS = ['summary', 'kpisExec', 'slos', 'trendsExec', 'radar', 'issues', 'foot'];
+  /* The radar lives on the NOC wall only (#noc, nocwall.js — it passes sections:['radar'] itself, so it is
+   * unaffected by this list). It was on the Executive Dashboard too until 19 Sep 2026: an executive reading
+   * the page wants the verdict, the numbers and what is still open, and a 12-hour scope at the bottom was a
+   * second, slower way of saying what 'Top ongoing issues' already says. The '\u25c9 NOC wall' button in the
+   * header is how you get to it, and SECTION.radar is untouched for the wall and for anyone passing it. */
+  const EXEC_SECTIONS = ['summary', 'kpisExec', 'slos', 'trendsExec', 'issues', 'foot'];
 
   async function render(host, opts, force) {
     ensureCss();
@@ -593,7 +596,7 @@
     document.querySelectorAll('.navtab:not([data-view="execops"]).active').forEach(b => b.classList.remove('active'));
     if (window.navdropSync) window.navdropSync();
     render(host, { biz: 'all', sections: EXEC_SECTIONS, title: 'Executive Dashboard',
-      sub: 'both businesses · north-star KPIs, SLO compliance, trends, the alert radar and the issues that are still open',
+      sub: 'both businesses · north-star KPIs, SLO compliance, trends and the issues that are still open · the alert radar is on the NOC wall',
       kicker: 'executive', brief: true });
   };
 
