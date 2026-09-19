@@ -3,6 +3,44 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.42] — 2026-09-19 — Every page is in the permissions matrix; a CIO role; the roles editor rebuilt
+### Added
+- **Six pages entered the permission model.** `exec` (Executive Dashboard), `noc` (both NOC walls), `governance`
+  (SLA · vendors & contracts · SLO definitions), `cst` (Arqami · CST escalations), `audit` (Audit log) and
+  `tickets` (Tickets & feedback). Until now each was gated privately in `ops.js` with `style.display` or a
+  `realRole === 'super_admin'` test, so none appeared as a matrix column and nobody could review who reached them —
+  and Executive Dashboard and the NOC walls simply rode on `dashboard`, which is to say everybody. They survive both
+  business scopes, because none of them belongs to Mobile or Fixed alone.
+- **CIO / Executive role** — the narrowest in the console: the Executive Dashboard, the NOC walls, Yusr and export.
+  No operate pages, no Customer 360 (that view carries PII), no edit caps. It is what the `exec` view was created
+  for: before it, the only way to hand someone the executive dashboard was to hand them Home and everything keyed to it.
+- **`adminTools` capability** — the ticket board, the error log, rule reseed and the health self-check. Admin holds it.
+### Changed
+- **Roles & permissions is a role-centric editor**, not a 14 × 33 grid of bare checkboxes under rotated headers. Pick a
+  role on the left; edit it on the right with pages grouped the way the nav is grouped (Mobile · Fixed · Cross-business ·
+  Shared), a select-all per group, the sentence that says what each capability actually grants, and a live preview of
+  the navigation that role would get. The wide grid survives underneath as a read-only heat map for "who can export?".
+  Saving shows the diff and how many people each change touches, and warns when anyone loses access mid-session.
+  Each role row carries its user count and never-signed-in count, so a change is no longer made blind. Works on a
+  phone (the role list becomes a scroll strip) and in dark mode.
+- **`/api/roles/matrix` reports usage** — users, never-signed-in and last sign-in per role.
+- **Labels that drifted when the nav moved**: Analytics / SLA → **Reports**, Fixed · Errors → **Fixed · Troubleshoot**,
+  and "Explore links" → **Explore & Customer 360**, which is what that view actually gates.
+- **A role now starts where it can.** `#`, `#home` and `#dashboard` resolve to the landing page, which needs the
+  `dashboard` view; every role had it, so it never mattered — the CIO does not. Landing on a page the session cannot
+  open now routes to its first reachable page instead of greeting it with ACCESS DENIED, and the denial panel's
+  "Go to my home page" button follows the same rule instead of guessing at the first visible nav tab.
+### Fixed
+- **User management was one tick box away from anyone.** `/api/users` and `/api/roles/matrix` were gated on the
+  `manageUsers` CAP — a checkbox inside the very matrix those endpoints edit, and `rolePerms.addRole` can mint a
+  custom role carrying it. Both, plus `POST/DELETE /api/roles`, are now `requireSuper`: the tier decides, the tick
+  box only decides whether the UI offers the page. The gear entry also hides for non-super instead of opening a page
+  that 403s — an Admin could previously click "User management" and collect an error.
+- **`manageUsers` was doing five unrelated jobs.** It also gated the ticket board, the error log, rule reseed, the
+  health self-check and the interface feature flags, so granting "can manage users" handed over all of those, and an
+  ops manager had to be made a user administrator to answer a ticket. Those move to `adminTools`.
+
+
 ## [2.0.0-alpha.41] — 2026-09-19 — Affected cases work for the DMS flow rules
 ### Fixed
 - **Every `dms.flow.*` alert exported an empty Preview / XLSX / PDF.** `alertCases.casesFor()` resolves the cases

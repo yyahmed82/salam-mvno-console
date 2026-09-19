@@ -319,12 +319,12 @@ app.put('/api/errclass', requireCap('editRules'), async (req, res) => {
 
 app.get('/api/roles', (req, res) => res.json({ roles: rolePerms.current() }));   // reflects saved overrides
 // editable permissions matrix (roles × pages/features)
-app.get('/api/roles/matrix', requireCap('manageUsers'), (req, res) => res.json(rolePerms.matrix()));
+app.get('/api/roles/matrix', requireSuper, async (req, res) => res.json(await rolePerms.matrix()));
 app.put('/api/roles/matrix', requireSuper, async (req, res) => {
   try {
     const saved = await rolePerms.save((req.body && req.body.overrides) || {});
     await audit(req, 'roles.matrix.save', null, { changed: Object.keys(saved) });
-    res.json(rolePerms.matrix());
+    res.json(await rolePerms.matrix());
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/me', async (req, res) => {
@@ -349,7 +349,7 @@ app.get('/api/me', async (req, res) => {
 });
 // interface feature flags — read (any signed-in user) + update (admins)
 app.get('/api/settings/features', async (req, res) => { res.json((await settings.getSetting('features')) || {}); });
-app.put('/api/settings/features', requireCap('manageUsers'), async (req, res) => {
+app.put('/api/settings/features', requireCap('adminTools'), async (req, res) => {
   const cur = (await settings.getSetting('features')) || {};
   const next = { ...cur };
   if (req.body && typeof req.body.langSwitch === 'boolean') next.langSwitch = req.body.langSwitch;
@@ -389,18 +389,18 @@ app.post('/api/roles', requireSuper, async (req, res) => {
   try {
     const slug = await rolePerms.addRole(req.body || {});
     await audit(req, 'roles.create', slug, { clone_from: (req.body || {}).clone_from || null });
-    res.json(rolePerms.matrix());
+    res.json(await rolePerms.matrix());
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.delete('/api/roles/:name', requireSuper, async (req, res) => {
   try {
     await rolePerms.removeRole(req.params.name);
     await audit(req, 'roles.delete', req.params.name, {});
-    res.json(rolePerms.matrix());
+    res.json(await rolePerms.matrix());
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-app.get('/api/users', requireCap('manageUsers'), async (req, res) => {
+app.get('/api/users', requireSuper, async (req, res) => {
   const r = await C.query(`SELECT * FROM console_users ORDER BY role, email`);
   // per-user activity for the users page (10 Sep 2026): actions 30 d, acknowledgements 30 d, last action
   const activity = {};
@@ -428,7 +428,7 @@ async function wouldOrphanSuper({ email, willBeSuper, willBeEnabled }) {
   return others < 1;                                                    // removing the last one
 }
 const LAST_SUPER_MSG = 'This is the last Super Admin — grant super_admin to another user before changing this one.';
-app.post('/api/users', requireCap('manageUsers'), async (req, res) => {
+app.post('/api/users', requireSuper, async (req, res) => {
   const b = req.body || {};
   const email = (b.email || '').toLowerCase().trim();
   if (!email) return res.status(400).json({ error: 'email required' });
@@ -447,7 +447,7 @@ app.post('/api/users', requireCap('manageUsers'), async (req, res) => {
   await audit(req, 'user.upsert', email, { roles: rolesArr, business });
   res.json({ ok: true });
 });
-app.patch('/api/users/:id', requireCap('manageUsers'), async (req, res) => {
+app.patch('/api/users/:id', requireSuper, async (req, res) => {
   const { role, roles: rolesArr, enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen, business, ack_mobile, ack_fixed } = req.body || {};
   const sets = [], vals = [];
   const fields = { enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen,
@@ -3485,7 +3485,7 @@ app.post('/api/alerts/:id/notify', requireCap('ackErrors'), async (req, res) => 
 
 /* Re-seed built-in metric catalog + alert rules on demand (idempotent upsert) so newly-added rules
  * activate without a full reboot. Super-admin only. Returns the resulting rule count. */
-app.post('/api/rules/reseed', requireCap('manageUsers'), async (req, res) => {
+app.post('/api/rules/reseed', requireCap('adminTools'), async (req, res) => {
   try {
     await require('./init').init({ reset: false });
     const n = (await C.query(`SELECT count(*)::int c FROM alert_rules`)).rows[0].c;
@@ -3622,7 +3622,7 @@ app.get('/api/tickets/mine', async (req, res) => {      // caller's own tickets 
   try { res.json(await tickets.listMine(req.actor)); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.get('/api/tickets', requireCap('manageUsers'), async (req, res) => {   // admin board
+app.get('/api/tickets', requireCap('adminTools'), async (req, res) => {   // admin board
   try { res.json(await tickets.listBoard(req.query || {})); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3640,7 +3640,7 @@ app.get('/api/tickets/:ref', async (req, res) => {      // detail — own ticket
     res.json(t);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.patch('/api/tickets/:ref', requireCap('manageUsers'), async (req, res) => {   // admin: status/priority/resolution
+app.patch('/api/tickets/:ref', requireCap('adminTools'), async (req, res) => {   // admin: status/priority/resolution
   try {
     const out = await tickets.update(req, req.params.ref, req.body || {});
     if (out.error) return res.status(out.status || 400).json({ error: out.error });
@@ -4235,7 +4235,7 @@ app.get('/api/version', (req, res) => res.json({ ...reliability.version(),
   fixedEnabled: roles.FIXED_ENABLED, fixedViews: roles.FIXED_VIEWS,
   pools: { upg: db.upgConfigured, ops: db.opsConfigured, opsBeta: db.opsBetaConfigured, nexus: db.nexusConfigured, payments: db.paymentsConfigured },
   fixedInventory: (() => { try { const fi = require('./fixedInventory'); return { live: fi.liveConfigured(), recorded: fi.recordedConfigured() }; } catch (_) { return null; } })() }));
-app.get('/api/errors/log', requireCap('manageUsers'), async (req, res) => {
+app.get('/api/errors/log', requireCap('adminTools'), async (req, res) => {
   try {
     const rows = (await C.query(`SELECT id, at, level, message, route, actor, ip FROM console_errors ORDER BY at DESC LIMIT 200`)).rows;
     res.json({ errors: rows });
@@ -5972,7 +5972,7 @@ app.get('/api/noc', async (req, res) => {
 // Operator health self-check — one call that tells you whether the tooling itself is healthy:
 // replica freshness, prod-sync, console DB, alert engine, and each notification channel + integration key.
 // Reports presence/health only (booleans + lag), never secret values. Admin-only.
-app.get('/api/health/selfcheck', requireCap('manageUsers'), async (req, res) => {
+app.get('/api/health/selfcheck', requireCap('adminTools'), async (req, res) => {
   const nowMs = Date.now();
   const checks = [];
   const push = (key, label, status, detail) => checks.push({ key, label, status, detail });

@@ -85,15 +85,38 @@ async function removeRole(name) {
 }
 
 // snapshot for the matrix UI: roles (rows) × views + caps (columns), current on/off state
-function matrix() {
+/* How many people actually hold each role, and when they were last seen. Without this a permission change is
+ * made blind: "remove Troubleshoot from L2 Digital" reads very differently when it is four people than when it
+ * is nobody. A user can carry a primary role plus extra roles, so both columns count. */
+async function roleUsage() {
+  const out = {};
+  try {
+    /* DISTINCT on (id, role): a user whose primary role also appears in roles[] must count once, not twice */
+    const r = await db.console.query(
+      `SELECT role, count(*)::int AS users,
+              count(*) FILTER (WHERE last_login IS NULL)::int AS never_signed_in,
+              max(last_login) AS last_seen
+         FROM (SELECT DISTINCT u.id, x.role, u.last_login
+                 FROM console_users u,
+                      LATERAL unnest(array_remove(array_cat(ARRAY[u.role], COALESCE(u.roles, '{}')), NULL)) AS x(role)
+                WHERE u.enabled = true) z
+        GROUP BY role`);
+    for (const row of r.rows) out[row.role] = { users: row.users, never: row.never_signed_in, last_seen: row.last_seen };
+  } catch (e) { /* column set differs or table missing → the UI just shows no counts */ }
+  return out;
+}
+
+async function matrix() {
   const m = current();
+  const usage = await roleUsage();
   return {
-    views: roles.ALL_VIEWS.map(v => ({ key: v, label: roles.VIEW_LABELS[v] || v })),
-    caps: roles.CAPS.map(c => ({ key: c, label: roles.CAP_LABELS[c] || c })),
+    views: roles.ALL_VIEWS.map(v => ({ key: v, label: roles.VIEW_LABELS[v] || v, group: roles.VIEW_GROUP[v] || 'shared' })),
+    caps: roles.CAPS.map(c => ({ key: c, label: roles.CAP_LABELS[c] || c, note: (roles.CAP_NOTES || {})[c] || '' })),
     roles: Object.keys(m).map(name => {
-      const r = m[name];
+      const r = m[name], u = usage[name] || {};
       return {
         name, label: r.label, team: r.team, rank: r.rank, locked: name === 'super_admin', custom: !!r.custom,
+        note: r.note || '', users: u.users || 0, never_signed_in: u.never || 0, last_seen: u.last_seen || null,
         views: Object.fromEntries(roles.ALL_VIEWS.map(v => [v, r.views.includes(v)])),
         caps: Object.fromEntries(roles.CAPS.map(c => [c, !!r.caps[c]]))
       };

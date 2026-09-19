@@ -16,7 +16,20 @@ const FIXED_LEGACY = { maps: 'fixed_maps', b2c: 'fixed_salamhome' };
 // which view each Fixed hub tab needs (shared with the frontend via /api/me → fixedTabViews)
 const FIXED_TAB_VIEW = { overview:'fixed', epurchase:'fixed_epurchase', salamhome:'fixed_salamhome', map:'fixed_maps', qr:'fixed_maps',
   dash:'fixed_reports', report:'fixed_reports', errors:'fixed_errors', alerts:'fixed_alerts', playbook:'fixed_explore', diagrams:'fixed_explore' };
-const ALL_VIEWS = ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','explore','settings','users'];
+/* CROSS-BUSINESS PAGES (19 Sep 2026) — until now these were gated ad hoc in ops.js with style.display or a
+ * realRole === 'super_admin' test, so they appeared in no matrix column and nobody could review who reached them:
+ *   exec        Executive Dashboard (#exec)              — rode on 'dashboard', i.e. everyone
+ *   noc         NOC walls (#noc, #noc?w=kpi)             — rode on 'dashboard', i.e. everyone
+ *   governance  SLA · Vendors & contracts · SLO defs     — requireSuper on the API, hidden group in the gear menu
+ *   cst         CST Arqami · CST Escalations             — requireSuper on the API, hidden group in the gear menu
+ *   audit       Audit log                                — realRole super_admin AND root
+ *   tickets     Tickets & feedback board                 — the manageUsers cap, which also meant four other things
+ * They survive both business scopes (scopeViews) because none of them belongs to Mobile or Fixed alone.
+ * The remaining gear entries (Notifications, Navigation & tabs, Demo, Yusr, Agents) stay under 'settings':
+ * they are settings panels, not destinations of their own. */
+const CROSS_VIEWS = ['exec','noc','governance','cst','audit','tickets'];
+const ALL_VIEWS = ['dashboard','monitoring','dms','alerts','errors','analytics','workbench', ...FIXED_VIEWS,
+  'exec','noc','governance','cst','audit','tickets', 'explore','settings','users'];   // grouped: mobile · fixed · cross · shared
 /* ---- Business scope (6 Sep 2026) ----------------------------------------------------------------
  * Every console user belongs to a BUSINESS: 'mobile' (MVNO team), 'fixed' (Fixed team) or 'both'. It is a
  * second axis next to ROLES: the role says WHAT a person may do (views + caps), the business says on WHICH
@@ -35,15 +48,30 @@ function scopeViews(views, business) {
   if (b === 'fixed') return views.filter(v => !MOBILE_VIEWS.includes(v));
   return views;
 }
-const CAPS = ['editRules','manageSync','manageUsers','unmaskPII','export','ackErrors','useYusr','customizeDashboard'];
+/* manageUsers used to gate five unrelated things on the API (users, the role matrix, the ticket board, the error
+ * log, rule reseed, self-check), so granting "can manage users" also handed over the ticket board and a reseed
+ * button. It now means ONLY users + roles — and those endpoints are pinned to super admin in api.js regardless,
+ * so the tick box cannot open them. adminTools carries what was left behind. */
+const CAPS = ['editRules','manageSync','manageUsers','adminTools','unmaskPII','export','ackErrors','useYusr','customizeDashboard'];
 // human labels for the permissions matrix UI
 const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS', workbench:'L2 Workbench', alerts:'Alerts',
-  errors:'Troubleshoot', analytics:'Analytics / SLA', explore:'Explore links', settings:'Settings', users:'User management',
-  fixed:'Fixed · Overview', fixed_epurchase:'Fixed · E-purchase', fixed_salamhome:'Fixed · Salam Home app', fixed_maps:'Fixed · SDA map & QR codes',
-  fixed_reports:'Fixed · Reports & KPI digest', fixed_errors:'Fixed · Errors', fixed_alerts:'Fixed · Alerts', fixed_explore:'Fixed · Playbook & Diagrams' };
-const CAP_LABELS = { editRules:'Edit rules', manageSync:'Manage sync', manageUsers:'Manage users',
-  unmaskPII:'Unmask PII', export:'Export data', ackErrors:'Ack incidents',
+  errors:'Troubleshoot', analytics:'Reports', explore:'Explore & Customer 360', settings:'Settings', users:'User management',
+  fixed:'Fixed · Overview', fixed_epurchase:'Fixed · Epurchase', fixed_salamhome:'Fixed · Salam Home app', fixed_maps:'Fixed · SDA map & QR codes',
+  fixed_reports:'Fixed · Reports', fixed_errors:'Fixed · Troubleshoot', fixed_alerts:'Fixed · Alerts', fixed_explore:'Fixed · Playbook & Diagrams',
+  exec:'Executive Dashboard', noc:'NOC wall', governance:'IT Governance (SLA · vendors · SLO)', cst:'CST (Arqami · escalations)',
+  audit:'Audit log', tickets:'Tickets & feedback' };
+/* which nav family each page belongs to — the matrix UI groups by this instead of guessing from the key */
+const VIEW_GROUP = Object.fromEntries(ALL_VIEWS.map(v => [v,
+  FIXED_VIEWS.includes(v) ? 'fixed' : CROSS_VIEWS.includes(v) ? 'cross' : ['explore','settings','users'].includes(v) ? 'shared' : 'mobile']));
+const CAP_LABELS = { editRules:'Edit rules', manageSync:'Manage sync', manageUsers:'Manage users & roles',
+  adminTools:'Admin tools', unmaskPII:'Unmask PII', export:'Export data', ackErrors:'Ack incidents',
   useYusr:'Use Yusr AI', customizeDashboard:'Customize dashboards' };
+const CAP_NOTES = { editRules:'Create and tune alert rules.', manageSync:'Control the sync engine.',
+  manageUsers:'Create users and edit the role matrix. Super Admin only — the endpoints are pinned in code, so this box cannot open them for anyone else.',
+  adminTools:'The ticket board, the error log, rule reseed and the health self-check.',
+  unmaskPII:'Reveal a masked value on demand. Never a mode: every reveal is audited as pii.unmask.',
+  export:'Download XLSX / PDF exports.', ackErrors:'Acknowledge and resolve incidents.',
+  useYusr:'Ask Yusr, the AI assistant.', customizeDashboard:'Add and rearrange dashboard cards.' };
 /* 2 Sep 2026 view-model change: 'dashboard' and 'dms' became real gated views (dashboard used to be
  * hardcoded-visible, dms rode on 'monitoring'); topology/journeys/integrations collapsed into one
  * 'explore' view = the whole Explore menu (topology, API GW, docs, journeys, integrations, Sub360).
@@ -54,79 +82,89 @@ const ROLES = {
   super_admin: {
     label: 'Super Admin', team: 'Digital Ops', rank: 1,
     views: ALL_VIEWS,
-    caps: { editRules:true, manageSync:true, manageUsers:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    caps: { editRules:true, manageSync:true, manageUsers:true, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
     note: 'Full control. Can unmask PII (live-fetched, never stored) and manage users.'
   },
   admin: {
     label: 'Admin', team: 'Digital Ops', rank: 2,
-    views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','explore','settings'],
+    views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','exec','noc','explore','tickets','settings'],
     /* unmaskPII granted to admin on 21 Aug 2026 at the owner's request — per-request ACT, never a
      * mode: caller must pass unmask=1, value fetched live, every reveal audited as pii.unmask. */
-    caps: { editRules:true, manageSync:true, manageUsers:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
-    note: 'Manages rules, sync mode and dashboards. Can unmask PII on demand (audited); cannot manage users.'
+    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    note: 'Manages rules, sync mode, dashboards and the admin tools (tickets · error log · reseed). Can unmask PII on demand (audited). Cannot manage users or roles — that is Super Admin only.'
   },
   report_manager: {
     label: 'Sales Ops', team: 'Sales Ops', rank: 3,
-    views: ['dashboard','monitoring','dms','explore', ...(FIXED_ENABLED ? ['fixed','fixed_maps','fixed_reports'] : [])],
-    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false },
+    views: ['dashboard','monitoring','dms','exec','explore', ...(FIXED_ENABLED ? ['fixed','fixed_maps','fixed_reports'] : [])],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false },
     note: 'Sales Operations — Dashboard, Monitoring, DMS (dealers), Fixed dealer maps & reports and the Explore pages, with export. PII masked.'
   },
   ...(FIXED_ENABLED ? {
   fixed_ops: {
     label: 'Fixed Ops', team: 'Fixed Ops', rank: 3,
-    views: ['dashboard', ...FIXED_VIEWS, 'explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    views: ['dashboard', ...FIXED_VIEWS, 'exec','noc','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
     note: 'Owns the Fixed side (FTTH · FTTB · 5G home): every Fixed page, Fixed alert rules, Customer 360. No Mobile operate pages. PII masked.'
   },
   b2c_admin: {
     label: 'Salam Home (B2C)', team: 'Fixed Ops', rank: 3,
     views: ['dashboard','fixed','fixed_epurchase','fixed_salamhome','fixed_reports','fixed_errors','explore'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:true },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:true },
     note: 'Salam Home app & e-purchase owners — the two channel dashboards, Reports, Errors and Customer 360. PII masked.'
   } } : {}),
   errors_manager: {
     label: 'Errors Manager', team: 'OSS Ops', rank: 3,
-    views: ['dashboard','monitoring','errors','alerts','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    views: ['dashboard','monitoring','errors','alerts','noc','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
     note: 'Owns the Error Control Board & troubleshooting; can tune error-related alerts. PII masked.'
   },
   events_manager: {
     label: 'Events Manager', team: 'Digital Ops', rank: 3,
-    views: ['dashboard','monitoring','alerts','explore'],
-    caps: { editRules:true, manageSync:true, manageUsers:false, unmaskPII:false, export:false, ackErrors:false, useYusr:true, customizeDashboard:false },
+    views: ['dashboard','monitoring','alerts','noc','explore'],
+    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:false, unmaskPII:false, export:false, ackErrors:false, useYusr:true, customizeDashboard:false },
     note: 'Owns alerts/events: defines rules and controls the sync engine. PII masked.'
   },
 
   // ---- support escalation tiers (BSS / Digital) — retuned 2 Sep 2026 to the agreed scope ----
   l1_bss: {
     label: 'L1 BSS', team: 'BSS Ops', rank: 5,
-    views: ['dashboard','monitoring','errors','explore'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    views: ['dashboard','monitoring','errors','noc','explore'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
     note: 'Frontline BSS support — Dashboard, Monitoring, Troubleshoot. PII masked.'
   },
   l2_bss: {
     label: 'L2 BSS', team: 'BSS Ops', rank: 4,
-    views: ['dashboard','monitoring','errors','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    views: ['dashboard','monitoring','errors','noc','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
     note: 'BSS escalation — same pages as L1 BSS plus alert-rule tuning. PII masked.'
   },
   l1_digital: {
     label: 'L1 Digital', team: 'Digital Ops', rank: 5,
-    views: ['dashboard','monitoring','dms','alerts','explore'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    views: ['dashboard','monitoring','dms','alerts','noc','explore'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
     note: 'Frontline Digital support — Dashboard, Monitoring, DMS, Alerts. No Troubleshoot. PII masked.'
   },
   l2_digital: {
     label: 'L2 Digital', team: 'Digital Ops', rank: 4,
-    views: ['dashboard','monitoring','dms','errors','alerts','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    views: ['dashboard','monitoring','dms','errors','alerts','noc','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
     note: 'Digital escalation — all five operate pages. No Workbench, no SLA, no settings. PII masked.'
   },
   l3_digital: {
     label: 'L3 Digital', team: 'Digital Ops', rank: 3,
-    views: ['monitoring','errors','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    views: ['monitoring','errors','noc','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
     note: 'Deep Digital escalation — Troubleshoot + Monitoring with audited PII unmask for end-to-end cases.'
+  },
+  /* CIO / Executive (19 Sep 2026) — the narrowest role in the console. Two pages and the assistant: the
+   * Executive Dashboard, the NOC walls, and Yusr. Deliberately NO Customer 360 (that view carries PII), no
+   * operate pages, no edit caps. This is the role the 'exec' and 'noc' views were created for — before them
+   * the only way to hand someone the executive dashboard was to hand them Home and everything keyed to it. */
+  cio: {
+    label: 'CIO / Executive', team: 'Executive', rank: 2,
+    views: ['exec', 'noc'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false },
+    note: 'Executive view — the Executive Dashboard, the NOC walls and Yusr AI, with export. No operate pages, no Customer 360, no PII.'
   },
   call_center: {
     label: 'Call Center', team: 'Call Center', rank: 6,
@@ -134,7 +172,7 @@ const ROLES = {
     /* unmaskPII granted 2 Sep 2026 (Yosri): agents verify callers and must read real values in
      * Subscriber 360. Stays a per-request ACT — every reveal writes a pii.unmask audit row naming
      * the agent and the record; masked remains the default until the agent presses Unmask. */
-    caps: { editRules:false, manageSync:false, manageUsers:false, unmaskPII:true, export:false, ackErrors:false, useYusr:true, customizeDashboard:false },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:true, export:false, ackErrors:false, useYusr:true, customizeDashboard:false },
     note: 'Customer-facing agents — Dashboard and the Explore pages (incl. Subscriber 360), answer with Yusr. PII masked by default; unmask per-view, audited per agent.'
   }
 };
@@ -241,4 +279,4 @@ function maskDeep(obj, allowUnmask) {
   return walk(obj);
 }
 
-module.exports = { ROLES, LEGACY_VIEW, FIXED_LEGACY, FIXED_TAB_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS, FIXED_ENABLED, FIXED_VIEWS, BUSINESSES, BUSINESS_LABEL, MOBILE_VIEWS, normBusiness, scopeViews };
+module.exports = { ROLES, LEGACY_VIEW, CROSS_VIEWS, VIEW_GROUP, CAP_NOTES, FIXED_LEGACY, FIXED_TAB_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS, FIXED_ENABLED, FIXED_VIEWS, BUSINESSES, BUSINESS_LABEL, MOBILE_VIEWS, normBusiness, scopeViews };

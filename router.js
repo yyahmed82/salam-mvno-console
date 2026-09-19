@@ -34,11 +34,24 @@
    * view (page permission) it needs under the v2 model; a role without it gets a full
    * ACCESS DENIED panel — same message the API would 403 with — instead of a half-broken page.
    * The server gates the data regardless; this makes the denial clear instead of confusing. */
-  const VIEW_REQ={ landing:"dashboard", execops:"dashboard", nocwall:"dashboard", monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts",
+  const VIEW_REQ={ landing:"dashboard", execops:"exec", nocwall:"noc", monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts",
     home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", mvnohld:"explore", otodocs:"explore",
     tapdocs:"explore", salamdocs:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
   const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed", errors:"Troubleshoot", alerts:"Alerts", fixed_alerts:"Fixed › Alerts",
-    analytics:"Analytics / SLA", explore:"Explore", workbench:"L2 Workbench", settings:"Settings" };
+    analytics:"Reports", explore:"Explore & Customer 360", workbench:"L2 Workbench", settings:"Settings",
+    exec:"Executive Dashboard", noc:"NOC wall", governance:"IT Governance", cst:"CST", audit:"Audit log", tickets:"Tickets & feedback", users:"User management" };
+  /* WHERE A ROLE STARTS (19 Sep 2026) — #'' and #home resolve to the landing page, which needs 'dashboard'.
+   * Every role had that view, so it never mattered; the CIO role does not, and a narrow custom role need not
+   * either, so signing in used to end on ACCESS DENIED. This is the first page the session can actually open,
+   * in the order a person would want it, and it also feeds the "Go to my home page" button on the denial panel. */
+  const HOME_ORDER=[["dashboard","home"],["exec","exec"],["fixed","fixed"],["monitoring","monitoring"],["alerts","alerts"],
+    ["errors","troubleshoot"],["dms","dms"],["analytics","analytics"],["fixed_epurchase","fixed?tab=epurchase"],
+    ["fixed_salamhome","fixed?tab=salamhome"],["fixed_alerts","fixed-alerts"],["fixed_errors","fixed?tab=errors"],
+    ["fixed_reports","fixed?tab=dash"],["fixed_maps","fixed?tab=map"],["noc","noc"],["explore","subscriber"],
+    ["tickets","tickets"],["governance","sla"],["cst","arqami"],["workbench","workbench"],["users","settings-users"],["settings","settings"]];
+  function homeHash(){ const me=sess().me; if(!me||!Array.isArray(me.views)) return "dashboard";
+    const hit=HOME_ORDER.find(([v])=>me.views.includes(v)); return hit?hit[1]:"dashboard"; }
+  window.consoleHomeHash=homeHash;
   function sess(){ try{ return (window.opsSession&&window.opsSession())||{}; }catch(e){ return {}; } }
   function lacks(need){ const me=sess().me; if(!me||!Array.isArray(me.views)) return false;  // session not ready → don't block boot
     return !me.views.includes(need); }
@@ -64,7 +77,7 @@
       If you work on both, ask an admin to set your business to <b>Mobile + Fixed</b> in User management.</p>
       <button class="pill" id="adHome" style="border-left-color:var(--green,#0e9f5a);margin-top:8px">Go to my home page</button></div>`;
     d.style.display="flex";
-    const b=d.querySelector("#adHome"); if(b) b.onclick=()=>{ hideDenied(); setHash("home"); };
+    const b=d.querySelector("#adHome"); if(b) b.onclick=()=>{ hideDenied(); setHash(homeHash()); };
   }
   function showDenied(need){
     let d=document.getElementById("accessDenied");
@@ -79,8 +92,9 @@
       If you need it, ask a Super Admin to grant it in Settings → Roles &amp; permissions.</p>
       <button class="pill" id="adHome" style="border-left-color:var(--green,#0e9f5a);margin-top:8px">Go to my home page</button></div>`;
     d.style.display="flex";
-    const b=d.querySelector("#adHome"); if(b) b.onclick=()=>{ hideDenied();
-      const first=document.querySelector(".navtab:not(.hidden)"); if(first){ first.click(); setHash(VIEW_HASH[first.dataset.view]||first.dataset.view||"dashboard"); } };
+    /* the first visible nav tab is not always reachable (a role can hold a page that has no tab, e.g. the
+     * CIO's Executive Dashboard sits outside the two business dropdowns) — ask the permission list instead */
+    const bt=d.querySelector("#adHome"); if(bt) bt.onclick=()=>{ hideDenied(); setHash(homeHash()); };
     window.audit && window.audit("ACCESS_DENIED", "#"+(_cur||"")+" needs "+need);
   }
   function hideDenied(){ const d=document.getElementById("accessDenied"); if(d) d.style.display="none"; }
@@ -105,11 +119,18 @@
     // hidden root tier: #audit + #settings-assist deep links bounce home for excluded sessions
     // (me.root===false only when ROOT_ADMINS is configured server-side; the API 403s regardless)
     const notRoot=()=>{ const s=(window.opsSession&&window.opsSession())||{}; return s.me && s.me.root===false; };
-    if((r.audit||r.assistClone||r.sla||r.sloSettings||r.agents) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash("dashboard"); return; }
+    if((r.audit||r.assistClone||r.sla||r.sloSettings||r.agents) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash(homeHash()); return; }
     // role guard — before any renderer runs (the API 403s regardless; this makes it CLEAR)
     hideDenied();
     const need=neededFor(r);
-    if(need && lacks(need)){ showDenied(need); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (denied)"); return; }
+    if(need && lacks(need)){
+      /* arriving at the default route (no hash, #home, #dashboard) with no right to it means the role simply
+       * starts somewhere else — send them there instead of greeting them with ACCESS DENIED at sign-in */
+      const landed=!base||base==="home"||base==="dashboard"||base==="landing";
+      const alt=homeHash();
+      if(landed && alt && alt!==base){ setHash(alt); return; }
+      showDenied(need); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (denied)"); return;
+    }
     // business guard (6 Sep 2026): a Mobile-only user never lands on a Fixed page and vice-versa, deep link or not
     const bizOf=r=>{ if(r.view==="fixed"||r.seg==="fixed") return "fixed"; if(r.view==="execops") return null; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","mvnohld","otodocs","tapdocs","salamdocs","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
     const biz=(sess().me||{}).business||"both", rb=bizOf(r);

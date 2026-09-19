@@ -191,7 +191,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   window.opsSession = () => SES;   // { email, role, me:{name,mobile,dashboard,...} }
   /* 2 Sep 2026 view split: home→'dashboard', dms→'dms' (own view), every Explore-menu entry
    * (topology/apigw/docs/journeys/integrations/sub360) → the single 'explore' view. */
-  const NAV_VIEW = { landing:"dashboard", execops:"dashboard", nocwall:"dashboard", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
+  const NAV_VIEW = { landing:"dashboard", execops:"exec", nocwall:"noc", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
     explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", tapdocs:"explore", alerts:"alerts", errors:"errors", analytics:"analytics", sub360:"explore", settings:"settings" };
 
   async function loadMe(){
@@ -232,27 +232,34 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     document.querySelectorAll('.navdrop[data-drop="mobile"] .navtab').forEach(b=>{ if(biz==="fixed") b.classList.add("hidden"); });
     document.querySelectorAll('.navdrop[data-drop="home"] .navtab[data-fxtab]').forEach(b=>{ if(biz==="mobile") b.classList.add("hidden"); });
     document.documentElement.setAttribute("data-business", biz);
-    // SLA / SLO surfaces are Super Admin surfaces. The API also allows hidden root owners.
     const isSuper = SES.me && (SES.me.realRole==="super_admin" || (SES.me.realRoles||[]).includes("super_admin"));
-    const slaMi = document.getElementById("slaMenuItem"); if(slaMi) slaMi.style.display = isSuper?"":"none";
-    const sloMi = document.getElementById("sloSettingsMenuItem"); if(sloMi) sloMi.style.display = isSuper?"":"none";
-    const vcMi = document.getElementById("vendorContractsMenuItem"); if(vcMi) vcMi.style.display = isSuper?"":"none";
-    ["governGroup","cstGroup","cstArqamiMenuItem","cstEscMenuItem"].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display = isSuper?"":"none"; });   // GOVERN + REGULATORY AFFAIRS groups (16 Sep 2026): super admin only
-    const agMi = document.getElementById("agentsMenuItem"); if(agMi) agMi.style.display = (SES.me && SES.me.root!==false && SES.me.realRole==="super_admin")?"":"none";
+    const show = (id, on) => { const el = document.getElementById(id); if(el) el.style.display = on ? "" : "none"; };
+    const has = v => views.includes(v);
+    // IT GOVERNANCE — the 'governance' view (SLA · vendors & contracts · SLO definitions)
+    ["governGroup","slaMenuItem","vendorContractsMenuItem","sloSettingsMenuItem"].forEach(id=>show(id, has("governance")));
+    // REGULATORY AFFAIRS — the 'cst' view (Arqami · CST escalations)
+    ["cstGroup","cstArqamiMenuItem","cstEscMenuItem"].forEach(id=>show(id, has("cst")));
+    // NOC WALL — the 'noc' view. Its two entries are .navtab buttons, so they also answer to the nav scoping above.
+    document.querySelectorAll('#settingsMenu .navtab[data-view="nocwall"]').forEach(b=>b.classList.toggle("hidden", !has("noc")));
+    // Agents & LLM stays a root-tier surface: it configures the models, not a business page.
+    show("agentsMenuItem", !!(SES.me && SES.me.root!==false && isSuper));
     // if current active tab is hidden, jump to first visible
     const active = document.querySelector(".navtab.active");
     if(active && active.classList.contains("hidden")){
       const first = document.querySelector(".navtab:not(.hidden)"); if(first) first.click();
     }
-    // hide users panel unless manageUsers
-    const up = $("#usersPanel"); if(up) up.style.display = can("manageUsers")?"":"none";
+    /* User management — the 'users' view, which only Super Admin holds. The gear entry used to be shown to
+     * anyone who could open the gear at all (i.e. any role with 'settings'), so an Admin could click it and
+     * collect a 403 from /api/users. Hide the door rather than lock it in their face. */
+    const usersMi = document.querySelector('#settingsMenu [data-seg="users"]'); if(usersMi) usersMi.style.display = has("users")?"":"none";
+    const up = $("#usersPanel"); if(up) up.style.display = has("users")?"":"none";
     // settings gear visibility by role
     const gear = document.getElementById("settingsBtn"); if(gear) gear.style.display = views.includes("settings")?"":"none";
     // audit log — super admin only, AND the hidden root tier when ROOT_ADMINS is configured
     // (me.root===false means the server WILL 403 — hiding here is cosmetic, the gate is server-side)
-    const am = document.getElementById("auditMenuItem"); if(am) am.style.display = (SES.me && SES.me.realRole==="super_admin" && SES.me.root!==false)?"":"none";
-    // Tickets & feedback board — manageUsers (super_admins / admins). Raising a ticket stays open to all.
-    const tm = document.getElementById("ticketsMenuItem"); if(tm) tm.style.display = can("manageUsers")?"":"none";
+    show("auditMenuItem", has("audit") && !!(SES.me && SES.me.root!==false));
+    // Tickets & feedback board — the 'tickets' view. Raising a ticket stays open to everyone.
+    show("ticketsMenuItem", has("tickets"));
     // On-call view — removed from the "?" menu on 18 Sep 2026. It is the "On-call" tab of each Alerts
     // page (alertsview.js → renderOncallInto), and #oncall / #fixed-oncall still open it full screen.
     // L2 Workbench menu item — only roles holding the 'workbench' view see it (server requireView gates access)
