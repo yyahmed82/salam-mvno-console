@@ -3,6 +3,17 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.44] — 2026-09-19 — Speaker notes for the executive brief
+### Added
+- **`exec-script.html`** — the notes for presenting the brief, at `/unified-console/exec-script.html`. One opening line
+  per slide, the cues under it, the numbers worth saying out loud, the bridge into the next slide, and six likely
+  questions with answers. Cumulative timings (~38 min) with the two slides to drop first marked. Readable on a phone,
+  prints to 8 A4 pages with its own print stylesheet, light by default with a dark toggle for a dim room.
+### Changed
+- **The brief drops the August/September comparison slide** — 13 slides. Its numbers are carried by the convergence
+  slide that follows it, and the deck opens faster without a table of what used to be true.
+
+
 ## [2.0.0-alpha.43] — 2026-09-19 — Executive brief rewritten for the September story
 ### Changed
 - **The executive brief goes from 6 slides to 14**, sized for a 30–40 minute review with high management rather than a
