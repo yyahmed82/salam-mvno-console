@@ -104,6 +104,7 @@
   const sla=menu.querySelector("[data-sla]"); if(sla) sla.addEventListener("click", ()=>{ if(window.openSla) window.openSla(); closeMenu(); });
   const vendorContracts=menu.querySelector("[data-vendor-contracts]"); if(vendorContracts) vendorContracts.addEventListener("click", ()=>{ if(window.openVendorContracts){ window.openVendorContracts(); if(location.hash!=="#vendor-contracts") location.hash="#vendor-contracts"; } closeMenu(); });
   const sloSettings=menu.querySelector("[data-slo-settings]"); if(sloSettings) sloSettings.addEventListener("click", ()=>{ if(window.openSloSettings){ window.openSloSettings(); if(location.hash!=="#slo-settings") location.hash="#slo-settings"; } closeMenu(); });
+  const semati=menu.querySelector("[data-semati]"); if(semati) semati.addEventListener("click", ()=>{ if(window.setConsoleHash) window.setConsoleHash("semati-clearance"); else location.hash="#semati-clearance"; if(window.openSematiClearance) window.openSematiClearance(); closeMenu(); });
   menu.querySelectorAll("[data-cst]").forEach(b=>b.addEventListener("click", ()=>{ const h=b.dataset.cst==="arqami"?"arqami":"cst-escalations"; if(window.setConsoleHash) window.setConsoleHash(h); else location.hash="#"+h; if(window.openCst) window.openCst(b.dataset.cst); closeMenu(); }));
   /* NOC WALL (18 Sep 2026): the two wall entries are real .navtab buttons — router.js routes them and
    * app.js activates the view, so all this menu owes them is to get out of the way. The gear does not

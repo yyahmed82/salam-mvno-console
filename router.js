@@ -9,7 +9,7 @@
     workbench:{workbench:true},
     // Growth was absorbed into Monitoring → Resellers. Old links keep working.
     analytics:{view:"analytics"}, growth:{view:"monitoring",monTab:"resellers"}, resellers:{view:"monitoring",monTab:"resellers"},
-    dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, sla:{sla:true}, slo:{sla:true}, "slo-settings":{sloSettings:true}, "sla-targets":{sloSettings:true}, "vendor-contracts":{vendorContracts:true}, vendors:{vendorContracts:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
+    dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, sla:{sla:true}, slo:{sla:true}, "slo-settings":{sloSettings:true}, "sla-targets":{sloSettings:true}, "vendor-contracts":{vendorContracts:true}, vendors:{vendorContracts:true}, "semati-clearance":{semati:true}, semati:{semati:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
     alerts:{view:"alerts"}, "fixed-alerts":{view:"alerts",seg:"fixed"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"}, mvnohld:{view:"topology2",t2:"hld"}, "bss-atlas":{view:"topology2",t2:"hld"}, journeys:{view:"explorer"}, integrations:{view:"integrations"},
     subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true}, "fixed-oncall":{oncall:true,seg:"fixed"},
     settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
@@ -140,6 +140,7 @@
     else if(r.sla){ window.openSla && window.openSla(); }
     else if(r.sloSettings){ window.openSloSettings && window.openSloSettings(); }
     else if(r.vendorContracts){ window.openVendorContracts && window.openVendorContracts(); }
+    else if(r.semati){ window.openSematiClearance && window.openSematiClearance(); }
     else if(r.cst){ window.openCst && window.openCst(r.cst); }
     else if(r.notifyClone){ window.openNotifyClone && window.openNotifyClone(); }
     else if(r.assistClone){ window.openAssistClone && window.openAssistClone(); }

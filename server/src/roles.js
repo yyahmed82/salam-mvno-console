@@ -52,7 +52,10 @@ function scopeViews(views, business) {
  * log, rule reseed, self-check), so granting "can manage users" also handed over the ticket board and a reseed
  * button. It now means ONLY users + roles — and those endpoints are pinned to super admin in api.js regardless,
  * so the tick box cannot open them. adminTools carries what was left behind. */
-const CAPS = ['editRules','manageSync','manageUsers','adminTools','unmaskPII','export','ackErrors','useYusr','customizeDashboard'];
+/* sematiClear (19 Sep 2026): release MSISDN + ID pairs on Semati (TCC) from Governance › Semati Clearance. Its own
+ * capability rather than adminTools because it writes to a national registry: you want to know exactly who holds it.
+ * Defaults to Super Admin and Admin only; the matrix hands it to a role deliberately, never as a side effect. */
+const CAPS = ['editRules','manageSync','manageUsers','adminTools','unmaskPII','export','ackErrors','useYusr','customizeDashboard','sematiClear'];
 // human labels for the permissions matrix UI
 const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS', workbench:'L2 Workbench', alerts:'Alerts',
   errors:'Troubleshoot', analytics:'Reports', explore:'Explore & Customer 360', settings:'Settings', users:'User management',
@@ -65,13 +68,14 @@ const VIEW_GROUP = Object.fromEntries(ALL_VIEWS.map(v => [v,
   FIXED_VIEWS.includes(v) ? 'fixed' : CROSS_VIEWS.includes(v) ? 'cross' : ['explore','settings','users'].includes(v) ? 'shared' : 'mobile']));
 const CAP_LABELS = { editRules:'Edit rules', manageSync:'Manage sync', manageUsers:'Manage users & roles',
   adminTools:'Admin tools', unmaskPII:'Unmask PII', export:'Export data', ackErrors:'Ack incidents',
-  useYusr:'Use Yusr AI', customizeDashboard:'Customize dashboards' };
+  useYusr:'Use Yusr AI', customizeDashboard:'Customize dashboards', sematiClear:'Semati clearance' };
 const CAP_NOTES = { editRules:'Create and tune alert rules.', manageSync:'Control the sync engine.',
   manageUsers:'Create users and edit the role matrix. Super Admin only — the endpoints are pinned in code, so this box cannot open them for anyone else.',
   adminTools:'The ticket board, the error log, rule reseed and the health self-check.',
   unmaskPII:'Reveal a masked value on demand. Never a mode: every reveal is audited as pii.unmask.',
   export:'Download XLSX / PDF exports.', ackErrors:'Acknowledge and resolve incidents.',
-  useYusr:'Ask Yusr, the AI assistant.', customizeDashboard:'Add and rearrange dashboard cards.' };
+  useYusr:'Ask Yusr, the AI assistant.', customizeDashboard:'Add and rearrange dashboard cards.',
+  sematiClear:'Release MSISDN + ID pairs on Semati (TCC) so the number can be sold again. Writes to a national registry — every run, cancel and export is audited; identifiers are never stored.' };
 /* 2 Sep 2026 view-model change: 'dashboard' and 'dms' became real gated views (dashboard used to be
  * hardcoded-visible, dms rode on 'monitoring'); topology/journeys/integrations collapsed into one
  * 'explore' view = the whole Explore menu (topology, API GW, docs, journeys, integrations, Sub360).
@@ -82,7 +86,7 @@ const ROLES = {
   super_admin: {
     label: 'Super Admin', team: 'Digital Ops', rank: 1,
     views: ALL_VIEWS,
-    caps: { editRules:true, manageSync:true, manageUsers:true, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    caps: { editRules:true, manageSync:true, manageUsers:true, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:true },
     note: 'Full control. Can unmask PII (live-fetched, never stored) and manage users.'
   },
   admin: {
@@ -90,38 +94,38 @@ const ROLES = {
     views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','exec','noc','explore','tickets','settings'],
     /* unmaskPII granted to admin on 21 Aug 2026 at the owner's request — per-request ACT, never a
      * mode: caller must pass unmask=1, value fetched live, every reveal audited as pii.unmask. */
-    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:true },
     note: 'Manages rules, sync mode, dashboards and the admin tools (tickets · error log · reseed). Can unmask PII on demand (audited). Cannot manage users or roles — that is Super Admin only.'
   },
   report_manager: {
     label: 'Sales Ops', team: 'Sales Ops', rank: 3,
     views: ['dashboard','monitoring','dms','exec','explore', ...(FIXED_ENABLED ? ['fixed','fixed_maps','fixed_reports'] : [])],
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Sales Operations — Dashboard, Monitoring, DMS (dealers), Fixed dealer maps & reports and the Explore pages, with export. PII masked.'
   },
   ...(FIXED_ENABLED ? {
   fixed_ops: {
     label: 'Fixed Ops', team: 'Fixed Ops', rank: 3,
     views: ['dashboard', ...FIXED_VIEWS, 'exec','noc','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false },
     note: 'Owns the Fixed side (FTTH · FTTB · 5G home): every Fixed page, Fixed alert rules, Customer 360. No Mobile operate pages. PII masked.'
   },
   b2c_admin: {
     label: 'Salam Home (B2C)', team: 'Fixed Ops', rank: 3,
     views: ['dashboard','fixed','fixed_epurchase','fixed_salamhome','fixed_reports','fixed_errors','explore'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:true },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:true, sematiClear:false },
     note: 'Salam Home app & e-purchase owners — the two channel dashboards, Reports, Errors and Customer 360. PII masked.'
   } } : {}),
   errors_manager: {
     label: 'Errors Manager', team: 'OSS Ops', rank: 3,
     views: ['dashboard','monitoring','errors','alerts','noc','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Owns the Error Control Board & troubleshooting; can tune error-related alerts. PII masked.'
   },
   events_manager: {
     label: 'Events Manager', team: 'Digital Ops', rank: 3,
     views: ['dashboard','monitoring','alerts','noc','explore'],
-    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:false, unmaskPII:false, export:false, ackErrors:false, useYusr:true, customizeDashboard:false },
+    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:false, unmaskPII:false, export:false, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Owns alerts/events: defines rules and controls the sync engine. PII masked.'
   },
 
@@ -129,31 +133,31 @@ const ROLES = {
   l1_bss: {
     label: 'L1 BSS', team: 'BSS Ops', rank: 5,
     views: ['dashboard','monitoring','errors','noc','explore'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Frontline BSS support — Dashboard, Monitoring, Troubleshoot. PII masked.'
   },
   l2_bss: {
     label: 'L2 BSS', team: 'BSS Ops', rank: 4,
     views: ['dashboard','monitoring','errors','noc','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'BSS escalation — same pages as L1 BSS plus alert-rule tuning. PII masked.'
   },
   l1_digital: {
     label: 'L1 Digital', team: 'Digital Ops', rank: 5,
     views: ['dashboard','monitoring','dms','alerts','noc','explore'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Frontline Digital support — Dashboard, Monitoring, DMS, Alerts. No Troubleshoot. PII masked.'
   },
   l2_digital: {
     label: 'L2 Digital', team: 'Digital Ops', rank: 4,
     views: ['dashboard','monitoring','dms','errors','alerts','noc','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Digital escalation — all five operate pages. No Workbench, no SLA, no settings. PII masked.'
   },
   l3_digital: {
     label: 'L3 Digital', team: 'Digital Ops', rank: 3,
     views: ['monitoring','errors','noc','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Deep Digital escalation — Troubleshoot + Monitoring with audited PII unmask for end-to-end cases.'
   },
 
@@ -170,57 +174,57 @@ const ROLES = {
   l1_oss: {
     label: 'L1 OSS', team: 'OSS Ops', rank: 5,
     views: ['dashboard','monitoring','errors','noc','explore', ...(FIXED_ENABLED ? ['fixed_errors'] : [])],
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Frontline OSS — Monitoring and the error boards on both businesses. Acknowledge and export. PII masked.'
   },
   l2_oss: {
     label: 'L2 OSS', team: 'OSS Ops', rank: 4,
     views: ['dashboard','monitoring','errors','alerts','noc','explore', ...(FIXED_ENABLED ? ['fixed_errors','fixed_alerts'] : [])],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'OSS escalation — adds Alerts on both businesses and the tuning of OSS alert rules. PII masked.'
   },
   l3_oss: {
     label: 'L3 OSS', team: 'OSS Ops', rank: 3,
     views: ['dashboard','monitoring','errors','alerts','workbench','noc','explore', ...(FIXED_ENABLED ? ['fixed_errors','fixed_alerts'] : [])],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false },
     note: 'Deep OSS escalation — adds the L2 Workbench and audited PII unmask for end-to-end cases, like L3 Digital.'
   },
 
   l1_infra: {
     label: 'L1 Infra', team: 'Infra Ops', rank: 5,
     views: ['dashboard','monitoring','alerts','noc','explore'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Frontline Infrastructure — Monitoring, Alerts and the NOC walls. Acknowledge and export. PII masked.'
   },
   l2_infra: {
     label: 'L2 Infra', team: 'Infra Ops', rank: 4,
     views: ['dashboard','monitoring','alerts','errors','noc','explore', ...(FIXED_ENABLED ? ['fixed_alerts'] : [])],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Infrastructure escalation — adds Troubleshoot and Fixed alerts, and tunes infrastructure alert rules. PII masked.'
   },
   l3_infra: {
     label: 'L3 Infra', team: 'Infra Ops', rank: 3,
     views: ['dashboard','monitoring','alerts','errors','workbench','noc','explore', ...(FIXED_ENABLED ? ['fixed_alerts'] : [])],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false },
     note: 'Deep Infrastructure escalation — adds the L2 Workbench and its own dashboard layout. No PII: the layer below the customer record.'
   },
 
   l1_data: {
     label: 'L1 Data', team: 'Data Ops', rank: 5,
     views: ['dashboard','analytics','explore', ...(FIXED_ENABLED ? ['fixed_reports'] : [])],
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Frontline Data — Reports on both businesses and the Explore pages, with export. PII masked.'
   },
   l2_data: {
     label: 'L2 Data', team: 'Data Ops', rank: 4,
     views: ['dashboard','monitoring','analytics','explore', ...(FIXED_ENABLED ? ['fixed_reports'] : [])],
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false },
     note: 'Data escalation — adds Monitoring so a number can be traced to the journey behind it, and dashboard layout. PII masked.'
   },
   l3_data: {
     label: 'L3 Data', team: 'Data Ops', rank: 3,
     views: ['dashboard','monitoring','dms','errors','alerts','analytics','explore', ...(FIXED_ENABLED ? ['fixed_reports','fixed_errors'] : [])],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false },
     note: 'Deep Data escalation — the operate pages a data quality case needs (DMS, Troubleshoot, Alerts) and rule tuning. PII masked.'
   },
 
@@ -232,19 +236,19 @@ const ROLES = {
   l1_enterprise: {
     label: 'L1 Enterprise', team: 'Enterprise IT', rank: 5,
     views: ['dashboard','alerts','errors','noc','explore'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Frontline Enterprise IT (RA hub · HR hub · Contracting · Jira · MSD) — Alerts, Troubleshoot and the NOC walls. Enterprise systems are not a monitored business yet. PII masked.'
   },
   l2_enterprise: {
     label: 'L2 Enterprise', team: 'Enterprise IT', rank: 4,
     views: ['dashboard','monitoring','alerts','errors','noc','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Enterprise IT escalation — adds Monitoring and the tuning of its own alert rules. PII masked.'
   },
   l3_enterprise: {
     label: 'L3 Enterprise', team: 'Enterprise IT', rank: 3,
     views: ['dashboard','monitoring','alerts','errors','workbench','noc','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true },
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false },
     note: 'Deep Enterprise IT escalation — adds the L2 Workbench and its own dashboard layout. PII masked.'
   },
 
@@ -255,7 +259,7 @@ const ROLES = {
   cio: {
     label: 'CIO / Executive', team: 'Executive', rank: 2,
     views: ['exec', 'noc'],
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Executive view — the Executive Dashboard, the NOC walls and Yusr AI, with export. No operate pages, no Customer 360, no PII.'
   },
   call_center: {
@@ -264,7 +268,7 @@ const ROLES = {
     /* unmaskPII granted 2 Sep 2026 (Yosri): agents verify callers and must read real values in
      * Subscriber 360. Stays a per-request ACT — every reveal writes a pii.unmask audit row naming
      * the agent and the record; masked remains the default until the agent presses Unmask. */
-    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:true, export:false, ackErrors:false, useYusr:true, customizeDashboard:false },
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:true, export:false, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Customer-facing agents — Dashboard and the Explore pages (incl. Subscriber 360), answer with Yusr. PII masked by default; unmask per-view, audited per agent.'
   }
 };

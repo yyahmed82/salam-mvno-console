@@ -3,6 +3,44 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.49] — 2026-09-19 — Governance › Semati Clearance: release MSISDN + ID pairs on TCC, from the console
+### Added
+- **Semati Clearance** (`server/src/semati.js`, `semati-clearance.js`, gear menu › IT GOVERNANCE). Paste a list or load
+  a `.xlsx` / `.csv` / `.txt` of `MSISDN, customer ID[, ID type]`, review what would be sent (validated, de-duplicated,
+  the type inferred from the ID's first digit — 1… national ID, 2… iqama — and a contradiction flagged), confirm, and
+  watch every row come back as **Cleared**, **Not cleared** or **Error**. Mobile and Fixed (5G home), scoped by the
+  session's business. Cancel mid-run leaves unsent rows untouched. History per run; "Check a number" answers whether a
+  pair was ever sent, from a keyed hash. Result file as XLSX.
+- **The same call the operations script made** — the TCC `individual/v2/verify` endpoint with `requestType 4`, the
+  same payload shape, the same operator block — now with the outcome, the operator and the time on the record.
+  From a 2,935-row production run: code **600** = released; code **727 MOBILE_DOESNT_EXIST** = not registered under
+  this ID, which TCC does not split into "already released" vs "wrong ID" — so the console says exactly that and does
+  not guess; 715 / timeout / HTTP 5xx = **Error**, not a verdict, retry later.
+- **Where the call is made from.** 152 has no internet, so the request is issued ON an API host (the boxes that already
+  talk to Semati) over the collector SSH channel, `curl` with the JSON body on stdin — the api key is in no argv, no
+  shell history. `SEMATI_CLEAR_TRANSPORT=direct` for a host with egress or the local mock. The page shows reachability
+  from that vantage point before anything is sent.
+- **The outcome is stored, never the customer.** Jobs and rows go to `unified_console` with identifiers masked (last
+  3 digits) plus an HMAC of msisdn|ID for the lookup. The full values live in process memory for
+  `SEMATI_CLEAR_RESULT_TTL_MIN` (120) after the run — the window for downloading the result file — then only the masked
+  outcome remains. Full values on screen or in the file: the run's own author, or `unmaskPII`; every reveal, run, cancel,
+  export and lookup is audited (`semati.clear.start`, `semati.clear.cancel`, `pii.unmask`, `semati.export`, `semati.lookup`).
+- **A `sematiClear` capability** (`roles.js`, its own column in the matrix, granted to Super Admin and Admin by default).
+  It writes to a national registry, so a role gets it deliberately, never as a side effect of another tick box.
+  The page and every `/api/semati/*` route need the `governance` view **and** this capability; the endpoints are on the
+  Fixed-team allow-list so a Fixed-only session can clear 5G numbers.
+- **Configuration is `.env` only** — `SEMATI_CLEAR_API_KEY`, `SEMATI_CLEAR_OPERATOR_JSON` (+ optional `_MOBILE` / `_FIXED`),
+  transport, host, TLS, request type, pacing, caps — documented in `deploy152/env.template`. The page stays locked, naming
+  the missing keys, until they are set. Nothing about Semati is stored in console settings.
+### Verified
+- 32 end-to-end checks against a real PostgreSQL and a mock TCC endpoint, in both transports (`direct`, and `ssh` through
+  a stand-in `ssh` that proves the key never reaches argv): normalisation, the real 2,935-row workbook, classification of
+  600/727/715/timeout/502, masking in the database, author vs `unmaskPII` reveal, XLSX export that re-reads, hash lookup,
+  business scoping, 409 on a concurrent run, cancel mid-run, both gates, the audit trail. The page rendered headless in
+  both themes at 1440×900 and 390×844 through every state — empty, review, confirm, running, finished, full reveal,
+  history, lookup, locked — with no horizontal overflow and no page errors.
+
+
 ## [2.0.0-alpha.48] — 2026-09-19 — North-star KPIs second on the exec brief; menu rows light like dropdown rows
 ### Changed
 - **"Are the north-star KPIs moving?" moves to second position** on the Executive Dashboard, directly after

@@ -62,6 +62,9 @@ app.use('/api/workbench/docs', (req, res, next) => req.method === 'POST'
 // CST imports (RA escalation export ≈ 1 600 rows × 31 columns, Arqami per-minute CSV) — same per-route large-body trick.
 app.use('/api/cst', (req, res, next) => req.method === 'POST' && /\/import$/.test(req.path)
   ? express.json({ limit: process.env.CST_BODY_LIMIT || '20mb' })(req, res, next) : next());
+// Semati clearance: a pasted list or a base64 .xlsx/.csv (a 5,000-row workbook ≈ 300 KB) — same per-route large-body trick.
+app.use('/api/semati', (req, res, next) => req.method === 'POST' && /\/(parse|jobs)$/.test(req.path)
+  ? express.json({ limit: process.env.SEMATI_BODY_LIMIT || '8mb' })(req, res, next) : next());
 app.use(express.json({ limit: '1mb' }));
 // General API limiter: keyed by CONSOLE USER (not IP) because the console sits behind a
 // shared corporate VPN — a per-IP limit would let one office collectively throttle itself.
@@ -133,7 +136,7 @@ app.use(async (req, _res, next) => {
 // (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
 // through the stripped views (every Fixed route is requireView-gated). Kept as an allow-list so a new
 // Mobile endpoint is closed for the Fixed team by default.
-const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents)/;   // alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
+const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents|semati)/;   // alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
 app.use('/api/', (req, res, next) => {
   if (req.business === 'fixed' && !FIXED_TEAM_ALLOW.test(req.originalUrl.split('?')[0]))
     return res.status(403).json({ error: 'Not available for the Fixed team — this endpoint belongs to the Mobile side.', business: 'fixed' });
@@ -3189,7 +3192,8 @@ require('./fixedLogGrep').mount(app, { requireView, audit });   // Troubleshoot 
 require('./yakeenProbe').mount(app, { requireView, audit });
 require('./fixedErrCatalog').mount(app, { requireView, audit });
 require('./datasets').mount(app, { requireCap, audit });        // Data sources tab: registry, freshness, prod mapping (both segments)
-require('./customMetrics').mount(app, { requireCap, audit });   // console-managed custom metrics: draft → shadow → live, versions, test / preview   // configurable error catalogue: every signature, auto class + operator override   // Yakeen / ELM synthetic probe: status · history · run (capped)   // Fixed › Executive + Operations (one endpoint, read models only)
+require('./customMetrics').mount(app, { requireCap, audit });
+require('./semati').mount(app, { requireView, requireCap, audit });   // Governance › Semati Clearance: release MSISDN + ID pairs on TCC (cap sematiClear, every run audited, identifiers never stored)   // console-managed custom metrics: draft → shadow → live, versions, test / preview   // configurable error catalogue: every signature, auto class + operator override   // Yakeen / ELM synthetic probe: status · history · run (capped)   // Fixed › Executive + Operations (one endpoint, read models only)
 require('./cst').mount(app, { requireSuper, audit });                   // CST section (super admin): Arqami per-minute health + CST escalations (16 Sep 2026)
 // Mobile › Executive + Operations and Home › Executive + Operations (both businesses). mvnoExec gets the Dashboard's
 // own KPI function so the 24 h numbers are the Dashboard's numbers, not a second implementation of them.

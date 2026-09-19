@@ -271,6 +271,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const has = v => views.includes(v);
     // IT GOVERNANCE — the 'governance' view (SLA · vendors & contracts · SLO definitions)
     ["governGroup","slaMenuItem","vendorContractsMenuItem","sloSettingsMenuItem"].forEach(id=>show(id, has("governance")));
+    // Semati clearance sits in the same group but is a CAPABILITY on top of the view: it writes to a national registry
+    show("sematiMenuItem", has("governance") && !!((SES.me&&SES.me.caps)||{}).sematiClear);
     // REGULATORY AFFAIRS — the 'cst' view (Arqami · CST escalations)
     ["cstGroup","cstArqamiMenuItem","cstEscMenuItem"].forEach(id=>show(id, has("cst")));
     // NOC WALL — the 'noc' view. Its two entries are .navtab buttons, so they also answer to the nav scoping above.
