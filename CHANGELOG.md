@@ -3,6 +3,21 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.43] — 2026-09-19 — Executive brief rewritten for the September story
+### Changed
+- **The executive brief goes from 6 slides to 14**, sized for a 30–40 minute review with high management rather than a
+  six-minute skim. The design system, the timing model and the closing ask are unchanged; the story is not.
+  New: what changed since August as a side-by-side (one business → two, 66 rules → 177, one console instead of two);
+  the convergence and why a shared spine makes the second business cheap; where customers actually stop, as a funnel
+  rather than an up/down; alerting that earns attention, including the tuning that took open Fixed incidents from 14 to
+  1; service objectives as a number agreed in advance; a worked example of a business escalation settled the same day
+  with the evidence attached, told without naming anyone; the regulator as a stakeholder (Arqami, CST escalations);
+  and access, PII masking and the audit trail — the questions a CIO asks that the August deck did not answer.
+- Title, timeline and closing figures updated to September: both businesses live, ten months rather than nine, 177
+  governed rules, and the executive role that opens the same live platform with no operational page behind it.
+- Every "open the console" link now points at `/unified-console` instead of the superseded `/digital-console`.
+
+
 ## [2.0.0-alpha.42] — 2026-09-19 — Every page is in the permissions matrix; a CIO role; the roles editor rebuilt
 ### Added
 - **Six pages entered the permission model.** `exec` (Executive Dashboard), `noc` (both NOC walls), `governance`
