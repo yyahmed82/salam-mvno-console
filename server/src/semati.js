@@ -395,6 +395,27 @@ function ensure() {
   return ready;
 }
 
+/* A restart mid-run leaves rows that were never sent sitting at 'pending' and the job at 'running' forever —
+ * the history would then claim a run is still going when no process is running it. Measured on 152, a pinned row
+ * costs ~2 s (ssh handshake + TLS handshake to TCC), so a 2,935-row file is a ~1.5–2 hour run and a deploy landing
+ * in the middle of one is a real possibility, not a theoretical one. At mount we settle the previous process's
+ * work: the job becomes 'interrupted' and every unsent row says so, in words that make clear it is safe to re-run.
+ * Rows that already have an answer keep it — those WERE sent. */
+async function reconcile() {
+  try {
+    await ensure();
+    const r = await C().query(`UPDATE semati_clear_jobs SET status='interrupted', finished_at=COALESCE(finished_at, now())
+      WHERE status IN ('queued','running') RETURNING id`);
+    if (!r.rowCount) return 0;
+    const ids = r.rows.map(x => Number(x.id));
+    await C().query(`UPDATE semati_clear_rows SET status='interrupted',
+        reason='The console restarted before this row was sent. It never reached Semati, so this pair is unchanged and safe to run again.'
+      WHERE status='pending' AND job_id = ANY($1::bigint[])`, [ids]);
+    console.log(`[SEMATI] settled ${r.rowCount} run(s) interrupted by a restart: #${ids.join(', #')}`);
+    return r.rowCount;
+  } catch (e) { console.error('[SEMATI] reconcile:', e.message); return 0; }
+}
+
 /* ---------- the run: one job at a time, sequential rows, cancellable ---------- */
 const JOBS = new Map();          // id → { id, business, rows: [{seq,msisdn,personId,idType}], status, cancel, createdBy, ttl }
 let RUNNING = null;
@@ -464,7 +485,7 @@ async function jobFromDb(id) {
     inMemory: false, full: false, source: j.source, filename: j.filename, note: j.note, transport: j.transport, host: j.host,
     rows: rows.map(r => ({ seq: r.seq, msisdn: r.msisdn_masked, personId: r.person_masked, idType: r.id_type, status: r.status, code: r.code, message: r.message, tcn: r.tcn, reason: r.reason, http: r.http, ms: r.ms, processedAt: r.processed_at })) };
 }
-const STATUS_LABEL = { cleared: 'Cleared', not_cleared: 'Not cleared', error: 'Error — retry', cancelled: 'Cancelled', pending: 'Pending' };
+const STATUS_LABEL = { cleared: 'Cleared', not_cleared: 'Not cleared', error: 'Error — retry', cancelled: 'Cancelled', pending: 'Pending', interrupted: 'Not sent — restart' };
 function exportXlsx(view) {
   const rows = [['#', 'MSISDN', 'Customer ID', 'ID type', 'Status', 'Semati code', 'Semati message', 'Why', 'TCN', 'Processed (KSA)']];
   for (const r of view.rows) rows.push([r.seq, r.msisdn, r.personId, r.idType == null ? '' : r.idType, STATUS_LABEL[r.status] || r.status, r.code == null ? '' : r.code, r.message || '', r.reason || '', r.tcn || '', ksa(r.processedAt)]);
@@ -478,13 +499,18 @@ function exportXlsx(view) {
 
 /* ---------- routes ---------- */
 function mount(app, { requireView, requireCap, audit } = {}) {
-  const gate = [requireView('governance'), requireCap('sematiClear')];
+  /* REGULATORY AFFAIRS, not IT Governance (19 Sep 2026): this writes to the CITC/TCC national number registry, the
+   * same stakeholder as Arqami and the CST escalations, so it sits with them and answers to the same 'cst' view.
+   * The capability is the second lock and the deliberate one — 'cst' gets you the regulatory pages, 'sematiClear'
+   * is what lets you change a number's status on a national registry. Menu and route must agree, or a role sees an
+   * item that 403s. */
+  const gate = [requireView('cst'), requireCap('sematiClear')];
   const actorOf = req => String(req.sessionEmail || req.actor || 'console').toLowerCase();
   const scope = req => (req.business === 'mobile' || req.business === 'fixed') ? req.business : null;
   const bizOk = (req, b) => BUSINESSES.includes(b) && (!scope(req) || scope(req) === b);
   const canSeeFull = (req, job) => !!(req.caps && req.caps.unmaskPII) || (job && job.createdBy === actorOf(req));
 
-  ensure().catch(e => console.error('[SEMATI] tables:', e.message));
+  ensure().then(reconcile).catch(e => console.error('[SEMATI] tables:', e.message));
 
   app.get('/api/semati/health', gate, async (req, res) => {
     const c = CFG(); const miss = missing();
@@ -585,4 +611,4 @@ function mount(app, { requireView, requireCap, audit } = {}) {
   });
 }
 
-module.exports = { mount, CFG, configured, missing, probe, classify, prepare, parseText, parseXlsx, parseUpload, rowsFromTable, normMsisdn, normPerson, inferIdType, mask, keyHash, payload, exportXlsx, createJob, runJob, JOBS, _call: call };
+module.exports = { mount, reconcile, CFG, configured, missing, probe, classify, prepare, parseText, parseXlsx, parseUpload, rowsFromTable, normMsisdn, normPerson, inferIdType, mask, keyHash, payload, exportXlsx, createJob, runJob, JOBS, _call: call };

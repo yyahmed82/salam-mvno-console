@@ -271,10 +271,13 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const has = v => views.includes(v);
     // IT GOVERNANCE — the 'governance' view (SLA · vendors & contracts · SLO definitions)
     ["governGroup","slaMenuItem","vendorContractsMenuItem","sloSettingsMenuItem"].forEach(id=>show(id, has("governance")));
-    // Semati clearance sits in the same group but is a CAPABILITY on top of the view: it writes to a national registry
-    show("sematiMenuItem", has("governance") && !!((SES.me&&SES.me.caps)||{}).sematiClear);
+
     // REGULATORY AFFAIRS — the 'cst' view (Arqami · CST escalations)
     ["cstGroup","cstArqamiMenuItem","cstEscMenuItem"].forEach(id=>show(id, has("cst")));
+    // Semati clearance lives in REGULATORY AFFAIRS (19 Sep 2026): it writes to the CITC/TCC national number registry,
+    // which is the same stakeholder as Arqami and the CST escalations. It needs the 'cst' view AND its own capability —
+    // the view puts it in the group, the capability is the deliberate grant, because this one writes.
+    show("sematiMenuItem", has("cst") && !!((SES.me&&SES.me.caps)||{}).sematiClear);
     // NOC WALL — the 'noc' view. Its two entries are .navtab buttons, so they also answer to the nav scoping above.
     document.querySelectorAll('#settingsMenu .navtab[data-view="nocwall"]').forEach(b=>b.classList.toggle("hidden", !has("noc")));
     // Agents & LLM stays a root-tier surface: it configures the models, not a business page.

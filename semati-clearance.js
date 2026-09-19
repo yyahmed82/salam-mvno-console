@@ -16,8 +16,8 @@
   const ksa = v => v ? (window.ksaDTS ? window.ksaDTS(v) : new Date(v).toLocaleString("en-GB", { timeZone: "Asia/Riyadh" })) : "—";
 
   const S = { health: null, business: null, parsed: null, file: null, job: null, filter: "all", full: false, poll: null, jobs: [], view: "run" };
-  const LABEL = { cleared: "Cleared", not_cleared: "Not cleared", error: "Error · retry", cancelled: "Cancelled", pending: "Pending" };
-  const TONE = { cleared: "ok", not_cleared: "warn", error: "bad", cancelled: "muted", pending: "muted" };
+  const LABEL = { cleared: "Cleared", not_cleared: "Not cleared", error: "Error · retry", cancelled: "Cancelled", pending: "Pending", interrupted: "Not sent · restart" };
+  const TONE = { cleared: "ok", not_cleared: "warn", error: "bad", cancelled: "muted", pending: "muted", interrupted: "warn" };
 
   /* ---------- styles: the console's tokens, both themes, phone first ---------- */
   function installCss(){
@@ -113,7 +113,7 @@
     host.innerHTML = `<div class="panel">
       <div class="sm-head">
         <div>
-          <div class="sm-kicker">IT GOVERNANCE · NATIONAL NUMBER REGISTRY</div>
+          <div class="sm-kicker">REGULATORY AFFAIRS · NATIONAL NUMBER REGISTRY</div>
           <h2>Semati Clearance</h2>
           <div class="sub">Release an MSISDN from the customer ID it is registered under on Semati (TCC), so the number is available for sale again. Mobile and Fixed (5G home). Every row is sent one at a time, exactly as the operations script did — with the outcome, the operator and the time on the record.</div>
         </div>
@@ -280,6 +280,7 @@
       </div>
       ${!live && j.inMemory ? `<div class="sm-note">${S.full ? "<b>Full identifiers shown</b> — this reveal is on the audit log." : "Identifiers are masked on screen."} The full values are kept for <b>${esc((S.health || {}).resultTtlMin || 120)} minutes</b> after the run, then only the masked outcome remains — <b>download the result file now</b>.</div>` : ""}
       ${!live && !j.inMemory ? `<div class="sm-note">This run is older than the download window: the outcome is kept, the full identifiers are not. Use <b>Check a number</b> to confirm a specific pair.</div>` : ""}
+      ${j.status === "interrupted" ? `<div class="albanner">The console restarted while this run was going. Rows that already have an answer were sent; the rest never reached Semati and are marked <b>Not sent · restart</b> — those pairs are unchanged, so put them in a new list and run them again.</div>` : ""}
       <div class="sm-filters">${[["all", "All " + num(j.total)], ["cleared", "Cleared " + num(c.cleared || 0)], ["not_cleared", "Not cleared " + num(c.not_cleared || 0)], ["error", "Error " + num(c.errors || 0)]].map(([k, l]) => `<button type="button" data-f="${k}" class="${S.filter === k ? "on" : ""}">${esc(l)}</button>`).join("")}</div>
       <div class="sm-tablewrap"><table><thead><tr><th>#</th><th>MSISDN</th><th>Customer ID</th><th>Type</th><th>Status</th><th>Semati</th><th>Why</th><th>When (KSA)</th></tr></thead><tbody>
         ${rows.slice(0, 2000).map(r => `<tr><td class="mono">${esc(r.seq)}</td><td class="mono">${esc(r.msisdn)}</td><td class="mono">${esc(r.personId)}</td><td class="mono">${esc(r.idType == null ? "" : r.idType)}</td>
@@ -331,7 +332,7 @@
     activateView(); installCss();
     const host = $("#view-semati-clearance"); if(!host) return;
     if(!caps().sematiClear){
-      host.innerHTML = `<div class="panel"><div class="sm-lock"><div style="font-size:26px">Locked</div><h2 style="margin:8px 0 4px">Semati clearance is a capability</h2><div class="sub">Your role does not hold <b>Semati clearance</b>. A Super Admin grants it in Settings › Users › Roles — it releases numbers on a national registry, so it is handed out deliberately.</div></div></div>`;
+      host.innerHTML = `<div class="panel"><div class="sm-lock"><div style="font-size:26px">Locked</div><h2 style="margin:8px 0 4px">Semati clearance is a capability</h2><div class="sub">This page needs the <b>CST (Arqami · escalations)</b> view <em style="font-style:normal;color:var(--ink)">and</em> the <b>Semati clearance</b> capability. A Super Admin grants both in Settings › Users › Roles — it changes a number's status on a national registry, so it is handed out deliberately.</div></div></div>`;
       return;
     }
     if(!S.health){ host.innerHTML = `<div class="panel"><div class="sub">Checking the Semati configuration…</div></div>`; }

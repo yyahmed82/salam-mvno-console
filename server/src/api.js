@@ -3193,7 +3193,7 @@ require('./yakeenProbe').mount(app, { requireView, audit });
 require('./fixedErrCatalog').mount(app, { requireView, audit });
 require('./datasets').mount(app, { requireCap, audit });        // Data sources tab: registry, freshness, prod mapping (both segments)
 require('./customMetrics').mount(app, { requireCap, audit });
-require('./semati').mount(app, { requireView, requireCap, audit });   // Governance › Semati Clearance: release MSISDN + ID pairs on TCC (cap sematiClear, every run audited, identifiers never stored)   // console-managed custom metrics: draft → shadow → live, versions, test / preview   // configurable error catalogue: every signature, auto class + operator override   // Yakeen / ELM synthetic probe: status · history · run (capped)   // Fixed › Executive + Operations (one endpoint, read models only)
+require('./semati').mount(app, { requireView, requireCap, audit });   // Regulatory Affairs › Semati Clearance: release MSISDN + ID pairs on the CITC/TCC registry (view cst + cap sematiClear, every run audited, identifiers never stored)   // console-managed custom metrics: draft → shadow → live, versions, test / preview   // configurable error catalogue: every signature, auto class + operator override   // Yakeen / ELM synthetic probe: status · history · run (capped)   // Fixed › Executive + Operations (one endpoint, read models only)
 require('./cst').mount(app, { requireSuper, audit });                   // CST section (super admin): Arqami per-minute health + CST escalations (16 Sep 2026)
 // Mobile › Executive + Operations and Home › Executive + Operations (both businesses). mvnoExec gets the Dashboard's
 // own KPI function so the 24 h numbers are the Dashboard's numbers, not a second implementation of them.

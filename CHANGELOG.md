@@ -3,6 +3,38 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.52] — 2026-09-19 — Semati moves to Regulatory Affairs, and a restart no longer leaves a run claiming to be in progress
+### Changed
+- **Semati Clearance moves from IT GOVERNANCE to REGULATORY AFFAIRS**, beside CST Arqami and CST Escalations. It
+  writes to the CITC/TCC national number registry — the same stakeholder as those two — so that is where it belongs.
+  The gate moves with it: the menu item and every `/api/semati/*` route now require the **`cst`** view instead of
+  `governance`, plus the `sematiClear` capability as before. Menu and route have to agree or a role sees an item
+  that 403s, so both moved in one change, and a test now asserts which view the routes actually demand.
+  **Access is unchanged**: Super Admin could reach it before and still can.
+### Fixed
+- **`sematiClear` was granted to Admin and did nothing** — Admin holds neither the `governance` nor the `cst` view,
+  so the tick box was inert, and it would have switched registry writes on silently the day anyone granted Admin
+  `cst` for Arqami. Exactly the accidental-privilege shape alpha.42 set out to remove. The default is now Super Admin
+  alone; the role editor grants the view and the capability together, deliberately, with no deploy.
+- **A run interrupted by a restart is settled at mount** (`server/src/semati.js` `reconcile()`). Rows that were never
+  sent sat at `pending` and the job at `running` for good, so the history would claim a run was still going with no
+  process running it. The job now becomes **interrupted** with a finish time, and every unsent row says *"The console
+  restarted before this row was sent. It never reached Semati, so this pair is unchanged and safe to run again."*
+  Rows that already have an answer keep it — those were sent. Idempotent: a second mount settles nothing.
+- This matters more than it sounds. Measured on 152, a pinned row costs **~2 s** (ssh handshake + TLS handshake to
+  TCC), so the 2,935-row file is a **1.5–2 hour** run — a deploy landing in the middle of one is a real possibility,
+  not a theoretical one. The result page explains the state and tells the operator to re-run the unsent pairs.
+### Verified
+A new suite that runs a job, kills it mid-flight, puts the database back into the exact shape a hard kill leaves
+(job `running`, 20 rows `pending`), then calls what mount calls: the job lands on `interrupted`, no row is left
+`pending`, the 10 rows that were really sent keep their verdicts, the unsent ones carry the explanation, and a second
+pass is a no-op. Plus the existing suites green: 32 end-to-end in each transport, 7 pins, 9 hints.
+### Note
+Two stale assertions in the test harness were corrected in the same pass — one asserted hint wording that alpha.51
+deliberately changed, the other dropped tables after the module had cached its `ensure()` promise, which was a race
+in the test rather than in the product. Both were checked against the running code before being changed.
+
+
 ## [2.0.0-alpha.51] — 2026-09-19 — Semati: TCC's certificate is self-signed, so pin their key instead of trusting the path
 ### Fixed
 - **The TLS diagnosis in alpha.50 was wrong and is corrected everywhere.** `openssl s_client` from `172.31.43.17`

@@ -52,9 +52,12 @@ function scopeViews(views, business) {
  * log, rule reseed, self-check), so granting "can manage users" also handed over the ticket board and a reseed
  * button. It now means ONLY users + roles — and those endpoints are pinned to super admin in api.js regardless,
  * so the tick box cannot open them. adminTools carries what was left behind. */
-/* sematiClear (19 Sep 2026): release MSISDN + ID pairs on Semati (TCC) from Governance › Semati Clearance. Its own
- * capability rather than adminTools because it writes to a national registry: you want to know exactly who holds it.
- * Defaults to Super Admin and Admin only; the matrix hands it to a role deliberately, never as a side effect. */
+/* sematiClear (19 Sep 2026): release MSISDN + ID pairs on the CITC/TCC registry from Regulatory Affairs › Semati
+ * Clearance. Its own capability rather than adminTools because it WRITES to a national registry: you want to know
+ * exactly who holds it. Defaults to Super Admin alone. It was briefly true for Admin as well, which was wrong twice
+ * over — Admin has neither the 'governance' nor the 'cst' view, so the tick box did nothing, and it would have
+ * switched registry writes on silently the day anyone granted Admin 'cst' for Arqami. The page needs the view AND
+ * this capability; the matrix grants both deliberately, never as a side effect. */
 const CAPS = ['editRules','manageSync','manageUsers','adminTools','unmaskPII','export','ackErrors','useYusr','customizeDashboard','sematiClear'];
 // human labels for the permissions matrix UI
 const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS', workbench:'L2 Workbench', alerts:'Alerts',
@@ -94,7 +97,7 @@ const ROLES = {
     views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','exec','noc','explore','tickets','settings'],
     /* unmaskPII granted to admin on 21 Aug 2026 at the owner's request — per-request ACT, never a
      * mode: caller must pass unmask=1, value fetched live, every reveal audited as pii.unmask. */
-    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:true },
+    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false },
     note: 'Manages rules, sync mode, dashboards and the admin tools (tickets · error log · reseed). Can unmask PII on demand (audited). Cannot manage users or roles — that is Super Admin only.'
   },
   report_manager: {
