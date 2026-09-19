@@ -3,6 +3,24 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.48] — 2026-09-19 — North-star KPIs second on the exec brief; menu rows light like dropdown rows
+### Changed
+- **"Are the north-star KPIs moving?" moves to second position** on the Executive Dashboard, directly after
+  "Are we OK right now?" — status, then the north-star numbers, then the cost, the vendors and the follow-up.
+- **The number in front of each question is now its position, not a constant.** `qnum()` reads the index out of
+  `execbrief.js` `V2`, so reordering the page renumbers it. It used to be the first element of each `TITLES` row,
+  which meant moving a section would have left the old numbering behind; those rows are now
+  `[question, description, window]`.
+### Fixed
+- **Menu rows light like dropdown rows** (`index.html`). Inside `.helpmenu` — the gear menu and the "?" menu —
+  only `.active` styled anything, so hovering **Alert radar** in the gear menu left its icon grey while the
+  identical row in the Mobile or Fixed dropdown turned green. The icon now fills green on hover and on focus,
+  the row slides 3 px, and the current page keeps the green inset bar and gradient icon the dropdown panels use.
+  `.hm-tour` icons are green at rest by design, so they take a ring rather than a second green — which also keeps
+  them legible in dark mode, where `--green-dark` is lighter rather than darker. Motion is dropped under
+  `prefers-reduced-motion`.
+
+
 ## [2.0.0-alpha.47] — 2026-09-19 — The two alpha.46 misses: the radar was on a different list, the gear never lit
 ### Fixed
 - **The alert radar really does leave the Executive Dashboard now.** `#exec` is rendered by `execbrief.js` — the

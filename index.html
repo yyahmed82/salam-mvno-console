@@ -456,6 +456,21 @@
   .helpmenu .hm-ic,.helpmenu .num{width:20px;height:20px;flex:0 0 20px;border-radius:50%;background:var(--bg);border:1px solid var(--line);
     display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--muted)}
   .helpmenu .hm-tour .hm-ic{background:var(--green);border-color:var(--green);color:#fff}
+  /* Menu rows answer like the Mobile / Fixed dropdown rows do: the icon fills green on hover and on the
+   * current page, and the row slides a little so the pointer has somewhere to land. Until 19 Sep 2026
+   * that treatment was scoped to .navdrop-panel, so hovering "Alert radar" in the gear menu left its
+   * icon grey while the identical row in a business dropdown went green. .hm-tour icons are already
+   * green at rest by design, so they take a ring instead of a second green — which also keeps them
+   * legible in dark mode, where --green-dark is lighter rather than darker. */
+  .helpmenu .navtab,.helpmenu .hm-tour{transition:background .15s ease,border-color .15s ease,transform .15s ease}
+  .helpmenu .navtab .num,.helpmenu .hm-ic{transition:background .15s ease,border-color .15s ease,color .15s ease,box-shadow .15s ease}
+  .helpmenu .navtab:hover,.helpmenu .hm-tour:hover,
+  .helpmenu .navtab:focus-visible,.helpmenu .hm-tour:focus-visible{transform:translateX(3px);outline:none}
+  .helpmenu .navtab:hover .num,.helpmenu .navtab:focus-visible .num{background:var(--green);border-color:var(--green);color:#fff}
+  .helpmenu .hm-tour:hover .hm-ic,.helpmenu .hm-tour:focus-visible .hm-ic{box-shadow:0 0 0 3px var(--green-bg)}
+  .helpmenu .navtab.active{box-shadow:inset 3px 0 0 var(--green)}
+  .helpmenu .navtab.active .num{background:linear-gradient(135deg,#0e9f5a,#019c20);border-color:transparent;color:#fff}
+  @media (prefers-reduced-motion:reduce){.helpmenu .navtab:hover,.helpmenu .hm-tour:hover,.helpmenu .navtab:focus-visible,.helpmenu .hm-tour:focus-visible{transform:none}}
   /* ---- branded loader (Salam hourglass) ---- */
   .salam-loader{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:48px 20px;min-height:220px}
   .sl-stage{position:relative;width:104px;height:104px;display:flex;align-items:center;justify-content:center}
@@ -2163,7 +2178,7 @@
 <script src="fixed-playbook.js?v=20260910c"></script>
 <script src="fixed-diagrams.js?v=20260911x"></script>
 <script src="execops.js?v=20260919b"></script>
-<script src="execbrief.js?v=20260919a"></script>
+<script src="execbrief.js?v=20260919b"></script>
 <script src="cst-remedy.js?v=20260918f"></script>
 <script src="cst-api.js?v=20260918f"></script>
 <script src="arqami-api.js?v=20260918f"></script>

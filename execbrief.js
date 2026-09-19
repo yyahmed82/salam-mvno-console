@@ -126,16 +126,19 @@
 
     kpis: d => none(d, 'Key indicators') + halvesOf(d).map(h => h.kpis.length ? grp(h, `<div class="xo-grid">${h.kpis.map(k => `<a href="${esc(k.href || '#')}" class="xo-kpi xo-t-${k.tone || 'none'}"><div class="xo-kh"><span class="xo-kt">${esc(k.title)}</span><span class="xo-win">${esc(k.window || '')}</span></div><div class="xo-kv">${num(k.value)}</div><div class="xo-ks">${esc(k.sub || '')}</div>${k.delta ? `<div class="xo-kd" style="color:${k.delta.pct === 0 ? 'var(--muted)' : k.delta.good ? TONE.OK : TONE.OUTAGE}">${k.delta.pct > 0 ? '+' : ''}${k.delta.pct}% vs previous 24 h</div>` : ''}</a>`).join('')}</div>`, null, lnk(L(h).dash, L(h).dashLabel) + lnk(L(h).slo, 'SLO / SLA')) : '').join(''),
   };
-  /* [number, question, what it answers in plain words, window / method on the right] */
+  /* [question, what it answers in plain words, window / method on the right] — the NUMBER in front of
+   * each question is its position in V2, computed by qnum(), so reordering the page renumbers it. It used
+   * to be a constant first element here, which meant moving a section left the old numbers behind. */
   const TITLES = {
-    status: ['1', 'Are we OK right now?', 'Live status per business from open P1 / P2 incidents only — never from chronic SLOs — and how many customers are affected at this minute.', 'live · open P1 / P2'],
-    impact: ['2', 'What did it cost us?', 'Customer-facing incidents this month, the time customers were impacted, contacts touched and money at risk — against last month.', () => `${monthLabel(curKey())} · P1 ≥ 5 min · vs last month`],
-    vendors: ['3', 'Are the vendors delivering?', 'Each contract obligation (TCS for Mobile, Sigma for Fixed) with its contractual target against what the console measured, and the candidate penalty.', () => `${monthLabel(curKey())} · contract target vs measured`],
-    actions: ['4', 'What are we doing about it?', 'Who holds each open incident and for how long, and which RCAs the vendors owe us by the contract clause.', 'owner · age · RCA due dates'],
-    kpis: ['5', 'Are the north-star KPIs moving?', 'The business indicators that matter, measured ones only, versus the previous day — each opens its operational page.', '24 h · measured only'],
+    status: ['Are we OK right now?', 'Live status per business from open P1 / P2 incidents only — never from chronic SLOs — and how many customers are affected at this minute.', 'live · open P1 / P2'],
+    kpis: ['Are the north-star KPIs moving?', 'The business indicators that matter, measured ones only, versus the previous day — each opens its operational page.', '24 h · measured only'],
+    impact: ['What did it cost us?', 'Customer-facing incidents this month, the time customers were impacted, contacts touched and money at risk — against last month.', () => `${monthLabel(curKey())} · P1 ≥ 5 min · vs last month`],
+    vendors: ['Are the vendors delivering?', 'Each contract obligation (TCS for Mobile, Sigma for Fixed) with its contractual target against what the console measured, and the candidate penalty.', () => `${monthLabel(curKey())} · contract target vs measured`],
+    actions: ['What are we doing about it?', 'Who holds each open incident and for how long, and which RCAs the vendors owe us by the contract clause.', 'owner · age · RCA due dates'],
   };
-  const qsec = k => { const t = TITLES[k]; const right = typeof t[3] === 'function' ? t[3]() : t[3];
-    return `<div class="xb-q" data-q="${k}"><div class="xb-qn">${t[0]}</div><div class="xb-qt"><h3 class="xb-qh">${esc(t[1])}</h3><div class="xb-qd">${esc(t[2])}</div></div><div class="xb-qr">${esc(right)}</div></div>`; };
+  const qnum = k => { const i = V2.indexOf('brief_' + k); return i < 0 ? '' : String(i + 1); };
+  const qsec = k => { const t = TITLES[k]; const right = typeof t[2] === 'function' ? t[2]() : t[2];
+    return `<div class="xb-q" data-q="${k}"><div class="xb-qn">${qnum(k)}</div><div class="xb-qt"><h3 class="xb-qh">${esc(t[0])}</h3><div class="xb-qd">${esc(t[1])}</div></div><div class="xb-qr">${esc(right)}</div></div>`; };
   const placeholder = k => qsec(k) + `<div class="xb-block" data-brief="${k}"><div class="xo-loading">Loading…</div></div>`;
 
   /* ---------- fill the placeholders when the brief arrives ---------- */
@@ -149,7 +152,7 @@
     if (tools && !tools.querySelector('.xb-month')) {
       const m = document.createElement('span'); m.className = 'xo-range xb-month';
       m.innerHTML = ['cur', 'prev'].map(k => `<button type="button" class="xo-r${state.month === k ? ' on' : ''}" data-m="${k}">${k === 'cur' ? 'this month' : 'last month'}</button>`).join('');
-      m.querySelectorAll('button').forEach(b => b.onclick = () => { state.month = b.dataset.m; localStorage.setItem('exec_month', state.month); m.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); host.querySelectorAll('[data-brief]').forEach(s => { s.innerHTML = '<div class="xo-loading">Loading…</div>'; delete s.dataset.filled; }); host.querySelectorAll('.xb-q').forEach(sc => { const t = TITLES[sc.dataset.q]; if (t && typeof t[3] === 'function') { const dd = sc.querySelector('.xb-qr'); if (dd) dd.textContent = t[3](); } }); fill(host, true); });
+      m.querySelectorAll('button').forEach(b => b.onclick = () => { state.month = b.dataset.m; localStorage.setItem('exec_month', state.month); m.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); host.querySelectorAll('[data-brief]').forEach(s => { s.innerHTML = '<div class="xo-loading">Loading…</div>'; delete s.dataset.filled; }); host.querySelectorAll('.xb-q').forEach(sc => { const t = TITLES[sc.dataset.q]; if (t && typeof t[2] === 'function') { const dd = sc.querySelector('.xb-qr'); if (dd) dd.textContent = t[2](); } }); fill(host, true); });
       tools.insertBefore(m, tools.querySelector('[data-act="refresh"]'));
     }
   }
@@ -250,7 +253,7 @@
    * said a second, slower time what 'What did it cost us' and the follow-up list already say. It lives
    * on the NOC wall (#noc), which asks EXECOPS for sections:['radar'] itself and is untouched; the
    * '\u25c9 NOC wall' button in this page's header is the way there. SECTION.radar is unchanged. */
-  const V2 = ['brief_status', 'brief_impact', 'brief_vendors', 'brief_actions', 'brief_kpis', 'foot'];
+  const V2 = ['brief_status', 'brief_kpis', 'brief_impact', 'brief_vendors', 'brief_actions', 'foot'];
   function openV2() {
     const host = $('#view-execops'); if (!host || !install()) return;
     ensureCss(); host.classList.add('xo-v2');
