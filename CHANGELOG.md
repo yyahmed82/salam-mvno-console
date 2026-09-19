@@ -3,6 +3,28 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.41] — 2026-09-19 — Affected cases work for the DMS flow rules
+### Fixed
+- **Every `dms.flow.*` alert exported an empty Preview / XLSX / PDF.** `alertCases.casesFor()` resolves the cases
+  behind an alert from a `CASES` map keyed by `metric_key`, each entry a SQL twin of the metric it mirrors. The DMS
+  flow rules have no such entry — they do not evaluate a source table, `dmsFlowRules.js` runs each rule against the
+  DMS data tier every tick and writes what it matched into the console's own `dms_flow_findings.sample` (jsonb, the
+  first 40 rows). With no entry the lookup fell through to `supported:false`, so the file carried a header row, no
+  cases, and the untrue line *"not row-based — this metric is computed from aggregates, not from individual rows"*.
+  The rows existed all along, one table away. `dms.flow.*` now resolves against the finding written by the same
+  evaluation that opened or last kept the alert, and the export holds the cases the rule actually matched.
+  Columns come from the sample itself, so each rule exports its own shape (L5: time · row id · status; L1: last seen ·
+  dealer · codes · failures), ordered for reading rather than in the order jsonb happens to return keys.
+  The metadata is honest about what it could not give: the rule's true window (it ends early so in-flight journeys
+  can finish), `the rule stores the first 40 of N` when a run was capped, and a specific reason when there is nothing
+  to show — the run errored, it stored no sample, or the finding has aged past `DMS_FLOW_RULES_RETENTION_DAYS`.
+- **Every alert-cases export claimed "Identities: unmasked (audited export)".** True for the SQL-backed metrics, false
+  for a DMS flow rule, whose identifiers are masked by `dmsFlowRules.maskRow()` when the finding is captured and can
+  never be unmasked afterwards. Both the XLSX metadata sheet and the PDF footer now say which of the two applies.
+- **A source timestamp could be shifted three hours.** The writers ran every `*_at` column through `ksa()`. That is
+  right for a `timestamptz` (pg returns a Date), wrong for a DMS flow sample, which carries the source system's own
+  clock as a string — converting it again moved the case three hours. Strings now pass through as captured.
+
 ## [2.0.0-alpha.40] — 2026-09-18 — Monitoring is a level of its own; the NOC wall moves to ⚙
 ### Changed
 - **The business menus have a second level.** A section (OPERATE / EXPLORE) can now hold a named family of pages

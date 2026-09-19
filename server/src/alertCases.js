@@ -212,11 +212,64 @@ async function customSpec(a, T, W, d) {
 
 const NO_ROWS = { fixed_board_ingest_lag_min: 'freshness of the read model — see Alerts › Data sources', fixed_applog_collector_lag_min: 'freshness of the app-log collector — see Alerts › Data sources', apigw_nodes_unreachable: 'console TCP probe (apigw_probe_log) — see #apigw for the node map', dealer_activity: 'aggregate of dealer activity', offhours_orders: 'aggregate', sms_probe_fail_count: 'SMS probe events — see Monitoring › SMS', courier_backlog: 'derived from paid reseller orders without a delivery request', onboarding_created: 'count of orders created', fixed_workhours_activity_ratio: 'same-hour baseline ratio (SDA activity) — see Fixed › Dashboard', fixed_sms_balance: 'Unifonic balance reading' };
 
+/* ---- DMS flow rules (metric dms.flow.<id>) ----
+ * These do not evaluate a source table the way a metric does. dmsFlowRules.js runs each rule's own SQL against the
+ * DMS data tier every tick and stores what it found in the console's own dms_flow_findings.sample — jsonb, the first
+ * 40 matched rows, already masked by maskRow() at capture time. So the cases DO exist row by row; they live in a
+ * finding rather than in a table the SQL machinery below can reach, which is why every dms.flow.* export came out as
+ * a header and nothing else. This resolver reads the finding written by the same evaluation that opened or last kept
+ * the alert (dms_flow_findings.at and alerts.last_seen_at are both set from the same `now` in alertsFromResults) and
+ * hands its sample out as the case rows. Columns differ per rule, so the header is derived from the sample itself. */
+const FLOW_LABEL = { id: 'Row id', at: 'Time (KSA)', last_at: 'Last seen (KSA)', n: 'Count', dealer: 'Dealer',
+  msisdn: 'MSISDN', status: 'Status', api_name: 'API', response_code: 'Code', codes: 'Codes', note: 'Note',
+  age_min: 'Age (min)', ledger: 'Ledger', table: 'Table', request_type: 'Request type', outcome: 'Outcome',
+  plan: 'Plan', amount: 'Amount', failures: 'Failures', dealers: 'Dealers', username: 'Username' };
+/* jsonb does not keep the key order the rule wrote, so the columns come back sorted by key length. Put the
+ * ones a human reads first — when it happened, which row, whose dealer — and leave the rest as jsonb ordered them. */
+const FLOW_ORDER = ['at', 'last_at', 'first_at', 'id', 'src_id', 'newest_id', 'payment_initiate_id', 'dealer',
+  'username', 'employee_username', 'msisdn', 'api_name', 'table', 'ledger', 'plan', 'status', 'user_status',
+  'wallet_status', 'outcome', 'request_type', 'response_code', 'uil_code', 'adj_code', 'codes', 'n', 'failures',
+  'dealers', 'amount', 'age_min', 'note', 'info'];
+const flowHead = rows => {
+  const seen = []; for (const r of rows) for (const k of Object.keys(r)) if (!seen.includes(k)) seen.push(k);
+  const at0 = {}; seen.forEach((k, i) => { at0[k] = i; });
+  const rank = k => { const i = FLOW_ORDER.indexOf(k); return i >= 0 ? i : (/(^|_)at$/.test(k) ? -1 : FLOW_ORDER.length); };
+  return seen.slice().sort((a, b) => rank(a) - rank(b) || at0[a] - at0[b])
+    .map(k => [k, FLOW_LABEL[k] || k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())]);
+};
+async function dmsFlowCases(base, alert, T) {
+  const rule = String((base.dim && base.dim.rule) || String(alert.metric_key || '').split('.').pop() || '').trim();
+  const no = reason => ({ ...base, supported: false, reason, head: [], rows: [], total: 0, counted: 0 });
+  if (!db.console) return no('the console database is not configured');
+  if (!rule) return no('the alert carries no rule id in its dimension');
+  let f;
+  try {
+    f = (await db.console.query(
+      `SELECT at, win_from, win_to, n, capped, sample, note, error FROM dms_flow_findings
+        WHERE rule = $1 ORDER BY abs(extract(epoch FROM (at - $2::timestamptz))) ASC LIMIT 1`, [rule, T])).rows[0];
+  } catch (e) { return no(`dms_flow_findings is not readable — ${e.message}`); }
+  if (!f) return no(`no dms_flow_findings row for rule ${rule} — findings are pruned after DMS_FLOW_RULES_RETENTION_DAYS (default 30)`);
+  if (f.error) return no(`the ${ksa(f.at)} KSA run of rule ${rule} failed — ${clip(f.error, 160)}`);
+  const sample = Array.isArray(f.sample) ? f.sample : [];
+  if (!sample.length) return no(`the ${ksa(f.at)} KSA run of rule ${rule} counted ${f.n} case(s) but stored no sample rows`);
+  const drift = Math.abs(new Date(f.at).getTime() - new Date(T).getTime()) / 60000;
+  const rows = sample.map(r => ({ ...r, counted: true }));
+  return { ...base, supported: true, head: flowHead(sample), rows, total: rows.length,
+    capped: Number(f.n) > rows.length, population: Number(f.n), counted: Number(f.n), kind: 'count',
+    identities: 'masked when the finding was captured (dmsFlowRules.maskRow) — this export cannot unmask them',
+    note: `every row is a case DMS flow rule ${rule} matched`
+      + ` · rule window ${ksa(f.win_from)} → ${ksa(f.win_to)} KSA (the rule ends its window early so in-flight journeys can finish)`
+      + (Number(f.n) > rows.length ? ` · the rule stores the first ${rows.length} of ${f.n}` : '')
+      + (f.note ? ` · ${f.note}` : '')
+      + (drift > 2 ? ` · nearest run is ${Math.round(drift)} min from the evaluation time` : '') };
+}
+
 async function casesFor(alert, opts = {}) {
   const key = alert.metric_key; const fn = CASES[key] || (/custom_/.test(key) ? customSpec : null);
   const at = opts.at === 'first' ? (alert.fired_at || alert.last_seen_at) : (alert.last_seen_at || alert.fired_at || new Date().toISOString());
   const T = new Date(at).toISOString(), W = Number(alert.window_hours) || 1, dim = alert.dim || {};
   const base = { alert, at: T, window_hours: W, dim, metric: key, segment: segOf(alert) };
+  if (/^dms\.flow\./.test(key)) return dmsFlowCases(base, alert, T);   // rows live in dms_flow_findings.sample, not in a table
   if (!fn) return { ...base, supported: false, reason: NO_ROWS[key] || 'this metric is computed from aggregates, not from individual rows', head: [], rows: [], total: 0, counted: 0 };
   const spec = await fn(alert, T, W, dim);
   if (!spec) return { ...base, supported: false, reason: 'the API-traffic source is the Grafana MySQL feed (no row store) — switch the collector on to get row-level cases', head: [], rows: [], total: 0, counted: 0 };
@@ -232,11 +285,15 @@ async function casesFor(alert, opts = {}) {
   return { ...base, supported: true, head: spec.head, rows, total: rows.length, capped: r.rows.length > cap, population: cnt.rows[0].pop, counted: cnt.rows[0].num, note: spec.note, group: spec.group || null, kind: spec.num === 'TRUE' ? 'count' : 'rate' };
 }
 
-const isTs = k => /_at$|^ts$/.test(k);
+const isTs = k => /(^|_)at$|^ts$/.test(k);
+/* pg hands a timestamp back as a Date and those render in KSA. A DMS flow sample carries the SOURCE system's own
+ * timestamp as a STRING, already on its own clock — running it through ksa() again shifts it three hours and
+ * misreports when the case happened, so a string is passed through exactly as the rule captured it. */
+const fmtTs = v => (v instanceof Date ? ksa(v) : String(v));
 function xlsx(d, meta) {
   const X = require('./xlsx');
   const head = ['Counted', ...d.head.map(h => h[1])];
-  const body = d.rows.map(r => [r.counted ? 'YES' : '', ...d.head.map(([k]) => { const v = r[k]; return v == null ? '' : (isTs(k) ? ksa(v) : (typeof v === 'object' ? JSON.stringify(v) : v)); })]);
+  const body = d.rows.map(r => [r.counted ? 'YES' : '', ...d.head.map(([k]) => { const v = r[k]; return v == null ? '' : (isTs(k) ? fmtTs(v) : (typeof v === 'object' ? JSON.stringify(v) : v)); })]);
   const S = [[`Alert cases — ${d.alert.name}`], []];
   meta.forEach(([k, v]) => S.push([k, v]));
   if (d.group) { const g = {}; d.rows.forEach(r => { const k = r[d.group] || '—'; g[k] = g[k] || { p: 0, n: 0 }; g[k].p++; if (r.counted) g[k].n++; }); S.push([], [`By ${d.group}`, 'Counted', 'Population']); Object.entries(g).sort((a, b) => b[1].n - a[1].n).forEach(([k, v]) => S.push([k, v.n, v.p])); }
@@ -254,8 +311,9 @@ function pdf(d, meta) {
   doc.h2(`Cases - ${d.total} row(s) shown${d.capped ? ' (PDF capped - the xlsx export holds the full list)' : ''} - counted rows first, marked ●`);
   const H = d.head.slice(0, 7);
   const cols = [{ label: '●', w: 3 }, ...H.map(([, l]) => ({ label: l, w: /message|response|title|description/i.test(l) ? 26 : /time|started|submitted|sent|created/i.test(l) ? 13 : 11 }))];
-  doc.table(cols, d.rows.map(r => [r.counted ? '●' : '', ...H.map(([k]) => { const v = r[k]; if (v == null) return '—'; if (isTs(k)) return ksa(v); return clip(typeof v === 'object' ? JSON.stringify(v) : v, 90); })]), { size: 6.8, rowColor: ri => d.rows[ri].counted ? CC.red : null });
-  doc.p('Population = exactly what the metric evaluated at the time above; counted = the rows in its numerator. Identities are not masked in this export; the export is audited.', { color: CC.muted, size: 8 });
+  doc.table(cols, d.rows.map(r => [r.counted ? '●' : '', ...H.map(([k]) => { const v = r[k]; if (v == null) return '—'; if (isTs(k)) return fmtTs(v); return clip(typeof v === 'object' ? JSON.stringify(v) : v, 90); })]), { size: 6.8, rowColor: ri => d.rows[ri].counted ? CC.red : null });
+  doc.p('Population = exactly what the metric evaluated at the time above; counted = the rows in its numerator. '
+    + (d.identities ? `Identities: ${d.identities}. The export is audited.` : 'Identities are not masked in this export; the export is audited.'), { color: CC.muted, size: 8 });
   return doc.buffer();
 }
 
@@ -271,7 +329,7 @@ function mount(app, { audit }) {
         ['Dimension', Object.keys(d.dim).length ? Object.entries(d.dim).map(([k, v]) => `${k}=${v}`).join(', ') : '—'],
         ['Population', d.supported ? `${d.population} row(s)${d.capped ? ` (file capped at ${d.total})` : ''}` : `not row-based — ${d.reason}`],
         ['Counted', d.supported ? `${d.counted} row(s)${d.kind === 'rate' && d.population ? ` = ${(100 * d.counted / d.population).toFixed(1)}%` : ''}` : '—'],
-        ['What the rows are', d.note || '—'], ['Identities', 'unmasked (audited export)'], ['Generated', `${ksa(new Date().toISOString())} KSA by ${req.actor || 'console'}`]];
+        ['What the rows are', d.note || '—'], ['Identities', d.identities || 'unmasked (audited export)'], ['Generated', `${ksa(new Date().toISOString())} KSA by ${req.actor || 'console'}`]];
       if (audit) audit(req, format === 'json' ? 'alert.cases.view' : 'alert.cases.export', String(a.id), { format, metric: a.metric_key, population: d.population, counted: d.counted, at: d.at });
       if (format === 'json') return res.json({ ...d, meta });
       const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
