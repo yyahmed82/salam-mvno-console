@@ -3,7 +3,30 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
-## [2.0.0-alpha.46] — 2026-09-19 — Twelve more roles, a quieter Executive Dashboard, and the gear and "?" behave like tabs
+## [2.0.0-alpha.47] — 2026-09-19 — The two alpha.46 misses: the radar was on a different list, the gear never lit
+### Fixed
+- **The alert radar really does leave the Executive Dashboard now.** `#exec` is rendered by `execbrief.js` — the
+  CEO/CIO brief ("Are we OK right now?", "What did it cost us?") — and its section list is `V2`, not the
+  `EXEC_SECTIONS` alpha.46 edited. `'radar'` sat second-to-last there, right before `'foot'`. It is out of `V2`
+  and out of that page's subtitle. Both lists now agree, and the NOC wall is untouched: `nocwall.js` asks EXECOPS
+  for `sections:['radar']` itself, `SECTION.radar` is unchanged, and the `◉ NOC wall` button in the page header
+  is the way there.
+- **Opening the gear menu now lights the gear** (`settingsmenu.js`). `.on` was set only by `window.openSettings()`,
+  i.e. once you had already landed on a settings page — so pulling the menu down left the gear grey with its own
+  panel hanging underneath it, which is what alpha.46's new styling had nothing to act on. A `syncGear()` helper
+  owns that state now, so opening, closing, Escape, an outside click and a nav tab all agree, and the gear still
+  stays lit while a settings page is the current view. The NOC-wall entries keep their old behaviour of not
+  lighting it, because a wall is a page rather than a settings segment. The `"?"` needed no change —
+  `helpmenu.js` was already setting `.on` on open. Verified headless against the real module and the real
+  stylesheet, in both themes: at rest muted, menu open solid green with a white glyph, on a settings page solid
+  green, hover green throughout.
+### Note
+Front-end only — `server/src/roles.js` shipped in alpha.46 and is unchanged, so this deploys with `--web-only`
+and no restart. `/api/version` is stamped from `server/build.json`, which `--web-only` does not copy, so it keeps
+reporting `2.0.0-alpha.46` until the next full deploy.
+
+
+## [2.0.0-alpha.46] — 2026-09-19 — Twelve more roles across four new teams, and the nav icon buttons restyled
 ### Added
 - **Twelve roles on one ladder — OSS, Infra, Data and Enterprise IT, each L1/L2/L3** (`server/src/roles.js`).
   The console now has **26 roles across ten teams** instead of 14 across seven, so every team that operates
@@ -19,14 +42,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
 - **The escalation ladder can route to all of them** — the tier picker in Notifications & escalation
   (`notifycfg.js`, `notifyclone.js`) went from 5 tiers to 17.
 ### Changed
-- **The alert radar leaves the Executive Dashboard** (`execops.js`). It stays on the NOC wall, which passes
-  `sections:['radar']` itself and is untouched; the `◉ NOC wall` button in the page header is how you reach it.
-  An executive reading the page wants the verdict, the numbers and what is still open — a 12-hour scope at the
-  bottom was a second, slower way of saying what *Top ongoing issues* already says. `SECTION.radar` is unchanged.
-- **The gear and the "?" answer like Mobile and Fixed do** (`index.html`). The glyph goes green on hover and
-  solid green while the menu is open or one of its pages is current. Until now hover turned the glyph *ink*, so
-  hovering read as less selected than resting, and the open state was a pale tint a projector washed out. An
-  older `#tourBtn.on` tint further down the sheet was winning on source order; it is gone. Checked in both themes.
+- **The alert radar was removed from `execops.js` `EXEC_SECTIONS`** — which turned out not to be the list that
+  renders `#exec`, so the page was unchanged. The live list is `execbrief.js` `V2`; corrected in alpha.47.
+- **The gear and the "?" got the hover and selected styling of a nav tab** (`index.html`). The glyph goes green
+  on hover and solid green while the menu is open or one of its pages is current. Until now hover turned the glyph
+  *ink*, so hovering read as less selected than resting, and the open state was a pale tint a projector washed out;
+  an older `#tourBtn.on` tint further down the same sheet was also winning on source order and is gone. The `"?"`
+  lights correctly from this release. **The gear does not** — nothing ever set its `.on` class when its own menu
+  opened. Fixed in alpha.47.
 - **Role labels are no longer a hard-coded list of ten** (`ops.js`). `ROLE_LABELS` carries all 26 and is
   hydrated from `/api/roles`, so a custom role shows its real name too. The Super-Admin "preview as role"
   picker is grouped by team and ordered by rank — 26 flat options is a scroll, not a choice. Before this, anyone

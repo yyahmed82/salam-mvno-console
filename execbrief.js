@@ -246,7 +246,11 @@
     Object.keys(BLOCK).forEach(k => { S['brief_' + k] = () => placeholder(k); });
     return true;
   }
-  const V2 = ['brief_status', 'brief_impact', 'brief_vendors', 'brief_actions', 'brief_kpis', 'radar', 'foot'];
+  /* The alert radar left this page on 19 Sep 2026. It was the last section before the footer, and it
+   * said a second, slower time what 'What did it cost us' and the follow-up list already say. It lives
+   * on the NOC wall (#noc), which asks EXECOPS for sections:['radar'] itself and is untouched; the
+   * '\u25c9 NOC wall' button in this page's header is the way there. SECTION.radar is unchanged. */
+  const V2 = ['brief_status', 'brief_impact', 'brief_vendors', 'brief_actions', 'brief_kpis', 'foot'];
   function openV2() {
     const host = $('#view-execops'); if (!host || !install()) return;
     ensureCss(); host.classList.add('xo-v2');
@@ -258,7 +262,7 @@
       host._xbObs.observe(host, { childList: true, subtree: false });
     }
     window.EXECOPS.render(host, { biz: 'all', sections: V2, title: 'Executive Dashboard', range: false,
-      sub: 'CEO / CIO brief · are we OK now · what it cost · vendors vs contract · follow-up · north-star · alert radar',
+      sub: 'CEO / CIO brief · are we OK now · what it cost · vendors vs contract · follow-up · north-star',
       kicker: 'executive', brief: true });
     fill(host, false);
   }

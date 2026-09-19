@@ -6,7 +6,13 @@
   if(!gear||!menu) return;
   const $=s=>document.querySelector(s);
 
-  function closeMenu(){ menu.classList.remove("open"); }
+  /* The gear lights while its own menu is open, and stays lit while a settings page is the current view.
+   * Until 19 Sep 2026 the open path never set it: .on was added only by window.openSettings(), so pulling
+   * the menu down left the gear grey with its own panel hanging underneath it. One helper owns the state
+   * now, so open, close, Escape, an outside click and a nav tab all end up saying the same thing. */
+  const onSettingsPage=()=>{ const v=document.getElementById("view-settings"); return !!(v&&v.classList.contains("active")); };
+  function syncGear(){ gear.classList.toggle("on", menu.classList.contains("open")||onSettingsPage()); }
+  function closeMenu(){ menu.classList.remove("open"); syncGear(); }
   function showSeg(seg){
     document.querySelectorAll("#view-settings .setseg").forEach(s=>s.classList.toggle("active", s.dataset.seg===seg));
     menu.querySelectorAll("[data-seg]").forEach(b=>b.classList.toggle("active", b.dataset.seg===seg));
@@ -85,7 +91,7 @@
     // one popover at a time: tell the business dropdowns and the "?" menu to close
     document.dispatchEvent(new CustomEvent("navpop",{detail:"settings"}));
     const tb=document.getElementById("tourBtn"); if(tb) tb.classList.remove("on");
-    menu.classList.add("open"); syncSections(); menu.classList.add("reveal"); setTimeout(()=>menu.classList.remove("reveal"),700); });
+    menu.classList.add("open"); syncGear(); syncSections(); menu.classList.add("reveal"); setTimeout(()=>menu.classList.remove("reveal"),700); });
   menu.querySelectorAll("[data-seg]").forEach(b=>b.addEventListener("click", ()=>{
     // Notify + Yusr use standalone replacement views (their legacy in-settings segments are retired)
     if(b.dataset.seg==="notify" && window.openNotifyClone){ window.openNotifyClone(); closeMenu(); return; }
@@ -102,9 +108,9 @@
   /* NOC WALL (18 Sep 2026): the two wall entries are real .navtab buttons — router.js routes them and
    * app.js activates the view, so all this menu owes them is to get out of the way. The gear does not
    * light up for them: the wall is a page, not a settings segment. */
-  menu.querySelectorAll(".navtab").forEach(b=>b.addEventListener("click", ()=>{ gear.classList.remove("on"); closeMenu(); }));
+  menu.querySelectorAll(".navtab").forEach(b=>b.addEventListener("click", ()=>{ closeMenu(); setTimeout(syncGear,0); }));
   document.addEventListener("click", e=>{ if(!e.target.closest(".setwrap")) closeMenu(); });
   document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeMenu(); });
-  // leaving settings via a nav tab clears the gear highlight
-  document.querySelectorAll(".navtab").forEach(b=>b.addEventListener("click", ()=>gear.classList.remove("on")));
+  // leaving settings via a nav tab clears the gear highlight (after the view switch, so syncGear reads it)
+  document.querySelectorAll(".navtab").forEach(b=>b.addEventListener("click", ()=>setTimeout(syncGear,0)));
 })();
