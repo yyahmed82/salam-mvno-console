@@ -278,26 +278,44 @@ function callDirect(body) {
 }
 const call = body => (CFG().transport === 'ssh' ? callSsh(body) : callDirect(body));
 
+/* Turn the transport error into the next action. The first production check (19 Sep 2026, from
+ * 172.31.43.17) came back `strict 000 — SSL certificate problem: self signed certificate` while
+ * `-k` got a clean 405: something terminates TLS between the API hosts and TCC, which is exactly
+ * why the operations script carried `curl -k`. Without this hint an operator reads a raw curl
+ * string and has no idea which switch to reach for. */
+const TLS_RE = /self[- ]signed|unable to get local issuer|certificate verify failed|SSL certificate problem|CERT_|DEPTH_ZERO|unable to verify/i;
+function hintFor(err, insecure) {
+  const e = String(err || ''); if (!e) return null;
+  if (TLS_RE.test(e)) return insecure
+    ? 'The certificate still does not verify even with verification off — that is unusual; check the URL and the proxy in front of this host.'
+    : 'The certificate chain does not verify from this host — something is terminating TLS in the path. Either set SEMATI_CLEAR_TLS_INSECURE=1 in /apps/unified/.env and restart (what the operations script did with curl -k), or install the intercepting CA on that host and keep verification on. Nothing has been sent to Semati.';
+  if (/Could not resolve host|Name or service not known|getaddrinfo|ENOTFOUND|EAI_AGAIN/i.test(e)) return 'DNS does not resolve that host name from there — check the resolver on the box making the call.';
+  if (/Connection refused|No route to host|Network is unreachable|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|ECONNRESET|EPIPE/i.test(e)) return 'That host cannot reach Semati — check its egress/firewall rule to TCC (152 itself has no internet, which is why the call is made from an API host).';
+  if (/timed? ?out|ETIMEDOUT|ESOCKETTIMEDOUT|aborted/i.test(e)) return 'The request timed out. Semati is slow or the path is blocked — retry before reading anything into it.';
+  if (/Permission denied|publickey|Host key|BatchMode/i.test(e)) return 'The SSH hop to the curl host failed — check SEMATI_CLEAR_SSH_USER / SEMATI_CLEAR_SSH_KEY (they default to API_LOG_USER / API_LOG_KEY) and that 152 can still reach that box.';
+  return null;
+}
 /* reachability only — a GET with no body; ANY http answer proves DNS + route + TLS from that vantage point */
 function probe() {
   const c = CFG();
   if (c.transport === 'ssh') {
     return new Promise(resolve => {
-      if (!c.host) return resolve({ reachable: false, http: null, ms: null, error: 'no host configured' });
+      if (!c.host) return resolve({ reachable: false, http: null, ms: null, error: 'no host configured', hint: 'Set SEMATI_CLEAR_HOST (or API_LOG_HOSTS) to the API host that should issue the request.' });
       const remote = `curl -sS -o /dev/null -m 8 ${c.insecure ? '-k ' : ''}-w '%{http_code} %{time_total}' ${shq(c.url)} 2>&1 || true`;
       execFile('ssh', [...sshArgs(c), remote], { timeout: 20000, encoding: 'utf8' }, (err, stdout, stderr) => {
         const out = String(stdout || '').trim(); const m = /(\d{3})\s+([\d.]+)\s*$/.exec(out);
-        if (m && m[1] !== '000') return resolve({ reachable: true, http: Number(m[1]), ms: Math.round(Number(m[2]) * 1000), error: null });
-        resolve({ reachable: false, http: null, ms: null, error: (out.replace(/\s*000\s+[\d.]+\s*$/, '') || String(stderr || '') || (err && err.message) || 'transport failure').slice(0, 300) });
+        if (m && m[1] !== '000') return resolve({ reachable: true, http: Number(m[1]), ms: Math.round(Number(m[2]) * 1000), error: null, hint: null });
+        const e = (out.replace(/\s*000\s+[\d.]+\s*$/, '') || String(stderr || '') || (err && err.message) || 'transport failure').slice(0, 300);
+        resolve({ reachable: false, http: null, ms: null, error: e, hint: hintFor(e, c.insecure) });
       });
     });
   }
   return new Promise(resolve => {
-    let u; try { u = new URL(c.url); } catch (_) { return resolve({ reachable: false, http: null, ms: null, error: 'bad SEMATI_CLEAR_URL' }); }
+    let u; try { u = new URL(c.url); } catch (_) { return resolve({ reachable: false, http: null, ms: null, error: 'bad SEMATI_CLEAR_URL', hint: 'SEMATI_CLEAR_URL is not a URL.' }); }
     const t0 = Date.now(); const mod = u.protocol === 'http:' ? http : https;
-    const req = mod.request(u, { method: 'GET', timeout: 8000, rejectUnauthorized: !c.insecure }, res => { res.resume(); resolve({ reachable: true, http: res.statusCode, ms: Date.now() - t0, error: null }); });
+    const req = mod.request(u, { method: 'GET', timeout: 8000, rejectUnauthorized: !c.insecure }, res => { res.resume(); resolve({ reachable: true, http: res.statusCode, ms: Date.now() - t0, error: null, hint: null }); });
     req.on('timeout', () => req.destroy(new Error('timeout after 8s')));
-    req.on('error', e => resolve({ reachable: false, http: null, ms: Date.now() - t0, error: String(e.message || e).slice(0, 300) }));
+    req.on('error', e => { const t = String(e.message || e).slice(0, 300); resolve({ reachable: false, http: null, ms: Date.now() - t0, error: t, hint: hintFor(t, c.insecure) }); });
     req.end();
   });
 }
@@ -309,7 +327,7 @@ const CODES = {
   715: { status: 'error', reason: 'TCC says "Service not available" (715) — the provider is down, not a verdict on this row. Retry later.' }
 };
 function classify(r) {
-  if (r.error || !r.http) return { status: 'error', code: null, message: null, tcn: null, reason: `No answer from Semati — ${r.error || 'transport failure'}.` };
+  if (r.error || !r.http) { const h = hintFor(r.error, CFG().insecure); return { status: 'error', code: null, message: null, tcn: null, reason: `No answer from Semati — ${r.error || 'transport failure'}.` + (h ? ' ' + h : '') }; }
   const j = safeJson(r.body);
   if (!j || typeof j !== 'object') return { status: 'error', code: null, message: null, tcn: null, reason: `HTTP ${r.http} without a JSON answer${r.body ? ': ' + r.body.slice(0, 120) : ''}.` };
   const code = Number(j.code != null ? j.code : j.responseCode); const message = String(j.message || j.responseMessage || '').slice(0, 200); const tcn = j.tcn ? String(j.tcn).slice(0, 64) : null;

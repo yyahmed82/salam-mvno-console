@@ -3,6 +3,25 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.50] — 2026-09-19 — Semati: the health check now says what to do about a failure
+### Changed
+- **The reachability check turns an error into the next action** (`server/src/semati.js`). The first production probe
+  from `172.31.43.17` came back `strict 000 — SSL certificate problem: self signed certificate` while `-k` got a clean
+  `405`: something terminates TLS between the API hosts and TCC, which is exactly why the operations script carried
+  `curl -k`. The raw curl string told an operator nothing, so `hintFor()` now names the switch — set
+  `SEMATI_CLEAR_TLS_INSECURE=1`, or install the intercepting CA on that host and keep verification on — and does the
+  same for DNS, egress, timeout and SSH-hop failures (both curl's English and Node's `ECONNREFUSED`-style codes).
+  The hint rides on `/api/semati/health` and on the `reason` of any row that failed at transport, and it always ends
+  with the fact that nothing was sent.
+- **The page shows the hint and the TLS posture.** An unreachable probe renders the hint as a banner above the two
+  steps instead of hiding the error in a tooltip, and while `SEMATI_CLEAR_TLS_INSECURE=1` is set a permanent
+  **TLS not verified** chip sits next to the health chip, so an unverified hop to a national registry is never
+  invisible. Verified headless in both themes: reachable-with-the-switch, and a real self-signed endpoint refused.
+### Note
+No change to what is sent to Semati or to how an answer is classified. `roles.js`, the routes and the storage model
+are untouched since alpha.49.
+
+
 ## [2.0.0-alpha.49] — 2026-09-19 — Governance › Semati Clearance: release MSISDN + ID pairs on TCC, from the console
 ### Added
 - **Semati Clearance** (`server/src/semati.js`, `semati-clearance.js`, gear menu › IT GOVERNANCE). Paste a list or load

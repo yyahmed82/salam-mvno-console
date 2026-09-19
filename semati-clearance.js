@@ -119,12 +119,14 @@
         </div>
         <div class="sm-actions">
           ${chip}
+          ${h.configured && h.tlsInsecure ? `<span class="sm-chip warn" title="SEMATI_CLEAR_TLS_INSECURE=1 — the certificate on this hop is not verified. Put it back to 0 once the intercepting CA is installed on the curl host."><i></i>TLS not verified</span>` : ""}
           ${biz.length > 1 ? `<span class="sm-seg" id="smBiz">${biz.map(b => `<button type="button" data-b="${esc(b.key)}" class="${S.business === b.key ? "on" : ""}">${esc(b.label)}</button>`).join("")}</span>` : biz.length === 1 ? `<span class="sm-chip">${esc(biz[0].label)}</span>` : ""}
           <button class="pill" id="smTabRun" style="border-left-color:var(--green)">Run a list</button>
           <button class="pill" id="smTabHist" style="border-left-color:var(--blue)">History</button>
           <button class="pill" id="smTabLookup" style="border-left-color:var(--indigo,var(--blue))">Check a number</button>
         </div>
       </div>
+      ${p.hint ? `<div class="albanner" style="margin:0 0 12px">${esc(p.hint)}</div>` : ""}
       <div id="smBody"></div>
       <div id="smStatus" class="rl" style="margin-top:10px"></div>
     </div>`;
