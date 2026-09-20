@@ -3,6 +3,38 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.60] — 2026-09-20 — The alert got quieter as the incident got worse
+### Fixed
+- **A probe that cannot connect because the server is FULL was reported as a flaky probe.** Tonight on
+  the shared PostgreSQL server `172.31.15.121:5432` (where `unified_console`, `mvno_console` and
+  `sda_ops` all live): **19:49 WARN at 83 %, 20:04 CRIT at 94/100, then 20:09 “WARN · probe failed” —
+  while the server was actually at 100 %.** Severity fell as the situation deteriorated, which is the
+  worst failure mode an alert can have.
+- The cause is structural, not a typo: **the saturation check needs a connection in order to measure
+  saturation.** Once the slots ran out, `dbChecks()` threw on connect and every connect failure fell
+  into one generic `catch` that emitted `level: 'WARN', prodImpact: false`. Four probes — Console DB,
+  Local replica, Local Nexus copy and Fixed ingest — all downgraded together for the same reason.
+- A probe refused for lack of a slot is **not** a degraded probe. It is the saturation reading at its
+  maximum: every application on that server is being turned away. It now reports **CRIT with
+  `prodImpact: true`**, and says so — including that the reserved superuser slots exist for exactly
+  this moment. Detection is **SQLSTATE 53300**, which covers both wordings PostgreSQL uses:
+  “sorry, too many clients already” and “remaining connection slots are reserved for non-replication
+  superuser connections” (the second is what a non-superuser sees once only the reserved slots remain).
+  A message test backs it up in case a pooler drops the code.
+- Everything else keeps its old behaviour on purpose — `ECONNREFUSED`, a timeout, bad credentials, a
+  missing database are all still WARN. A down server is a different alert from a full one.
+### Notes
+The console was **not** the cause and the check said so: its own role held **6** of the 94, against a
+configured pool budget of **26**. That is the number to sit with — if the console ever used the pool it
+is allowed, the same server would be asked for **114 of 100**. The saturation is a shared-server
+capacity problem (44 abandoned pgAdmin sessions at the last honest reading), not a console problem, but
+the console is one busy hour away from being a contributor rather than a witness.
+### Verified
+**12 assertions**, with the classifier sliced verbatim out of the shipped `prodHealth.js` — both real
+wordings from tonight's emails, the bare SQLSTATE, a `FATAL:` prefix, mixed case, and five error shapes
+that must **not** be promoted. One of them caught a bug in my own test rather than the code: the
+partial-phrase assertion was written inverted against its own description.
+
 ## [2.0.0-alpha.59] — 2026-09-20 — The executive view carries platform health, and nothing else
 ### Fixed
 - **The Payment tile was the last business number on the Executive Dashboard**, and alpha.58 could only

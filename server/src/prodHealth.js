@@ -81,7 +81,25 @@ async function dbChecks(checks, label, cs, { shared, srcOnly, local } = {}) {
           detail: `${u}/${m} connections used (${pct}%) on the SHARED server ${hostOf(cs)} (${shared}). warn ≥${T.usedWarn}%, crit ≥${T.usedCrit}%.${who}` });
       }
     });
-  } catch (e) { checks.push({ name: `${label} — probe`, level: 'WARN', prodImpact: false, detail: `probe failed: ${e.message}` }); }
+  } catch (e) {
+    /* 20 Sep 2026 — the alert got QUIETER as the incident got worse. 20:04 said CRIT, 94/100 used on
+     * 172.31.15.121; 20:09 said "WARN · probe failed" while the server was actually FULL. The
+     * saturation check needs a connection to measure saturation, so at 100 % it cannot run, and every
+     * connect failure fell into this one generic WARN with prodImpact:false.
+     *
+     * A probe refused for lack of a slot is not a degraded probe. It IS the saturation reading, at its
+     * maximum: every app on that server is being turned away. SQLSTATE 53300 (too_many_connections)
+     * covers both wordings PostgreSQL uses — "sorry, too many clients already" and "remaining
+     * connection slots are reserved for non-replication superuser connections" (the latter is what a
+     * non-superuser sees once only the reserved slots remain). The message test is a belt-and-braces
+     * fallback for drivers or poolers that drop the code. */
+    const full = !!(e && (e.code === '53300' ||
+      /too many clients|remaining connection slots are reserved/i.test(String(e.message || ''))));
+    checks.push({ name: `${label} — probe`, level: full ? 'CRIT' : 'WARN', prodImpact: full,
+      detail: full
+        ? `OUT OF CONNECTIONS on ${hostOf(cs)} — the probe could not get a slot. Treat this as the saturation check at 100 %, not a flaky probe: every application on this server is being refused right now. Free slots as superuser (the reserved slots exist for exactly this), then find the holder. Driver said: ${e.message}`
+        : `probe failed: ${e.message}` });
+  }
 }
 
 function boxChecks(checks) {
