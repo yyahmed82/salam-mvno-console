@@ -4571,7 +4571,17 @@ async function homeKpisFromSource(now, winFrom, winTo) {
   }
   const win = `created_at >= $1::timestamptz AND created_at < $2::timestamptz`;
   const c = (sql) => S.query(sql, [from, to]).then(r => Number(r.rows[0].c)).catch(() => null);
-  const [orders, paidOk, paidFail, actOk, actFail, nafOk, nafTotal, nafFailed, deliv, planOk, planFail, checkouts, eligOk, delivDone] = await Promise.all([
+  /* COUNTS (20 Sep 2026) — the same failures, split by class, so the Executive Dashboard KPI tiles can
+   * follow the objective's Counts setting instead of always counting every negative outcome. Without
+   * these the tile would show an all-errors number while the SLO page judged it by a technical-only
+   * rule — two pages, two answers, same objective. The expressions are errclass.sourceCls(), the ones
+   * the Troubleshoot board and the rollups already use. Payment is absent on purpose: a decline is
+   * business by doctrine, so there is no technical half to count. */
+  const CLS_ACT = require('./errclass').sourceCls('activation_logs');
+  const CLS_NAF = require('./errclass').sourceCls('nafath_logs');
+  const CLS_CPL = require('./errclass').sourceCls('change_plan_logs');
+  const [orders, paidOk, paidFail, actOk, actFail, nafOk, nafTotal, nafFailed, deliv, planOk, planFail, checkouts, eligOk, delivDone,
+         actFailTech, nafFailedTech, planFailTech] = await Promise.all([
     c(`SELECT count(*) c FROM onboarding_orders WHERE ${win}`),
     c(`SELECT count(*) c FROM payments WHERE status='success' AND ${win}`),
     c(`SELECT count(*) c FROM payments WHERE status IN ('fail','failed') AND ${win}`),
@@ -4587,7 +4597,10 @@ async function homeKpisFromSource(now, winFrom, winTo) {
     // successes for the "API call outcomes" gauge — same sources errors.summary() draws its
     // failures from (activation+semati, eligibility, nafath, payments, delivery, change_plan)
     c(`SELECT count(*) c FROM eligibility_logs WHERE state=true AND ${win}`),
-    c(`SELECT count(*) c FROM delivery_requests WHERE delivery_state = ANY('{${FLOW_DEL_DONE.join(',')}}') AND ${win}`)
+    c(`SELECT count(*) c FROM delivery_requests WHERE delivery_state = ANY('{${FLOW_DEL_DONE.join(',')}}') AND ${win}`),
+    c(`SELECT count(*) c FROM activation_logs WHERE state=false AND (${CLS_ACT})='technical' AND ${win}`),
+    c(`SELECT count(*) c FROM nafath_logs WHERE lower(status) IN ('expired','rejected','failed','denied','cancelled') AND (${CLS_NAF})='technical' AND ${win}`),
+    c(`SELECT count(*) c FROM change_plan_logs WHERE status=2 AND (${CLS_CPL})='technical' AND ${win}`)
   ]);
   const nafPending = (nafTotal != null && nafOk != null && nafFailed != null) ? Math.max(0, nafTotal - nafOk - nafFailed) : null;
   let errorsToday = null, errorsBusiness = null, errorsTechnical = null;
@@ -4652,7 +4665,10 @@ async function homeKpisFromSource(now, winFrom, winTo) {
   return { now: n, from, to, source: 'raw',
     ksaDay: new Date(new Date(n).getTime() + 3 * 3600e3).toISOString().slice(0, 10),
     orders, checkouts, paidOk, paidFail, payRate: rate(paidOk, paidFail),
-    actOk, actFail, actRate: rate(actOk, actFail), nafOk, nafPending, nafFailed, deliveries: deliv, planOk, planFail, errorsToday, errorsBusiness, errorsTechnical, apiOutcomes, targets, prev, spark };
+    actOk, actFail, actRate: rate(actOk, actFail), nafOk, nafPending, nafFailed, deliveries: deliv, planOk, planFail,
+    // class-split halves — the consumer picks per the objective's Counts setting (mvnoExec)
+    actFailTech, nafFailedTech, planFailTech,
+    errorsToday, errorsBusiness, errorsTechnical, apiOutcomes, targets, prev, spark };
 }
 app.get('/api/home', async (req, res) => {
   try {

@@ -3,6 +3,31 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.58] — 2026-09-20 — The Executive Dashboard and the SLO page now give one answer
+### Fixed
+- **The KPI tiles ignored Counts.** With `Count business errors` off, the SLO page reported Activation
+  technical-only while the Executive Dashboard tile still read **79.3 %** — the all-errors number — carrying a
+  colour and a target taken from the very objective it was contradicting. One console, two answers to
+  “is activation healthy”. **Activation success**, **Nafath completed**, **Change plan** and the Fixed
+  **API error budget** now compute the same half their objective does, and name it on the tile
+  (“· technical only”) so the number is never ambiguous about what it counted.
+- `homeKpisFromSource()` supplies the technical half of each class-capable failure count straight from the
+  source tables. The exec tiles read raw `activation_logs` / `nafath_logs` / `change_plan_logs`, **not** the
+  rollups, so alpha.55’s `err_class` column could not have served them — three class-filtered counts were
+  the only honest way. The business half is the remainder of two counts, never a third query.
+- **Payment now explains itself.** It cannot honour a technical-only default (alpha.57), and without a word
+  on the tile it just looks like a tile that ignored the switch. With the default off it reads
+  “… failed · all outcomes — a decline is business · target ≥ 95 %”; with the default on it says nothing,
+  because then nothing is surprising.
+### Notes
+Change plan moves the most: on the classified 30 days it is **253 failures, 0 technical**. Its health-strip
+line flips from “down” to “up” the moment the switch is off — which is the point, because a
+not-eligible refusal is the customer, not the platform. Payment stays at its all-errors number by design.
+### Verified
+**50 assertions (31 + 19, was 31 + 10), all green**, against a real PostgreSQL 16. The new ones drive the
+change-plan strip line and the payment note from the shipped source, sliced verbatim rather than restated,
+and assert the note never claims a technical-only number payment cannot produce.
+
 ## [2.0.0-alpha.57] — 2026-09-20 — Payment and Delivery cannot be measured technical-only, and now say so
 ### Fixed
 - **Two objectives would have read 100 % met forever.** `errclass.sourceCls()` classifies `payments` and

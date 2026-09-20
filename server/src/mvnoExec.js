@@ -102,9 +102,29 @@ async function execRaw(q, { homeKpis, boardNow, segment }) {
   const def = key => slo.findDef(sloCfg, key);
   const errors24 = n((err24[0] || {}).n);
   const dOrders = delta(n(h.orders), n(p.orders)), dAct = delta(n(h.actOk), n(p.actOk)), dPay = delta(n(h.paidOk), n(p.paidOk));
-  const nafTotal = n(h.nafOk) + n(h.nafFailed), nafRate = nafTotal ? n(h.nafOk) / nafTotal : null;
-  const payS = slo.assess(def('mobile_payment_success'), h.payRate, {}, t.payment);
-  const actS = slo.assess(def('mobile_activation_success'), h.actRate, {}, t.activation);
+  /* COUNTS (20 Sep 2026) — a KPI tile follows its objective's Counts setting, so the Executive
+   * Dashboard and the SLO page cannot give two answers to the same question. api.js supplies the
+   * technical half of each class-capable failure count; business is the remainder. Payment is not in
+   * this list on purpose — a decline is business by doctrine, there is no technical half, and
+   * slo.effectiveClass returns 'all' for it whatever the page default is. */
+  const half = (cls, all, tech) => cls === 'technical' ? n(tech) : cls === 'business' ? Math.max(0, n(all) - n(tech)) : n(all);
+  const rateOf = (ok, fail) => (n(ok) + fail) > 0 ? n(ok) / (n(ok) + fail) : null;
+  const actCls = slo.effectiveClass(def('mobile_activation_success'), sloCfg);
+  const nafCls = slo.effectiveClass(def('mobile_nafath_completion'), sloCfg);
+  const actFailEff = half(actCls, h.actFail, h.actFailTech);
+  const nafFailEff = half(nafCls, h.nafFailed, h.nafFailedTech);
+  const actRate = h.actFail == null ? h.actRate : rateOf(h.actOk, actFailEff);
+  const payRate = h.payRate;                     // always all-errors: payment has no technical half
+  const nafTotal = n(h.nafOk) + nafFailEff, nafRate = nafTotal ? n(h.nafOk) / nafTotal : null;
+  const planCls = slo.effectiveClass(def('mobile_change_plan_success'), sloCfg);
+  const planFailEff = half(planCls, h.planFail, h.planFailTech);
+  const clsNote = c => c === 'all' ? '' : ` · ${c} only`;
+  /* Payment cannot honour a technical-only default (alpha.57): say so on the tile rather than let it
+   * look like the setting was ignored. Silent when the default is on, because then nothing is odd. */
+  const payNote = (sloCfg && sloCfg.countBusinessErrors === false && slo.effectiveClass(def('mobile_payment_success'), sloCfg) === 'all')
+    ? ' · all outcomes — a decline is business' : '';
+  const payS = slo.assess(def('mobile_payment_success'), payRate, {}, t.payment);
+  const actS = slo.assess(def('mobile_activation_success'), actRate, {}, t.activation);
   const nafS = slo.assess(def('mobile_nafath_completion'), nafRate, {}, 0.9);
   const errS = slo.assess(def('mobile_technical_error_budget'), errors24, {}, bud);
   const payOk = payS.status !== 'breached', actOk = actS.status !== 'breached';
@@ -132,8 +152,8 @@ async function execRaw(q, { homeKpis, boardNow, segment }) {
   const semS = slo.assess(def('mobile_semati_provider_errors'), sem, {}, 0.05);
   const eligS = slo.assess(def('mobile_citc_eligibility_denials'), elig, {}, 0.5);
   const slos = [
-    { key: 'payment', name: 'Payment success', actual: fmtRate(h.payRate), target: payS.targetText, ok: payS.ok, status: payS.status, message: payS.message, measured: h.payRate != null, href: '#troubleshoot?cat=payment' },
-    { key: 'activation', name: 'Activation success', actual: fmtRate(h.actRate), target: actS.targetText, ok: actS.ok, status: actS.status, message: actS.message, measured: h.actRate != null, href: '#troubleshoot?cat=activation' },
+    { key: 'payment', name: 'Payment success', actual: fmtRate(payRate), target: payS.targetText, ok: payS.ok, status: payS.status, message: payS.message, measured: payRate != null, href: '#troubleshoot?cat=payment' },
+    { key: 'activation', name: 'Activation success', actual: fmtRate(actRate), target: actS.targetText, ok: actS.ok, status: actS.status, message: actS.message, measured: actRate != null, href: '#troubleshoot?cat=activation' },
     { key: 'nafath', name: 'Nafath completion', actual: fmtRate(nafRate), target: nafS.targetText, ok: nafS.ok, status: nafS.status, message: nafS.message, measured: nafRate != null, href: '#troubleshoot?cat=nafath' },
     { key: 'error_budget', name: 'Technical error budget', actual: `${errors24} / 24 h`, target: errS.targetText, ok: errS.ok, status: errS.status, message: errS.message, measured: true, href: '#troubleshoot?cls=technical' },
     { key: 'semati', name: 'Semati provider errors', actual: sem == null ? '—' : `${Math.round(sem * 1000) / 10}%`, target: semS.targetText, ok: semS.ok, status: semS.status, message: semS.message, measured: sem != null, href: '#alerts' },
@@ -145,9 +165,9 @@ async function execRaw(q, { homeKpis, boardNow, segment }) {
   const warnings = open.filter(a => a.severity === 'P2').length + slos.filter(s => s.measured && (s.status === 'at_risk' || (s.status === 'breached' && !['error_budget', 'payment', 'activation'].includes(s.key)))).length;
   const status = K.statusOf(critical, warnings);
   const summary = [];
-  if (critical) summary.push(`${critical} critical signal(s): ${[sev.P1 ? `${sev.P1} P1 alert(s)` : null, errS.status === 'breached' ? `technical errors ${errors24} above ${errS.targetText}` : null, payS.status === 'breached' ? `payment success ${fmtRate(h.payRate)} below ${payS.targetText}` : null, actS.status === 'breached' ? `activation success ${fmtRate(h.actRate)} below ${actS.targetText}` : null].filter(Boolean).join(', ')}.`);
+  if (critical) summary.push(`${critical} critical signal(s): ${[sev.P1 ? `${sev.P1} P1 alert(s)` : null, errS.status === 'breached' ? `technical errors ${errors24} above ${errS.targetText}` : null, payS.status === 'breached' ? `payment success ${fmtRate(payRate)} below ${payS.targetText}` : null, actS.status === 'breached' ? `activation success ${fmtRate(actRate)} below ${actS.targetText}` : null].filter(Boolean).join(', ')}.`);
   else summary.push(`No critical signal in the last 24 h${warnings ? `; ${warnings} warning(s) to watch` : ''}.`);
-  summary.push(`${n(h.orders).toLocaleString('en-US')} orders in 24 h (${dOrders >= 0 ? '+' : ''}${dOrders}% vs the previous 24 h), ${n(h.paidOk).toLocaleString('en-US')} paid at ${fmtRate(h.payRate)}, ${n(h.actOk).toLocaleString('en-US')} activated at ${fmtRate(h.actRate)}.`);
+  summary.push(`${n(h.orders).toLocaleString('en-US')} orders in 24 h (${dOrders >= 0 ? '+' : ''}${dOrders}% vs the previous 24 h), ${n(h.paidOk).toLocaleString('en-US')} paid at ${fmtRate(payRate)}, ${n(h.actOk).toLocaleString('en-US')} activated at ${fmtRate(actRate)}.`);
   const worst = issues[0]; summary.push(worst ? `Busiest technical error: ${worst.label} (${worst.total} in ${days} d, ${worst.trend}).` : 'No technical error in the app error log for the window.');
 
   return {
@@ -157,22 +177,22 @@ async function execRaw(q, { homeKpis, boardNow, segment }) {
     status, summary, counts: { critical, warnings, alerts24, bySeverity: sev },
     kpis: [
       { key: 'orders', title: 'Orders', value: n(h.orders), sub: `${n(h.checkouts).toLocaleString('en-US')} checkouts · new SIM + MNP`, tone: 'green', delta: { pct: dOrders, good: dOrders >= 0 }, href: '#dashboard', exec: true, window: '24 h' },
-      { key: 'payments', title: 'Payment success', value: fmtRate(h.payRate), sub: `${n(h.paidOk).toLocaleString('en-US')} paid · ${n(h.paidFail).toLocaleString('en-US')} failed · target ${payS.targetText}`, tone: payS.status === 'breached' ? 'red' : payS.status === 'at_risk' ? 'amber' : 'green', delta: { pct: dPay, good: dPay >= 0 }, href: '#troubleshoot?cat=payment', exec: true, window: '24 h' },
-      { key: 'activations', title: 'Activation success', value: fmtRate(h.actRate), sub: `${n(h.actOk).toLocaleString('en-US')} activated · ${n(h.actFail).toLocaleString('en-US')} failed · target ${actS.targetText}`, tone: actS.status === 'breached' ? 'red' : actS.status === 'at_risk' ? 'amber' : 'green', delta: { pct: dAct, good: dAct >= 0 }, href: '#troubleshoot?cat=activation', exec: true, window: '24 h' },
+      { key: 'payments', title: 'Payment success', value: fmtRate(payRate), sub: `${n(h.paidOk).toLocaleString('en-US')} paid · ${n(h.paidFail).toLocaleString('en-US')} failed${payNote} · target ${payS.targetText}`, tone: payS.status === 'breached' ? 'red' : payS.status === 'at_risk' ? 'amber' : 'green', delta: { pct: dPay, good: dPay >= 0 }, href: '#troubleshoot?cat=payment', exec: true, window: '24 h' },
+      { key: 'activations', title: 'Activation success', value: fmtRate(actRate), sub: `${n(h.actOk).toLocaleString('en-US')} activated · ${actFailEff.toLocaleString('en-US')} failed${clsNote(actCls)} · target ${actS.targetText}`, tone: actS.status === 'breached' ? 'red' : actS.status === 'at_risk' ? 'amber' : 'green', delta: { pct: dAct, good: dAct >= 0 }, href: '#troubleshoot?cat=activation', exec: true, window: '24 h' },
       { key: 'errors', title: 'Technical errors', value: errors24, sub: `budget ${errS.targetText} — ${errS.status === 'breached' ? 'exceeded' : errS.status === 'at_risk' ? 'near limit' : 'within budget'} · ${n(h.errorsBusiness).toLocaleString('en-US')} business refusals`, tone: errS.status === 'breached' ? 'red' : errS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#troubleshoot?cls=technical', exec: true, window: '24 h' },
       { key: 'critical', title: 'Active critical signals', value: critical, sub: `${open.length} open alert(s) · ${sev.P1} P1 · ${sev.P2} P2 · ${sev.P3} P3`, tone: critical ? 'red' : 'green', delta: null, href: '#alerts', exec: true, window: `${days} d` },
       { key: 'revenue', title: 'Daily revenue', value: '—', sub: 'connect the billing feed to activate', tone: 'muted', delta: null, href: null, exec: true, window: '24 h' },
-      { key: 'nafath', title: 'Nafath completed', value: n(h.nafOk), sub: `${n(h.nafFailed).toLocaleString('en-US')} failed · ${n(h.nafPending).toLocaleString('en-US')} pending`, tone: null, delta: null, href: '#troubleshoot?cat=nafath', exec: false, window: '24 h' },
+      { key: 'nafath', title: 'Nafath completed', value: n(h.nafOk), sub: `${nafFailEff.toLocaleString('en-US')} failed${clsNote(nafCls)} · ${n(h.nafPending).toLocaleString('en-US')} pending`, tone: null, delta: null, href: '#troubleshoot?cat=nafath', exec: false, window: '24 h' },
       { key: 'deliveries', title: 'Deliveries', value: n(h.deliveries), sub: 'courier requests created', tone: null, delta: null, href: '#troubleshoot?cat=delivery', exec: false, window: '24 h' },
     ],
     slos,
     health: [
-      { label: 'Payments', value: fmtRate(h.payRate), state: h.payRate == null ? 'nowire' : payS.status === 'met' ? 'up' : payS.status === 'at_risk' ? 'warn' : 'down', sub: `target ${payS.targetText}`, href: '#troubleshoot?cat=payment' },
-      { label: 'Activations (BSS)', value: fmtRate(h.actRate), state: h.actRate == null ? 'nowire' : actS.status === 'met' ? 'up' : actS.status === 'at_risk' ? 'warn' : 'down', sub: `target ${actS.targetText}`, href: '#troubleshoot?cat=activation' },
+      { label: 'Payments', value: fmtRate(payRate), state: payRate == null ? 'nowire' : payS.status === 'met' ? 'up' : payS.status === 'at_risk' ? 'warn' : 'down', sub: `target ${payS.targetText}`, href: '#troubleshoot?cat=payment' },
+      { label: 'Activations (BSS)', value: fmtRate(actRate), state: actRate == null ? 'nowire' : actS.status === 'met' ? 'up' : actS.status === 'at_risk' ? 'warn' : 'down', sub: `target ${actS.targetText}`, href: '#troubleshoot?cat=activation' },
       { label: 'Nafath', value: fmtRate(nafRate), state: nafRate == null ? 'nowire' : nafS.status === 'met' ? 'up' : nafS.status === 'at_risk' ? 'warn' : 'down', sub: `${nafTotal.toLocaleString('en-US')} checks · target ${nafS.targetText}`, href: '#troubleshoot?cat=nafath' },
       { label: 'Semati provider', value: sem == null ? '—' : `${Math.round(sem * 1000) / 10}% errors`, state: sem == null ? 'nowire' : semS.status === 'met' ? 'up' : semS.status === 'at_risk' ? 'warn' : 'down', sub: sn.semati_provider_error_rate ? `target ${semS.targetText} · snapshot ${dayKey(sn.semati_provider_error_rate.sim_now)}` : 'no snapshot', href: '#monitoring' },
       { label: 'OTP verification', value: otp == null ? '—' : `${Math.round(otp * 1000) / 10}%`, state: otp == null ? 'nowire' : otp >= 0.7 ? 'up' : 'warn', sub: 'SMS OTPs verified', href: '#monitoring' },
-      { label: 'Change plan', value: `${n(h.planOk).toLocaleString('en-US')} ok · ${n(h.planFail).toLocaleString('en-US')} fail`, state: n(h.planFail) > n(h.planOk) ? 'down' : 'up', sub: '24 h', href: '#troubleshoot?cat=change_plan' },
+      { label: 'Change plan', value: `${n(h.planOk).toLocaleString('en-US')} ok · ${planFailEff.toLocaleString('en-US')} fail${clsNote(planCls)}`, state: planFailEff > n(h.planOk) ? 'down' : 'up', sub: '24 h', href: '#troubleshoot?cat=change_plan' },
     ],
     series: { days: daysArr, charts: [
       { key: 'orders', title: 'Orders', type: 'line', field: 'orders', color: 'green', exec: true },
