@@ -3,6 +3,26 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.56] — 2026-09-20 — cli.js could not reach a database when run by hand
+### Fixed
+- **`node src/cli.js <anything>` died with `getaddrinfo ENOTFOUND db`.** The CLI is run from a shell, where
+  PM2's environment does not exist, and `db.js` reads its connection strings at module load — so every
+  command fell back to the docker-compose default and pointed at a host called `db` that exists on no
+  server. The alpha.55 `rollups --days 30` rebuild hit exactly this: it reported all nine journeys
+  "skipped", wrote nothing, and threw. `sql.cjs` never had the problem because it finds and parses the
+  app's own `.env` itself; `cli.js` simply never did.
+- It does now, before `require('./db')` — the same loader, **parsed in Node**, never `set -a; . .env`,
+  which makes the shell evaluate values carrying spaces and angle brackets (a pattern that has broken a
+  cron on this box; `SMTP_FROM="Salam Operations Console <ops@salam.sa>"` is exactly that shape). An
+  already-exported variable still wins, so a one-off override on the command line keeps working. It looks
+  for `ENV_FILE`, then the app root beside `server/`, then `/apps/unified/.env`, `/apps/console/.env`.
+- **A rebuild that wrote nothing now says so and exits non-zero**, instead of printing a row count of 0
+  under a list of per-journey "skipped" lines and reading like success.
+### Verified
+Four assertions on the loader itself, sliced out of the shipped `cli.js` and executed: the URLs arrive
+from the app `.env`, an `export `-prefixed line is parsed, a value carrying spaces and angle brackets
+survives intact, and a variable already exported in the shell is not overwritten.
+
 ## [2.0.0-alpha.55] — 2026-09-20 — An SLO can count technical failures only, and says so
 ### Added
 - **Counts — business vs technical, on every SLO** (Settings › SLO definitions). One page-wide default,

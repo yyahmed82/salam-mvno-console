@@ -12,6 +12,30 @@
  *   vendor-sla-mail-test --to <email> [--contract <id>] [--matrix] [--all-items]
  *                          send TEST-ONLY vendor contract SLA escalation mail samples to that address only
  */
+/* ENVIRONMENT (20 Sep 2026) — cli.js is run BY HAND from a shell, where PM2's environment does not
+ * exist. db.js reads its URLs at module load, so every command fell back to the docker-compose
+ * default and died with `getaddrinfo ENOTFOUND db` — the rollups rebuild skipped all nine journeys
+ * and then threw. Load the app's own .env first, the way sql.cjs does: PARSED IN NODE, never
+ * `set -a; . .env`, which makes the shell evaluate values carrying spaces and angle brackets (that
+ * pattern has broken a cron on this box). An already-exported variable still wins, so a one-off
+ * override on the command line keeps working. Must run BEFORE require('./db'). */
+(function loadAppEnv() {
+  const fs = require('fs'), path = require('path');
+  const file = [process.env.ENV_FILE, path.join(__dirname, '..', '..', '.env'),
+    '/apps/unified/.env', '/apps/console/.env', path.join(process.cwd(), '.env')]
+    .filter(Boolean).find(p => { try { fs.accessSync(p); return true; } catch (_) { return false; } });
+  if (!file) return;
+  let txt = ''; try { txt = fs.readFileSync(file, 'utf8'); } catch (_) { return; }
+  let n = 0;
+  for (const line of txt.split(/\r?\n/)) {
+    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!m) continue;
+    let v = m[2].trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    if (process.env[m[1]] === undefined) { process.env[m[1]] = v; n++; }
+  }
+  console.error(`[cli] environment: ${n} key(s) from ${file}`);
+})();
 const db = require('./db');
 const { init } = require('./init');
 const { syncOnce } = require('./sync');
@@ -53,7 +77,9 @@ async function main() {
       const left = (await db.console.query(
         `SELECT coalesce(sum(cnt),0)::bigint n FROM rollup_hourly WHERE outcome='fail' AND err_class='' AND hour >= $1`,
         [from.toISOString()])).rows[0].n;
-      console.log(`rollups: ${(r && r.rows) || 0} row(s) written in ${Math.round((Date.now() - t0) / 1000)}s · ${Number(left).toLocaleString('en-US')} failure(s) still unclassified in the window`);
+      const wrote = (r && r.rows) || 0;
+      console.log(`rollups: ${wrote} row(s) written in ${Math.round((Date.now() - t0) / 1000)}s · ${Number(left).toLocaleString('en-US')} failure(s) still unclassified in the window`);
+      if (!wrote) { console.error('✗ NOTHING was written — every journey was skipped. The [ROLLUP] lines above say why; a connection error there means this process could not reach the source database.'); process.exitCode = 1; }
       if (Number(left) > 0) console.log('  (journeys whose source table carries no class signal keep \'\' — that is expected, not a gap)');
     } else if (cmd === 'bounds') {
       console.log(await dataBounds());
