@@ -3,6 +3,44 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.54] — 2026-09-20 — Super admins can see the console through another user's account
+### Added
+- **View as user** (Account → VIEW AS USER, Super Admin only). Pick any enabled console user and the console
+  loads as *they* see it: their roles, their capabilities, their business scope (Mobile / Fixed / both) and their
+  saved home dashboard. The existing **Preview as role** covers the role alone, so it could never reproduce the
+  question people actually ask — "why can't I see this?" — which is almost always the per-account business scope
+  or a role set held on that specific account, not the role in the abstract. Both controls stay; the modal now
+  says which one answers which question.
+- Two invariants make it safe, and both are tested rather than asserted in a comment:
+  - **Identity never changes.** `req.actor` stays the super admin, so every audit row and every incident comment
+    still names the person who really acted, and `audit()` stamps `viewing_as` on anything done through the other
+    account. `realRole` / `realRoles` are computed before the substitution and never overwritten — which is also
+    what keeps the way back reachable, since the control that ends the switch is gated on the real role.
+  - **The session is read-only.** Enforced as a method check at the front of `/api/`, not a route list, so a route
+    added tomorrow is closed by default: every non-GET is refused `423` with a message naming the account. The
+    only exceptions are the two routes that start and stop the switch — you can always get out.
+- A persistent bar is fixed to the bottom of every page for as long as the switch is live, naming the person, the
+  role, the side of the business and the read-only state, with **Return to my account**. The same escape hatch is
+  repeated at the top of the Account modal, and the profile editor and role preview are disabled there.
+- The switch is gated on the roles the **session** user holds in `console_users`, never on a header, so
+  `X-Console-View-As` does nothing at all for anyone who is not already a super admin — it is not an escalation
+  path, it is a lens. A disabled account, an unknown address and your own address are all refused. The header is
+  added once in `ops.js` `authHeaders()`, which the global fetch wrapper applies to every `/api/` call, so the
+  switch covers the whole app rather than the handful of modules that build their own headers.
+- Starting and stopping are recorded in the audit trail as `me.view_as.start` / `me.view_as.stop` with both
+  identities; a non-super-admin probing the routes is recorded as `RESTRICTED_ATTEMPT`.
+### Verified
+37 assertions against the **real** middleware, read-only guard and routes — sliced verbatim out of the shipped
+`server/src/api.js` and run on a real Express app over a real PostgreSQL with the real `roles.js` and
+`rolePerms.js`, so nothing in the test re-implements the logic it is checking. Covers: the header is inert for a
+non-super-admin (role unchanged, no capability picked up, routes 403 and audited); a super admin viewing a
+Fixed-only L1 gets that role, those capabilities and `business='fixed'` — 3 views where their own session has 16,
+and *not* forced back to both; `req.actor` and `realRole` unchanged; an audited read carries both identities;
+every write refused with 423 while reads keep working; stop reachable through the guard; disabled, unknown and
+self addresses refused; the picker omits disabled accounts and your own; the address trimmed and case-folded; and
+view-as taking precedence over the older role-preview header instead of mixing the two. The modal and the bar
+were rendered at 1100, 834 and 390 px in both themes: no horizontal scroll.
+
 ## [2.0.0-alpha.53] — 2026-09-20 — Resolving an alert now sticks: the operator can hold a rule while its window drains
 ### Fixed
 - **A resolve was being undone by the next sync, and the operator's reason and name were wiped with it.** A rule is

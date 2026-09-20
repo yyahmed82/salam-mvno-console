@@ -116,21 +116,75 @@ app.use(async (req, _res, next) => {
       if (r.rowCount) { const row = r.rows[0]; names = (row.roles && row.roles.length) ? row.roles : [row.role]; business = roles.normBusiness(row.business); }
     } catch (e) {}
   }
-  // super admins and the root tier always see both businesses — a scope can never lock the operator out
-  if (names.includes('super_admin') || req.isRoot) business = 'both';
-  req.business = business;
   const rmap = rolePerms.current();   // code defaults merged with super-admin's saved overrides
+  /* The session user's OWN identity, computed before any substitution below and never overwritten.
+   * requireRealSuper and the client's "return to my account" both hang off this: if view-as replaced
+   * realRole, a super admin who switched to a viewer would lose the control that switches them back. */
+  const isRealSuper = names.includes('super_admin');
   const realEff = roles.effective(names, rmap);
   req.realRoles = realEff.roles;
   req.realRole = realEff.primary;
-  // a super admin may preview a single other role via the header; nobody else can escalate
+
+  /* ---- VIEW AS USER (20 Sep 2026) ------------------------------------------------------------
+   * A real super admin may see the console through another registered user's eyes: that user's
+   * roles, their business scope, their profile and their saved dashboard — which is what actually
+   * reproduces "I can't see X", since the older "preview as role" header covers the role alone and
+   * never the per-account scope. Two invariants make it safe:
+   *   1. IDENTITY DOES NOT CHANGE. req.actor stays the super admin, so every audit row and every
+   *      incident comment still names the person who really acted, and audit() stamps viewing_as.
+   *   2. THE SESSION IS READ-ONLY. Enforced by the guard below, at the front of /api/, so a route
+   *      added tomorrow is closed by default rather than opt-in.
+   * Gated on the roles the SESSION user holds in console_users — never on a header — so the header
+   * cannot be used to escalate: for anyone who is not already a super admin it does nothing at all. */
+  let effNames = names, effBusiness = business;
+  req.viewAs = null;
+  const vaHdr = (req.get('X-Console-View-As') || '').toLowerCase().trim();
+  if (isRealSuper && vaHdr && vaHdr !== email) {
+    try {
+      const t = await C.query(`SELECT email, name, roles, role, business FROM console_users WHERE email=$1 AND enabled=true`, [vaHdr]);
+      if (t.rowCount) {
+        const row = t.rows[0];
+        req.viewAs = { email: row.email, name: row.name || null };
+        effNames = (row.roles && row.roles.length) ? row.roles : [row.role];
+        effBusiness = roles.normBusiness(row.business);
+      }
+    } catch (e) {}
+  }
+  /* super admins and the root tier always see both businesses — a scope can never lock the operator
+   * out. While viewing as someone else that must NOT apply, or a Fixed-only user's session would be
+   * shown the Mobile side too and the switch would prove nothing. It applies again when the person
+   * being viewed is themselves a super admin. */
+  if (!req.viewAs) { if (effNames.includes('super_admin') || req.isRoot) effBusiness = 'both'; }
+  else if (effNames.includes('super_admin')) effBusiness = 'both';
+  business = effBusiness;
+  req.business = business;
+
+  // a super admin may preview a single other role via the header; nobody else can escalate.
+  // While viewing as a user the role comes from that user, so the preview header is ignored.
   const hdr = req.get('X-Console-Role');
-  const eff = (names.includes('super_admin') && hdr) ? roles.effective([hdr], rmap) : realEff;
+  const eff = req.viewAs ? roles.effective(effNames, rmap)
+            : (isRealSuper && hdr) ? roles.effective([hdr], rmap)
+            : realEff;
   req.roleNames = eff.roles;
   req.roleName = eff.primary;
   req.caps = eff.caps;
   req.views = roles.scopeViews(eff.views, business);   // role ∩ business — every requireView gate follows
   next();
+});
+/* VIEW-AS IS READ-ONLY. A super admin looking through someone else's account may read whatever that
+ * account can read and write nothing: no acknowledgement, no resolve, no profile edit, no settings
+ * change, nothing under a name that is not theirs. Placed at the front of /api/ and written as a
+ * method check rather than a route list, so every route — including ones added later — is closed
+ * while a switch is active. The two routes that start and stop the switch are the only exceptions. */
+const VIEW_AS_ALLOW = /^\/api\/me\/view-as(\/stop)?$/;
+app.use('/api/', (req, res, next) => {
+  if (!req.viewAs) return next();
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const full = '/api' + (req.path === '/' ? '' : req.path);
+  if (VIEW_AS_ALLOW.test(full)) return next();
+  return res.status(423).json({
+    error: `Read-only — you are viewing the console as ${req.viewAs.email}. Return to your own account to make changes.`,
+    viewAs: req.viewAs.email });
 });
 // Business scope, API side. Fixed-only sessions may call only the Fixed API and the shared surfaces
 // (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
@@ -216,8 +270,14 @@ app.use('/api/rules',      requireView('alerts'));       // rule list/editor —
 function clientIp(req) { try { return (req.headers && (req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.ip || null; } catch (e) { return null; } }
 function clientUa(req) { try { return (req.get && req.get('user-agent')) || null; } catch (e) { return null; } }
 async function audit(req, action, target, detail, actorOverride) {
+  /* `actor` is always the person who really acted — view-as never changes req.actor — and when they
+   * were looking through someone else's account at the time, the row says so. Writes are blocked
+   * while a switch is active, so this only ever annotates reads, but an export or a PII unmask done
+   * through another account must still be traceable to both identities. */
+  const d = Object.assign({}, detail || {});
+  if (req && req.viewAs) d.viewing_as = req.viewAs.email;
   try { await C.query(`INSERT INTO audit_log (actor,role,action,target,detail,ip,ua) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-    [actorOverride || req.actor, req.roleName || null, action, target || null, JSON.stringify(detail || {}), clientIp(req), clientUa(req)]); } catch (e) {}
+    [actorOverride || req.actor, req.roleName || null, action, target || null, JSON.stringify(d), clientIp(req), clientUa(req)]); } catch (e) {}
 }
 // push incidents that opened at this sim tick to Slack/Teams (best-effort).
 // Root-cause suppression: if a child rule's provider ROOT is currently open, we do NOT page
@@ -330,17 +390,63 @@ app.put('/api/roles/matrix', requireSuper, async (req, res) => {
     res.json(await rolePerms.matrix());
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* ---- VIEW AS USER — super admin only, read-only, audited (20 Sep 2026) -----------------------
+ * The switch itself rides on the X-Console-View-As header (ops.js adds it once, in authHeaders, so
+ * every module inherits it). These routes exist so the target is validated server-side before the
+ * client commits to it, and so starting and stopping land in audit_log with both identities.
+ * Gated on req.realRoles — the roles the SESSION user holds — which view-as never rewrites. */
+function requireRealSuper(req, res, next) {
+  if ((req.realRoles || []).includes('super_admin')) return next();
+  audit(req, 'RESTRICTED_ATTEMPT', req.originalUrl || req.path, { feature: 'view-as' });
+  return res.status(403).json({ error: 'Switching user is Super Admin only.' });
+}
+app.get('/api/me/view-as/users', requireRealSuper, async (req, res) => {
+  try {
+    const rows = (await C.query(
+      `SELECT email, name, role, roles, business, team FROM console_users
+        WHERE enabled=true AND email <> $1 ORDER BY lower(COALESCE(NULLIF(name,''), email))`,
+      [req.sessionEmail || ''])).rows;
+    res.json({ users: rows.map(u => ({
+      email: u.email, name: u.name || null, team: u.team || null,
+      roles: (u.roles && u.roles.length) ? u.roles : [u.role],
+      business: roles.normBusiness(u.business) })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/me/view-as', requireRealSuper, async (req, res) => {
+  try {
+    const target = String((req.body || {}).email || '').toLowerCase().trim();
+    if (!target) return res.status(400).json({ error: 'email required' });
+    if (target === (req.sessionEmail || '')) return res.status(400).json({ error: 'That is your own account.' });
+    const t = (await C.query(`SELECT email, name, role, roles, business FROM console_users WHERE email=$1 AND enabled=true`, [target])).rows[0];
+    if (!t) return res.status(404).json({ error: 'No enabled console user with that address.' });
+    const out = { email: t.email, name: t.name || null,
+      roles: (t.roles && t.roles.length) ? t.roles : [t.role], business: roles.normBusiness(t.business) };
+    await audit(req, 'me.view_as.start', t.email, { name: out.name || undefined, business: out.business, roles: out.roles });
+    res.json(Object.assign({ ok: true }, out));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/me/view-as/stop', requireRealSuper, async (req, res) => {
+  try { await audit(req, 'me.view_as.stop', req.viewAs ? req.viewAs.email : null, {}); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/api/me', async (req, res) => {
   let profile = {};
+  /* while viewing as someone else the profile and the saved home dashboard come from THAT account —
+   * a dashboard-layout complaint is only reproducible if their layout is what loads. */
+  const who = req.viewAs ? req.viewAs.email : req.actor;
   try {
-    if (req.actor && req.actor !== 'anonymous') {
-      const u = await C.query(`SELECT name, mobile, dashboard FROM console_users WHERE email=$1`, [req.actor]);
+    if (who && who !== 'anonymous') {
+      const u = await C.query(`SELECT name, mobile, dashboard FROM console_users WHERE email=$1`, [who]);
       if (u.rowCount) profile = { name: u.rows[0].name, mobile: u.rows[0].mobile, dashboard: u.rows[0].dashboard || {} };
     }
   } catch (e) {}
   let features = {}; try { features = (await settings.getSetting('features')) || {}; } catch (e) {}
-  res.json({ email: req.actor === 'anonymous' ? null : req.actor,
+  res.json({ email: req.viewAs ? req.viewAs.email : (req.actor === 'anonymous' ? null : req.actor),
     name: profile.name || null, mobile: profile.mobile || null, dashboard: profile.dashboard || {},
+    // who is really signed in, and whose account they are looking through (null when it is their own)
+    realEmail: req.actor === 'anonymous' ? null : req.actor,
+    viewAs: req.viewAs ? { email: req.viewAs.email, name: req.viewAs.name } : null,
+    readOnly: !!req.viewAs,
     role: req.roleName, roles: req.roleNames, realRole: req.realRole, realRoles: req.realRoles,
     label: roles.role(req.roleName).label, team: roles.role(req.roleName).team, note: roles.role(req.roleName).note,
     // `root` = "this session passes requireRoot" — a FLAG, not a role (never rendered in role UIs).

@@ -36,9 +36,16 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
 
   // ---- session ----
   const SES = { email: localStorage.getItem('cons_email')||"", role: localStorage.getItem('cons_role')||"super_admin",
-    token: localStorage.getItem('cons_token')||"", me:null };
-  // identity = the session token (server-side sessions); role header is only the super-admin preview
-  const authHeaders = ()=>({ "X-Console-Role": SES.role, "X-Console-Token": SES.token||"" });
+    token: localStorage.getItem('cons_token')||"", viewAs: localStorage.getItem('cons_viewas')||"", me:null };
+  /* identity = the session token (server-side sessions); the role header is only the super-admin
+   * preview, and X-Console-View-As is the super-admin "see the console as this person" switch.
+   * Both are ignored by the server for anyone whose own console_users roles lack super_admin, and
+   * a session carrying view-as is refused every write. Setting the header HERE — one place the
+   * global fetch wrapper applies to every /api/ call — is what makes the switch cover the whole
+   * app instead of the handful of modules that build their own headers. */
+  const authHeaders = ()=>{ const h = { "X-Console-Role": SES.role, "X-Console-Token": SES.token||"" };
+    if(SES.viewAs) h["X-Console-View-As"] = SES.viewAs;
+    return h; };
   /* A 401 must NOT immediately nuke the session: a single stray/early call (a poll fired before
    * sign-in finished, an iframe, a queued request) would clear the token and cascade "Not signed in."
    * into every other panel. Instead: re-validate once against /api/me and only sign out if the
@@ -197,6 +204,25 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       .map(t=>`<optgroup label="${esc(t)}">${groups[t].sort((a,b)=>(ROLE_RANKS[a]-ROLE_RANKS[b])||ROLE_LABELS[a].localeCompare(ROLE_LABELS[b])).map(opt).join("")}</optgroup>`).join("");
   }
 
+  /* the "view as user" picker — every enabled console user except yourself, grouped by the side of
+   * the business they work on, because that is the axis a "why can't I see this" question turns on. */
+  const BIZ_LABEL = { mobile:"Mobile", fixed:"Fixed", both:"Mobile + Fixed" };
+  async function loadViewAsUsers(){
+    const sel=$("#rmUser"); if(!sel) return;
+    if(!rolesHydrated){ try{ await hydrateRoleLabels(); }catch(e){} }   // so the rows read "Fixed L1", not "fixed_l1"
+    let d; try{ d=await api("/api/me/view-as/users"); }
+    catch(e){ sel.innerHTML=`<option value="">${esc(e.message)}</option>`; return; }
+    const us=(d&&d.users)||[];
+    if(!us.length){ sel.innerHTML='<option value="">No other enabled users</option>'; return; }
+    const groups={}; us.forEach(u=>{ const g=BIZ_LABEL[u.business]||u.business||"Other"; (groups[g]=groups[g]||[]).push(u); });
+    const cur=(SES.me&&SES.me.viewAs&&SES.me.viewAs.email)||"";
+    const opt=u=>{ const r=(u.roles||[]).map(k=>ROLE_LABELS[k]||k).join(", ");
+      return `<option value="${esc(u.email)}"${u.email===cur?" selected":""}>${esc(u.name||u.email.split("@")[0])} — ${esc(r||"no role")}${u.team?` · ${esc(u.team)}`:""}</option>`; };
+    sel.innerHTML=`<option value="">Choose a user…</option>`
+      + ["Mobile + Fixed","Mobile","Fixed"].concat(Object.keys(groups).filter(g=>!["Mobile + Fixed","Mobile","Fixed"].includes(g)))
+        .filter(g=>groups[g]).map(g=>`<optgroup label="${esc(g)}">${groups[g].map(opt).join("")}</optgroup>`).join("");
+  }
+
   // ---- export helper (CSV / JSON), shared globally ----
   function toCSV(rows){ const cols=[...new Set(rows.flatMap(r=>Object.keys(r)))];
     const q=v=>{ v=v==null?"":typeof v==="object"?JSON.stringify(v):String(v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
@@ -228,9 +254,46 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   const NAV_VIEW = { landing:"dashboard", execops:"exec", nocwall:"noc", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
     explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", tapdocs:"explore", alerts:"alerts", errors:"errors", analytics:"analytics", sub360:"explore", settings:"settings" };
 
+  /* VIEW AS USER — the persistent "you are not yourself" bar. Fixed to the bottom so it can never
+   * collide with the header on a phone, and present on every page because it lives on <body>, not
+   * inside a view. It is the only way out of the switch that is always one click away. */
+  function renderViewAsBar(){
+    const on = !!(SES.me && SES.me.viewAs);
+    let bar = document.getElementById("viewAsBar");
+    document.documentElement.toggleAttribute("data-view-as", on);
+    if(!on){ if(bar) bar.remove(); document.body.style.paddingBottom=""; return; }
+    const v = SES.me.viewAs, who = v.name || v.email.split("@")[0];
+    const role = ROLE_LABELS[SES.me.role] || SES.me.role;
+    const biz = SES.me.businessLabel || SES.me.business || "";
+    if(!bar){ bar=document.createElement("div"); bar.id="viewAsBar"; document.body.appendChild(bar); }
+    bar.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:9000;display:flex;gap:10px;flex-wrap:wrap;"
+      +"align-items:center;justify-content:center;padding:9px 14px;font-size:12.5px;line-height:1.4;"
+      +"background:var(--tint-warn-bg);color:var(--tint-warn-fg);border-top:2px solid var(--tint-warn-line);"
+      +"box-shadow:0 -6px 18px rgba(15,23,42,.10)";
+    bar.innerHTML=`<span style="font-weight:800">Viewing as ${esc(who)}</span>
+      <span style="opacity:.85">${esc(v.email)} · ${esc(role)}${biz?` · ${esc(biz)}`:""} — read only, nothing can be changed under this account</span>
+      <button class="pill" id="viewAsExit" style="padding:3px 10px;font-size:11.5px;border-left-color:var(--green)">Return to my account</button>`;
+    document.body.style.paddingBottom = (bar.getBoundingClientRect().height + 8) + "px";
+    document.getElementById("viewAsExit").onclick = ()=>stopViewAs();
+  }
+  async function stopViewAs(){
+    try{ await api("/api/me/view-as/stop",{method:"POST",body:"{}"}); }catch(e){}
+    SES.viewAs=""; localStorage.removeItem('cons_viewas');
+    location.reload();                       // the GET micro-cache holds the other account's answers
+  }
+  async function startViewAs(email){
+    const r = await api("/api/me/view-as",{method:"POST",body:JSON.stringify({email})});
+    SES.viewAs = r.email; localStorage.setItem('cons_viewas', r.email);
+    location.reload();
+  }
+  window.opsStopViewAs = stopViewAs;
   async function loadMe(){
     try { SES.me = await api("/api/me"); SES.role = SES.me.role; }
     catch(e){ SES.me = { role:SES.role, views:["dashboard","explore","alerts","errors","settings"], caps:{} }; }
+    /* the server is the authority on whether a switch is live: if it refused the header (the account
+     * was disabled or deleted while switched) drop the stale local flag instead of looping. */
+    if(SES.viewAs && !(SES.me && SES.me.viewAs)){ SES.viewAs=""; localStorage.removeItem('cons_viewas'); }
+    renderViewAsBar();
     applyScope(); renderChip(); applyFeatureFlags();
     // Mark the session as ready so late-loading listeners (e.g. the hash router) that
     // registered after this dispatch can still detect readiness and self-heal.
@@ -318,27 +381,40 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   function openRoleModal(){
     hydrateRoleLabels();
     const card = $("#roleModalCard");
-    const isSuper = SES.me && SES.me.realRole === 'super_admin';
+    const isSuper = SES.me && SES.me.realRole === 'super_admin';   // the REAL role — view-as never rewrites it
+    const va = (SES.me && SES.me.viewAs) || null;
     const nm = displayName();
     card.innerHTML = `<div class="modal-head"><span class="path">Account</span><span class="x" id="rmX">×</span></div>
       <div class="modal-body">
         <div style="display:flex;align-items:center;gap:10px">
           <span class="av" style="width:38px;height:38px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800">${esc((nm||'?')[0].toUpperCase())}</span>
-          <div><div style="font-weight:700">${esc(nm)}</div><div class="rl" style="color:var(--muted);font-size:11px">${esc(ROLE_LABELS[SES.role]||SES.role)}${isSuper&&SES.role!=='super_admin'?' · previewing':''} · ${esc(SES.email||'')}</div></div>
+          <div><div style="font-weight:700">${esc(nm)}</div><div class="rl" style="color:var(--muted);font-size:11px">${esc(ROLE_LABELS[SES.role]||SES.role)}${isSuper&&!va&&SES.role!=='super_admin'?' · previewing':''} · ${esc((SES.me&&SES.me.email)||SES.email||'')}</div></div>
         </div>
+        ${va?`<div style="margin-top:12px;background:var(--tint-warn-bg);border:1px solid var(--tint-warn-line);border-left:3px solid var(--tint-warn-fg);border-radius:10px;padding:10px 13px;font-size:12.5px;color:var(--tint-warn-fg)">
+          You are signed in as <b>${esc((SES.me&&SES.me.realEmail)||'')}</b> and looking through <b>${esc(va.email)}</b>'s account. This session is read only — every change is refused until you return to your own account.
+          <div style="text-align:right;margin-top:8px"><button class="pill" id="rmUnview" style="padding:3px 10px;border-left-color:var(--green)">Return to my account</button></div>
+        </div>`:''}
         <h5 style="margin-top:16px">MY PROFILE</h5>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div><label style="font-size:9.5px;letter-spacing:1px;color:var(--muted);font-weight:800">NAME</label><input id="pfName" class="jsearch" style="width:100%" value="${esc((SES.me&&SES.me.name)||'')}" placeholder="Full name"></div>
           <div><label style="font-size:9.5px;letter-spacing:1px;color:var(--muted);font-weight:800">MOBILE</label><input id="pfMobile" class="jsearch" style="width:100%" value="${esc((SES.me&&SES.me.mobile)||'')}" placeholder="05x xxx xxxx"></div>
         </div>
-        <div style="text-align:right;margin-top:8px"><button class="pill" id="pfSave" style="border-left-color:var(--green)">Save profile</button> <span id="pfMsg" class="rl"></span></div>
-        ${isSuper?`<h5 style="margin-top:16px">PREVIEW AS ROLE <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(Super Admin only)</span></h5>
-        <select id="rmRole" class="jsearch" style="width:100%">
+        <div style="text-align:right;margin-top:8px"><button class="pill" id="pfSave" style="border-left-color:var(--green)"${va?' disabled title="Read only while you are viewing another account"':''}>Save profile</button> <span id="pfMsg" class="rl">${va?'read only while viewing another account':''}</span></div>
+        ${isSuper?`<h5 style="margin-top:16px">VIEW AS USER <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(Super Admin only · read only)</span></h5>
+        <div class="rl" style="font-weight:400;letter-spacing:0;color:var(--muted);margin:-2px 0 6px">See the console exactly as someone else does — their roles, their side of the business, their saved home dashboard. Nothing can be changed while you are in their account, and the switch is recorded in the audit trail.</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <select id="rmUser" class="jsearch" style="flex:1 1 220px;min-width:0"><option value="">Loading users…</option></select>
+          <button class="pill" id="rmView" style="border-left-color:var(--green)">View as</button>
+        </div>
+        <span id="rmViewMsg" class="rl" style="font-weight:400;letter-spacing:0"></span>
+        <h5 style="margin-top:16px">PREVIEW AS ROLE <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(Super Admin only)</span></h5>
+        <div class="rl" style="font-weight:400;letter-spacing:0;color:var(--muted);margin:-2px 0 6px">Permissions of a role, on your own account. Use "View as user" instead when you need someone's business scope and dashboard too.</div>
+        <select id="rmRole" class="jsearch" style="width:100%"${va?' disabled':''}>
           ${roleOptions(SES.role)}
         </select>`:''}
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
           <button class="pill" id="rmSignout" style="border-left-color:var(--red)">Sign out</button>
-          ${isSuper?`<button class="pill" id="rmApply" style="border-left-color:var(--green)">Apply preview</button>`:''}
+          ${isSuper&&!va?`<button class="pill" id="rmApply" style="border-left-color:var(--green)">Apply preview</button>`:''}
         </div>
       </div>`;
     $("#roleModal").classList.add("open");
@@ -350,7 +426,18 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         renderChip(); $("#pfMsg").textContent="✓ saved";
       }catch(e){ $("#pfMsg").textContent=e.message; }
     };
+    if($("#rmUnview")) $("#rmUnview").onclick = ()=>stopViewAs();
     if(isSuper){
+      loadViewAsUsers();
+      $("#rmView").onclick = async ()=>{
+        const email=$("#rmUser").value; const msg=$("#rmViewMsg");
+        if(!email){ msg.textContent="Pick a user first."; msg.style.color="var(--muted)"; return; }
+        const b=$("#rmView"); b.disabled=true; b.textContent="Switching…";
+        try{ await startViewAs(email); }
+        catch(e){ msg.textContent=e.message; msg.style.color="#dc2626"; b.disabled=false; b.textContent="View as"; }
+      };
+    }
+    if(isSuper && !va){
       $("#rmApply").onclick = async ()=>{
         SES.role = $("#rmRole").value; localStorage.setItem('cons_role',SES.role);
         $("#roleModal").classList.remove("open");
