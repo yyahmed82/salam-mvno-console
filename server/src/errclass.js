@@ -115,4 +115,32 @@ function classCaseSql(codeCol, textExpr) {
     ELSE 'business' END`;
 }
 
-module.exports = { classifyClass, classCaseSql, COLORS, TECH_CODE, BIZ_CODE, setOverrides, getOverrides };
+/* PER-SOURCE-TABLE SPLITS (20 Sep 2026) — the same expressions errors.js has used on the
+ * Troubleshoot board since August, lifted here so the rollups can classify with them too and there
+ * is exactly one definition of "which column carries the code and which carries the text" per table.
+ * Called at QUERY time, not module load, so an operator's errclass_overrides apply without a restart
+ * (errors.js still builds its copies once at load — it is not changed here).
+ * Some categories need no SQL at all and the codebase already fixes their class by doctrine:
+ * a payment decline is ALWAYS business (the gateway answered "no"), payment_stuck is ALWAYS
+ * technical (the platform never finalised), and delivery fail-states (cancelled / refused / RTO)
+ * are business outcomes. */
+function sourceCls(table) {
+  switch (table) {
+    case 'activation_logs':                       // also eligibility_logs — same shape
+    case 'eligibility_logs':
+      return classCaseSql(`COALESCE(NULLIF(status_code,''), response->>'responseCode')`,
+        `coalesce(status_code,'') || ' ' || coalesce(response::text,'')`);
+    case 'nafath_logs':                           // EXPIRED / REJECTED etc → business
+      return classCaseSql(`NULLIF(response->'response'->>'status','')`,
+        `coalesce(status,'') || ' ' || coalesce(response::text,'')`);
+    case 'change_plan_logs':
+      return classCaseSql(`NULL::text`, `coalesce(final_step_message,'')`);
+    case 'payments':                              // a decline is the gateway answering "no"
+    case 'delivery_requests':                     // cancelled / refused / RTO are business outcomes
+      return `'business'`;
+    default:
+      return null;                                // no class signal on this table
+  }
+}
+
+module.exports = { classifyClass, classCaseSql, sourceCls, COLORS, TECH_CODE, BIZ_CODE, setOverrides, getOverrides };

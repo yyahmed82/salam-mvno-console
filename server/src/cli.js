@@ -4,6 +4,9 @@
  *   sync [iso]             one metrics sync (+alerts) at iso or now
  *   simulate [stepH] [steps]   replay historical data as live traffic
  *   bounds                 print source data time bounds
+ *   rollups --days N       rebuild rollup_hourly for the last N days (default 7, max 400) so the
+ *                          journey failures in that window carry err_class and a class-filtered SLO
+ *                          can measure them. Idempotent: the window is deleted and re-inserted.
  *   testmail <rule-key> <email>   simulate ONE rule firing (Mobile or Fixed) and mail the digest + PDF
  *                          to that address only — the way to verify the alert mail on a server
  *   vendor-sla-mail-test --to <email> [--contract <id>] [--matrix] [--all-items]
@@ -35,6 +38,23 @@ async function main() {
     } else if (cmd === 'index') {
       const ix = await indexSource();
       console.log(`source indexes: ${ix.made} ok, ${ix.skipped} skipped`);
+    } else if (cmd === 'rollups') {
+      /* CLASS BACKFILL (20 Sep 2026) — rollup_hourly gained err_class, but only rows refreshed
+       * since carry it; older failures read as UNCLASSIFIED and a class-filtered SLO refuses to
+       * answer rather than under-count. This re-reads the source tables for the window and rewrites
+       * it with the class. Cost is a full scan of each journey's source over the range, so pick the
+       * window deliberately — 7 days is cheap, 400 is not. */
+      const i = args.indexOf('--days');
+      const days = Math.min(400, Math.max(1, Number(i >= 0 ? args[i + 1] : 7) || 7));
+      const to = new Date(), from = new Date(to.getTime() - days * 86400e3);
+      console.log(`rebuilding rollup_hourly ${from.toISOString()} → ${to.toISOString()} (${days} day(s))…`);
+      const t0 = Date.now();
+      const r = await require('./rollups').refresh(from.toISOString(), to.toISOString());
+      const left = (await db.console.query(
+        `SELECT coalesce(sum(cnt),0)::bigint n FROM rollup_hourly WHERE outcome='fail' AND err_class='' AND hour >= $1`,
+        [from.toISOString()])).rows[0].n;
+      console.log(`rollups: ${(r && r.rows) || 0} row(s) written in ${Math.round((Date.now() - t0) / 1000)}s · ${Number(left).toLocaleString('en-US')} failure(s) still unclassified in the window`);
+      if (Number(left) > 0) console.log('  (journeys whose source table carries no class signal keep \'\' — that is expected, not a gap)');
     } else if (cmd === 'bounds') {
       console.log(await dataBounds());
     } else if (cmd === 'sync') {

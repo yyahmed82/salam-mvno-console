@@ -90,7 +90,7 @@ const DEFAULT_DEFS = [
    * 1.2 % over the same hours, a 25x disagreement. Showing that gap is the point. */
   { key: 'fixed_app_technical_rate', business: 'fixed', group: 'Fixed app experience',
     label: 'App steps — technical failures', direction: 'gte', unit: 'percent', target: 0.97, warnBand: 0.02, windowDays: 30, enabled: true,
-    metric: { key: 'fixed_applog_fail_rate', dim: { channel: 'all', cls: 'technical' }, windowHours: 1, direction: 'lte', threshold: 0.02, label: 'with under 2 % of app steps failing technically' },
+    metric: { key: 'fixed_applog_fail_rate', dim: { channel: 'all' }, windowHours: 1, direction: 'lte', threshold: 0.02, label: 'with under 2 % of app steps failing technically' },
     note: 'Proposed target, not yet agreed. Attainment is the share of hours inside the 2 % ceiling.',
     messages: {
       met: 'App steps stay inside the 2 % technical-failure ceiling.',
@@ -108,7 +108,7 @@ const DEFAULT_DEFS = [
     } },
   { key: 'fixed_app_payment_reliability', business: 'fixed', group: 'Fixed app experience',
     label: 'Payment steps — technical failures', direction: 'gte', unit: 'percent', target: 0.99, warnBand: 0.01, windowDays: 30, enabled: true,
-    metric: { key: 'fixed_applog_payment_fail_rate', dim: { channel: 'all', cls: 'technical' }, windowHours: 1, direction: 'lte', threshold: 0.02, label: 'with under 2 % of payment steps failing technically' },
+    metric: { key: 'fixed_applog_payment_fail_rate', dim: { channel: 'all' }, windowHours: 1, direction: 'lte', threshold: 0.02, label: 'with under 2 % of payment steps failing technically' },
     note: 'Proposed target, not yet agreed. The money path earns a tighter objective than the rest of the app.',
     messages: {
       met: 'The payment path stays inside its technical-failure ceiling.',
@@ -117,7 +117,7 @@ const DEFAULT_DEFS = [
     } },
   { key: 'fixed_board_technical_rate', business: 'fixed', group: 'Fixed app experience',
     label: 'Journey errors — technical', direction: 'gte', unit: 'percent', target: 0.97, warnBand: 0.02, windowDays: 30, enabled: true,
-    metric: { key: 'fixed_board_fail_rate', dim: { channel: 'all', cls: 'technical' }, windowHours: 1, direction: 'lte', threshold: 0.02, label: 'with under 2 % of journey attempts ending in a technical error' },
+    metric: { key: 'fixed_board_fail_rate', dim: { channel: 'all' }, windowHours: 1, direction: 'lte', threshold: 0.02, label: 'with under 2 % of journey attempts ending in a technical error' },
     note: 'The same objective as the app-step one, measured on the error board instead of the app log. The two lanes disagreeing is itself the signal.',
     messages: {
       met: 'Journey attempts stay inside the 2 % technical-error ceiling.',
@@ -187,7 +187,62 @@ const cleanText = (v, max, fb = '') => {
   v = String(v == null ? fb : v).trim();
   return v.slice(0, max);
 };
-const defaultConfig = () => ({ version: 1, slos: clone(DEFAULT_DEFS) });
+/* ── BUSINESS vs TECHNICAL ON AN SLO (20 Sep 2026) ───────────────────────────────────────────────
+ * Settings › SLO definitions › Counts. One global default (cfg.countBusinessErrors) that every
+ * objective inherits, and a per-objective override where the signal can honour it.
+ *
+ * WHETHER a signal can be split is a fact about the signal, not a preference, so it lives HERE in
+ * code and is never writable through the editor — only the choice is. Three shapes:
+ *   capable          the signal carries a class; the operator picks.
+ *   locked: '<cls>'  the objective exists to measure that one class. Forcing the other leaves it
+ *                    measuring nothing, so the control shows the value and the reason, disabled.
+ *   (neither)        no class signal — latency, conversion, unwired probes. Disabled with the reason.
+ * `allowed` narrows the choice: the Fixed app/board metrics are recorded as one snapshot row PER
+ * class, so there is no combined series — asking for 'all' would match both rows and double-count
+ * the ticks. Those offer technical/business only, which is also why they were hard-coded to
+ * technical before this existed. */
+const CLASS_META = {
+  mobile_payment_success:        { capable: true },
+  mobile_activation_success:     { capable: true },
+  mobile_semati_success:         { capable: true },
+  mobile_nafath_completion:      { capable: true },
+  mobile_eligibility_approval:   { capable: true },
+  mobile_delivery_success:       { capable: true },
+  mobile_change_plan_success:    { capable: true },
+  mobile_technical_error_budget: { locked: 'technical', note: 'this objective is the technical error budget — counting business outcomes in it would make it a different objective' },
+  mobile_semati_provider_errors: { locked: 'technical', note: 'a provider error is an upstream CITC/TCC degradation; a Semati business decline is counted by the journey objective' },
+  mobile_citc_eligibility_denials: { locked: 'business', note: 'a denial is a business outcome, not a platform fault — that is what this objective measures' },
+  fixed_app_technical_rate:      { capable: true, allowed: ['technical', 'business'], fallback: 'technical' },
+  fixed_app_payment_reliability: { capable: true, allowed: ['technical', 'business'], fallback: 'technical' },
+  fixed_board_technical_rate:    { capable: true, allowed: ['technical', 'business'], fallback: 'technical' },
+  fixed_api_error_budget:        { capable: true },
+  fixed_nafath_failure_rate:     { capable: true },
+  fixed_manafith_denials:        { locked: 'business', note: 'a denial is a business outcome — this objective exists to count them' },
+  fixed_app_step_latency:        { note: 'latency has no error class — a slow step is slow whoever caused it' },
+  fixed_order_conversion:        { note: 'conversion counts where attempts stop, not why they failed' },
+  fixed_sadad_availability:      { note: 'no SADAD probe is wired into this console' },
+  fixed_sftp_odb_sync:           { note: 'no SFTP job feed is wired into this console' }
+};
+const CLASSES = new Set(['all', 'technical', 'business']);
+function classMeta(key) {
+  const m = CLASS_META[key] || {};
+  const allowed = Array.isArray(m.allowed) ? m.allowed.filter(x => CLASSES.has(x)) : ['all', 'technical', 'business'];
+  return { capable: !!m.capable, locked: CLASSES.has(m.locked) ? m.locked : null,
+           allowed, fallback: m.fallback || null, note: m.note || null };
+}
+/* what this objective actually counts right now: its own override, else the global default. */
+function effectiveClass(def, cfg) {
+  const m = classMeta(def && def.key);
+  if (m.locked) return m.locked;
+  if (!m.capable) return 'all';
+  const own = def && def.errorClass;
+  if (CLASSES.has(own) && m.allowed.includes(own)) return own;
+  const inherited = (cfg && cfg.countBusinessErrors === false) ? 'technical' : 'all';
+  return m.allowed.includes(inherited) ? inherited : (m.fallback || m.allowed[0]);
+}
+const classLabel = c => c === 'technical' ? 'Technical errors only' : c === 'business' ? 'Business outcomes only' : 'All errors';
+
+const defaultConfig = () => ({ version: 1, countBusinessErrors: true, slos: clone(DEFAULT_DEFS) });
 const byKey = cfg => Object.fromEntries(((cfg && cfg.slos) || []).map(x => [x.key, x]));
 const findDef = (cfg, key) => byKey(cfg)[key] || DEFAULT_DEFS.find(d => d.key === key) || null;
 
@@ -225,13 +280,22 @@ function normalizeDef(raw, base) {
    * measured against. Pin it from the code definition so a round-trip through the editor can never
    * corrupt or drop it — the editor owns the target, the window, the band and the wording. */
   if (base && base.metric) d.metric = clone(base.metric); else delete d.metric;
+  /* the operator's Counts choice. Capability is code (classMeta), so it is recomputed on every read
+   * and a stored value outside what the signal allows is dropped rather than honoured. */
+  const cm = classMeta(d.key);
+  d.errorClass = (CLASSES.has(d.errorClass) && !cm.locked && cm.capable && cm.allowed.includes(d.errorClass)) ? d.errorClass : null;
+  d.classCapable = cm.capable; d.classLocked = cm.locked; d.classAllowed = cm.allowed; d.classNote = cm.note;
   return d;
 }
 
 function mergeConfig(raw) {
   const saved = byKey(raw || {});
   const slos = DEFAULT_DEFS.map(base => normalizeDef(saved[base.key], base));
-  return { version: 1, updated_at: (raw && raw.updated_at) || null, slos };
+  const cfg = { version: 1, updated_at: (raw && raw.updated_at) || null,
+                countBusinessErrors: !(raw && raw.countBusinessErrors === false), slos };
+  // resolved for the UI: what each objective counts today, and whether that came from the default
+  for (const d of cfg.slos) { d.countsClass = effectiveClass(d, cfg); d.countsLabel = classLabel(d.countsClass); d.countsInherited = !d.errorClass && !d.classLocked; }
+  return cfg;
 }
 
 async function getConfig() {
@@ -356,7 +420,13 @@ async function metricSlos(now, cfg) {
     const win = Number(d.windowDays) || 30;
     const from = new Date(new Date(now).getTime() - win * 86400e3).toISOString();
     const cmp = d.metric.direction === 'gte' ? '>=' : '<=';        // our own config, never user input
-    const dim = JSON.stringify(d.metric.dim || {});
+    /* Counts (20 Sep 2026): the class is no longer baked into the definition — it is whatever the
+     * objective is set to count. These metrics are recorded one snapshot row PER class, so 'all'
+     * would match both rows and double-count the ticks; classMeta().allowed stops effectiveClass
+     * ever returning it for them, and the editor never offers it. */
+    const cls = effectiveClass(d, cfg);
+    const baseDim = { ...(d.metric.dim || {}) }; delete baseDim.cls;
+    const dim = JSON.stringify(cls === 'all' ? baseDim : { ...baseDim, cls });
     let row;
     try {
       row = (await C.query(
@@ -382,6 +452,7 @@ async function metricSlos(now, cfg) {
        new Date(new Date(now).getTime() - 7 * 86400e3).toISOString()])).rows;
     out.push({
       journey: null, key: d.key, label: d.label, target, business: d.business, group: d.group,
+      countsClass: cls, countsLabel: classLabel(cls),
       targetText: `${fmtValue(d, target)} of hours ${d.metric.label || `${cmp} ${d.metric.threshold}`}`,
       window_days: win, message: tot ? verdict.message : (d.note || 'No measurements in the window yet.'),
       attainment: attain, total: tot, ok, fail, allowed: Math.round(allowed),
@@ -405,28 +476,53 @@ async function evaluate(now) {
   for (const t of targets) {
     const def = byJourney[t.journey] || null;
     const from = new Date(new Date(n).getTime() - t.window_days * 86400e3).toISOString();
+    /* Counts (20 Sep 2026): rollup_hourly now carries err_class on its fail rows, so a journey
+     * objective can measure platform health (technical only) instead of every negative outcome.
+     * Rows written before that change carry '' — UNCLASSIFIED, which is not the same as business.
+     * A class-filtered objective whose window still contains them would quietly report a flattering
+     * number, so it refuses to answer instead and says how to fix it. */
+    const cls = effectiveClass(def, cfg);
     const r = (await C.query(
-      `SELECT outcome, sum(cnt)::bigint c FROM rollup_hourly WHERE journey=$1 AND hour >= $2 AND hour < $3 GROUP BY 1`,
+      `SELECT outcome, err_class, sum(cnt)::bigint c FROM rollup_hourly WHERE journey=$1 AND hour >= $2 AND hour < $3 GROUP BY 1,2`,
       [t.journey, from, n])).rows;
-    const m = {}; r.forEach(x => m[x.outcome] = Number(x.c));
-    const ok = m.ok || 0, fail = m.fail || 0, tot = ok + fail;
+    const m = {}; let failAll = 0, failCls = 0, failRaw = 0;
+    for (const x of r) {
+      const c = Number(x.c);
+      m[x.outcome] = (m[x.outcome] || 0) + c;
+      if (x.outcome !== 'fail') continue;
+      failAll += c;
+      if (!x.err_class) failRaw += c; else if (x.err_class === cls) failCls += c;
+    }
+    const unclassified = cls === 'all' ? 0 : failRaw;
+    const ok = m.ok || 0, fail = cls === 'all' ? failAll : failCls, tot = ok + fail;
     const target = Number(t.target);
     const attain = rate(ok, fail);
     const allowed = tot * (1 - target);         // error budget (allowed failures) over the window
     const remaining = allowed - fail;
     const budgetPct = allowed > 0 ? remaining / allowed : (fail === 0 ? 1 : -1);
     const verdict = assess(def || { direction: 'gte', unit: 'percent', target, warnBand: 0.02 }, attain, {}, target);
-    const status = attain == null ? 'nodata' : verdict.status;
-    // 7-day daily attainment sparkline
+    let status = attain == null ? 'nodata' : verdict.status;
+    let message = verdict.message;
+    if (unclassified > 0) {
+      const lo = (await C.query(
+        `SELECT min(hour) h FROM rollup_hourly WHERE journey=$1 AND outcome='fail' AND err_class <> ''`, [t.journey])).rows[0];
+      status = 'nodata';
+      message = `Counting ${classLabel(cls).toLowerCase()}, but ${unclassified.toLocaleString('en-US')} failure(s) in this ${t.window_days}-day window were recorded before the console classified them — reporting a number now would under-count. `
+        + (lo && lo.h ? `Classified from ${new Date(lo.h).toISOString().slice(0, 10)}. ` : '')
+        + `Rebuild the window (node src/cli.js rollups --days ${t.window_days}) or set this objective back to All errors.`;
+    }
+    /* the sparkline follows the same Counts setting, or the line and the headline would disagree */
     const days = (await C.query(
       `SELECT (hour AT TIME ZONE 'Asia/Riyadh')::date d,
-              sum(cnt) FILTER (WHERE outcome='ok')::bigint ok, sum(cnt) FILTER (WHERE outcome='fail')::bigint fail
+              sum(cnt) FILTER (WHERE outcome='ok')::bigint ok,
+              sum(cnt) FILTER (WHERE outcome='fail' AND ($3 = 'all' OR err_class = $3))::bigint fail
        FROM rollup_hourly WHERE journey=$1 AND hour >= $2 GROUP BY 1 ORDER BY 1`,
-      [t.journey, new Date(new Date(n).getTime() - 7 * 86400e3).toISOString()])).rows;
+      [t.journey, new Date(new Date(n).getTime() - 7 * 86400e3).toISOString(), cls])).rows;
     const spark = days.map(x => { const o = Number(x.ok), f = Number(x.fail); return (o + f) > 0 ? o / (o + f) : null; });
     out.push({ journey: t.journey, key: def && def.key, label: t.label, target, targetText: verdict.targetText,
-      window_days: t.window_days, business: def && def.business, message: verdict.message,
-      attainment: attain, total: tot, ok, fail, allowed: Math.round(allowed),
+      window_days: t.window_days, business: def && def.business, message,
+      countsClass: cls, countsLabel: classLabel(cls), unclassified,
+      attainment: unclassified > 0 ? null : attain, total: tot, ok, fail, allowed: Math.round(allowed),
       budgetRemaining: Math.round(remaining), budgetPct, status, spark });
   }
   let metricOut = [];
@@ -461,5 +557,6 @@ async function vendorHealth(now, windowHours = 24) {
 module.exports = {
   evaluate, vendorHealth, seedDefaults, DEFAULTS,
   CONFIG_KEY, defaultConfig, getConfig, saveConfig, resetConfig, updateJourneyTarget,
-  findDef, targetNumber, targetText, assess, fmtValue, fmtPercent
+  findDef, targetNumber, targetText, assess, fmtValue, fmtPercent,
+  classMeta, effectiveClass, classLabel, CLASS_META
 };

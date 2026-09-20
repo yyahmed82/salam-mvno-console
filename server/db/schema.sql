@@ -703,3 +703,33 @@ ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS held_by       text;         -- 
 ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS held_reason   text;         -- their resolve reason + note
 ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS held_alert_id bigint;       -- the incident the hold came from
 CREATE INDEX IF NOT EXISTS idx_alert_rules_held ON alert_rules (held_until) WHERE held_until IS NOT NULL;
+
+/* ERROR CLASS ON THE JOURNEY ROLLUPS (20 Sep 2026) ────────────────────────────────────────────────
+ * An SLO can now be told to count only TECHNICAL failures (the platform broke) or only BUSINESS ones
+ * (the platform worked and answered "no") — Settings › SLO definitions › Counts. The Fixed objectives
+ * could already do this because their signal is metric_snapshots, which carries a cls dimension; the
+ * seven MVNO journey objectives could not, because rollup_hourly aggregates a failure as simply
+ * 'fail' with no idea which kind it was.
+ *
+ * err_class is therefore part of the grain, classified at refresh time by errclass.sourceCls() — the
+ * same expressions the Troubleshoot board has used since August, so the two lanes cannot disagree.
+ * It is set ONLY on outcome='fail' rows and stays '' on ok / pending / total, so every existing
+ * reader (mvnoExec, anomaly, the dashboards, slo.evaluate) that sums cnt over the old keys is
+ * unaffected — they aggregate over the new column without knowing it exists.
+ *
+ * History written before this change carries '' and is therefore UNCLASSIFIED, not business. A
+ * class-filtered SLO whose window still contains unclassified failures refuses to answer rather than
+ * quietly under-count; rebuild the window to fix it (cli.js rollups --from …). */
+ALTER TABLE rollup_hourly ADD COLUMN IF NOT EXISTS err_class text NOT NULL DEFAULT '';
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_index i
+     WHERE i.indrelid = 'rollup_hourly'::regclass AND i.indisprimary
+       AND array_length(i.indkey::int2[], 1) = 5
+  ) THEN
+    ALTER TABLE rollup_hourly DROP CONSTRAINT IF EXISTS rollup_hourly_pkey;
+    ALTER TABLE rollup_hourly ADD PRIMARY KEY (hour, journey, outcome, platform, err_class);
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_rollup_journey_class ON rollup_hourly (journey, err_class, hour);

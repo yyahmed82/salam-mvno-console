@@ -191,13 +191,18 @@ async function execRaw(q = {}) {
 
   // ---- SLOs (measured ones from data; unmeasured ones honestly marked)
   const naf = (today.integrations || {}).nafath || {}, man = (today.integrations || {}).manafith || {};
-  const errS = slo.assess(def('fixed_api_error_budget'), errors24, {}, budget);
+  /* Counts (20 Sep 2026): the error budget can be set to count only technical failures — the split
+   * was already computed two lines up and thrown away, so the objective was measuring every negative
+   * outcome including the ones where the platform worked and simply answered "no". */
+  const errCls = slo.effectiveClass(def('fixed_api_error_budget'), sloCfg);
+  const errCount = errCls === 'technical' ? errTech24 : errCls === 'business' ? errBiz24 : errors24;
+  const errS = slo.assess(def('fixed_api_error_budget'), errCount, {}, budget);
   const convS = slo.assess(def('fixed_order_conversion'), n(k.conversion) / 100, { baseline: conv7 / 100 }, convFloor / 100);
   const nafS = slo.assess(def('fixed_nafath_failure_rate'), naf.total ? naf.failRate / 100 : null, {}, 0.25);
   const manS = slo.assess(def('fixed_manafith_denials'), man.total ? man.deniedRate / 100 : null, {}, 0.10);
   const sadadDef = def('fixed_sadad_availability'), sftpDef = def('fixed_sftp_odb_sync');
   const slos = [
-    { key: 'error_budget', name: 'API error budget', actual: `${errors24} / 24 h`, target: errS.targetText, ok: errS.ok, status: errS.status, message: errS.message, measured: true, href: '#fixed?tab=errors' },
+    { key: 'error_budget', name: 'API error budget', actual: `${errCount} / 24 h${errCls === 'all' ? '' : ` · ${errCls}`}`, target: errS.targetText, ok: errS.ok, status: errS.status, message: errS.message, measured: true, countsClass: errCls, countsLabel: slo.classLabel(errCls), href: '#fixed?tab=errors' },
     { key: 'conversion', name: 'Order conversion', actual: `${n(k.conversion)}%`, target: convS.targetText, ok: convS.ok, status: convS.status, message: convS.message, measured: n(k.attempts) > 0, href: '#fixed?tab=dash' },
     { key: 'nafath', name: 'Nafath failure rate', actual: naf.total ? `${naf.failRate}%` : '—', target: nafS.targetText, ok: nafS.ok, status: nafS.status, message: nafS.message, measured: !!naf.total, href: '#fixed?tab=dash' },
     { key: 'manafith', name: 'Manafith denials', actual: man.total ? `${man.deniedRate}%` : '—', target: manS.targetText, ok: manS.ok, status: manS.status, message: manS.message, measured: !!man.total, href: '#fixed?tab=dash' },
@@ -210,7 +215,7 @@ async function execRaw(q = {}) {
   const warnings = sev.P2 + slos.filter(s => s.measured && (s.status === 'at_risk' || (s.status === 'breached' && s.key !== 'error_budget'))).length;
   const status = K.statusOf(critical, warnings);
   const summary = [];
-  if (critical) summary.push(`${critical} critical signal(s): ${[sev.P1 ? `${sev.P1} P1 alert(s) fired` : null, errS.status === 'breached' ? `API errors ${errors24} above ${errS.targetText}` : null, pileup && pileup.n >= 1000 ? `${pileup.n} attempts sitting at ${pileup.label}` : null].filter(Boolean).join(', ')}.`);
+  if (critical) summary.push(`${critical} critical signal(s): ${[sev.P1 ? `${sev.P1} P1 alert(s) fired` : null, errS.status === 'breached' ? `API errors ${errCount}${errCls === 'all' ? '' : ` (${errCls})`} above ${errS.targetText}` : null, pileup && pileup.n >= 1000 ? `${pileup.n} attempts sitting at ${pileup.label}` : null].filter(Boolean).join(', ')}.`);
   else summary.push(`No critical signal in the last 24 h${warnings ? `; ${warnings} warning(s) to watch` : ''}.`);
   const dA = delta(n(k.attempts), n(kp.attempts));
   summary.push(`${n(k.attempts).toLocaleString('en-US')} order attempts in 24 h (${dA >= 0 ? '+' : ''}${dA}% vs the previous 24 h), ${n(k.completed).toLocaleString('en-US')} completed — ${n(k.conversion)}% conversion against a ${conv7}% ${days}-day average.`);

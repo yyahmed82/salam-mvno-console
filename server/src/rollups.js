@@ -2,6 +2,7 @@
  * not the multi-GB source tables. Filled incrementally by the sync watcher + a bounded
  * boot backfill. Idempotent: refreshing a window deletes + re-inserts that window. */
 const db = require('./db');
+const errclass = require('./errclass');   // Business vs Technical — single source of truth
 
 const DELIVERY_OK = ['delivered', 'completed', 'DELIVERED', 'DL', 'POD'];
 const DELIVERY_FAIL = ['cancelled', 'canceled', 'deleted', 'RTO', 'CANCELLED', 'PUX43', 'returned', 'reverseReturned',
@@ -34,8 +35,16 @@ async function refresh(fromISO, toISO) {
     let agg;
     const p = s.deliv ? [from, to, DELIVERY_OK, DELIVERY_FAIL] : [from, to];
     const where = `created_at >= $1::timestamptz AND created_at < $2::timestamptz` + (s.where ? ` AND ${s.where}` : '');
-    const sql = `SELECT date_trunc('hour', created_at) AS h, ${s.outcome} AS oc, ${s.platform} AS pf, count(*)::bigint AS c
-                 FROM "${s.table}" WHERE ${where} GROUP BY 1,2,3`;
+    /* ERROR CLASS (20 Sep 2026) — classify each FAILURE as business or technical so an SLO can be
+     * told to count only one kind. The expression per source table comes from errclass.sourceCls(),
+     * the same one the Troubleshoot board uses, and is resolved HERE (per refresh) rather than at
+     * module load so an operator's errclass_overrides take effect without a restart. ok / pending /
+     * total rows keep '' — the class of a success is not a thing, and leaving them blank is what
+     * keeps every existing reader summing over the old keys correct. */
+    const clsSql = errclass.sourceCls(s.table);
+    const clsExpr = clsSql ? `CASE WHEN (${s.outcome}) = 'fail' THEN (${clsSql}) ELSE '' END` : `''`;
+    const sql = `SELECT date_trunc('hour', created_at) AS h, ${s.outcome} AS oc, ${s.platform} AS pf, ${clsExpr} AS cl, count(*)::bigint AS c
+                 FROM "${s.table}" WHERE ${where} GROUP BY 1,2,3,4`;
     try { agg = (await S.query(sql, p)).rows; }
     catch (e) {
       // Don't silently swallow: a bad column expr / missing table would otherwise show as a
@@ -48,9 +57,9 @@ async function refresh(fromISO, toISO) {
     await C.query(`DELETE FROM rollup_hourly WHERE journey=$1 AND hour >= $2 AND hour < $3`, [s.journey, from, to]);
     for (const r of agg) {
       await C.query(
-        `INSERT INTO rollup_hourly (hour, journey, outcome, platform, cnt) VALUES ($1,$2,$3,$4,$5)
-           ON CONFLICT (hour, journey, outcome, platform) DO UPDATE SET cnt=EXCLUDED.cnt`,
-        [r.h, s.journey, r.oc, r.pf || '', Number(r.c)]);
+        `INSERT INTO rollup_hourly (hour, journey, outcome, platform, err_class, cnt) VALUES ($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (hour, journey, outcome, platform, err_class) DO UPDATE SET cnt=EXCLUDED.cnt`,
+        [r.h, s.journey, r.oc, r.pf || '', r.cl || '', Number(r.c)]);
       rows++;
     }
     // per-vendor rollup for journeys that have a vendor/partner column (payment gateways, couriers)

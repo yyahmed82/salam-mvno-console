@@ -3,6 +3,47 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.55] — 2026-09-20 — An SLO can count technical failures only, and says so
+### Added
+- **Counts — business vs technical, on every SLO** (Settings › SLO definitions). One page-wide default,
+  *Count business errors*, that every objective inherits, plus a per-objective override in the definition
+  modal beside Rule and Unit. Switch the default off and the console measures **platform health**: a BSS
+  timeout counts, a declined card does not. The value each objective ended up with is shown on its card,
+  so an operator can see at a glance why one reads differently from the error board.
+- The distinction was already in the codebase, invisibly and inconsistently — three Fixed objectives had
+  `cls: 'technical'` hard-coded into their metric dim, a group is literally called *MVNO business
+  outcomes*, and the Fixed API error budget had the split computed two lines above where it was used and
+  thrown away. This makes it one explicit, visible property instead of four private conventions.
+- **Whether a signal can be split is code, not configuration** (`slo.CLASS_META`), and the editor can
+  never write it. Three shapes, all rendered rather than hidden, because a control that is silently
+  ignored is worse than one that explains itself: *capable* (the operator picks), *locked* (the objective
+  exists to measure that one class — denials, the technical error budget — shown disabled with the
+  reason), and *not split* (latency, conversion, unwired probes — likewise).
+- **`rollup_hourly` now carries `err_class`**, classified at refresh by `errclass.sourceCls()` — the same
+  expressions the Troubleshoot board has used since August, so the two lanes cannot disagree. This is what
+  makes the seven MVNO journey objectives class-aware at all; they previously aggregated a failure as
+  simply `fail`. It is set only on `fail` rows, so every existing reader that sums `cnt` over the old keys
+  is unaffected. `node src/cli.js rollups --days N` rebuilds a window.
+### Fixed
+- **Two ways this would have quietly lied, both closed before shipping.** The Fixed app and board metrics
+  are recorded as one snapshot row *per class*, so a Counts setting of "All" would have matched both rows
+  and **double-counted the ticks** — `classAllowed` stops that ever being offered or resolved for them,
+  which is also why they were hard-coded to technical in the first place. And rollup rows written before
+  this change carry `''`, which is UNCLASSIFIED, not business: a class-filtered objective whose window
+  still contains them **refuses to answer** — `nodata`, with the count, the date the split starts and the
+  rebuild command — instead of reporting a flattering number.
+### Verified
+26 assertions against a real PostgreSQL 16 with the real `slo.js`, `rollups.js` and `errclass.js`. The one
+that matters: the *same hour* of payment data reads **90 % and breached** counting all errors and **98.9 %
+and met** counting technical only — same rows, different question, which is the whole point. Also: a denial
+objective stays business even when told otherwise; the technical error budget stays technical under the
+all default; latency is never filtered; the per-class metrics never resolve to "all" even when "all" is
+forced into the stored config; a window holding 400 unclassified failures returns nodata with the fix in
+the message while the all-errors reading of the same rows is unaffected; and the rollup classifies a 504
+gateway timeout as technical, a user rejection as business, and a payment decline as business by doctrine,
+without inventing or losing a row. `schema.sql` applied twice to a fresh database — the primary-key swap is
+idempotent. Rendered at 1280, 834 and 390 px in both themes: no horizontal scroll.
+
 ## [2.0.0-alpha.54] — 2026-09-20 — Super admins can see the console through another user's account
 ### Added
 - **View as user** (Account → VIEW AS USER, Super Admin only). Pick any enabled console user and the console

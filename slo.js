@@ -74,6 +74,7 @@
    * house modal. Every edit lands in an in-memory draft that survives tab switches, search and
    * filters; the sticky bar says how much is unsaved; nothing reaches the server until Save. */
   let DRAFT=null, BASE={}, EDIT_KEY=null, CFG_Q="", CFG_FILTER="all";
+  let DRAFT_DEFAULT=true, BASE_DEFAULT=true;   // Counts: the page-wide "count business errors" default
   const DIRTY=new Set();
 
   const stable=o=>JSON.stringify(o,(k,v)=> v&&typeof v==="object"&&!Array.isArray(v)
@@ -170,6 +171,7 @@
   }
   function resetDraft(){
     DRAFT=JSON.parse(JSON.stringify((CFG&&CFG.slos)||[]));
+    DRAFT_DEFAULT=BASE_DEFAULT=!(CFG&&CFG.countBusinessErrors===false);
     BASE={}; DRAFT.forEach(s=>{ BASE[s.key]=stable(s); }); DIRTY.clear();
   }
   function markDirty(k){
@@ -177,7 +179,7 @@
     if(stable(cur)===BASE[k]) DIRTY.delete(k); else DIRTY.add(k);
   }
   function sloBar(){
-    const n=DIRTY.size, bar=$("#sloDirtyBar");
+    const n=DIRTY.size+(DRAFT_DEFAULT===BASE_DEFAULT?0:1), bar=$("#sloDirtyBar");
     if(bar){ bar.classList.toggle("on",n>0); const l=$("#sloDirtyN"); if(l&&n) l.textContent=n===1?"1 definition changed":n+" definitions changed"; }
     const top=$("#sloCfgSave"); if(top){ top.textContent=n?("Save "+n+" change"+(n===1?"":"s")):"Save changes"; top.disabled=!n; }
   }
@@ -196,6 +198,15 @@
         <button type="button" data-k="fixed" title="Show Fixed definitions"><b>${fixed}</b><span>Fixed definitions</span></button>
         <button type="button" data-k="disabled" title="Show only definitions that are not measured"><b>${total-enabled}</b><span>not measured / disabled</span></button>
       </div>
+      <div class="sd-counts">
+        <label class="slo-switch" title="Count business outcomes in every objective that can tell them apart"><input type="checkbox" id="sloCountBiz" ${DRAFT_DEFAULT?"checked":""}><span></span></label>
+        <div>
+          <b>Count business errors</b>
+          <div class="rl" style="font-weight:400;letter-spacing:0;color:var(--muted)">${DRAFT_DEFAULT
+            ? "Every objective counts all negative outcomes — a declined card and a BSS timeout weigh the same. Switch off to measure platform health only; each objective can still override it."
+            : "Objectives count <b>technical failures only</b> — the platform broke. Business outcomes (declines, denials, refusals) are excluded wherever the signal can tell them apart."}</div>
+        </div>
+      </div>
       <div class="sd-tools">
         <div class="slo-admin-tabs" role="tablist" aria-label="SLO business">
           <button type="button" role="tab" aria-selected="${CFG_ACTIVE==="mobile"}" data-biz="mobile" class="${CFG_ACTIVE==="mobile"?"on":""}">MVNO</button>
@@ -208,6 +219,8 @@
         <aside class="slo-group-nav" id="sloGroupNav"></aside>
         <div class="slo-group-main" id="sloGroupMain"></div>
       </div>`;
+    const cb=box.querySelector("#sloCountBiz");
+    if(cb) cb.addEventListener("change",()=>{ DRAFT_DEFAULT=cb.checked; sloBar(); paintSloConfig(); });
     box.querySelectorAll(".slo-admin-tabs button").forEach(b=>b.addEventListener("click",()=>{ CFG_ACTIVE=b.dataset.biz||"mobile"; paintSloConfig(); }));
     box.querySelectorAll(".slo-admin-summary button").forEach(b=>b.addEventListener("click",()=>{
       const k=b.dataset.k;
@@ -279,6 +292,20 @@
     sloBar();
   }
 
+  /* what this objective counts, on the card — so an operator can see at a glance why one reads
+   * differently from the error board. Silent when it counts everything, which is the default. */
+  function effCls(s){
+    if(s.classLocked) return s.classLocked;
+    if(!s.classCapable) return "all";
+    const allowed=(s.classAllowed&&s.classAllowed.length?s.classAllowed:["all","technical","business"]);
+    if(allowed.includes(s.errorClass)) return s.errorClass;
+    const inherited=(DRAFT_DEFAULT===false)?"technical":"all";
+    return allowed.includes(inherited)?inherited:allowed[0];
+  }
+  function clsChip(s){
+    const c=effCls(s); if(c==="all") return "";
+    return `<span class="sd-cls-chip${c==="business"?" biz":""}" title="${esc(s.classLocked?("fixed — "+(s.classNote||"")):"counts "+CLS_LABEL[c].toLowerCase())}">${c==="technical"?"technical only":"business only"}</span>`;
+  }
   function defCard(s){
     const off=s.enabled===false, dirty=DIRTY.has(s.key);
     const met=(s.messages&&s.messages.met)||"";
@@ -287,7 +314,7 @@
         <label class="slo-switch" title="${off?"Not measured — no dashboard card, no verdict":"Measured"}">
           <input type="checkbox" ${off?"":"checked"} aria-label="Measure ${esc(s.label||s.key)}"><span></span></label>
         <div class="sd-id">
-          <div class="sd-name">${esc(s.label||s.key)}${dirty?`<em class="sd-tag">changed</em>`:""}${off?`<em class="sd-tag off">not measured</em>`:""}</div>
+          <div class="sd-name">${esc(s.label||s.key)}${clsChip(s)}${dirty?`<em class="sd-tag">changed</em>`:""}${off?`<em class="sd-tag off">not measured</em>`:""}</div>
           <div class="sd-key"><span class="mono">${esc(s.key)}</span>${s.note?` · ${esc(s.note)}`:""}</div>
         </div>
         <button type="button" class="sd-edit" title="Edit this definition" aria-label="Edit ${esc(s.label||s.key)}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
@@ -372,6 +399,7 @@
     if(g("sdDir")) s.direction=g("sdDir").value;
     if(g("sdUnit")) s.unit=g("sdUnit").value;
     if(g("sdWin")){ const w=Number(g("sdWin").value); if(Number.isFinite(w)&&w>0) s.windowDays=w; }
+    if(g("sdCls")) s.errorClass=g("sdCls").value||null;
     if(g("sdTarget")){
       const v=g("sdTarget").value;
       if(s.targetMode==="rolling_floor") s.marginPp=Number(v)||0;
@@ -384,6 +412,28 @@
   }
   /* The rule grid re-renders on direction/unit change because those decide which target control is
    * even meaningful: a state SLO has no numeric target, a rolling floor has no fixed one. */
+  /* COUNTS — business vs technical (20 Sep 2026).
+   * Whether a signal CAN be split is a fact about the signal, decided server-side (classCapable /
+   * classLocked / classAllowed) and never editable here. Where it cannot, the control still renders
+   * — disabled, with the reason in words — because a hidden control teaches an operator nothing and
+   * a silently-ignored one is worse. Blank means "follow the page default". */
+  const CLS_LABEL={all:"All errors",technical:"Technical errors only",business:"Business outcomes only"};
+  function countsField(s){
+    const inherited=(DRAFT_DEFAULT===false)?"technical":"all";
+    if(s.classLocked) return `<label><span>Counts</span>
+      <select disabled><option>${esc(CLS_LABEL[s.classLocked])}</option></select>
+      <em class="sd-why">fixed — ${esc(s.classNote||"this objective measures that class by design")}</em></label>`;
+    if(!s.classCapable) return `<label><span>Counts</span>
+      <select disabled><option>All errors</option></select>
+      <em class="sd-why">not split — ${esc(s.classNote||"this signal carries no error class")}</em></label>`;
+    const allowed=(s.classAllowed&&s.classAllowed.length?s.classAllowed:["all","technical","business"]);
+    const cur=allowed.includes(s.errorClass)?s.errorClass:"";
+    const canInherit=allowed.includes(inherited);
+    return `<label><span>Counts</span><select id="sdCls">
+        ${canInherit?`<option value="" ${cur===""?"selected":""}>Page default — ${esc(CLS_LABEL[inherited])}</option>`:""}
+        ${allowed.map(v=>`<option value="${v}" ${cur===v?"selected":""}>${esc(CLS_LABEL[v])}</option>`).join("")}
+      </select>${allowed.includes("all")?"":`<em class="sd-why">recorded per class — there is no combined series</em>`}</label>`;
+  }
   function paintRule(){
     const host=document.getElementById("sdRule"); if(!host) return;
     const s=formDef();
@@ -410,6 +460,7 @@
         ? `<input disabled value="—">`
         : `<div class="sd-inline"><input id="sdWarn" type="number" step="0.1" min="0" value="${esc(fmtWarn(s))}"><em>${esc(s.unit==="percent"?"pp":(unitSfx(s.unit).trim()||"wide"))}</em></div>`}</label>
       <label><span>Window</span><div class="sd-inline"><input id="sdWin" type="number" min="1" max="400" step="1" value="${esc(s.windowDays==null?"":s.windowDays)}"><em>days</em></div></label>
+      ${countsField(s)}
     </div>`;
     host.querySelectorAll("select").forEach(el=>el.addEventListener("change",paintRule));
     host.querySelectorAll("input").forEach(el=>el.addEventListener("input",paintPreview));
@@ -440,10 +491,10 @@
     const st=$("#sloCfgStatus"); if(st) st.textContent="";
   }
   async function saveSloConfig(){
-    if(!DIRTY.size) return;
+    if(!DIRTY.size && DRAFT_DEFAULT===BASE_DEFAULT) return;
     const st=$("#sloCfgStatus"); if(st) st.textContent="Saving…";
     try{
-      CFG=await api("/api/slo/config",{method:"PUT",body:JSON.stringify(Object.assign({},CFG,{slos:DRAFT}))});
+      CFG=await api("/api/slo/config",{method:"PUT",body:JSON.stringify(Object.assign({},CFG,{slos:DRAFT,countBusinessErrors:DRAFT_DEFAULT}))});
       resetDraft(); paintSloConfig(); loadSlos();
       if(st) st.textContent="Saved. Executive Dashboard SLO cards, SLA attainment and health messages now use these values.";
     }catch(e){ if(st) st.innerHTML=`<span style="color:#dc2626">Save failed: ${esc(e.message)}</span>`; }
