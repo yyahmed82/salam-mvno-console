@@ -3295,9 +3295,18 @@ app.get('/api/subscriber', async (req, res) => {
     if (!key) return res.status(400).json({ error: 'missing key (MSISDN or National ID)' });
     // masked by default; unmask needs the capability AND the explicit toggle (?unmask=1)
     const allowUnmask = !!(req.caps && req.caps.unmaskPII) && req.query.unmask === '1';
+    /* 20 Sep 2026 — this route went from 50 ms to 6 s between two deploys and nothing in it was
+     * measured, so the cause was unknowable. Three phases, timed, on a response header rather than
+     * in the payload so no consumer's shape changes: `curl -D -` reads it. The audit is a WRITE to
+     * unified_console on the shared server, so it is the phase most likely to move with load. */
+    const t0 = Date.now();
     const p = await subscriber.profile({ key });
+    const t1 = Date.now();
     await audit(req, allowUnmask ? 'subscriber.view.unmasked' : 'subscriber.view', key, { found: p.found });
-    res.json(roles.maskDeep(p, allowUnmask));
+    const t2 = Date.now();
+    const out = roles.maskDeep(p, allowUnmask);
+    res.set('X-Console-Timing', `profile=${t1 - t0}ms audit=${t2 - t1}ms mask=${Date.now() - t2}ms`);
+    res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

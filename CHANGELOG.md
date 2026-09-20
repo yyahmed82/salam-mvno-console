@@ -3,6 +3,19 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.66] — 2026-09-20 — Measure the other one too
+### Added
+- **`/api/subscriber` now reports its phases** on an `X-Console-Timing` response header — profile,
+  audit, mask — because it went from **50 ms to 6.18 s** between two deploys and nothing in it was
+  measured, so the cause was unknowable. A header rather than the payload, so no consumer's shape
+  changes. The audit is a WRITE to `unified_console` on the shared server that ran out of
+  connections earlier tonight, which makes it the phase most likely to move with load — but that is
+  a hypothesis, and the header is how it gets tested instead of assumed.
+### Notes
+alpha.65 measured well on the rest: `complaints` **7133 ms → 87 ms** once the two nexus queries
+stopped competing for a two-connection pool, and `/api/fixed/customer` **17.9 s → 2.0 s** with the
+whole answer cached.
+
 ## [2.0.0-alpha.65] — 2026-09-20 — Cache the answer, not a piece of it — and undo my own regression
 ### Fixed
 - **The timings said I had been caching the wrong thing all evening.** Measured on 152 for one
