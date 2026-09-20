@@ -63,7 +63,34 @@ async function wrap(key, build) {
   return body;
 }
 
-const drop = key => store.delete(norm(key));
+/* INVALIDATION (20 Sep 2026). A stale cached answer before a demo is worse than a slow fresh one,
+ * so dropping a customer has to be one step, not two. Clears BOTH halves: the in-memory profile in
+ * this process, and the persisted nexus link row — which is addressed by hash, so this is the only
+ * place that can find it, the identifier having deliberately not been stored. */
+async function drop(key) {
+  const mem = store.delete(norm(key));
+  let link = 0;
+  const h = keyHash(key);
+  if (h) {
+    try {
+      const db = require('./db');
+      const r = await (db.console || db.console_).query('DELETE FROM nexus_link_cache WHERE key_hash = $1', [h]);
+      link = r.rowCount || 0;
+    } catch (e) { /* table may not exist */ }
+  }
+  return { memory: mem, nexusLinks: link };
+}
+
+async function dropAll() {
+  const mem = store.size; store.clear();
+  let link = 0;
+  try {
+    const db = require('./db');
+    const r = await (db.console || db.console_).query('DELETE FROM nexus_link_cache');
+    link = r.rowCount || 0;
+  } catch (e) {}
+  return { memory: mem, nexusLinks: link };
+}
 function stats() {
   return { entries: store.size, max: MAX, ttlDays: TTL_MS / 86400e3, softSec: SOFT_MS / 1000,
            hits, misses, stale, warmed, persistedToDisk: false, saltConfigured: !!SALT };
@@ -113,4 +140,4 @@ function startWarm() {
   }, 20000).unref?.();
 }
 
-module.exports = { wrap, drop, stats, keyHash, startWarm, sweep, norm };
+module.exports = { wrap, drop, dropAll, stats, keyHash, startWarm, sweep, norm };

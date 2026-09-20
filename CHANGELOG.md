@@ -3,6 +3,35 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.64] — 2026-09-20 — Forgetting a customer, and finding the other 15 seconds
+### Added
+- **`warmup.js --clear <id>` and `--clear-all`.** A stale cached profile in front of an executive is
+  worse than a slow fresh one, so dropping a customer had to be one step. It clears BOTH halves: the
+  in-memory profile and the persisted nexus row — which is addressed by hash, so the server is the
+  only thing that can find it, the identifier having deliberately never been stored. Behind it,
+  `POST /api/cache/lookup/drop` (super admin, audited; the keys themselves are not written to the
+  audit log, only how many).
+### Fixed
+- **Caching the nexus scan took `/api/fixed/customer` from 45 s to 15 s, and I could not say where
+  the other 15 s went** — because every phase ran end to end with nothing measuring it. Two changes,
+  in that order:
+  - **`timings` is now in the response** and in the warm script's output, per phase. A slow customer
+    now says which part was slow instead of just being slow.
+  - **Complaints no longer queue behind everything else.** `findComplaints` (a nexus query with its
+    own 8 s budget) depends on nothing above it, yet ran after attempts → nexus → inventory, one
+    after another. It now starts immediately and is awaited where it was always used.
+### Notes
+Measured on 152 before this change: profile **50 ms** against `/api/fixed/customer` **15.4 s** with
+the nexus link already cached — which is what proved the regex scan had never been the only problem.
+The remaining suspects are `findAttempts`, whose WHERE ends in `iccid ILIKE '%'||$1||'%'` (a leading
+wildcard, so no index can serve it and `order_attempts` is scanned end to end), and the complaints
+query. The timings will now say which, without guessing.
+### Also settled
+The 2-vs-3 question that started this: the warm reports **3 orders for both the national ID and the
+contact number**, with no collision flag — so all three are his, the third simply carries no national
+ID, and the CMS filter has been hiding a real order. Nothing on the console needs correcting; the
+label now explains it.
+
 ## [2.0.0-alpha.63] — 2026-09-20 — A cache that could never fill, on a page that waited for it
 ### Fixed
 - **The nexus cache could never populate for the customers it was built for.** It stored the answer

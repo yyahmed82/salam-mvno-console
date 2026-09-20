@@ -204,12 +204,28 @@ async function lookup(q, req) {
   const unmask = !!(req && req.caps && req.caps.unmaskPII && q.unmask === '1');
   const ms = forms(key);
   const pools = [[db.ops, 'prod']].concat(db.opsBeta ? [[db.opsBeta, 'beta']] : []);
+  const kind = keyKind(key);
+  /* TIMINGS (20 Sep 2026). Caching the nexus scan took this endpoint from 45 s to 15 s and I had no
+   * idea where the remaining 15 s went, because every phase ran end to end with nothing measuring
+   * it. `timings` is now in the response, so the next person does not have to guess either. */
+  const T = {}; const T0 = Date.now(); const mark = (n, t) => { T[n] = Date.now() - t; };
+  /* COMPLAINTS START NOW, not after the attempts scan. They depend on nothing above them, and
+   * queueing them behind attempts + nexus + inventory is most of why this endpoint felt slow. */
+  const tC = Date.now();
+  const complaintsP = (kind === 'msisdn' || kind === 'nid')
+    ? findComplaints(key, ms, kind, unmask)
+        .catch(e => ({ configured: true, error: e.message, rows: [] }))
+        .then(r => { mark('complaints', tC); return r; })
+    : Promise.resolve({ configured: !!db.nexus, rows: [], skipped: 'complaints are matched by mobile number or national id' });
+  const tA = Date.now();
   let found = (await Promise.all(pools.map(([p, s]) => findAttempts(p, key, ms, s).catch(e => { console.error('[fixedCustomer]', s, e.message); return []; })))).flat();
+  mark('attempts', tA);
   // NID / contact-mobile keys are not in the read model → bridge through nexus to the workflow ids
   let link = null;
-  const kind = keyKind(key);
   if (kind === 'nid' || kind === 'msisdn') {
+    const tN = Date.now();
     link = await nexusLinkIds(key, ms, { warm: q.warm === '1' });
+    mark('nexus', tN);
     if (link.ids.length) {
       const more = (await Promise.all(pools.map(([p, s]) => attemptsByIds(p, link.ids, s).catch(() => [])))).flat();
       found = found.concat(more);
@@ -223,18 +239,21 @@ async function lookup(q, req) {
    * set, else the latest responses nexus logged in the customer's own journeys (see fixedInventory.js). */
   const wfIds = Array.from(new Set([...(link && link.ids ? link.ids : []), ...attempts.map(a => a.id)]));
   let inventory = null;
+  const tI = Date.now();
   try { inventory = await inventoryMod.inventory({ nid: kind === 'nid' ? key : null, workflowIds: wfIds, refresh: q.refresh === '1' }); }
   catch (e) { inventory = { available: false, reason: e.message }; }
+  mark('inventory', tI);
   const invOut = inventoryMod.mask(inventory, unmask);
-  // complaint tickets from the Salam Home app (nexus) — by the key's phone spellings / national id; never blocks the lookup
-  const complaints = (kind === 'msisdn' || kind === 'nid') ? await findComplaints(key, ms, kind, unmask).catch(e => ({ configured: true, error: e.message, rows: [] })) : { configured: !!db.nexus, rows: [], skipped: 'complaints are matched by mobile number or national id' };
+  // complaint tickets from the Salam Home app (nexus) — started above, awaited here; never blocks the lookup
+  const complaints = await complaintsP;
+  T.total = Date.now() - T0;
 
   if (!attempts.length) {
     if ((inventory && inventory.available) || complaints.rows.length) {
       return { found: true, key, keyKind: keyKind(key), unmasked: unmask, customer: { cust_code: invOut.customer && invOut.customer.cust_code, customer_id: null, services: 0, orders: 0, attempts: 0, channels: [] },
-        services: [], attempts: [], errors: [], payments: await findPayments([key]), links: {}, sources: pools.map(([, s]) => s), link, inventory: invOut, inventory_summary: inventoryMod.summary(inventory), complaints };
+        services: [], attempts: [], errors: [], payments: await findPayments([key]), links: {}, sources: pools.map(([, s]) => s), link, inventory: invOut, inventory_summary: inventoryMod.summary(inventory), complaints, timings: { ...T, total: Date.now() - T0 } };
     }
-    return { found: false, key, keyKind: keyKind(key), link, inventory: invOut, payments: await findPayments([key]), complaints };
+    return { found: false, key, keyKind: keyKind(key), link, inventory: invOut, payments: await findPayments([key]), complaints, timings: { ...T, total: Date.now() - T0 } };
   }
 
   // every identifier this customer is known by → cross-search keys for payments and for the MVNO side

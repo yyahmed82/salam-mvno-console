@@ -3,6 +3,12 @@
  *
  *   node src/warmup.js 2635308931 966511600080 0512345678
  *   node src/warmup.js --file /root/demo-ids.txt        (one id per line, # comments allowed)
+ *   node src/warmup.js --clear 2635308931               (forget these customers — both halves)
+ *   node src/warmup.js --clear-all                      (forget everyone)
+ *
+ * CLEARING matters more than it sounds: a stale cached profile in front of an executive is worse
+ * than a slow fresh one. --clear drops the in-memory profile AND the persisted nexus row, which is
+ * addressed by hash, so only the server can find it — the identifier was deliberately never stored.
  *
  * WHY THIS TALKS TO THE SERVER OVER LOOPBACK INSTEAD OF DOING THE WORK ITSELF:
  * the profile cache lives in the RUNNING server's memory — lookupCache.js writes nothing to disk,
@@ -43,6 +49,7 @@ function loadEnv() {
 const envFile = loadEnv();
 
 const args = process.argv.slice(2);
+const CLEAR = args.includes('--clear'), CLEAR_ALL = args.includes('--clear-all');
 let ids = [];
 const fi = args.indexOf('--file');
 if (fi >= 0 && args[fi + 1]) {
@@ -50,8 +57,11 @@ if (fi >= 0 && args[fi + 1]) {
   args.splice(fi, 2);
 }
 ids = ids.concat(args.filter(a => !a.startsWith('--')));
-if (!ids.length) {
-  console.error('usage: node src/warmup.js <id> [<id> ...]   |   node src/warmup.js --file ids.txt');
+if (!ids.length && !CLEAR_ALL) {
+  console.error('usage: node src/warmup.js <id> [<id> ...]        warm these customers');
+  console.error('       node src/warmup.js --file ids.txt         warm a list, one id per line');
+  console.error('       node src/warmup.js --clear <id> [<id>]    forget these customers');
+  console.error('       node src/warmup.js --clear-all            forget everyone');
   console.error('       ids are MSISDNs (9665…, 05…) or National IDs — whatever you type into Customer 360.');
   process.exit(2);
 }
@@ -63,6 +73,13 @@ const HDR  = { 'X-Console-User': USER, 'X-Demo-Bypass': '1', 'X-Cache-Warm': '1'
 const mask = k => String(k).length > 4 ? '***' + String(k).slice(-4) : '***';
 const pad  = (s, n) => String(s).padEnd(n).slice(0, n);
 
+async function post(p, body) {
+  try {
+    const r = await fetch(BASE + p, { method: 'POST', headers: { ...HDR, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  } catch (e) { return { status: 0, body: {}, error: e.message }; }
+}
+
 async function get(p) {
   const t0 = Date.now();
   try {
@@ -73,6 +90,19 @@ async function get(p) {
 }
 
 (async () => {
+  if (CLEAR || CLEAR_ALL) {
+    const r = await post('/api/cache/lookup/drop', CLEAR_ALL ? { all: true } : { keys: ids });
+    if (r.status !== 200) {
+      console.error(`clear failed: HTTP ${r.status} ${r.body.error || r.error || ''}`);
+      console.error('the drop endpoint is super-admin only — set CONSOLE_ADMIN_USER in .env to a super admin, or pass it in the environment.');
+      process.exit(1);
+    }
+    console.log(CLEAR_ALL
+      ? `cleared EVERYTHING — ${r.body.memory} profile(s) from memory, ${r.body.nexusLinks} nexus link row(s).`
+      : `cleared ${ids.length} customer(s) — ${r.body.memory} profile(s) from memory, ${r.body.nexusLinks} nexus link row(s).`);
+    console.log('the next lookup of those customers pays full price again. Re-warm them if that matters.');
+    process.exit(0);
+  }
   console.log(`warming ${ids.length} customer(s) against ${BASE}${envFile ? `  ·  env ${envFile}` : ''}`);
   console.log(`${pad('customer', 12)} ${pad('profile', 10)} ${pad('orders', 7)} ${pad('fixed', 10)} ${pad('links', 6)} note`);
   console.log('-'.repeat(78));
@@ -90,6 +120,10 @@ async function get(p) {
     else if (b.body.found) notes.push('fixed service found');     // a direct hit carries no link block
     else if (link.reason) notes.push(String(link.reason).slice(0, 60));
     if (a.body && a.body.contactCollision) notes.push(`⚠ ${a.body.contactCollision.count} order(s) under another national ID`);
+    /* the per-phase breakdown, so a slow customer says WHICH part was slow instead of just "slow" */
+    const t = b.body && b.body.timings;
+    if (t) notes.push(Object.entries(t).filter(([k]) => k !== 'total').sort((x, y) => y[1] - x[1])
+      .map(([k, v]) => `${k} ${v}ms`).join(' '));
     console.log(`${pad(mask(id), 12)} ${pad(a.ms + ' ms', 10)} ${pad(lines, 7)} ${pad(b.ms + ' ms', 10)} ${pad(nIds, 6)} ${notes.join(' · ') || 'ok'}`);
   }
   console.log('-'.repeat(78));

@@ -401,6 +401,25 @@ function requireRealSuper(req, res, next) {
   audit(req, 'RESTRICTED_ATTEMPT', req.originalUrl || req.path, { feature: 'view-as' });
   return res.status(403).json({ error: 'Switching user is Super Admin only.' });
 }
+/* CACHE INVALIDATION (20 Sep 2026) — super admin only, and audited like any other operator action.
+ * Needed because the in-memory half lives in THIS process: a script cannot clear it from outside,
+ * and a stale profile in front of an executive is worse than a slow fresh one. */
+app.post('/api/cache/lookup/drop', requireRealSuper, async (req, res) => {
+  try {
+    const lc = require('./lookupCache');
+    const all = req.body && (req.body.all === true || req.body.all === '1');
+    const keys = Array.isArray(req.body && req.body.keys) ? req.body.keys.map(String).filter(Boolean).slice(0, 200) : [];
+    if (!all && !keys.length) return res.status(400).json({ error: 'pass {"keys":["…"]} or {"all":true}' });
+    const out = all ? { all: true, ...(await lc.dropAll()) }
+                    : { keys: keys.length, ...(await keys.reduce(async (accP, k) => {
+                        const acc = await accP, r = await lc.drop(k);
+                        return { memory: acc.memory + (r.memory ? 1 : 0), nexusLinks: acc.nexusLinks + r.nexusLinks };
+                      }, Promise.resolve({ memory: 0, nexusLinks: 0 }))) };
+    audit(req, 'cache.lookup.drop', all ? 'ALL' : `${keys.length} key(s)`, out);   // the keys themselves are not logged
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/me/view-as/users', requireRealSuper, async (req, res) => {
   try {
     const rows = (await C.query(
