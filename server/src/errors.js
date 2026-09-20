@@ -822,4 +822,4 @@ function osbReadPathNote() {
   };
 }
 
-module.exports = { CATEGORIES, summary, feed, timeline, resolveRow, codeBreakdown, bssBreakdown, osbReadPathNote };
+module.exports = { CATEGORIES, summary, feed, timeline, resolveRow, codeBreakdown, bssBreakdown, osbReadPathNote, STUCK_COND };

@@ -15,6 +15,20 @@ const DEFAULT_DEFS = [
       at_risk: 'Payment success is close to the configured target.',
       breached: 'Payment success is below target; check gateway failures and payment callbacks.'
     } },
+  /* alpha.59 — the platform half of the payment journey, which payment success cannot carry.
+     Deliberately has NO journey: the rollup classifies every payments row 'business' by doctrine, so
+     a journey-backed technical rule there would compute ok/(ok+0) and read 100 % forever. This one is
+     measured on the Executive Dashboard from paid and payment_stuck (errors.js STUCK_COND), which is
+     the only place both numbers exist. The target below is editable and is what the tile judges
+     against. */
+  { key: 'mobile_payment_reliability', business: 'mobile', group: 'MVNO platform',
+    label: 'Payment reliability (platform)', direction: 'gte', unit: 'percent', target: 0.995, warnBand: 0.003, windowDays: 7, enabled: true,
+    note: 'measured on the Executive Dashboard — settled payments vs payments the gateway committed and the app never finalised',
+    messages: {
+      met: 'Every payment the gateway answered was finalised.',
+      at_risk: 'Unconfirmed payments are climbing — check the commit callback path before it becomes money at risk.',
+      breached: 'Payments are being committed by the gateway and left unfinalised. Customers have been charged for orders the platform did not complete — page Payments L2.'
+    } },
   { key: 'mobile_activation_success', journey: 'activation', business: 'mobile', group: 'MVNO journey',
     label: 'Activation success', direction: 'gte', unit: 'percent', target: 0.98, warnBand: 0.02, windowDays: 30, enabled: true,
     messages: {
@@ -209,7 +223,8 @@ const CLASS_META = {
    * So a technical-only setting here would compute ok/(ok+0) and read 100 % met forever: a
    * permanently green objective measuring nothing. Confirmed against 30 days on 20 Sep — payment
    * 70,699 business / 0 technical, delivery 111 / 0. A test asserts this stays true. */
-  mobile_payment_success:        { note: 'a decline is the gateway answering "no" — this console has no technical signal on the payment journey (a timeout becomes payment_stuck)' },
+  mobile_payment_success:        { note: 'a decline is the gateway answering "no", so this objective is a conversion measure and counts every outcome. The platform half lives in Payment reliability, which counts payment_stuck instead — that is the one on the Executive Dashboard.' },
+  mobile_payment_reliability:    { locked: 'technical', note: 'stuck payments only — the gateway committed and the app never finalised. Declines are excluded by construction, not by setting.' },
   mobile_activation_success:     { capable: true },
   mobile_semati_success:         { capable: true },
   mobile_nafath_completion:      { capable: true },

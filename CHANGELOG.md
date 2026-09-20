@@ -3,6 +3,51 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.59] — 2026-09-20 — The executive view carries platform health, and nothing else
+### Fixed
+- **The Payment tile was the last business number on the Executive Dashboard**, and alpha.58 could only
+  put a label on it: “1,010 failed · all outcomes — a decline is business”. Declines are the customer's
+  bank, not us; an executive view that grades the platform on them is grading the wrong thing.
+- **Payment did have a technical half. It was never in `payments.status`.** `errors.js` has owned the
+  definition since August — `payment_stuck`: the gateway returned a commit and the app never finalised
+  it, >30 min old, excluding “initiated with no commit” (a customer abandoning the page, not a stuck
+  payment; that exclusion mirrors `Payment#actual_pending?` in selfcare-backend). alpha.57's guard was
+  right — a technical-only rule on the decline column computes `ok / (ok + 0)` and reads 100 % forever
+  — but its conclusion that the journey has no technical signal was too broad. The signal was one
+  category over, already classified technical, showing **32 in 168 h**.
+- So the tile is now **Payment reliability** — `settled / (settled + unconfirmed)` — with a new
+  objective, `mobile_payment_reliability`, **locked technical** and **deliberately given no `journey`**,
+  because a journey-backed rule would read the constant-business payment rollup and report a permanent
+  100 %. `mobile_payment_success` is untouched: it remains the conversion objective, all outcomes, on
+  the SLO page and Troubleshoot › Payment, where a commercial number belongs.
+- **The decline count cannot reach the executive payload by any route now.** `h.payRate` and
+  `h.paidFail` are gone from `mvnoExec`, and so is `paidFail` from the day series — nothing charted it,
+  and data that rides along in the JSON is how a number creeps back onto a slide. Five assertions guard
+  this structurally rather than by inspection.
+- **Fixed › Order funnel health left the executive row.** Conversion counts where attempts *stop*, not
+  why they failed — a customer who closes the tab is indistinguishable from one the platform lost — so
+  23.7 % on a platform-health line invites being read as “the platform is 23.7 % well”. It keeps its card
+  on Fixed › Operations, is flagged `commercial: true`, and no longer raises a warning on the Fixed
+  status line.
+- **The reliability tile shows no delta.** `dPay` is a change in paid *volume*; under a ~99 % rate it
+  reads as reliability moving. Volume trend stays on Orders and the Payments OK chart.
+- **A missing count reads `nowire`, never a green 100 %.** The failure mode this whole thread has been
+  about, closed explicitly this time and asserted twice.
+- **The SLO page stopped over-promising.** An objective with neither a rollup journey nor a metric
+  snapshot used to claim it was measured “on the Executive Dashboard and SLA attainment”; there is no
+  attainment series to draw, so it now says exactly where it is measured and that no attainment card
+  will appear.
+### Notes
+Default target for the new objective is **≥ 99.5 %**, editable like any other. It is a placeholder, not a
+measurement: set it from the real unconfirmed rate once a week of data exists. A 95 % target here would
+be the permanently-green trap alpha.58's notes warned about, one metric later.
+### Verified
+**70 assertions (35 + 35, was 31 + 19), all green**, order-independent, against a real PostgreSQL 16.
+`STUCK_COND` is sliced out of the shipped `errors.js` and the tile arithmetic out of the shipped
+`mvnoExec.js`, so neither is restated in the test. The ones that matter: 200 settled, 40 declined, 3
+stuck, 5 abandoned, 2 in flight → **98.5 %**; adding **500 more declines does not move it**; adding 7
+unconfirmed payments does.
+
 ## [2.0.0-alpha.58] — 2026-09-20 — The Executive Dashboard and the SLO page now give one answer
 ### Fixed
 - **The KPI tiles ignored Counts.** With `Count business errors` off, the SLO page reported Activation

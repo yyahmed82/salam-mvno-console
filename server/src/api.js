@@ -4575,13 +4575,21 @@ async function homeKpisFromSource(now, winFrom, winTo) {
    * follow the objective's Counts setting instead of always counting every negative outcome. Without
    * these the tile would show an all-errors number while the SLO page judged it by a technical-only
    * rule — two pages, two answers, same objective. The expressions are errclass.sourceCls(), the ones
-   * the Troubleshoot board and the rollups already use. Payment is absent on purpose: a decline is
-   * business by doctrine, so there is no technical half to count. */
+   * the Troubleshoot board and the rollups already use.
+   *
+   * PAYMENT (alpha.59) is the exception, and it took two goes to get right. Its technical half is not
+   * in payments.status at all — a decline there is the gateway answering "no", which is business by
+   * doctrine. The platform's own failure on that journey is payment_stuck: the gateway DID return a
+   * commit, and the app never finalised it. errors.js has owned that definition since August (it
+   * mirrors Payment#actual_pending? in selfcare-backend, and deliberately excludes "initiated with no
+   * commit", which is a customer abandoning the page, not a stuck payment). We import it rather than
+   * restate it, so there is exactly one answer to "what is a stuck payment" in this codebase. */
   const CLS_ACT = require('./errclass').sourceCls('activation_logs');
   const CLS_NAF = require('./errclass').sourceCls('nafath_logs');
   const CLS_CPL = require('./errclass').sourceCls('change_plan_logs');
+  const STUCK = require('./errors').STUCK_COND;
   const [orders, paidOk, paidFail, actOk, actFail, nafOk, nafTotal, nafFailed, deliv, planOk, planFail, checkouts, eligOk, delivDone,
-         actFailTech, nafFailedTech, planFailTech] = await Promise.all([
+         actFailTech, nafFailedTech, planFailTech, payStuck] = await Promise.all([
     c(`SELECT count(*) c FROM onboarding_orders WHERE ${win}`),
     c(`SELECT count(*) c FROM payments WHERE status='success' AND ${win}`),
     c(`SELECT count(*) c FROM payments WHERE status IN ('fail','failed') AND ${win}`),
@@ -4600,7 +4608,11 @@ async function homeKpisFromSource(now, winFrom, winTo) {
     c(`SELECT count(*) c FROM delivery_requests WHERE delivery_state = ANY('{${FLOW_DEL_DONE.join(',')}}') AND ${win}`),
     c(`SELECT count(*) c FROM activation_logs WHERE state=false AND (${CLS_ACT})='technical' AND ${win}`),
     c(`SELECT count(*) c FROM nafath_logs WHERE lower(status) IN ('expired','rejected','failed','denied','cancelled') AND (${CLS_NAF})='technical' AND ${win}`),
-    c(`SELECT count(*) c FROM change_plan_logs WHERE status=2 AND (${CLS_CPL})='technical' AND ${win}`)
+    c(`SELECT count(*) c FROM change_plan_logs WHERE status=2 AND (${CLS_CPL})='technical' AND ${win}`),
+    // the 30-minute grace is part of the definition: a payment committed five minutes ago is in
+    // flight, not stuck. Same grace errors.js applies, against the board clock rather than now().
+    c(`SELECT count(*) c FROM payments WHERE ${STUCK}
+         AND created_at >= $1::timestamptz AND created_at < $2::timestamptz - interval '30 minutes'`)
   ]);
   const nafPending = (nafTotal != null && nafOk != null && nafFailed != null) ? Math.max(0, nafTotal - nafOk - nafFailed) : null;
   let errorsToday = null, errorsBusiness = null, errorsTechnical = null;
@@ -4668,6 +4680,8 @@ async function homeKpisFromSource(now, winFrom, winTo) {
     actOk, actFail, actRate: rate(actOk, actFail), nafOk, nafPending, nafFailed, deliveries: deliv, planOk, planFail,
     // class-split halves — the consumer picks per the objective's Counts setting (mvnoExec)
     actFailTech, nafFailedTech, planFailTech,
+    // payment's technical half, which is NOT a share of paidFail but a separate population
+    payStuck,
     errorsToday, errorsBusiness, errorsTechnical, apiOutcomes, targets, prev, spark };
 }
 app.get('/api/home', async (req, res) => {

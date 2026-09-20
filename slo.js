@@ -472,7 +472,13 @@
     host.innerHTML=bandStrip(s,true)+
       `<div class="sd-prevnote">${s.enabled===false
         ? "Not measured — this definition produces no dashboard card and no verdict."
-        : "Measured over "+esc(String(s.windowDays||"—"))+" day"+(Number(s.windowDays)===1?"":"s")+", on the Executive Dashboard and SLA attainment."}</div>`;
+        : (!s.journey && !(s.metric&&s.metric.key))
+          /* alpha.59 — an objective with neither a journey rollup nor a metric snapshot has no
+             attainment series to draw. Saying "and SLA attainment" here would promise a card that
+             can never appear. Payment reliability is the first of these: it is computed on the
+             Executive Dashboard from settled vs unconfirmed payments. */
+          ? "Measured on the Executive Dashboard only — this definition has no rollup or snapshot series, so the target below drives the tile and there is no attainment card."
+          : "Measured over "+esc(String(s.windowDays||"—"))+" day"+(Number(s.windowDays)===1?"":"s")+", on the Executive Dashboard and SLA attainment."}</div>`;
   }
   function applyDef(){
     if(!EDIT_KEY||!DRAFT) return closeDef();

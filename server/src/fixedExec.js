@@ -203,7 +203,11 @@ async function execRaw(q = {}) {
   const sadadDef = def('fixed_sadad_availability'), sftpDef = def('fixed_sftp_odb_sync');
   const slos = [
     { key: 'error_budget', name: 'API error budget', actual: `${errCount} / 24 h${errCls === 'all' ? '' : ` · ${errCls}`}`, target: errS.targetText, ok: errS.ok, status: errS.status, message: errS.message, measured: true, countsClass: errCls, countsLabel: slo.classLabel(errCls), href: '#fixed?tab=errors' },
-    { key: 'conversion', name: 'Order conversion', actual: `${n(k.conversion)}%`, target: convS.targetText, ok: convS.ok, status: convS.status, message: convS.message, measured: n(k.attempts) > 0, href: '#fixed?tab=dash' },
+    /* alpha.59 — commercial, not platform. Conversion counts where attempts STOP, not why they
+       failed: a customer who closes the tab is indistinguishable from one the platform lost. It
+       stays visible, but it no longer raises a warning on a status line that is meant to say
+       whether the platform is healthy. */
+    { key: 'conversion', name: 'Order conversion', actual: `${n(k.conversion)}%`, target: convS.targetText, ok: convS.ok, status: convS.status, message: convS.message, measured: n(k.attempts) > 0, commercial: true, href: '#fixed?tab=dash' },
     { key: 'nafath', name: 'Nafath failure rate', actual: naf.total ? `${naf.failRate}%` : '—', target: nafS.targetText, ok: nafS.ok, status: nafS.status, message: nafS.message, measured: !!naf.total, href: '#fixed?tab=dash' },
     { key: 'manafith', name: 'Manafith denials', actual: man.total ? `${man.deniedRate}%` : '—', target: manS.targetText, ok: manS.ok, status: manS.status, message: manS.message, measured: !!man.total, href: '#fixed?tab=dash' },
     { key: 'sadad', name: 'SADAD availability', actual: '—', target: slo.targetText(sadadDef, {}, 'UP · ≤ 500 ms'), ok: null, status: 'nodata', measured: false, note: sadadDef && sadadDef.note || 'no SADAD probe is wired into this console' },
@@ -212,7 +216,7 @@ async function execRaw(q = {}) {
 
   // ---- status + summary
   const critical = sev.P1 + (errS.status === 'breached' ? 1 : 0) + (pileup && pileup.n >= 1000 ? 1 : 0);
-  const warnings = sev.P2 + slos.filter(s => s.measured && (s.status === 'at_risk' || (s.status === 'breached' && s.key !== 'error_budget'))).length;
+  const warnings = sev.P2 + slos.filter(s => s.measured && !s.commercial && (s.status === 'at_risk' || (s.status === 'breached' && s.key !== 'error_budget'))).length;
   const status = K.statusOf(critical, warnings);
   const summary = [];
   if (critical) summary.push(`${critical} critical signal(s): ${[sev.P1 ? `${sev.P1} P1 alert(s) fired` : null, errS.status === 'breached' ? `API errors ${errCount}${errCls === 'all' ? '' : ` (${errCls})`} above ${errS.targetText}` : null, pileup && pileup.n >= 1000 ? `${pileup.n} attempts sitting at ${pileup.label}` : null].filter(Boolean).join(', ')}.`);
@@ -230,7 +234,7 @@ async function execRaw(q = {}) {
     kpis: [
       { key: 'availability', title: 'Service availability', value: '—', sub: 'SADAD / SFTP probes not wired — not measured', tone: 'muted', delta: null, href: null, exec: true, window: '24 h' },
       { key: 'attempts', title: 'Order attempts', value: n(k.attempts), sub: `${n(k.completed).toLocaleString('en-US')} completed · ${n(k.withOrder).toLocaleString('en-US')} with a BSS order`, tone: 'green', delta: { pct: dA, good: dA >= 0 }, href: '#fixed?tab=dash', exec: true, window: '24 h' },
-      { key: 'conversion', title: 'Order funnel health', value: `${n(k.conversion)}%`, sub: `${(n(outcomes.STALLED) + n(outcomes.IN_PROGRESS)).toLocaleString('en-US')} stalled / in progress · target ${convS.targetText}`, tone: convS.status === 'breached' ? 'red' : convS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#fixed?tab=dash', exec: true, window: '24 h' },
+      { key: 'conversion', title: 'Order funnel health', value: `${n(k.conversion)}%`, sub: `${(n(outcomes.STALLED) + n(outcomes.IN_PROGRESS)).toLocaleString('en-US')} stalled / in progress · target ${convS.targetText}`, tone: convS.status === 'breached' ? 'red' : convS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#fixed?tab=dash', exec: false, window: '24 h' },   // off the executive row: a conversion % sitting on a platform-health line invites reading 23.7% as "the platform is 23.7% well". Still on Fixed › Operations.
       { key: 'errors', title: 'API errors', value: errCount, sub: `${errTech24.toLocaleString('en-US')} technical · ${errBiz24.toLocaleString('en-US')} business${errCls === 'all' ? '' : ` · counting ${errCls} only`} · budget ${errS.targetText} — ${errS.status === 'breached' ? 'exceeded' : errS.status === 'at_risk' ? 'near limit' : 'within budget'}`, tone: errS.status === 'breached' ? 'red' : errS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#fixed?tab=errors', exec: true, window: '24 h' },
       { key: 'critical', title: 'Active critical signals', value: critical, sub: `${sev.P1} P1 · ${sev.P2} P2 · ${sev.P3} P3 fired in ${days} d`, tone: critical ? 'red' : 'green', delta: null, href: '#fixed?tab=alerts', exec: true, window: `${days} d` },
       { key: 'revenue', title: 'Daily revenue', value: '—', sub: 'connect the billing feed to activate', tone: 'muted', delta: null, href: null, exec: true, window: '24 h' },
