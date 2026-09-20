@@ -733,3 +733,17 @@ BEGIN
   END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_rollup_journey_class ON rollup_hourly (journey, err_class, hour);
+
+-- NEXUS LINK CACHE (20 Sep 2026) --------------------------------------------------------------
+-- fixedCustomer.nexusLinkIds() runs a regex over workflow_states.context::text, which no index can
+-- serve; it times out under load and the timeout is visible on Customer 360. This caches the ANSWER.
+-- IT STORES NO CUSTOMER IDENTIFIER: key_hash = sha256(LOOKUP_HASH_SALT || '|' || lower(trim(key))),
+-- and wf_ids are nexus workflow ids, which identify nobody without nexus. With no salt configured
+-- the code writes nothing here at all rather than write a brute-forceable hash.
+-- Swept back to LOOKUP_CACHE_TTL_DAYS on boot and daily (lookupCache.sweep).
+CREATE TABLE IF NOT EXISTS nexus_link_cache (
+  key_hash text PRIMARY KEY,
+  wf_ids   text[] NOT NULL DEFAULT '{}',
+  seen_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_nexus_link_seen ON nexus_link_cache (seen_at);

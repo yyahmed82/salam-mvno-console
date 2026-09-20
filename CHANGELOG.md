@@ -3,6 +3,59 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.61] — 2026-09-20 — An order is his only if his national ID says so
+### Fixed
+- **Customer 360 and the CMS admin disagreed on how many journeys a customer has, and both looked
+  equally confident.** `subscriber.js` matches `onboarding_orders` on the **contact number** as well
+  as the national ID; the CMS filters on the national ID alone. A contact number is a field somebody
+  typed onto an order, not an identity — so the console could show an order the CMS hides (his own,
+  created before an ID was captured) and, in the bad case, **an order belonging to whoever else typed
+  the same number.** On screen the two were identical, so the count could not be trusted either way.
+- Every row now carries **`match_basis`**: `nid`, `contact_no_nid`, or `contact_other_nid`. A row
+  matched only by contact number **and carrying a different national ID** is somebody else: dropped
+  from the lines, dropped from the Journey & Orders badge, and reported as **a count only** — the
+  operator learns the number is shared and learns nothing about the other customer. A row with **no**
+  national ID stays, because hiding a real order is the worse error, but it is labelled rather than
+  silently counted as confirmed. With no national ID resolved at all, nothing is dropped and
+  everything reads `contact?`.
+- **The header was showing the plan under the word "order".** `sub360.js` rendered
+  `Onboarding order: ${i.current_plan}` — so "122 · Solo 149" was the price plan, and anyone reading
+  it concluded the customer had one order. It now reads `Plan: … · N onboarding orders`.
+### Added
+- **A lookup cache that keeps customer data off disk** (`lookupCache.js`). Explicitly **not**
+  `respCache`, which persists bodies to `RESP_CACHE_FILE`: a subscriber profile is PII and the house
+  rule keeps customer identifiers out of `unified_console` and off disk. This module imports no
+  filesystem at all — memory-only by construction, not by intention, and a test asserts that.
+  Serve-stale-and-refresh: a hit is instant, an entry past the soft window refreshes behind the
+  viewer. `LOOKUP_CACHE_TTL_DAYS` (10) bounds how long a key is remembered;
+  `LOOKUP_CACHE_SOFT_SEC` (600) is what actually governs freshness.
+- **`DEMO_WARM_KEYS`** — keys warmed 20 s after boot, one at a time, so a restart never costs a
+  demo. It holds customer identifiers, so it lives in `/apps/unified/.env` and nowhere else, and
+  every log line this module writes masks the key to its last four digits.
+- **`nexus_link_cache`** — the one thing in this path that is persisted, and it stores **no
+  identifier**: `key_hash = sha256(LOOKUP_HASH_SALT || '|' || key)` plus the nexus workflow ids,
+  which mean nothing without nexus. **With no salt configured the code writes nothing at all**
+  rather than write a hash a ten-digit national ID could be brute-forced out of. Swept to the same
+  retention on boot and daily.
+### Fixed — the timeout that was about to happen on stage
+- `fixedCustomer.nexusLinkIds()` runs `context::text ~ $1` — a **regex over a JSON column** across
+  24 months of `workflow_states` under a 12 s budget. No index can serve it; it is a sequential scan
+  with a per-row regex, it timed out tonight, and the page prints *"could not link through nexus"*
+  to whoever is watching. It cannot be made fast, so it is now **answered from cache** on the second
+  and later lookups, and a timeout sets a short in-memory backoff so one doomed scan does not make
+  every later page load stall another 12 s behind it.
+### Notes
+The 2-vs-3 question this started from has a real answer either way, and the new label says which:
+three rows tied to his contact number, two carrying his national ID, and a third — lining up with
+the refunded 13:58 charge on 06 Aug against the two successes — that is almost certainly his and
+that the CMS has been hiding all along.
+### Verified
+**100 assertions (35 + 35 + 12 + 18), all green**, order-independent, against a real PostgreSQL 16.
+The matching SQL and the filter are sliced verbatim out of the shipped `subscriber.js`. The fixture is
+the real shape of this case: two orders with his ID, one with none, and one belonging to a different
+national ID under the same contact number. The old query matches all four; the new one keeps three,
+counts the fourth once, and never lets the other customer's national ID into the payload.
+
 ## [2.0.0-alpha.60] — 2026-09-20 — The alert got quieter as the incident got worse
 ### Fixed
 - **A probe that cannot connect because the server is FULL was reported as a flaky probe.** Tonight on

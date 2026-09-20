@@ -206,7 +206,8 @@ app.use('/api/', (req, res, next) => {
   if (OPEN_PATHS.has(full) || OPEN_PATHS.has(req.path)) return next();
   return res.status(401).json({ error: 'Not signed in.' });
 });
-app.get('/api/cache-stats', (req, res) => res.json(respCache.stats()));
+app.get('/api/cache-stats', (req, res) => res.json({ ...respCache.stats(),
+  lookup: (() => { try { return require('./lookupCache').stats(); } catch (e) { return { error: e.message }; } })() }));
 /* DEMO MODE — record / replay at the API boundary, per signed-in user (server/src/demo.js). Sits right after
  * the session gate so only authenticated calls are ever recorded or replayed; routes below never know. */
 const demo = require('./demo');
@@ -6888,6 +6889,7 @@ app.listen(PORT, async () => {
   try { require('./uilSampler').start(); } catch (e) { console.error('UIL sampler:', e.message); }
   try { require('./assist').startWarm(); } catch (e) { /* LLM warm-up is best-effort */ }
   try { demo.startWarmup(); } catch (e) { /* cache warm-up is best-effort */ }
+  try { require('./lookupCache').startWarm(); } catch (e) { console.error('lookup cache:', e.message); }
   try { require('./prodHealth').start(); } catch (e) { console.error('prod-safety healthcheck:', e.message); }
   try { respCache.startKeepWarm(); } catch (e) { /* keep-warm is best-effort */ }
 });

@@ -1658,6 +1658,11 @@
   @media (prefers-reduced-motion:reduce){ nav,.modal-card,body.nav-open header::before{animation:none;transition:none} }
   @media (max-width:1140px){ html[dir=rtl] header>nav{right:auto;left:0;border-left:0;border-right:1px solid var(--line);transform:translateX(-104%)} html[dir=rtl] header>nav.open{transform:none} }
 
+/* match-basis chip on a Lines/SIMs row: says whether the order is tied to this customer by
+   national ID or only by the contact number typed on it. Inherits the row's font, carries its own
+   colour from the renderer, and stays legible on both themes because it sits on the table surface. */
+.sb-mb{font-size:11px;font-weight:600;letter-spacing:.02em;opacity:.9;white-space:nowrap}
+@media (max-width:640px){.sb-mb{display:block;margin-top:2px}}
 </style>
 <link rel="stylesheet" href="uipolish.css?v=20260912b">   <!-- additive polish layer: rendering, motion, a11y — no layout changes -->
 </head>
@@ -2203,7 +2208,7 @@
 <script src="notifycfg.js?v=20260919a"></script>
 <script src="notifyclone.js?v=20260919a"></script>
 <script src="democfg.js?v=20260910c"></script>
-<script src="sub360.js?v=20260920d"></script>
+<script src="sub360.js?v=20260921a"></script>
 <script src="rolesmatrix.js?v=20260919a"></script>
 <script src="i18n.js?v=20260918m"></script>
 <script src="settingsmenu.js?v=20260919b"></script>

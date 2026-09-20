@@ -56,7 +56,7 @@
       + `<div class="sbt-pane" data-tab="overview">${liveCard('overview')+summaryRow(d.summary)+idCard(d.identity)}</div>`
       + `<div class="sbt-pane" data-tab="billing" hidden>${liveCard('billing')}</div>`
       + `<div class="sbt-pane" data-tab="usage" hidden>${liveCard('usage')}</div>`
-      + `<div class="sbt-pane" data-tab="journey" hidden>${onboardingCard()+linesCard(d.lines)+timelineCard(d.events)}</div>`
+      + `<div class="sbt-pane" data-tab="journey" hidden>${onboardingCard()+linesCard(d.lines, d.contactCollision)+timelineCard(d.events)}</div>`
       + `<div class="sbt-pane" data-tab="diag" hidden>${logsCard()+liveCard('diag')}</div>`
       + (hasFixed?`<div class="sbt-pane" data-tab="fixed" hidden>${fixedPane(curFixed)}</div>`:'')
       + `<div class="sbt-pane" data-tab="cst" hidden id="sbCst">${cstPane()}</div>`;
@@ -97,7 +97,7 @@
         <div class="sbt-avatar">👤</div>
         <div class="sbt-who">
           <div id="sbSalamNums" class="sbt-nums">Customer · NID <b>${esc(i.nationality_id_number||'—')}</b></div>
-          <div class="rl sbt-sub">Onboarding order: ${esc(i.current_plan||'—')} ${act}<span style="color:var(--muted)"> · ${esc(i.flow||'—')}</span><span id="sbLineCount" hidden></span></div>
+          <div class="rl sbt-sub">Plan: ${esc(i.current_plan||'—')} ${act}<span style="color:var(--muted)"> · ${esc(i.flow||'—')} · ${nJourney||0} onboarding order${nJourney===1?'':'s'}</span><span id="sbLineCount" hidden></span></div>
         </div>
         <span id="lvHealth" class="rl sbt-health"></span>
         ${unmaskBtn}
@@ -151,16 +151,25 @@
    * activation with request/response, delivery, …) fetched lazily from /api/transaction.
    * This is what makes a National-ID search with 12 lines fully explorable: the header
    * timeline covers only the most recent order; each line carries its own complete story. */
-  function linesCard(lines){
+  /* MATCHED-BY (20 Sep 2026) — an order is tied to this customer by national ID, or only by the
+     contact number somebody typed on it. Those are not the same claim and the page now says which,
+     because the CMS admin filters on the national ID alone and the two counts must be explainable. */
+  const MATCH={ nid:{t:'ID',c:'var(--good)',h:'Matched on this customer\u2019s national ID'},
+                contact_no_nid:{t:'contact',c:'#d97706',h:'Matched on the contact number only \u2014 this order carries no national ID, so it is very likely his but is not confirmed by ID'},
+                contact_unverified:{t:'contact?',c:'#d97706',h:'Matched on the contact number only \u2014 no national ID was resolved for this search, so ownership is unverified'} };
+  function linesCard(lines, collision){
     if(!lines||!lines.length) return '';
+    const mb=l=>{const m=MATCH[l.match_basis]; return m?` <span class="sb-mb" style="color:${m.c}" title="${esc(m.h)}">· ${m.t}</span>`:'';};
     const rows=lines.map((l,i)=>`<tr class="sb-line" data-oid="${esc(l.id)}" data-ln="ln${i}" role="button" tabindex="0" title="Click for this order's full journey">
-      <td>${esc(l.mobile_number||'—')}</td><td>${esc(l.plan||'—')}</td>
+      <td>${esc(l.mobile_number||'—')}${mb(l)}</td><td>${esc(l.plan||'—')}</td>
       <td>${esc(l.line_type||'—')}</td><td>${esc(l.sim||'—')}</td>
       <td>${(v=>{const c=stClass(v);return `<span class="mono" style="${c==='ok'?'color:var(--good);font-weight:700':c==='bad'?'color:#dc2626;font-weight:700':c==='mid'?'color:#d97706;font-weight:700':''}">${esc(v)}</span>`;})(l.status||l.aasm_state||'—')}</td>
       <td>${l.activated?'✓':'—'}</td><td class="rl">${day(l.created_at)}<span class="sb-chev">▸</span></td></tr>
       <tr class="sb-line-x" id="ln${i}" hidden><td colspan="7"><div class="sb-line-tl" id="ln${i}tl"><div class="sub">…</div></div></td></tr>`).join('');
+    const cc=collision;
+    const note=cc?`<div class="okbox" style="margin-top:10px;border-left:3px solid var(--tint-amber-fg,#d97706)"><b>Shared contact number.</b> ${esc(cc.note)}</div>`:'';
     return `<div class="sb-block"><h3>Lines / SIMs <span class="rl">(${lines.length} · click a line for its full journey)</span></h3>
-      <table class="sb-tbl"><thead><tr><th>MSISDN</th><th>Plan</th><th>Type</th><th>SIM</th><th>Status</th><th>Act.</th><th>Created</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      <table class="sb-tbl"><thead><tr><th>MSISDN</th><th>Plan</th><th>Type</th><th>SIM</th><th>Status</th><th>Act.</th><th>Created</th></tr></thead><tbody>${rows}</tbody></table>${note}</div>`;
   }
 
   function wireLines(box){

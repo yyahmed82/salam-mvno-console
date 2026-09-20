@@ -33,9 +33,35 @@ const ATTEMPT_COLS = `oa.id, oa.workflow::text AS workflow, oa.plan, oa.channel,
 /* nexus bridge — the ONLY place a NID / contact mobile can be resolved to Fixed workflows. Reads workflow ids only
  * (the identity never leaves the server); the attempts themselves come from the masked read model. Bounded scan:
  * last 24 months, regex on the context text, 12 s timeout, falls back to "not linked" on any error. */
+/* 20 Sep 2026 — THE QUERY BELOW CANNOT BE MADE FAST. `context::text ~ $1` is a regex over a JSON
+ * column: no index can serve it, so it is a sequential scan with a per-row regex across 24 months of
+ * workflow_states, under a 12 s budget. It times out under load, and when it does the page prints
+ * "could not link through nexus" to whoever is watching. Two guards:
+ *
+ *  1. A PERSISTED cache of the ANSWER — `nexus_link_cache`, keyed by a SALTED HASH of the identity.
+ *     The row holds the hash and a list of workflow ids. No identifier is stored, and the ids mean
+ *     nothing without nexus itself, so this stays inside the rule that keeps customer identifiers
+ *     out of unified_console. Second and subsequent lookups of the same customer never run the scan.
+ *  2. An in-memory NEGATIVE window after a timeout, so one slow scan does not make every later page
+ *     load stall another 12 s behind the same doomed query. */
+const NEG = new Map();                                   // key → epoch ms until which we do not retry
+const NEG_MS = Math.max(15, Number(process.env.NEXUS_LINK_BACKOFF_SEC || 90)) * 1000;
+const LINK_DAYS = Math.max(1, Number(process.env.LOOKUP_CACHE_TTL_DAYS ?? 10));
+
 async function nexusLinkIds(key, ms) {
   if (!db.nexus) return { ids: [], reason: 'nexus not configured' };
   const k = String(key).trim(); const alts = Array.from(new Set([k, ...ms])).filter(Boolean);
+  const hash = require('./lookupCache').keyHash(k);
+  if (hash) {
+    try {
+      const r = await db.console.query(
+        `SELECT wf_ids FROM nexus_link_cache WHERE key_hash = $1 AND seen_at > now() - ($2||' days')::interval`,
+        [hash, LINK_DAYS]);
+      if (r.rowCount) return { ids: r.rows[0].wf_ids || [], reason: null, cached: true };
+    } catch (_) { /* table missing on first boot → fall through to the live scan */ }
+  }
+  const until = NEG.get(k);
+  if (until && until > Date.now()) return { ids: [], reason: 'nexus link lookup timed out a moment ago — not retried yet', cached: false };
   const pat = '"(?:certNbr|nationalId|idNumber|nid|msisdn|mobilePhone|mobileNumber|mobile|phoneNumber|phone)"\\s*:\\s*"(?:' + alts.map(a => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')"';
   const c = await db.nexus.connect();
   try {
@@ -45,8 +71,20 @@ async function nexusLinkIds(key, ms) {
        WHERE updated_at > now() - interval '24 months' AND context::text ~ $1
        ORDER BY updated_at DESC LIMIT 100`, [pat]);
     await c.query('ROLLBACK');
-    return { ids: r.rows.map(x => x.id), reason: null };
-  } catch (e) { try { await c.query('ROLLBACK'); } catch (_) {} return { ids: [], reason: e.message }; }
+    const ids = r.rows.map(x => x.id);
+    NEG.delete(k);
+    if (hash) {
+      db.console.query(
+        `INSERT INTO nexus_link_cache (key_hash, wf_ids, seen_at) VALUES ($1, $2::text[], now())
+           ON CONFLICT (key_hash) DO UPDATE SET wf_ids = EXCLUDED.wf_ids, seen_at = now()`,
+        [hash, ids]).catch(() => {});                    // best-effort: a cache miss is never an error
+    }
+    return { ids, reason: null, cached: false };
+  } catch (e) {
+    try { await c.query('ROLLBACK'); } catch (_) {}
+    if (/statement timeout|canceling statement/i.test(e.message || '')) NEG.set(k, Date.now() + NEG_MS);
+    return { ids: [], reason: e.message };
+  }
   finally { c.release(); }
 }
 /* COMPLAINT TICKETS the customer opened from the Salam Home app (nexus `tickets`, 8 Sep 2026). The app posts them to

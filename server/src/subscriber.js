@@ -7,10 +7,11 @@
 const db = require('./db');
 const errors = require('./errors');
 const plans = require('./plans');
+const lookupCache = require('./lookupCache');
 
 const FLOW = { 0: 'New (normal)', 1: 'Indirect', 2: 'POSA', 3: 'Apollo', 4: 'Ownership transfer', 5: 'Partner', 6: 'Visitor / Hajj', 7: 'QR POSA' };
 
-async function profile({ key }) {
+async function buildProfile({ key }) {
   const id = String(key || '').trim();
   if (!id) return { key: id, found: false, identity: null, lines: [], summary: {}, events: [] };
 
@@ -54,15 +55,31 @@ async function profile({ key }) {
     : (/^[12]\d{9}$/.test(id) ? id : null);
   const pmap = await plans.loadMap();
 
-  // every line/SIM this subscriber has acquired (an onboarding_order == one line attempt)
-  let lines = [];
+  /* EVERY LINE/SIM THIS SUBSCRIBER HAS ACQUIRED (an onboarding_order == one line attempt).
+   *
+   * 20 Sep 2026 — WHY match_basis EXISTS. This WHERE matches on the CONTACT NUMBER as well as the
+   * national id, and a contact number is a field somebody typed into an order, not an identity. The
+   * CMS admin filters on the national id alone, which is why the two disagree: the console can show
+   * an order the CMS hides (his own, created before a national id was captured) AND, in the bad
+   * case, an order belonging to WHOEVER ELSE typed the same contact number. Both looked identical
+   * on screen, so the count could not be trusted either way.
+   *
+   * Now every row says why it matched. A row matched only by contact number AND carrying a
+   * DIFFERENT national id is somebody else: it is dropped from the lines, dropped from the journey
+   * count, and reported only as a number so the operator knows it exists without seeing a stranger's
+   * data. A row with no national id at all stays — it is almost certainly his, and hiding a real
+   * order is the worse error — but it is labelled, not silently counted as confirmed. */
+  let lines = [], foreignContactOrders = 0;
   try {
-    lines = (await db.source.query(
+    const rows = (await db.source.query(
       `SELECT id::text, mobile_number, nationality_id_number, plan_id, aasm_state, status,
               flow_type, number_order_type, sim_type, completed, activated, is_eligible,
               physical_sim_iccid, seller_id, store_id, checkout_id, created_at,
               lower(coalesce(nullif(external_service_name,''),'salam')) AS channel,
-              mnp_number, mnp_operator
+              mnp_number, mnp_operator,
+              CASE WHEN $2::text IS NOT NULL AND nationality_id_number = $2::text THEN 'nid'
+                   WHEN nationality_id_number IS NULL OR nationality_id_number = '' THEN 'contact_no_nid'
+                   ELSE 'contact_other_nid' END AS match_basis
          FROM onboarding_orders
         WHERE mobile_number = ANY($1::text[]) OR nationality_id_number = $2
         ORDER BY created_at DESC LIMIT 50`, [(v => { const d = String(v == null ? '' : v).replace(/\D/g, '');
@@ -74,6 +91,14 @@ async function profile({ key }) {
           sim: o.sim_type === 1 ? 'eSIM' : 'Physical SIM',
           flow: FLOW[o.flow_type] != null ? FLOW[o.flow_type] : o.flow_type
         }));
+    /* With no national id resolved we cannot tell his orders from anyone else's, so nothing is
+     * dropped — every contact match is labelled unverified instead of quietly presented as his. */
+    const knownNid = !!nid;
+    foreignContactOrders = knownNid ? rows.filter(o => o.match_basis === 'contact_other_nid').length : 0;
+    lines = rows
+      .filter(o => !(knownNid && o.match_basis === 'contact_other_nid'))
+      .map(o => ({ ...o, match_basis: knownNid ? o.match_basis
+        : (o.match_basis === 'nid' ? 'nid' : 'contact_unverified') }));
   } catch (e) { /* table/perm issues → empty */ }
 
   // per-stage roll-up from the timeline events
@@ -107,8 +132,19 @@ async function profile({ key }) {
   };
 
   const found = !!order || lines.length > 0 || events.length > 0 || !!userRow;
-  return { key: id, found, identity, lines, summary, events };
+  /* A COUNT ONLY — never the other customer's rows, never their national id. The operator learns
+   * that the contact number is shared; they learn nothing about whoever else is using it. */
+  const contactCollision = foreignContactOrders
+    ? { count: foreignContactOrders,
+        note: `${foreignContactOrders} further onboarding order(s) share this contact number under a different national ID. They are not this customer's and are not counted — search by that customer's own national ID to see them.` }
+    : null;
+  return { key: id, found, identity, lines, summary, events, contactCollision, builtAt: new Date().toISOString() };
 }
+
+/* The cached face of buildProfile. In memory only — see lookupCache.js for why this is not
+ * respCache. Masking still happens on the way out of /api/subscriber, on the cached body exactly as
+ * on a fresh one, so a cache hit can never leak more than a miss would. */
+function profile({ key }) { return lookupCache.wrap(key, () => buildProfile({ key })); }
 
 /* VAS / ADDONS ACTIVITY (3 Sep 2026) — the CMS admin's "Service Logs" page reads per-service
  * toggle tables in the app DB (visible in its tabs): boosters, social_datas, voice_minutes,
