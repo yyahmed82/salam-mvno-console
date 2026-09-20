@@ -139,10 +139,32 @@ async function runAlerts(simNow) {
   const c = db.console;
   const { evals } = await evaluate(simNow);
   const byKey = new Map(evals.map(e => [e.key, e]));
+  /* RESOLVE + HOLD (20 Sep 2026) — retire every hold that has run out BEFORE the rules are read, so a
+   * non-null held_until below always means a hold that is still running and the rules table stays clean.
+   * Holds are wall-clock, never sim_now: a person asked for quiet until a real time of day, and in replay
+   * mode sim_now is a virtual clock walking over a static dump. */
+  try {
+    /* RETURNING on an UPDATE hands back the row AFTER the write, so `RETURNING held_alert_id` on the
+     * clearing UPDATE is always NULL and the incident never gets its comment. Read the expiring rows in
+     * a CTE and RETURN from that side, which still holds the pre-update values, in one statement. */
+    const done = (await c.query(
+      `WITH expiring AS (
+         SELECT key, held_alert_id FROM alert_rules WHERE held_until IS NOT NULL AND held_until <= now()
+       )
+       UPDATE alert_rules r SET held_until=NULL, held_by=NULL, held_reason=NULL, held_alert_id=NULL
+         FROM expiring e WHERE r.key = e.key
+       RETURNING e.key AS key, e.held_alert_id AS held_alert_id`)).rows;
+    for (const d of done) {
+      if (!d.held_alert_id) continue;
+      await c.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`,
+        [d.held_alert_id, `Hold expired — ${d.key} is being evaluated again. If the condition is still breaching, the next tick opens a NEW incident.`]).catch(() => {});
+    }
+  } catch (e) { console.error('[ALERTS] hold sweep:', e.message); }
   // need the full rule rows for persistence details (rule_id, dim)
   const rules = (await c.query(`SELECT * FROM alert_rules WHERE enabled=true`)).rows;
   const grouped = groupRules(rules);
-  let opened = 0, resolved = 0, updated = 0, collapsed = 0;
+  let opened = 0, resolved = 0, updated = 0, collapsed = 0, held = 0;
+  const heldKeys = [];
 
   for (const rule of rules) {
     const ev = byKey.get(rule.key);
@@ -206,6 +228,12 @@ async function runAlerts(simNow) {
             [openRow.id, `Severity ${openRow.severity} → ${sig.severity}: ${why}${rose ? ' — the higher severity\u2019s escalation ladder now applies.' : '.'}`]).catch(() => {});
         }
         updated++;
+      } else if (holdActive(rule)) {
+        /* a person resolved this rule and asked to stay quiet while the rolling window drains. The
+         * condition is still true — that is expected and is exactly what they acknowledged — so we
+         * neither re-open the incident they closed nor open a new one. The hold sweep above lets it
+         * back in the moment held_until passes. */
+        held++; heldKeys.push(rule.key);
       } else if (await reopenRecent(c, rule, sig, now, msg)) {
         updated++;                                   // flap: same incident re-opened, no new page / mail
       } else {
@@ -228,7 +256,8 @@ async function runAlerts(simNow) {
       resolved++;
     }
   }
-  return { opened, resolved, updated, collapsed, evals, simNow: now };
+  if (held) console.log(`[ALERTS] ${held} rule(s) still breaching but held by an operator resolve: ${heldKeys.join(', ')}`);
+  return { opened, resolved, updated, collapsed, held, heldKeys, evals, simNow: now };
 }
 
 /* FLAP CONTROL (10 Sep 2026). Measured 5–9 Sep on Mobile: 872 incident rows in 4 days for 40 rules — the payment
@@ -237,7 +266,18 @@ async function runAlerts(simNow) {
  *   reopenMin   (default 60): a rule that fires again within N min of its last incident RESOLVING re-opens THAT
  *               incident (ack / owner / discussion kept, breach_count++, reopen_count++) instead of opening a new one
  *   clearHoldMin (default 15): an open incident resolves only after the condition has been clear for N min
- * Both read at tick time, no restart needed. */
+ * Both read at tick time, no restart needed.
+ * NOTE (20 Sep 2026): neither knob makes a resolve stick. A rule is recomputed over a ROLLING WINDOW on every
+ * tick, so while the window still holds the events that tripped it the condition is STILL TRUE and reopenRecent
+ * re-opens the row a person just closed (reopenMin=0 does not help — it only turns the re-open into a brand-new
+ * incident). That is what the HOLD is for: see holdActive / POST /api/alerts/:id/resolve {hold}. */
+/* a hold is running when held_until is still in the future. The tick's sweep has already cleared the
+ * expired ones, so this is a belt-and-braces check against the few seconds a long tick can take. */
+function holdActive(rule) {
+  if (!rule || !rule.held_until) return false;
+  const t = new Date(rule.held_until).getTime();
+  return Number.isFinite(t) && t > Date.now();
+}
 let _flap = null, _flapAt = 0;
 function flapCfg() { return _flap || { reopenMin: 60, clearHoldMin: 15 }; }
 async function loadFlap() {
@@ -277,4 +317,4 @@ function fmt(v, rule) {
   return ['rate', 'ratio'].includes(rule.unit) ? (v * 100).toFixed(1) + '%' : (Number.isInteger(v) ? v : v.toFixed(2));
 }
 
-module.exports = { runAlerts, evaluate };
+module.exports = { runAlerts, evaluate, holdActive };

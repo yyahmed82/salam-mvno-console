@@ -573,7 +573,7 @@
       $("#alBody").innerHTML = strip + quickBar(allRows) + clsBar("alerts", allRows) + `<div class="okbox" style="margin-top:6px">No ${atab==="all"?"":"open "}alerts${CLSFILTER.alerts!=="all"||AF.who!=="all"||AF.sev!=="all"||q?" for this filter":""}. ${atab==="open"&&CLSFILTER.alerts==="all"&&AF.who==="all"?"All clear — or run a sync/simulate to evaluate rules against the replica.":""}</div>`;
       wireClsBar(renderAlerts); wireQuickBar(); return;
     }
-    let h = strip + `<div id="alAckSla"></div>` + quickBar(allRows) + clsBar("alerts", allRows) + `<div style="overflow-x:auto"><table class="alerts"><tr><th>SEV</th><th>INCIDENT</th><th>IMPACT</th><th>OBSERVED</th><th>STATUS</th><th>OWNER</th><th>FIRST → LAST</th><th>ACTIONS</th></tr>`;
+    let h = strip + `<div id="alAckSla"></div><div id="alHolds"></div>` + quickBar(allRows) + clsBar("alerts", allRows) + `<div style="overflow-x:auto"><table class="alerts"><tr><th>SEV</th><th>INCIDENT</th><th>IMPACT</th><th>OBSERVED</th><th>STATUS</th><th>OWNER</th><th>FIRST → LAST</th><th>ACTIONS</th></tr>`;
     ordered.forEach(a=>{
       const snoozed = a.snoozed_until && new Date(a.snoozed_until)>new Date();
       const cr = a.correlation||null;
@@ -626,6 +626,7 @@
     $("#alBody").innerHTML = h;
     const body=$("#alBody");
     if(window.ackSlaNotice) window.ackSlaNotice(SEG, $("#alAckSla"));   // "N unacknowledged beyond SLA" notice for this side
+    renderHolds($("#alHolds"));                                         // rules held quiet by a resolve, with Release
     wireQuickBar();
     /* the ⋯ menu floats over the page (position:fixed, moved to <body>) so the table's overflow wrapper cannot clip it */
     document.querySelectorAll("body > .actmenu").forEach(x=>x.remove());
@@ -709,19 +710,74 @@
   let SEG_ROWS={};
   /* CLOSE with a reason (11 Sep 2026): the reason feeds the Noise scorecard — inline in the row, no prompt() */
   const RESOLVE_REASONS=[["fixed","Fixed / mitigated"],["single_customer","Single customer / retry storm — no platform issue"],["false_positive","False positive — rule to review"],["duplicate","Duplicate of another incident"],["maintenance","Planned maintenance / expected"]];
+  /* HOLD (20 Sep 2026) — a rule is recomputed from zero over a rolling window on every tick, so resolving
+   * changes nothing about the condition: while the window still holds the events that tripped it, the next
+   * sync finds the rule breaching and puts the incident straight back. The hold is the operator saying
+   * "I have dealt with it — stay quiet until the window drains". Server caps it at 12 h (HOLD_MAX_H) so a
+   * 168 h rule can never blind the console for a week. */
+  const HOLD_MAX_H=12;
+  function holdOptions(a){
+    const wh=Number(a&&a.window_hours)||0, capped=Math.min(HOLD_MAX_H,wh);
+    const o=[];
+    if(capped>0) o.push(["window", wh>HOLD_MAX_H
+      ? `hold ${capped} h (the cap) — the ${wh}h window needs longer`
+      : `hold ${capped} h — until the ${wh}h window drains`]);
+    [["1h",1],["4h",4],["8h",8]].forEach(([v,n])=>{ if(n!==capped) o.push([v,`hold ${n} h`]); });
+    o.push(["none","no hold — let it re-open if it fires again"]);
+    return o;
+  }
   function resolvePanel(btn, a){
     const cell=actCell(btn, a); if(!cell||cell.querySelector(".rsPanel")) return;
     const p=el("div","rsPanel"); p.style.cssText="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px";
     const pre=a&&a.customers===1?"single_customer":"fixed";
+    const IN="font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink)";
+    const HO=holdOptions(a);
     p.innerHTML=`<span class="rl" style="color:var(--muted)">resolve as</span>
-      <select class="fe-in" style="font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink);max-width:300px">${RESOLVE_REASONS.map(([v,l])=>`<option value="${v}"${v===pre?" selected":""}>${l}</option>`).join("")}</select>
-      <input placeholder="note (optional)" maxlength="500" style="font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink);width:200px">
+      <select id="rsReason_${a.id}" class="fe-in" style="${IN};max-width:300px">${RESOLVE_REASONS.map(([v,l])=>`<option value="${v}"${v===pre?" selected":""}>${l}</option>`).join("")}</select>
+      <select id="rsHold_${a.id}" class="fe-in" style="${IN};max-width:320px" title="While the rolling window still contains the events that tripped this rule, the condition stays true — a hold stops the console re-opening the incident you just closed.">${HO.map(([v,l],i)=>`<option value="${v}"${i===0?" selected":""}>${l}</option>`).join("")}</select>
+      <input id="rsNote_${a.id}" placeholder="note (optional)" maxlength="500" style="${IN};width:200px">
       <button class="pill" style="padding:3px 8px;border-left-color:var(--good)">Confirm</button><button class="pill" style="padding:3px 8px">Cancel</button>`;
     cell.appendChild(p);
-    const [ok,cancel]=p.querySelectorAll("button"); const sel=p.querySelector("select"), note=p.querySelector("input");
+    const [ok,cancel]=p.querySelectorAll("button");
+    const sel=$("#rsReason_"+a.id), hold=$("#rsHold_"+a.id), note=$("#rsNote_"+a.id);
     cancel.onclick=()=>p.remove();
-    ok.onclick=()=>incAction(a.id,"resolve",{reason:sel.value, note:note.value.trim()});
+    ok.onclick=async()=>{
+      ok.disabled=true; const lbl=ok.textContent; ok.textContent="Resolving…";
+      try{
+        const r=await api(`/api/alerts/${a.id}/resolve`,{method:"POST",body:JSON.stringify({reason:sel.value, note:note.value.trim(), hold:hold.value})});
+        banner(r.hold_until
+          ? `✓ Resolved <b>${esc(a.name)}</b> — held for ${r.hold_hours} h, until <b>${esc(ksaShort(r.hold_until))} KSA</b>. Its ${esc(a.window_hours)}h window still contains the events that tripped it, so the rule stays quiet instead of re-opening. Release it early from the held bar above.`
+          : `✓ Resolved <b>${esc(a.name)}</b> — no hold. If the condition is still breaching at the next sync this same incident re-opens (flap control), or a new one opens once the re-open window has passed.`);
+        renderAlerts();
+      }catch(e){ banner(`resolve failed: ${esc(e.message)}`); ok.disabled=false; ok.textContent=lbl; }
+    };
     sel.focus();
+  }
+  /* rules currently held by an operator resolve — shown above the table so a held rule is never mistaken
+   * for a healthy one, with Release to end the hold early. */
+  async function renderHolds(host){
+    if(!host) return;
+    let d; try{ d=await api(`/api/alert-holds?segment=${SEG}`); }catch(e){ host.innerHTML=""; return; }
+    const hs=(d&&d.holds)||[];
+    if(!hs.length){ host.innerHTML=""; return; }
+    const BOX="background:var(--green-bg);border:1px solid var(--green-line);border-left:3px solid var(--green);border-radius:10px;padding:12px 15px;font-size:12.5px;color:var(--ink);margin-top:12px";
+    host.innerHTML=`<div style="${BOX};display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1 1 320px;min-width:0">
+        <b>${hs.length} rule${hs.length===1?"":"s"} held after a resolve</b> <span class="rl" style="color:var(--muted)">— still evaluated, but not paging: the rolling window has not drained past what tripped them yet. Each returns on its own, and opens a NEW incident only if it is still breaching then.</span>
+        <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">${hs.map(h=>`<div style="font-size:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <b style="color:${sevColor(h.severity)}">${esc(h.severity)}</b>
+          <span>${esc(h.name)}</span>
+          <span class="rl" style="color:var(--muted)">${esc(h.window_hours)}h window · until <b>${esc(ksaShort(h.held_until))} KSA</b> · ${esc(String(h.held_by||"").split("@")[0])}${h.held_reason?` · ${esc(h.held_reason)}`:""}</span>
+          <button class="pill" data-release="${esc(h.key)}" style="padding:1px 8px;font-size:10.5px;border-left-color:var(--green)">Release now</button>
+        </div>`).join("")}</div>
+      </div></div>`;
+    host.querySelectorAll("[data-release]").forEach(b=>b.addEventListener("click",async()=>{
+      b.disabled=true; b.textContent="Releasing…";
+      try{ await api(`/api/alert-holds/${encodeURIComponent(b.dataset.release)}/release`,{method:"POST",body:"{}"});
+        banner(`Hold released — <b>${esc(b.dataset.release)}</b> is evaluated again from the next sync. If it is still breaching it opens a new incident.`);
+        renderAlerts();
+      }catch(e){ banner(`release failed: ${esc(e.message)}`); b.disabled=false; b.textContent="Release now"; }
+    }));
   }
   /* ---- ServiceNow ticket + incident comms (Phase 1: manual, after ack) ------------------------------
    * The panel lives in the incident's detail row (#incdet_<id>): draft → Raise in ServiceNow → INC card with

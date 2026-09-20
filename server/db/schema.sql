@@ -685,3 +685,21 @@ CREATE TABLE IF NOT EXISTS fixed_app_events (
 );
 CREATE INDEX IF NOT EXISTS idx_fixed_app_events_ts      ON fixed_app_events (ts DESC);
 CREATE INDEX IF NOT EXISTS idx_fixed_app_events_kind_ts ON fixed_app_events (kind, ts DESC);
+
+/* RESOLVE + HOLD (20 Sep 2026) ────────────────────────────────────────────────────────────────────
+ * A rule is evaluated over a ROLLING WINDOW ([now - window_hours, now)), recomputed from zero on every
+ * tick — there is no cursor and nothing accumulates. So resolving an incident changes nothing about the
+ * condition: until the window drains past the events that tripped it, the very next tick finds the rule
+ * still breaching and alertRunner.reopenRecent flips the row straight back to open (wiping resolve_reason
+ * and resolved_by with it). On a 24 h rule that is a full day of undoing the operator's resolve.
+ *
+ * A HOLD is the operator saying "I know — I have dealt with it; stay quiet while the window drains."
+ * It lives on the RULE (not the incident) because after reopenMin elapses the next fire would INSERT a
+ * brand-new incident, which a per-incident flag could never stop. alertRunner sweeps expired holds at the
+ * top of every tick, so a non-null held_until always means a hold that is still running.
+ * Set by POST /api/alerts/:id/resolve {hold}, released by POST /api/alert-holds/:key/release. */
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS held_until    timestamptz;  -- real wall-clock, never sim_now
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS held_by       text;         -- the person who resolved with a hold
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS held_reason   text;         -- their resolve reason + note
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS held_alert_id bigint;       -- the incident the hold came from
+CREATE INDEX IF NOT EXISTS idx_alert_rules_held ON alert_rules (held_until) WHERE held_until IS NOT NULL;

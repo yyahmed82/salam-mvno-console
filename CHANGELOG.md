@@ -3,6 +3,45 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.53] — 2026-09-20 — Resolving an alert now sticks: the operator can hold a rule while its window drains
+### Fixed
+- **A resolve was being undone by the next sync, and the operator's reason and name were wiped with it.** A rule is
+  not counting up from a start point that can be reset — there is no cursor. Every metric is recomputed **from zero
+  over a rolling window** `[now − window_hours, now)` on every tick, so a resolve changes nothing about the condition:
+  while the window still holds the events that tripped the rule, the condition is *still true*, and
+  `alertRunner.reopenRecent` flips the row a person just closed straight back to `open` — clearing `resolve_reason`
+  and `resolved_by` on the way. On a 24 h rule that is a full day of the console overruling the operator; the seed set
+  has 18 rules at 24 h, one at 48 h and four at 168 h. `reopenMin: 0` was never the answer: it only turns each
+  re-fire into a **brand-new** incident with a fresh mail and page — the 872-rows-in-4-days behaviour flap control
+  was introduced to stop.
+- The resolve dialog now carries a **hold**: *until the window drains* (the rule's own `window_hours`, capped at
+  **12 h** so a 168 h rule can never blind the console for a week), 1 h, 4 h, 8 h, or no hold. While a hold runs the
+  rule is still evaluated — it simply does not re-open the incident that was closed, and does not open a new one.
+  The hold retires itself, writes *"Hold expired"* on the incident discussion, and only then can the rule open a
+  **new** incident, if it is still breaching at that point.
+- The hold lives on the **rule**, not the incident, because past `reopenMin` the next fire is a new row that a
+  per-incident flag could never stop. It is wall-clock, never `sim_now`: a person asked for quiet until a real time
+  of day, and in replay mode `sim_now` is a virtual clock walking over a static dump.
+- A held rule is never silently quiet. The Alerts page shows a **held bar** above the table — rule, severity,
+  window, who held it, why, and until when in KSA — with **Release now** to end a hold early. The tick logs the
+  held rules, `runAlerts` returns a `held` count, and the resolve and the release are both on the incident timeline
+  and in the audit trail.
+- A hold only blocks **opening**. An incident that is already open keeps updating, escalating and paging as before.
+### Fixed (found while testing this)
+- **The hold expiry comment was never written.** `RETURNING` on an `UPDATE` hands back the row *after* the write, so
+  `RETURNING held_alert_id` on the statement that clears it always returned `NULL`. The sweep now reads the expiring
+  rows in a CTE and returns from that side, which still holds the pre-update values, in one statement.
+### Verified
+22 assertions against a real PostgreSQL 16 and the real `alertRunner.js` — starting with a test that **reproduces the
+reported bug exactly**: resolve, one tick later the same row is back open, `reopen_count` incremented, reason and
+resolver gone. Then: four breaching ticks under a hold leave exactly one incident, still resolved, reason and
+resolver intact; expiry sweeps the hold, opens a **new** incident and leaves the resolved one untouched; a hold never
+stops an already-open incident updating; `hold=window` on a 1 h rule holds for 1 h, not a blanket mute. Plus 16
+assertions on the hold-token maths and the endpoint SQL (including that a Fixed hold never leaks into the Mobile
+list, and that releasing twice 404s instead of silently succeeding), the full `schema.sql` applied twice to a fresh
+database to prove the new columns are idempotent — boot runs it on every restart — and the existing twin-collapse
+suite re-run unchanged. The held bar was rendered at 1280, 834 and 390 px in both themes: no horizontal scroll.
+
 ## [2.0.0-alpha.52] — 2026-09-19 — Semati moves to Regulatory Affairs, and a restart no longer leaves a run claiming to be in progress
 ### Changed
 - **Semati Clearance moves from IT GOVERNANCE to REGULATORY AFFAIRS**, beside CST Arqami and CST Escalations. It

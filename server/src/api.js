@@ -3589,16 +3589,73 @@ app.post('/api/alerts/:id/unsnooze', requireCap('ackErrors'), async (req, res) =
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 /* RESOLVE WITH A REASON (11 Sep 2026): fixed | duplicate | false_positive | single_customer | maintenance — the reason
- * feeds the Noise scorecard (which rules cry wolf) and is written on the incident discussion + audit. */
+ * feeds the Noise scorecard (which rules cry wolf) and is written on the incident discussion + audit.
+ *
+ * RESOLVE + HOLD (20 Sep 2026). A rule is recomputed from zero over a rolling window on every tick, so a resolve
+ * changes nothing about the condition: while the window still holds the events that tripped it, the next tick finds
+ * the rule breaching and alertRunner puts the incident straight back (reopenRecent within reopenMin, a brand-new
+ * incident after it). `hold` is the operator saying "I have dealt with it — stay quiet until the window drains":
+ *   none | 1h | 4h | 8h | window   ('window' = the rule's own window_hours, capped at HOLD_MAX_H)
+ * It is stored on the RULE, because after reopenMin the next fire would be a NEW row that a per-incident flag could
+ * never stop. alertRunner retires it the moment it expires; POST /api/alert-holds/:key/release ends it early. */
+const HOLD_MAX_H = 12;                       // a 168 h rule must not blind the console for a week
+const HOLD_CHOICES = { none: 0, '1h': 1, '4h': 4, '8h': 8 };
+function holdHours(token, windowHours) {
+  if (token == null || token === false || token === 'none') return 0;
+  if (token === 'window') return Math.min(HOLD_MAX_H, Math.max(0, Number(windowHours) || 0));
+  if (HOLD_CHOICES[token] != null) return HOLD_CHOICES[token];
+  const n = Number(token);                    // a raw number of hours is accepted too (API callers)
+  return Number.isFinite(n) ? Math.min(HOLD_MAX_H, Math.max(0, n)) : 0;
+}
 app.post('/api/alerts/:id/resolve', requireCap('ackErrors'), async (req, res) => {
   try {
     const b = req.body || {}; const REASONS = require('./alertJourney').REASONS;
     const reason = REASONS[b.reason] ? b.reason : 'fixed';
     const note = String(b.note || '').slice(0, 500).trim() || null;
+    const a = (await C.query(`SELECT rule_key, window_hours FROM alerts WHERE id=$1`, [req.params.id])).rows[0];
+    if (!a) return res.status(404).json({ error: 'no such incident' });
+    const hours = holdHours(b.hold, a.window_hours);
     await C.query(`UPDATE alerts SET status='resolved', resolved_at=COALESCE(resolved_at, now()), note=COALESCE($1, note), resolve_reason=$3, resolved_by=$4 WHERE id=$2`, [note, req.params.id, reason, req.actor]);
-    await C.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`, [req.params.id, `Resolved by ${String(req.actor).split('@')[0]} — ${REASONS[reason]}${note ? ` — ${note}` : ''}`]).catch(() => {});
-    await audit(req, 'incident.resolve', req.params.id, { reason, note: note || undefined });
-    res.json({ ok: true, reason });
+    let heldUntil = null;
+    if (hours > 0) {
+      heldUntil = (await C.query(
+        `UPDATE alert_rules SET held_until = now() + ($1 || ' hours')::interval, held_by=$2, held_reason=$3, held_alert_id=$4
+          WHERE key=$5 RETURNING held_until`,
+        [String(hours), req.actor, `${REASONS[reason]}${note ? ` — ${note}` : ''}`, req.params.id, a.rule_key])).rows[0];
+      heldUntil = heldUntil ? heldUntil.held_until : null;
+    }
+    const holdLine = heldUntil
+      ? ` — held for ${hours} h (until ${ksaStamp(heldUntil)} KSA): the ${a.window_hours}h window still holds the events that tripped this, so the rule stays quiet instead of re-opening.`
+      : '';
+    await C.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`, [req.params.id, `Resolved by ${String(req.actor).split('@')[0]} — ${REASONS[reason]}${note ? ` — ${note}` : ''}${holdLine}`]).catch(() => {});
+    await audit(req, 'incident.resolve', req.params.id, { reason, note: note || undefined, hold_hours: hours || undefined, hold_until: heldUntil || undefined });
+    res.json({ ok: true, reason, hold_hours: hours, hold_until: heldUntil });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+const ksaStamp = t => t ? new Date(new Date(t).getTime() + 3 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') : '';
+/* every rule currently held by an operator resolve — the Alerts banner reads this so a held rule is never
+ * mistaken for a healthy one, and offers Release to end the hold early. */
+app.get('/api/alert-holds', async (req, res) => {
+  try {
+    const seg = segment.forRequest(req, req.query.segment);
+    const rows = (await C.query(
+      `SELECT key, name, severity, team, segment, window_hours, held_until, held_by, held_reason, held_alert_id
+         FROM alert_rules
+        WHERE held_until IS NOT NULL AND held_until > now() AND ${segment.sqlWhere('alert_rules', 'key', seg)}
+        ORDER BY held_until`)).rows;
+    res.json({ holds: rows, segment: seg, now: new Date().toISOString() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/alert-holds/:key/release', requireCap('ackErrors'), async (req, res) => {
+  try {
+    const r = (await C.query(
+      `UPDATE alert_rules SET held_until=NULL, held_by=NULL, held_reason=NULL, held_alert_id=NULL
+        WHERE key=$1 AND held_until IS NOT NULL RETURNING held_alert_id`, [req.params.key])).rows[0];
+    if (!r) return res.status(404).json({ error: 'no hold on this rule' });
+    if (r.held_alert_id) await C.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`,
+      [r.held_alert_id, `Hold released early by ${String(req.actor).split('@')[0]} — ${req.params.key} is evaluated again from the next tick.`]).catch(() => {});
+    await audit(req, 'alert.hold.release', r.held_alert_id || null, { rule_key: req.params.key });
+    res.json({ ok: true, rule_key: req.params.key });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/alerts/:id/comment', requireCap('ackErrors'), async (req, res) => {
