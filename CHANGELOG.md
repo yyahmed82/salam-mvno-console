@@ -3,6 +3,40 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.63] — 2026-09-20 — A cache that could never fill, on a page that waited for it
+### Fixed
+- **The nexus cache could never populate for the customers it was built for.** It stored the answer
+  only on SUCCESS — so a scan that always times out was never cached, and the page paid the full
+  12 s on every single load, for ever. My error, found on 152 within the hour: `nexus_link_cache`
+  sat at **0 rows** through two clean deploys. A timeout is now a persisted answer too — an empty
+  list on a deliberately short retention — so the page stops paying for a question we already know
+  we cannot answer quickly, while a real answer is still free to arrive and replace it.
+- **That scan was gating the WHOLE page, not the Fixed tab.** `sub360.js` awaits
+  `Promise.allSettled([mobile, fixed])`, so Customer 360 sat on "Loading profile…" behind a query
+  that has nothing to do with the mobile profile. Rather than restructure the page the night before
+  a demo, the wait is now bounded server-side: an interactive caller gets whatever the scan produced
+  within `NEXUS_LINK_WAIT_MS` (2.5 s), and if it is still running the request returns and the scan
+  carries on in the background to fill the cache for the next look.
+- **One scan per customer, however many callers ask.** Three tabs open on the same customer meant
+  three sequential-scan regexes racing each other over the same 24 months of rows. They now share
+  one in-flight promise.
+- **The warm path pays the cost so the screen never does.** `warm=1` gets `NEXUS_LINK_WARM_SCAN_MS`
+  (120 s) instead of the interactive 12 s, and waits for the answer, so the slow query runs once,
+  offline, and lands in the persisted cache.
+### Added
+- **`server/src/warmup.js` — warm any list of customers on demand**, which is what was actually
+  wanted rather than a fixed env list:
+  `node src/warmup.js 2635308931 966511600080` or `node src/warmup.js --file ids.txt`.
+  It talks to the RUNNING server over loopback on purpose: the profile cache lives in that process's
+  memory (nothing on disk, deliberately), so a standalone CLI would warm its own memory and exit
+  having achieved nothing. Per customer it prints the profile time, **the order count**, the Fixed
+  time, the number of nexus links cached, and flags a contact-number collision — which also makes it
+  the fastest way to answer "how many journeys does the console think this customer has" without
+  opening a browser. Ids are arguments only: written nowhere, masked to four digits in the output.
+### Notes
+The mobile half of the cache is in memory and is lost on restart; the nexus half is persisted and is
+not. So after any restart, re-run the script — or leave `DEMO_WARM_KEYS` set and let boot do it.
+
 ## [2.0.0-alpha.62] — 2026-09-20 — The warm-up warmed the wrong half
 ### Fixed
 - **alpha.61 shipped a warm-up that left the slow half cold.** `startWarm()` called

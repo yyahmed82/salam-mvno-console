@@ -48,7 +48,25 @@ const NEG = new Map();                                   // key → epoch ms unt
 const NEG_MS = Math.max(15, Number(process.env.NEXUS_LINK_BACKOFF_SEC || 90)) * 1000;
 const LINK_DAYS = Math.max(1, Number(process.env.LOOKUP_CACHE_TTL_DAYS ?? 10));
 
-async function nexusLinkIds(key, ms) {
+/* 20 Sep 2026, second pass — TWO THINGS ALPHA.61 GOT WRONG, both found on 152 within the hour.
+ *
+ *  (a) The cache only stored a SUCCESS. A scan that always times out therefore never populated it,
+ *      so the cache could never help the one case it was built for. A timeout is now a persisted
+ *      answer too — an empty list with `pending` — on a short retention, so the page stops paying
+ *      12 s for it while a real answer is still allowed to arrive and replace it.
+ *  (b) Customer 360 awaits Promise.allSettled([mobile, fixed]), so this scan gated the WHOLE page
+ *      render, not just the Fixed tab. Rather than restructure the page the night before a demo,
+ *      the wait is bounded here: interactive callers get whatever the scan produced within
+ *      NEXUS_LINK_WAIT_MS, and if it is still running the request returns and the scan carries on
+ *      in the background to fill the cache for the next look. A WARM caller (warmup.js over
+ *      loopback) sets wait=Infinity and a long statement timeout, so the offline path pays the
+ *      cost once and the interactive path never does. */
+const WAIT_MS = Math.max(300, Number(process.env.NEXUS_LINK_WAIT_MS || 2500));
+const SCAN_MS = Math.max(2000, Number(process.env.NEXUS_LINK_SCAN_MS || 12000));
+const WARM_SCAN_MS = Math.max(SCAN_MS, Number(process.env.NEXUS_LINK_WARM_SCAN_MS || 120000));
+const inflight = new Map();                              // key → promise, so one scan serves everyone
+
+async function nexusLinkIds(key, ms, opts) {
   if (!db.nexus) return { ids: [], reason: 'nexus not configured' };
   const k = String(key).trim(); const alts = Array.from(new Set([k, ...ms])).filter(Boolean);
   const hash = require('./lookupCache').keyHash(k);
@@ -60,13 +78,30 @@ async function nexusLinkIds(key, ms) {
       if (r.rowCount) return { ids: r.rows[0].wf_ids || [], reason: null, cached: true };
     } catch (_) { /* table missing on first boot → fall through to the live scan */ }
   }
+  const warm = !!(opts && opts.warm);
   const until = NEG.get(k);
-  if (until && until > Date.now()) return { ids: [], reason: 'nexus link lookup timed out a moment ago — not retried yet', cached: false };
+  if (!warm && until && until > Date.now()) return { ids: [], reason: 'nexus link lookup timed out a moment ago — not retried yet', cached: false };
+  /* One scan per key, however many callers ask. Without this, three tabs on the same customer
+   * meant three sequential-scan regexes racing each other over the same 24 months of rows. */
+  let run = inflight.get(k);
+  if (!run) {
+    run = scan(k, alts, hash, warm)
+      .catch(e => ({ ids: [], reason: e.message }))      // nobody may be awaiting this one: never let it reject
+      .finally(() => inflight.delete(k));
+    inflight.set(k, run);
+  }
+  if (warm) return run;                                  // the warm path waits as long as it takes
+  const bounded = await Promise.race([run, new Promise(r => setTimeout(() => r(null), WAIT_MS))]);
+  if (bounded) return bounded;
+  return { ids: [], reason: `still linking through nexus (over ${Math.round(WAIT_MS / 100) / 10} s) — the scan is finishing in the background, reload in a moment`, pending: true };
+}
+
+async function scan(k, alts, hash, warm) {
   const pat = '"(?:certNbr|nationalId|idNumber|nid|msisdn|mobilePhone|mobileNumber|mobile|phoneNumber|phone)"\\s*:\\s*"(?:' + alts.map(a => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')"';
   const c = await db.nexus.connect();
   try {
-    await c.query('SET LOCAL statement_timeout = 12000').catch(() => {});
-    await c.query('BEGIN READ ONLY'); await c.query('SET LOCAL statement_timeout = 12000');
+    const budget = warm ? WARM_SCAN_MS : SCAN_MS;
+    await c.query('BEGIN READ ONLY'); await c.query(`SET LOCAL statement_timeout = ${Number(budget)}`);
     const r = await c.query(`SELECT id::text AS id FROM workflow_states
        WHERE updated_at > now() - interval '24 months' AND context::text ~ $1
        ORDER BY updated_at DESC LIMIT 100`, [pat]);
@@ -82,7 +117,17 @@ async function nexusLinkIds(key, ms) {
     return { ids, reason: null, cached: false };
   } catch (e) {
     try { await c.query('ROLLBACK'); } catch (_) {}
-    if (/statement timeout|canceling statement/i.test(e.message || '')) NEG.set(k, Date.now() + NEG_MS);
+    if (/statement timeout|canceling statement/i.test(e.message || '')) {
+      NEG.set(k, Date.now() + NEG_MS);
+      /* Persist the fact that we could not answer, on a SHORT retention. Without this the page pays
+       * the full scan every single time for exactly the customers the scan cannot handle. */
+      if (hash) {
+        db.console.query(
+          `INSERT INTO nexus_link_cache (key_hash, wf_ids, seen_at) VALUES ($1, '{}'::text[], now() - ($2||' days')::interval)
+             ON CONFLICT (key_hash) DO NOTHING`,
+          [hash, Math.max(0, LINK_DAYS - 1)]).catch(() => {});
+      }
+    }
     return { ids: [], reason: e.message };
   }
   finally { c.release(); }
@@ -164,7 +209,7 @@ async function lookup(q, req) {
   let link = null;
   const kind = keyKind(key);
   if (kind === 'nid' || kind === 'msisdn') {
-    link = await nexusLinkIds(key, ms);
+    link = await nexusLinkIds(key, ms, { warm: q.warm === '1' });
     if (link.ids.length) {
       const more = (await Promise.all(pools.map(([p, s]) => attemptsByIds(p, link.ids, s).catch(() => [])))).flat();
       found = found.concat(more);
