@@ -32,7 +32,8 @@ const DEFAULTS = {
   // host.docker.internal reaches the host's Ollama from inside the console container
   ollamaUrl: process.env.OLLAMA_URL || 'http://host.docker.internal:11434',
   model: process.env.OLLAMA_MODEL || 'llama3.1',
-  timeoutMs: 75000            // CPU-only inference on 152: prompt-eval + 220 tokens needs headroom
+  timeoutMs: 75000,           // CPU-only inference on 152: prompt-eval + 220 tokens needs headroom
+  maxTokens: 220              // measured 20 Sep: ~3.3 tok/s on 152, so this cap IS most of the wait
 };
 
 async function getConfig() {
@@ -48,6 +49,8 @@ async function setConfig(patch) {
   const cur = await getConfig();
   const next = { ...cur, ...(patch || {}) };
   next.timeoutMs = Math.min(120000, Math.max(5000, Number(next.timeoutMs) || 75000));
+  // answer length cap — the one setting that moves Yusr's latency linearly on CPU-only inference
+  next.maxTokens = Math.min(400, Math.max(60, Number(next.maxTokens) || 220));
   if (!next.ollamaUrl) next.ollamaUrl = DEFAULTS.ollamaUrl;
   if (!next.model) next.model = DEFAULTS.model;
   await settings.setSetting('assist', next);
@@ -601,7 +604,13 @@ async function ollamaChat({ cfg, system, history, user, actor }) {
     if (h && h.role && h.content) messages.push({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content).slice(0, 500) });
   }
   messages.push({ role: 'user', content: user });
-  const out = await llm.chat({ messages, purpose: 'yusr.chat', caller: 'console', actor, maxTokens: 220, numCtx: 4096, temperature: 0.2 });
+  /* 20 Sep 2026 — measured on 152: yusr.chat averages 66 s for 861 characters of answer, which is
+   * ~215 tokens against the 220 cap at roughly 3.3 tok/s. It is GENERATION-bound, not data-bound,
+   * so the cap is the one lever that moves it linearly — 120 tokens is about half the wait for a
+   * noticeably shorter answer. Settable from Settings › Assist so it can be tuned, and reverted,
+   * without a deploy. Default unchanged at 220: nothing moves until somebody chooses it. */
+  const cap = Math.min(400, Math.max(60, Number(cfg && cfg.maxTokens) || 220));
+  const out = await llm.chat({ messages, purpose: 'yusr.chat', caller: 'console', actor, maxTokens: cap, numCtx: 4096, temperature: 0.2 });
   return out.text;
 }
 

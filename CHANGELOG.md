@@ -3,6 +3,36 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.67] — 2026-09-20 — Yusr is generation-bound, and it is not alone on the box
+### Notes — what the numbers actually said
+`llm_calls`, 24 h on 152, all on `llama3.1` (the only model pulled, 4.9 GB, CPU-only):
+
+| purpose | calls | avg | prompt chars | failed |
+|---|---:|---:|---:|---:|
+| `yusr.chat` | 6 | **66 s** | 16,627 | 0 |
+| `agent-log.assess` | 89 | **56 s** | 4,272 | **44** |
+| `yusr.warm` | 83 | 32 s | 11,489 | 2 |
+| `agent-incident.triage` | 40 | 21 s | 2,323 | 0 |
+
+Two things follow, and neither is about data:
+- **`yusr.chat` is generation-bound.** 861 characters of answer is ~215 tokens against the 220 cap,
+  at roughly **3.3 tok/s**. No amount of caching touches that; the cap is the only lever that moves
+  it linearly.
+- **Yusr is competing for the box.** Those four purposes are ~2.4 hours of CPU inference a day on a
+  single Ollama, and `agent-log.assess` alone burns 83 minutes of it while **failing 44 of 89 calls**
+  at the 75 s timeout. A question asked while an agent is mid-call queues behind it.
+### Added
+- **`maxTokens` is now an Assist setting** (60–400, default unchanged at 220), so the answer-length
+  cap — and therefore most of Yusr's latency — can be tuned and reverted from Settings › Assist
+  without a deploy. 120 is about half the wait for a noticeably shorter answer.
+### Fixed
+- The first cut of that change referenced an undeclared `cfgMaxTokens`, which `node --check` passes
+  and which would have thrown at runtime on the first question asked. Caught before deploy.
+### Notes
+`yusr.warm`'s 11.5 k-character prompt is deliberate, not a bug: it keeps the evaluated `SYSTEM_BASE`
+prefix in the slot cache, which a bare "ok" would evict. The cost is 32 s of CPU every 20 minutes,
+which matters only because the box has no headroom to spare.
+
 ## [2.0.0-alpha.66] — 2026-09-20 — Measure the other one too
 ### Added
 - **`/api/subscriber` now reports its phases** on an `X-Console-Timing` response header — profile,
