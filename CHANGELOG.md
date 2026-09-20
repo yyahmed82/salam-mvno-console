@@ -3,6 +3,26 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.62] — 2026-09-20 — The warm-up warmed the wrong half
+### Fixed
+- **alpha.61 shipped a warm-up that left the slow half cold.** `startWarm()` called
+  `subscriber.profile()` only — the MOBILE profile. On 152 it reported `warmed 1/1` and looked
+  correct, while `nexus_link_cache` stayed at **0 rows**. The mobile lookup is the ~1 s one. The
+  half worth warming is the Fixed bridge, a regex over `workflow_states.context::text` that takes
+  12 s or times out and prints *"could not link through nexus"* on the page — which is the failure
+  this whole cache was built to stop appearing during a demo.
+- The warm now calls `fixedCustomer.lookup({ key })` as well, so a boot fills both. `req` is omitted
+  deliberately: no `req` means no unmask, so the warm reads masked and raises no audit event,
+  exactly as an anonymous page load would. The Fixed half is the persisted one, so unlike the
+  in-memory profile it survives every later restart.
+- The boot line now reports both halves — `warmed N/N profile(s) · M/N fixed link(s)` — so a repeat
+  of this is visible in the log instead of reading as success.
+### Notes
+Nothing was wrong with the cache; the verification was just narrow enough to miss it.
+`nexus_link_cache` being empty after a clean run is the tell, which is why that query was in the
+verification block. Opening Customer 360 once by hand fills the same row and it persists for ten
+days, so this can also be fixed without a deploy.
+
 ## [2.0.0-alpha.61] — 2026-09-20 — An order is his only if his national ID says so
 ### Fixed
 - **Customer 360 and the CMS admin disagreed on how many journeys a customer has, and both looked

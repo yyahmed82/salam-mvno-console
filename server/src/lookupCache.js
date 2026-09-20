@@ -95,12 +95,21 @@ function startWarm() {
   console.log(`[LOOKUP] cache armed — TTL ${TTL_MS / 86400e3} d · ${keys.length} key(s) to warm in 20 s · in memory, never written to disk`);
   setTimeout(async () => {
     const subscriber = require('./subscriber');
+    let linked = 0;
     for (const k of keys) {
       try { await subscriber.profile({ key: k }); warmed++; }
       catch (e) { console.error(`[LOOKUP] warm ${mask(k)} failed: ${e.message}`); }
+      /* ALSO warm the FIXED side (20 Sep 2026). Warming only the mobile profile left
+       * nexus_link_cache empty, which is the half that matters: the mobile lookup is ~1 s, while
+       * the nexus bridge is a regex over workflow_states that takes 12 s or times out on screen.
+       * `req` is omitted deliberately — no req means no unmask, so a warm reads masked and raises
+       * no audit event, exactly as an anonymous page load would. Its own cache row is persisted,
+       * so this survives a restart even though the profile above does not. */
+      try { await require('./fixedCustomer').lookup({ key: k }); linked++; }
+      catch (e) { /* Fixed may be unconfigured, or the customer may simply have no Fixed service */ }
       await new Promise(r => setTimeout(r, 1500));   // one at a time — no thundering herd at boot
     }
-    console.log(`[LOOKUP] warmed ${warmed}/${keys.length} key(s)`);
+    console.log(`[LOOKUP] warmed ${warmed}/${keys.length} profile(s) · ${linked}/${keys.length} fixed link(s)`);
   }, 20000).unref?.();
 }
 
