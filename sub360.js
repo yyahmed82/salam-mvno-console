@@ -86,7 +86,7 @@
      needs to know before they speak whether the regulator already has a case open. The Arqami call does NOT:
      every one writes a row into the audit table CST's own traffic is measured from, so it stays behind a button. */
   let cstState = { loaded: false, busy: false, data: null, error: null, svc: null, svcBusy: false, svcErr: null, avail: null };
-  const tabsNow=()=>(hasFixed?TABS.concat([{k:'fixed',ic:'🏠',name:'Fixed services'}]):TABS).concat([{k:'cst',ic:'⚖',name:'CST'}]);
+  const tabsNow=()=>(hasFixed?TABS.concat([{k:'fixed',ic:'🏠',name:'Fixed services'}]):TABS).concat([{k:'cst',ic:'⚖',name:'Tickets'}]);   // label only — the key stays 'cst' so deep links keep working
   function headCard(i){
     i=i||{};
     const unmaskBtn = canUnmask()? `<button class="pill" id="sbUnmask" style="border-left-color:var(--purple)">${unmasked?'Mask PII':'Unmask PII'}</button>` : '';
