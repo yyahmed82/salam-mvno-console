@@ -3,6 +3,37 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.65] — 2026-09-20 — Cache the answer, not a piece of it — and undo my own regression
+### Fixed
+- **The timings said I had been caching the wrong thing all evening.** Measured on 152 for one
+  customer: `complaints 7133 ms · nexus 5014 ms · attempts 1853 ms · inventory 0 ms`, total **22 s**.
+  Caching the nexus link was never going to fix that — attempts, complaints and inventory are each
+  slow in their own right. The whole Fixed answer is now cached, exactly as the mobile profile is,
+  which is what took that one to **50 ms**.
+- **MASKED ANSWERS ONLY.** An unmasked lookup is privileged and audited; serving one from a shared
+  cache — or seeding the cache with one — would put unmasked PII in front of someone whose request
+  was never audited for it. `unmask=1` bypasses in both directions, and the cache stays in process
+  memory, never on disk.
+- **`--clear` now clears both halves of a customer.** A customer has two in-memory entries, the
+  mobile profile and the Fixed answer, and "forget this customer" has to mean both — or the half you
+  did not think of is the half that is stale in front of an executive.
+### Fixed — a regression I introduced an hour earlier
+- **alpha.64 made this endpoint slower, not faster.** Starting the complaints query alongside the
+  nexus scan looked like free parallelism. It is not: `db.nexus` is a **two-connection** read-only
+  pool and `fixedInventory` reads it as well, so three concurrent consumers meant one waited out the
+  15 s connection timeout and the whole lookup failed — `timeout exceeded when trying to connect`,
+  **22 s and no answer**, against 15 s and an answer before I touched it. The rule I should have
+  applied: **parallelise across pools, serialise within one.** Attempts (the ops pool) now runs
+  alongside the nexus work; the two nexus queries take their turn.
+- `timeout exceeded when trying to connect` now counts as a timeout for the backoff and the negative
+  cache. It did not match the old test, so a connection failure was retried in full every time.
+### Notes
+`builtAt` is on the Fixed payload now, as it already was on the profile, so a cached answer can say
+how old it is rather than looking live. The underlying queries are still slow on a cold customer —
+`findAttempts` ends in `iccid ILIKE '%'||$1||'%'`, a leading wildcard no index can serve, and the
+complaints join is unindexed at 7 s. Those are the real fixes; caching is what buys the time to do
+them properly.
+
 ## [2.0.0-alpha.64] — 2026-09-20 — Forgetting a customer, and finding the other 15 seconds
 ### Added
 - **`warmup.js --clear <id>` and `--clear-all`.** A stale cached profile in front of an executive is

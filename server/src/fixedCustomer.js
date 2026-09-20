@@ -117,7 +117,7 @@ async function scan(k, alts, hash, warm) {
     return { ids, reason: null, cached: false };
   } catch (e) {
     try { await c.query('ROLLBACK'); } catch (_) {}
-    if (/statement timeout|canceling statement/i.test(e.message || '')) {
+    if (/statement timeout|canceling statement|timeout exceeded when trying to connect/i.test(e.message || '')) {
       NEG.set(k, Date.now() + NEG_MS);
       /* Persist the fact that we could not answer, on a SHORT retention. Without this the page pays
        * the full scan every single time for exactly the customers the scan cannot handle. */
@@ -197,9 +197,25 @@ async function findPayments(keys) {
   } catch (e) { return { configured: true, error: e.message, rows: [] }; }
 }
 
+/* 20 Sep 2026 — CACHE THE WHOLE ANSWER, not just the nexus link. Measured on 152: caching only the
+ * link left this endpoint at 15–22 s, because attempts, complaints and inventory are each slow in
+ * their own right and no amount of nexus caching touches them. The mobile profile went to 50 ms the
+ * moment its whole payload was cached; this is the same move.
+ *
+ * MASKED ANSWERS ONLY. An unmasked lookup is privileged and audited — serving one from a shared
+ * cache, or seeding the cache with one, would put unmasked PII in front of someone whose request was
+ * never audited for it. So unmask bypasses entirely, in both directions. Like the profile cache this
+ * lives in process memory and never touches disk. */
 async function lookup(q, req) {
   const key = String(q.key || '').trim();
   if (!key) return { found: false, key, keyKind: null };
+  const unmaskReq = !!(req && req.caps && req.caps.unmaskPII && q.unmask === '1');
+  if (unmaskReq || q.refresh === '1') return buildLookup(q, req);
+  return require('./lookupCache').wrap('fixed:' + key, () => buildLookup(q, req), { refresh: q.warm === '1' });
+}
+
+async function buildLookup(q, req) {
+  const key = String(q.key || '').trim();
   if (!db.ops) { const e = new Error('Fixed data source not configured (OPS_DATABASE_URL)'); e.status = 503; throw e; }
   const unmask = !!(req && req.caps && req.caps.unmaskPII && q.unmask === '1');
   const ms = forms(key);
@@ -209,23 +225,33 @@ async function lookup(q, req) {
    * idea where the remaining 15 s went, because every phase ran end to end with nothing measuring
    * it. `timings` is now in the response, so the next person does not have to guess either. */
   const T = {}; const T0 = Date.now(); const mark = (n, t) => { T[n] = Date.now() - t; };
-  /* COMPLAINTS START NOW, not after the attempts scan. They depend on nothing above them, and
-   * queueing them behind attempts + nexus + inventory is most of why this endpoint felt slow. */
-  const tC = Date.now();
-  const complaintsP = (kind === 'msisdn' || kind === 'nid')
-    ? findComplaints(key, ms, kind, unmask)
-        .catch(e => ({ configured: true, error: e.message, rows: [] }))
-        .then(r => { mark('complaints', tC); return r; })
-    : Promise.resolve({ configured: !!db.nexus, rows: [], skipped: 'complaints are matched by mobile number or national id' });
+  /* POOL DISCIPLINE (20 Sep 2026 — correcting my own change an hour old). Starting the complaints
+   * query alongside the nexus scan made this WORSE, not better: `db.nexus` is a TWO-connection
+   * read-only pool and fixedInventory reads it too, so three concurrent consumers meant one waited
+   * out the 15 s connection timeout and the whole lookup failed with "timeout exceeded when trying
+   * to connect" — 22 s and no answer, against 15 s and an answer before I touched it.
+   * The rule is: parallelise ACROSS pools, serialise WITHIN one. Attempts (ops) runs alongside the
+   * nexus work; the two nexus queries take their turn. */
   const tA = Date.now();
-  let found = (await Promise.all(pools.map(([p, s]) => findAttempts(p, key, ms, s).catch(e => { console.error('[fixedCustomer]', s, e.message); return []; })))).flat();
-  mark('attempts', tA);
-  // NID / contact-mobile keys are not in the read model → bridge through nexus to the workflow ids
-  let link = null;
-  if (kind === 'nid' || kind === 'msisdn') {
-    const tN = Date.now();
-    link = await nexusLinkIds(key, ms, { warm: q.warm === '1' });
-    mark('nexus', tN);
+  const attemptsP = Promise.all(pools.map(([p, s]) => findAttempts(p, key, ms, s)
+      .catch(e => { console.error('[fixedCustomer]', s, e.message); return []; })))
+    .then(r => { mark('attempts', tA); return r.flat(); });
+  const nexusP = (async () => {
+    let link = null, complaints;
+    if (kind === 'nid' || kind === 'msisdn') {
+      const tN = Date.now();
+      link = await nexusLinkIds(key, ms, { warm: q.warm === '1' });
+      mark('nexus', tN);
+      const tC = Date.now();
+      complaints = await findComplaints(key, ms, kind, unmask).catch(e => ({ configured: true, error: e.message, rows: [] }));
+      mark('complaints', tC);
+    } else complaints = { configured: !!db.nexus, rows: [], skipped: 'complaints are matched by mobile number or national id' };
+    return { link, complaints };
+  })();
+  let found = await attemptsP;
+  const { link, complaints } = await nexusP;
+  // NID / contact-mobile keys are not in the read model → the workflow ids came from nexus above
+  if (link) {
     if (link.ids.length) {
       const more = (await Promise.all(pools.map(([p, s]) => attemptsByIds(p, link.ids, s).catch(() => [])))).flat();
       found = found.concat(more);
@@ -245,15 +271,14 @@ async function lookup(q, req) {
   mark('inventory', tI);
   const invOut = inventoryMod.mask(inventory, unmask);
   // complaint tickets from the Salam Home app (nexus) — started above, awaited here; never blocks the lookup
-  const complaints = await complaintsP;
   T.total = Date.now() - T0;
 
   if (!attempts.length) {
     if ((inventory && inventory.available) || complaints.rows.length) {
       return { found: true, key, keyKind: keyKind(key), unmasked: unmask, customer: { cust_code: invOut.customer && invOut.customer.cust_code, customer_id: null, services: 0, orders: 0, attempts: 0, channels: [] },
-        services: [], attempts: [], errors: [], payments: await findPayments([key]), links: {}, sources: pools.map(([, s]) => s), link, inventory: invOut, inventory_summary: inventoryMod.summary(inventory), complaints, timings: { ...T, total: Date.now() - T0 } };
+        services: [], attempts: [], errors: [], payments: await findPayments([key]), links: {}, sources: pools.map(([, s]) => s), link, inventory: invOut, inventory_summary: inventoryMod.summary(inventory), complaints, timings: { ...T, total: Date.now() - T0 }, builtAt: new Date().toISOString() };
     }
-    return { found: false, key, keyKind: keyKind(key), link, inventory: invOut, payments: await findPayments([key]), complaints, timings: { ...T, total: Date.now() - T0 } };
+    return { found: false, key, keyKind: keyKind(key), link, inventory: invOut, payments: await findPayments([key]), complaints, timings: { ...T, total: Date.now() - T0 }, builtAt: new Date().toISOString() };
   }
 
   // every identifier this customer is known by → cross-search keys for payments and for the MVNO side

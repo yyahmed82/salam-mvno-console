@@ -41,11 +41,13 @@ function evict() {
   for (let i = 0; i < rows.length && store.size > MAX; i++) store.delete(rows[i][0]);
 }
 
-async function wrap(key, build) {
+async function wrap(key, build, opts) {
   if (!TTL_MS) return build();
   const k = norm(key); if (!k) return build();
   const now = Date.now(), e = store.get(k);
-  if (e && e.body !== undefined && now - e.at < TTL_MS) {
+  /* refresh: a warm run must REBUILD, not be served its own stale answer back. */
+  if (opts && opts.refresh) store.delete(k);
+  else if (e && e.body !== undefined && now - e.at < TTL_MS) {
     e.n = (e.n || 0) + 1;
     if (now - e.at > SOFT_MS && !e.building) {
       e.building = true; stale++;
@@ -68,7 +70,10 @@ async function wrap(key, build) {
  * this process, and the persisted nexus link row — which is addressed by hash, so this is the only
  * place that can find it, the identifier having deliberately not been stored. */
 async function drop(key) {
-  const mem = store.delete(norm(key));
+  /* BOTH namespaces. A customer has two in-memory entries — the mobile profile under the bare key
+   * and the Fixed answer under 'fixed:'+key — and "forget this customer" has to mean both, or the
+   * half you did not think of is the half that is stale in front of the executive. */
+  const mem = [norm(key), 'fixed:' + norm(key)].map(k => store.delete(k)).filter(Boolean).length;
   let link = 0;
   const h = keyHash(key);
   if (h) {

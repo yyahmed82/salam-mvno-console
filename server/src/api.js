@@ -413,7 +413,7 @@ app.post('/api/cache/lookup/drop', requireRealSuper, async (req, res) => {
     const out = all ? { all: true, ...(await lc.dropAll()) }
                     : { keys: keys.length, ...(await keys.reduce(async (accP, k) => {
                         const acc = await accP, r = await lc.drop(k);
-                        return { memory: acc.memory + (r.memory ? 1 : 0), nexusLinks: acc.nexusLinks + r.nexusLinks };
+                        return { memory: acc.memory + r.memory, nexusLinks: acc.nexusLinks + r.nexusLinks };
                       }, Promise.resolve({ memory: 0, nexusLinks: 0 }))) };
     audit(req, 'cache.lookup.drop', all ? 'ALL' : `${keys.length} key(s)`, out);   // the keys themselves are not logged
     res.json(out);
