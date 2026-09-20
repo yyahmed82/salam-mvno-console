@@ -3,6 +3,30 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.57] — 2026-09-20 — Payment and Delivery cannot be measured technical-only, and now say so
+### Fixed
+- **Two objectives would have read 100 % met forever.** `errclass.sourceCls()` classifies `payments` and
+  `delivery_requests` with a **constant** `'business'`, by the codebase's own doctrine: a decline is the
+  gateway answering "no", and cancelled / refused / RTO are business outcomes. A gateway timeout never
+  reaches those journeys at all — it becomes `payment_stuck`, outside this rollup. So a technical-only
+  setting on **Payment success** or **Delivery success** would compute `ok / (ok + 0)` and report a
+  permanently green objective measuring nothing. Both are now marked not class-capable, and the Counts
+  control shows the reason where the choice used to be.
+- Confirmed against the first real 30-day classification on 152: payment **70,699 business / 0 technical**,
+  delivery **111 / 0** — not a sampling artifact, a definition. `change_plan` also showed 0 technical but
+  keeps its choice, because it has a real classifier and simply saw none in the window; the difference
+  matters and the code now distinguishes it.
+- **A drift test** asserts the declaration against reality: for every journey objective, a source table
+  classified by a constant must not be capable, and one with a real classifier must not be marked
+  incapable. If the doctrine in `errclass` changes, the test fails instead of the console quietly lying.
+### Notes
+First full classification of the MVNO journeys, 30 days to 20 Sep: **162,939 failures, of which 256 —
+0.16 % — are technical.** Eligibility alone is 74,308 business denials against 211 technical. The seven
+journey objectives have been measuring customer and policy outcomes, not platform health, which is the
+whole reason this switch exists. Worth re-reading the targets with that in mind before flipping it.
+### Verified
+31 assertions (was 26), all green, against a real PostgreSQL 16.
+
 ## [2.0.0-alpha.56] — 2026-09-20 — cli.js could not reach a database when run by hand
 ### Fixed
 - **`node src/cli.js <anything>` died with `getaddrinfo ENOTFOUND db`.** The CLI is run from a shell, where

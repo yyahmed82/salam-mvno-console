@@ -202,12 +202,19 @@ const cleanText = (v, max, fb = '') => {
  * the ticks. Those offer technical/business only, which is also why they were hard-coded to
  * technical before this existed. */
 const CLASS_META = {
-  mobile_payment_success:        { capable: true },
+  /* NOT capable, and the reason is definitional rather than missing plumbing: errclass.sourceCls()
+   * classifies `payments` and `delivery_requests` with a CONSTANT 'business' — a decline is the
+   * gateway answering "no", a cancelled/refused/RTO delivery is a business outcome. A gateway
+   * timeout never lands on these journeys at all; it becomes payment_stuck, outside this rollup.
+   * So a technical-only setting here would compute ok/(ok+0) and read 100 % met forever: a
+   * permanently green objective measuring nothing. Confirmed against 30 days on 20 Sep — payment
+   * 70,699 business / 0 technical, delivery 111 / 0. A test asserts this stays true. */
+  mobile_payment_success:        { note: 'a decline is the gateway answering "no" — this console has no technical signal on the payment journey (a timeout becomes payment_stuck)' },
   mobile_activation_success:     { capable: true },
   mobile_semati_success:         { capable: true },
   mobile_nafath_completion:      { capable: true },
   mobile_eligibility_approval:   { capable: true },
-  mobile_delivery_success:       { capable: true },
+  mobile_delivery_success:       { note: 'cancelled / refused / RTO are business outcomes — this console has no technical signal on the delivery journey' },
   mobile_change_plan_success:    { capable: true },
   mobile_technical_error_budget: { locked: 'technical', note: 'this objective is the technical error budget — counting business outcomes in it would make it a different objective' },
   mobile_semati_provider_errors: { locked: 'technical', note: 'a provider error is an upstream CITC/TCC degradation; a Semati business decline is counted by the journey objective' },
