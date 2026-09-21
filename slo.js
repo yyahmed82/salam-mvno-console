@@ -1,4 +1,5 @@
-/* SLA page — SLO attainment + error budgets per journey, and vendor/integration health. */
+/* SLA page — SLO attainment + error budgets per journey. (Vendor & integration health moved to
+ * Monitoring › Gateway & API on 21 Sep 2026 — see monitoring.js renderVendors.) */
 (function(){
   "use strict";
   const $=s=>document.querySelector(s);
@@ -6,12 +7,10 @@
   const API = window.API_BASE;
   const api=(p,opts)=>window.fetch(API+p,Object.assign({headers:{"Content-Type":"application/json"}},opts)).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
   const tv=(n,fb)=>{const v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return v||fb;};
-  let vendWin=24;
   let CFG=null;
   let CFG_ACTIVE="mobile";
   const pct=v=> v==null?"—":(v*100).toFixed(1)+"%";
   const statusColor=s=> s==='met'?"#16a34a":s==='at_risk'?"#d97706":s==='breached'?"#dc2626":"#94a3b8";
-  const VLABEL={activation:"Activation (BSS)",semati:"Semati provisioning",nafath:"Nafath (Absher)",eligibility:"Eligibility (CITC)",change_plan:"Plan change"};
   const businessLabel=b=>({mobile:"MVNO",fixed:"Fixed",both:"Fixed / MVNO"}[String(b||"").toLowerCase()]||b||"MVNO");
   const isSuper=()=>{ const s=(window.opsSession&&window.opsSession())||{}; return !!(s.me && (s.me.realRole==="super_admin" || (s.me.realRoles||[]).includes("super_admin"))); };
   const fmtTarget=(s)=>{
@@ -37,18 +36,12 @@
     const host=$("#view-slo"); if(!host) return;
     host.innerHTML=`<div class="panel">
       <div class="slo-page-head">
-        <div><h2>Service levels &amp; vendor health</h2>
-          <div class="sub">SLO attainment and error budgets per journey, plus live partner/integration health — read from rollups, so it's instant.</div></div>
+        <div><h2>Service levels</h2>
+          <div class="sub">SLO attainment and error budgets per journey — read from rollups, so it's instant. Vendor &amp; integration health now lives in <a href="#monitoring?tab=gateway" style="color:var(--green);font-weight:700">Monitoring › Gateway &amp; API</a>.</div></div>
         ${isSuper()?`<button class="pill" id="sloOpenSettings" style="border-left-color:var(--green)">⚙ SLO definitions</button>`:''}
       </div>
       <h2 style="margin-top:14px">Current SLO attainment</h2>
       <div id="sloCards" class="slo-grid" style="margin-top:14px"></div>
-      <h2 style="margin-top:24px">Vendor &amp; integration health</h2>
-      <div style="display:flex;gap:8px;align-items:center;margin:6px 0 12px">
-        <span class="rl">Window</span>
-        <div class="segsel" id="vendWin"><button data-h="24" class="${vendWin===24?'on':''}">24h</button><button data-h="168" class="${vendWin===168?'on':''}">7d</button><button data-h="720" class="${vendWin===720?'on':''}">30d</button></div>
-      </div>
-      <div id="vendBoard"></div>
       <h2 style="margin-top:24px">Anomaly detection</h2>
       <div class="sub">Live signals vs each journey's seasonal baseline (hour-of-week median, robust z-score) — catches spikes &amp; drops a fixed threshold would miss.</div>
       <div id="anomBoard" style="margin-top:10px"></div>
@@ -57,8 +50,7 @@
       <div id="ackSlaBoard" style="margin-top:10px"></div>
     </div>`;
     const cfgBtn=$("#sloOpenSettings"); if(cfgBtn) cfgBtn.addEventListener("click",()=>{ location.hash="#slo-settings"; });
-    $("#vendWin").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ vendWin=Number(b.dataset.h); $("#vendWin").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); loadVendors(); }));
-    loadSlos(); loadVendors(); loadAnomalies(); if(window.renderAckSlaSettings) window.renderAckSlaSettings($("#ackSlaBoard"));
+    loadSlos(); loadAnomalies(); if(window.renderAckSlaSettings) window.renderAckSlaSettings($("#ackSlaBoard"));
   }
 
   /* ── SLO definitions (super admin) ─────────────────────────────────────────────────────────
@@ -558,18 +550,6 @@
     box.querySelectorAll(".slo-edit").forEach(b=>b.addEventListener("click",()=>{ location.hash="#slo-settings"; }));
   }
 
-  async function loadVendors(){
-    const box=$("#vendBoard"); if(!box) return; box.innerHTML=`<div class="sub">Loading vendor health…</div>`;
-    let d; try{ d=await api("/api/vendors?window="+vendWin); }catch(e){ box.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
-    const row=(name,rate,total)=>{ const c=rate==null?"#94a3b8":rate>=0.95?"#16a34a":rate>=0.85?"#d97706":"#dc2626";
-      return `<div class="vend-row"><span class="vend-name">${esc(name)}</span><div class="vend-bar"><span style="width:${rate==null?0:Math.round(rate*100)}%;background:${c}"></span></div><span class="vend-rate" style="color:${c}">${pct(rate)}</span><span class="vend-vol rl">${(total||0).toLocaleString()}</span></div>`; };
-    const grp=(title,rows,fn)=> (rows&&rows.length)?`<div class="vend-grp"><h5>${title}</h5>${rows.map(fn).join("")}</div>`:'';
-    const html =
-      grp("Payment gateways", d.paymentVendors, v=>row(v.vendor||"—", v.rate, v.total)) +
-      grp("Couriers", d.couriers, v=>row(v.vendor||"—", v.rate, v.total)) +
-      grp("Integrations", d.integrations, v=>row(VLABEL[v.journey]||v.journey, v.rate, v.total));
-    box.innerHTML = html || `<div class="okbox">No vendor activity in the window.</div>`;
-  }
 
   // SLA lives in the Settings gear menu (no nav tab) — activate its view directly,
   // mirroring window.openWorkbench: deactivate all tabs + views, clear the gear/opsBar, then render.

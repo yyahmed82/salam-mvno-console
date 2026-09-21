@@ -1289,6 +1289,37 @@
     }));
   }
 
+  /* VENDOR & INTEGRATION HEALTH — moved here from the SLA page (21 Sep 2026). "Which of our partners is
+   * failing" — payment gateways, couriers, CITC / Semati / Nafath / BSS — is a monitoring question, not a
+   * service-level one. It sits ABOVE the numbered request path (① gateway → ⑤ OSB) as the overview:
+   * read it first, then walk the numbers to find the layer at fault. Same /api/vendors, same colour
+   * thresholds, same bars as it had on the SLA page — only the page changed. Its window is its own
+   * (24 h / 7 d / 30 d) because the page window stops at 7 d and this one has always offered 30 d. */
+  const VLABEL={activation:"Activation (BSS)",semati:"Semati provisioning",nafath:"Nafath (Absher)",eligibility:"Eligibility (CITC)",change_plan:"Plan change"};
+  let vendWin=(window.pf&&Number(window.pf.get('mon_vend_win',24)))||24, vendSeq=0;
+  async function renderVendors(){
+    const box=document.getElementById("monVendors"); if(!box) return;
+    const seq=++vendSeq;                                   // a slow answer must not overwrite a newer window's
+    box.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:4px 0 8px">
+        <div style="font-weight:800;font-size:13px;color:var(--ink)">VENDOR &amp; INTEGRATION HEALTH
+          <span class="rl" style="font-weight:600">· success rate per partner — payment gateways, couriers, integrations</span></div>
+        <div class="segsel" id="monVendWin">${[[24,"24h"],[168,"7d"],[720,"30d"]].map(([h,l])=>`<button type="button" data-h="${h}" class="${vendWin===h?"on":""}">${l}</button>`).join("")}</div>
+      </div><div id="monVendBody"><div class="sub">Loading vendor health…</div></div>`;
+    box.querySelectorAll("#monVendWin button").forEach(b=>b.addEventListener("click",()=>{
+      vendWin=Number(b.dataset.h); if(window.pf) window.pf.set('mon_vend_win',vendWin); renderVendors(); }));
+    let d; try{ d=await api("/api/vendors?window="+vendWin); }
+    catch(e){ if(seq===vendSeq){ const b=document.getElementById("monVendBody"); if(b) b.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; } return; }
+    if(seq!==vendSeq) return;
+    const row=(name,rate,total)=>{ const c=rate==null?"#94a3b8":rate>=0.95?"#16a34a":rate>=0.85?"#d97706":"#dc2626";
+      return `<div class="vend-row"><span class="vend-name">${esc(name)}</span><div class="vend-bar"><span style="width:${rate==null?0:Math.round(rate*100)}%;background:${c}"></span></div><span class="vend-rate" style="color:${c}">${pct(rate)}</span><span class="vend-vol rl">${(total||0).toLocaleString()}</span></div>`; };
+    const grp=(title,rows,fn)=>(rows&&rows.length)?`<div class="vend-grp"><h5>${title}</h5>${rows.map(fn).join("")}</div>`:"";
+    const html=grp("Payment gateways",d.paymentVendors,v=>row(v.vendor||"—",v.rate,v.total))
+      +grp("Couriers",d.couriers,v=>row(v.vendor||"—",v.rate,v.total))
+      +grp("Integrations",d.integrations,v=>row(VLABEL[v.journey]||v.journey,v.rate,v.total));
+    const body=document.getElementById("monVendBody");
+    if(body) body.innerHTML=html||`<div class="okbox">No vendor activity in the window.</div>`;
+  }
+
   async function renderApigw(){
     const box=$("#monApigw"); if(!box) return;
     if(!box.firstChild) box.innerHTML=`<div class="sub">Loading gateway traces…</div>`;
@@ -1988,7 +2019,7 @@
     resellers:'<path d="M3 17l6-6 4 4 7-7"/><path d="M17 7h4v4"/>'
   };
   const TABS=[
-    { key:"gateway",   label:"Gateway & API", sub:"edge nodes · traces · dealer UIL",  color:"#2563eb", render:()=>{ renderApigw(); renderTraffic(); if(window.renderDealerGw) window.renderDealerGw(); renderUil(); renderOsbArch(); } },
+    { key:"gateway",   label:"Gateway & API", sub:"edge nodes · traces · dealer UIL",  color:"#2563eb", render:()=>{ renderVendors(); renderApigw(); renderTraffic(); if(window.renderDealerGw) window.renderDealerGw(); renderUil(); renderOsbArch(); } },
     { key:"payments",  label:"Payments GW",   sub:"UPG · Tap · capture & stuck",        color:"#d97706", render:renderPayments },
     { key:"access",    label:"Access",        sub:"login · IP blocking · app errors",   color:"#0e9f5a", render:renderAppErrors },
     { key:"sms",       label:"SMS gateways",  sub:"Unifonic · Msegat · OTP delivery",   color:"#0891b2", render:renderSms },

@@ -3,6 +3,29 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.68] — 2026-09-21 — Vendor & integration health moves to Monitoring
+### Changed
+- **Vendor & integration health left the SLA page for Monitoring › Gateway & API.** "Which of our
+  partners is failing" — payment gateways, couriers, CITC / Semati / Nafath / BSS — is a monitoring
+  question, not a service-level one, and on the SLA page it sat between the SLO attainment cards and
+  anomaly detection, belonging to neither.
+- It sits **above** the tab's numbered request path (① API gateway → ⑤ OSB) as the overview: read it
+  first, then walk the numbers to find the layer at fault. Vendor health is not a hop on that path — it
+  is every partner at its far end — so numbering it would have broken the sequence the tab is built on.
+- Same `/api/vendors`, same colour thresholds (≥ 95 % green, ≥ 85 % amber), same bars and volumes.
+  Its window stays its own (24 h / 7 d / 30 d) because the page window stops at 7 d and this section
+  has always offered 30 d; the choice now persists per user (`mon_vend_win`), as the tab itself does.
+- The SLA page is retitled **Service levels** and carries a link to the new home, so anyone who goes
+  looking for it where it used to be finds where it went.
+### Fixed
+- A slow `/api/vendors` answer can no longer overwrite a newer one when the window is switched
+  mid-request (sequence guard). The old version on the SLA page had that race.
+### Verified
+Rendered headless with the real stylesheet and the renderer sliced out of the shipped
+`monitoring.js`, at **1280 / 820 / 390 px in light and dark**: nine rows in three groups, no horizontal
+scroll at phone width, no console errors, the window buttons themed rather than browser-grey in both
+modes, and a click on 7 d refetching `window=168` with the active state following it.
+
 ## [2.0.0-alpha.67] — 2026-09-20 — Yusr is generation-bound, and it is not alone on the box
 ### Notes — what the numbers actually said
 `llm_calls`, 24 h on 152, all on `llama3.1` (the only model pulled, 4.9 GB, CPU-only):
