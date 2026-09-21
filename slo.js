@@ -1,5 +1,7 @@
 /* SLA page — SLO attainment + error budgets per journey. (Vendor & integration health moved to
- * Monitoring › Gateway & API on 21 Sep 2026 — see monitoring.js renderVendors.) */
+ * Monitoring › Gateway & API on 21 Sep 2026 — see monitoring.js renderVendors.)
+ * MVNO | Fixed tabs (21 Sep 2026): one tab per business, deep-linkable as #slo?tab=mobile|fixed
+ * (the Executive Dashboard's "SLO / SLA" links land on the matching tab). */
 (function(){
   "use strict";
   const $=s=>document.querySelector(s);
@@ -32,24 +34,115 @@
       <path d="${d}" fill="none" stroke="#2563eb" stroke-width="1.6"/></svg>`;
   }
 
+  /* ── MVNO | Fixed tabs (21 Sep 2026) ───────────────────────────────────────────────────────
+   * The page used to be one grid mixing both businesses, so "SLO / SLA" on the Executive
+   * Dashboard's Fixed panel landed on MVNO cards first. The tab comes from, in order: the link
+   * (#slo?tab=fixed — also accepts mvno), the tab already open, the last one chosen, else the
+   * account's business. A single-business account sees its own business only, no tab bar.
+   * Switching tabs re-filters what is already loaded (no refetch) and never re-renders the
+   * acknowledgement section, so an unsaved edit there survives a switch — its Save still sends
+   * both businesses, because the other business's card is hidden, not removed. */
+  const SLO_TABS={
+    mobile:{ label:"MVNO", sub:"journeys · integrations",
+      icon:'<rect x="6.5" y="2.5" width="11" height="19" rx="2.4"/><path d="M10.5 18.5h3"/>' },
+    fixed:{ label:"Fixed", sub:"FTTH · 5G · app",
+      icon:'<path d="M3.5 11.2 12 4l8.5 7.2"/><path d="M6 9.6v10h12v-10"/><path d="M10 19.6v-5h4v5"/>' }
+  };
+  let TAB=null, OPEN_TAB=null, SLO_DATA=null, SLO_SEQ=0;
+  const normTab=v=>{ v=String(v||"").toLowerCase(); return (v==="mobile"||v==="mvno")?"mobile":v==="fixed"?"fixed":null; };
+  /* an objective's business: 'both' shows on both tabs; a journey objective without a definition is an MVNO journey */
+  const sloBiz=s=>{ const b=String((s&&s.business)||"mobile").toLowerCase(); return b==="fixed"||b==="both"?b:"mobile"; };
+  const inTab=(s,t)=>{ const b=sloBiz(s); return b==="both"||b===t; };
+  function allowedTabs(){
+    const me=((window.opsSession&&window.opsSession())||{}).me||{};
+    return me.business==="mobile"?["mobile"]:me.business==="fixed"?["fixed"]:["mobile","fixed"];
+  }
+  function pickTab(req){
+    const ok=allowedTabs();
+    const fromHash=(/[?&]tab=([a-z]+)/.exec(location.hash||"")||[])[1];
+    let saved=null; try{ saved=window.pf?window.pf.get("slo_tab",null):null; }catch(e){ saved=null; }
+    for(const c of [req,fromHash,TAB,saved]){ const t=normTab(c); if(t&&ok.includes(t)) return t; }
+    return ok[0];
+  }
+  const hashBase=()=>/^#sla(?:\?|$)/.test(location.hash||"")?"sla":"slo";
+  /* the open tab is part of the URL, so a copied link opens the same view (replaceState: no hashchange, no reload) */
+  function syncTabHash(){ try{ const h="#"+hashBase()+"?tab="+TAB; if(location.hash!==h&&history.replaceState) history.replaceState(null,"",h); }catch(e){} }
+  function tabStats(t){
+    if(!SLO_DATA) return null;
+    const c={n:0,met:0,at_risk:0,breached:0,nodata:0};
+    SLO_DATA.filter(s=>inTab(s,t)).forEach(s=>{ c.n++;
+      if(s.status==="met") c.met++; else if(s.status==="at_risk") c.at_risk++; else if(s.status==="breached") c.breached++; else c.nodata++; });
+    return c;
+  }
+  function paintTabs(){
+    const bar=$("#sloTabs"); if(!bar) return;
+    const tabs=allowedTabs();
+    bar.innerHTML=tabs.map(t=>{
+      const m=SLO_TABS[t], on=t===TAB, st=tabStats(t);
+      let chip="", line=esc(m.sub);
+      if(st){
+        chip=!st.n?`<span class="slo-tab-chip">none</span>`
+          :st.breached?`<span class="slo-tab-chip bad">${st.breached} breached</span>`
+          :st.at_risk?`<span class="slo-tab-chip warn">${st.at_risk} at risk</span>`
+          :st.met===st.n?`<span class="slo-tab-chip ok">all met</span>`
+          :st.met?`<span class="slo-tab-chip ok">${st.met} met</span>`
+          :`<span class="slo-tab-chip">no data</span>`;
+        const parts=[st.n?`${st.n} objective${st.n===1?"":"s"}`:"no objective enabled"];
+        if(st.breached||st.at_risk) parts.push(`${st.met} met`);
+        if(st.breached&&st.at_risk) parts.push(`${st.at_risk} at risk`);
+        if(st.nodata&&st.nodata<st.n) parts.push(`${st.nodata} no data`);
+        line=parts.join(" · ");
+      }
+      return `<button type="button" role="tab" id="sloTab-${t}" class="slo-tab${on?" on":""}" data-tab="${t}" aria-selected="${on}" aria-controls="sloPane" tabindex="${on?0:-1}">
+        <span class="slo-tab-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${m.icon}</svg></span>
+        <span class="slo-tab-tx"><b>${esc(m.label)}</b><span>${line}</span></span>${chip}</button>`;
+    }).join("");
+    bar.querySelectorAll(".slo-tab").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));
+    /* WAI-ARIA tabs: ← / → move between the two tabs */
+    bar.onkeydown=e=>{
+      if(e.key!=="ArrowLeft"&&e.key!=="ArrowRight") return;
+      const i=tabs.indexOf(TAB), n=tabs[(i+(e.key==="ArrowRight"?1:tabs.length-1))%tabs.length];
+      e.preventDefault(); setTab(n); const nb=bar.querySelector('.slo-tab[data-tab="'+n+'"]'); if(nb) nb.focus();
+    };
+  }
+  function setTab(t){
+    t=normTab(t); if(!t||!allowedTabs().includes(t)||t===TAB) return;
+    TAB=t; try{ if(window.pf) window.pf.set("slo_tab",t); }catch(e){}
+    const pg=document.querySelector("#view-slo .slo-page"); if(pg) pg.dataset.tab=t;
+    const pane=$("#sloPane"); if(pane&&pane.hasAttribute("aria-labelledby")) pane.setAttribute("aria-labelledby","sloTab-"+t);
+    paintTabs(); paintSlos(); syncTabHash();
+    if(window.audit) window.audit("VIEW_PAGE","#"+hashBase()+"?tab="+t);
+  }
+
   async function render(){
     const host=$("#view-slo"); if(!host) return;
-    host.innerHTML=`<div class="panel">
+    TAB=pickTab(OPEN_TAB); OPEN_TAB=null; SLO_DATA=null;
+    try{ if(window.pf) window.pf.set("slo_tab",TAB); }catch(e){}
+    const tabs=allowedTabs();
+    host.innerHTML=`<div class="panel slo-page" data-tab="${TAB}">
       <div class="slo-page-head">
         <div><h2>Service levels</h2>
-          <div class="sub">SLO attainment and error budgets per journey — read from rollups, so it's instant. Vendor &amp; integration health now lives in <a href="#monitoring?tab=gateway" style="color:var(--green);font-weight:700">Monitoring › Gateway &amp; API</a>.</div></div>
+          <div class="sub">SLO attainment and error budgets per business — read from rollups, so it's instant.<span class="slo-only-mobile"> Vendor &amp; integration health lives in <a href="#monitoring?tab=gateway" style="color:var(--green);font-weight:700">Monitoring › Gateway &amp; API</a>.</span></div></div>
         ${isSuper()?`<button class="pill" id="sloOpenSettings" style="border-left-color:var(--green)">⚙ SLO definitions</button>`:''}
       </div>
-      <h2 style="margin-top:14px">Current SLO attainment</h2>
-      <div id="sloCards" class="slo-grid" style="margin-top:14px"></div>
-      <h2 style="margin-top:24px">Anomaly detection</h2>
-      <div class="sub">Live signals vs each journey's seasonal baseline (hour-of-week median, robust z-score) — catches spikes &amp; drops a fixed threshold would miss.</div>
-      <div id="anomBoard" style="margin-top:10px"></div>
-      <h2 style="margin-top:24px">Acknowledgement SLA — reminders &amp; escalation</h2>
-      <div class="sub">What happens when nobody on L1 / L2 acknowledges an alert: reminder 1 → reminder 2 (warning) → reminder 3 + management escalation, per business and per priority.</div>
-      <div id="ackSlaBoard" style="margin-top:10px"></div>
+      ${tabs.length>1?`<div class="slo-tabs" id="sloTabs" role="tablist" aria-label="Business"></div>`
+        :`<div class="slo-scope">Showing <b>${esc(SLO_TABS[TAB].label)}</b> — your account is scoped to ${TAB==="fixed"?"Fixed":"Mobile"}.</div>`}
+      <div id="sloPane"${tabs.length>1?` role="tabpanel" aria-labelledby="sloTab-${TAB}"`:""}>
+        <h2 style="margin-top:14px">Current SLO attainment</h2>
+        <div id="sloCards" class="slo-grid" style="margin-top:14px"></div>
+        <div class="slo-only-mobile">
+          <h2 style="margin-top:24px">Anomaly detection</h2>
+          <div class="sub">Live signals vs each MVNO journey's seasonal baseline (hour-of-week median, robust z-score) — catches spikes &amp; drops a fixed threshold would miss.</div>
+          <div id="anomBoard" style="margin-top:10px"></div>
+        </div>
+        <h2 style="margin-top:24px">Acknowledgement SLA — reminders &amp; escalation</h2>
+        <div class="sub">What happens when nobody on L1 / L2 acknowledges an alert: reminder 1 → reminder 2 (warning) → reminder 3 + management escalation, per priority. The on / off switch and flap control apply to both businesses.</div>
+        <div id="ackSlaBoard" style="margin-top:10px"></div>
+      </div>
     </div>`;
-    const cfgBtn=$("#sloOpenSettings"); if(cfgBtn) cfgBtn.addEventListener("click",()=>{ location.hash="#slo-settings"; });
+    paintTabs(); syncTabHash();
+    /* definitions open on the same business as the tab */
+    const cfgBtn=$("#sloOpenSettings"); if(cfgBtn) cfgBtn.addEventListener("click",()=>{ CFG_ACTIVE=TAB; location.hash="#slo-settings"; });
     loadSlos(); loadAnomalies(); if(window.renderAckSlaSettings) window.renderAckSlaSettings($("#ackSlaBoard"));
   }
 
@@ -146,7 +239,7 @@
     </div>`;
     $("#sloBackHealth").addEventListener("click",()=>{
       if(DIRTY.size && !confirm(DIRTY.size+" definition change"+(DIRTY.size===1?"":"s")+" have not been saved. Leave anyway?")) return;
-      location.hash="#sla";
+      location.hash="#sla?tab="+(CFG_ACTIVE==="fixed"?"fixed":"mobile");   // back to the business being edited
     });
     $("#sloCfgSave").addEventListener("click",saveSloConfig);
     $("#sloBarSave").addEventListener("click",saveSloConfig);
@@ -523,15 +616,25 @@
 
   async function loadSlos(){
     const box=$("#sloCards"); if(!box) return; box.innerHTML=`<div class="sub" style="grid-column:1/-1">Loading service levels…</div>`;
+    const seq=++SLO_SEQ;   // a re-render while this is in flight (theme / data refresh) owns the page now
     let d; try{ d=await api("/api/slo"); }catch(e){
+      if(seq!==SLO_SEQ) return;
       // hidden root tier: the server answers 403 {error:'restricted'} — show a clean panel, not an error banner
       if(/^restricted$/i.test(e.message||"")){ const host=$("#view-slo"); if(host) host.innerHTML=`<div class="panel" style="text-align:center;padding:34px 20px">
         <div style="font-size:26px">🔒</div>
         <h2 style="margin:8px 0 4px">Restricted</h2>
         <div class="sub">The SLA page is limited to the platform owner.</div></div>`; return; }
-      box.innerHTML=`<div class="albanner" style="grid-column:1/-1">${esc(e.message)}</div>`; return; }
-    const slos=d.slos||[];
-    if(!slos.length){ box.innerHTML=`<div class="okbox" style="grid-column:1/-1">No SLO targets yet.</div>`; return; }
+      const b2=$("#sloCards"); if(b2) b2.innerHTML=`<div class="albanner" style="grid-column:1/-1">${esc(e.message)}</div>`; return; }
+    if(seq!==SLO_SEQ) return;
+    SLO_DATA=d.slos||[];
+    paintTabs(); paintSlos();
+  }
+  /* the cards of the open tab, from what loadSlos already fetched */
+  function paintSlos(){
+    const box=$("#sloCards"); if(!box||!SLO_DATA) return;
+    if(!SLO_DATA.length){ box.innerHTML=`<div class="okbox" style="grid-column:1/-1">No SLO targets yet.</div>`; return; }
+    const slos=SLO_DATA.filter(s=>inTab(s,TAB));
+    if(!slos.length){ box.innerHTML=`<div class="okbox" style="grid-column:1/-1">No ${esc(businessLabel(TAB))} objective is enabled yet${isSuper()?" — add or enable one in SLO definitions":""}.</div>`; return; }
     const canEdit=isSuper();
     box.innerHTML=slos.map(s=>{
       const c=statusColor(s.status);
@@ -547,14 +650,16 @@
         <div class="rl">${s.budgetRemaining>=0?`${s.budgetRemaining.toLocaleString()} of ${s.allowed.toLocaleString()} failures left`:`<span style="color:#dc2626">over budget by ${Math.abs(s.budgetRemaining).toLocaleString()}</span>`}</div>
       </div>`;
     }).join("");
-    box.querySelectorAll(".slo-edit").forEach(b=>b.addEventListener("click",()=>{ location.hash="#slo-settings"; }));
+    box.querySelectorAll(".slo-edit").forEach(b=>b.addEventListener("click",()=>{ CFG_ACTIVE=TAB; location.hash="#slo-settings"; }));
   }
 
 
   // SLA lives in the Settings gear menu (no nav tab) — activate its view directly,
   // mirroring window.openWorkbench: deactivate all tabs + views, clear the gear/opsBar, then render.
-  window.openSla=()=>{
+  // tab (optional): 'mobile' | 'mvno' | 'fixed' — otherwise read from #slo?tab=…, then the last one open.
+  window.openSla=(tab)=>{
     const v=$("#view-slo"); if(!v) return;
+    OPEN_TAB=normTab(tab);
     document.querySelectorAll(".navtab").forEach(x=>x.classList.remove("active"));
     document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
     const gear=document.getElementById("settingsBtn"); if(gear) gear.classList.remove("on");

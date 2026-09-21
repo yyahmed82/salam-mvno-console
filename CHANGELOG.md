@@ -3,6 +3,38 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.69] — 2026-09-21 — Service levels: one tab per business
+### Changed
+- **The SLA page (Service levels) has two tabs, MVNO | Fixed.** It was one grid mixing both
+  businesses, so "SLO / SLA" on the Executive Dashboard's Fixed panel landed on MVNO cards first.
+  Each tab shows its own SLO cards; anomaly detection and the vendor-health pointer are MVNO-only
+  (both read the MVNO journey rollups), so they appear on the MVNO tab only; the acknowledgement SLA
+  shows that business's card and reminder history.
+- Each tab carries its verdict before it is opened: objectives, met, at risk, breached, no data,
+  with the worst status as a chip ("1 breached", "2 at risk", "all met").
+- **The tab is part of the URL** — `#slo?tab=mobile|fixed` (`mvno` accepted), kept current with
+  `replaceState` so a copied link opens the same view. Without one, the page opens on the tab last
+  used (`slo_tab`), else the first business the account holds. A single-business account sees only
+  its business, with no tab bar, and a link to the other business's tab is corrected, not obeyed.
+- **Every "SLO / SLA" link on the Executive Dashboard now opens its business's tab**: the
+  availability tile, the availability obligation rows and the panel links, per business. The home
+  page's anomaly rows open the MVNO tab, where anomalies are.
+- ⚙ SLO definitions opens on the same business as the tab; "← SLA health" returns to the business
+  that was being edited.
+### Notes
+- Switching tabs re-filters what is loaded — no second `/api/slo` call — and does not re-render the
+  acknowledgement section: the other business's card is hidden, not removed, so an unsaved edit
+  survives a switch and Save still sends both businesses (a PUT built from one card would have sent
+  half a config).
+- Web-only: no server change; `/api/version` keeps reporting the last full deploy.
+### Verified
+Headless against the real stylesheet and the shipped `slo.js` / `acksla.js`, 29 checks: deep links
+for both tabs, the `mvno` alias, last-tab fallback, the Fixed-only account, click and ← / → keyboard
+switching with the URL, audit and ARIA following, no refetch on switch, an edit on each card kept
+across switches and both sent by Save, a theme re-render keeping the tab, and the definitions
+round-trip. Rendered at 1280 / 820 / 390 px in light and dark: no horizontal scroll, no console
+errors.
+
 ## [2.0.0-alpha.68] — 2026-09-21 — Vendor & integration health moves to Monitoring
 ### Changed
 - **Vendor & integration health left the SLA page for Monitoring › Gateway & API.** "Which of our

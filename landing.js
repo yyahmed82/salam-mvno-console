@@ -110,7 +110,7 @@
   function renderInsights({m24,m7,anoms,f7,f7p,f24}){
     const box=$("#ldInsights"); const M=[], F=[];
     const list=((anoms&&anoms.anomalies)||[]).slice().sort((a,b)=>Math.abs(b.score||0)-Math.abs(a.score||0)).slice(0,3);
-    list.forEach(a=>M.push({sev:a.severity||"P3", text:a.text||`${a.metric||""} ${a.direction==="up"?"above":"below"} its seasonal norm (${Math.abs(a.score||0).toFixed(1)}σ)`, href:"#sla", tag:"Mobile"}));
+    list.forEach(a=>M.push({sev:a.severity||"P3", text:a.text||`${a.metric||""} ${a.direction==="up"?"above":"below"} its seasonal norm (${Math.abs(a.score||0).toFixed(1)}σ)`, href:"#sla?tab=mobile", tag:"Mobile"}));
     if(m7&&m7.prev){ const c=m7.actOk, p=m7.prev.actOk; if(c!=null&&p){ const d=(c-p)/p; M.push({sev:Math.abs(d)>.15?"P2":"info", text:`Mobile activations ${d>=0?"up":"down"} ${Math.abs(d*100).toFixed(0)}% week-on-week (${num(c)} vs ${num(p)})`, href:"#dashboard", tag:"Mobile"}); } }
     if(m24&&m24.errorsTechnical>0) M.push({sev:m24.errorsTechnical>50?"P2":"P3", text:`${num(m24.errorsTechnical)} technical errors on Mobile in 24 h (platform failed to answer) · ${num(m24.errorsBusiness)} business errors`, href:"#troubleshoot?cls=technical", tag:"Mobile"});
     // Fixed — today's open error categories first (what the operator must act on), then the weekly trends
@@ -206,7 +206,7 @@
     open.slice(0,4).forEach(a=>rows.push(`<a href="#alerts" class="ld-row"><span class="ld-sev" style="background:${col(a.severity)}">${esc(a.severity||"")}</span><span class="ld-row-t">${esc(a.name||a.rule_key||a.title||"alert")}</span><span class="ld-row-s">incident · ${esc(a.team||"")}${a.last_seen_at?" · "+ksa(a.last_seen_at):""}</span></a>`));
     // 2. seasonal anomalies (the P1s shown in the insights row — they belong here too)
     const an=((anoms&&anoms.anomalies)||[]).slice().sort((a,b)=>Math.abs(b.score||0)-Math.abs(a.score||0)).slice(0,3);
-    an.forEach(a=>rows.push(`<a href="#sla" class="ld-row"><span class="ld-sev" style="background:${col(a.severity||"P3")}">${esc(a.severity||"P3")}</span><span class="ld-row-t">${esc(a.metric||a.text||"anomaly")}</span><span class="ld-row-s">anomaly · ${Math.abs(a.score||0).toFixed(1)}σ ${a.direction==="up"?"above":"below"} norm</span></a>`));
+    an.forEach(a=>rows.push(`<a href="#sla?tab=mobile" class="ld-row"><span class="ld-sev" style="background:${col(a.severity||"P3")}">${esc(a.severity||"P3")}</span><span class="ld-row-t">${esc(a.metric||a.text||"anomaly")}</span><span class="ld-row-s">anomaly · ${Math.abs(a.score||0).toFixed(1)}σ ${a.direction==="up"?"above":"below"} norm</span></a>`));
     // 3. error categories with volume (Error Control Board, 24 h)
     const cats=((merr&&merr.summary)||[]).filter(c=>c.total>0).sort((a,b)=>(b.technical-a.technical)||(b.total-a.total)).slice(0,Math.max(2,6-rows.length));
     cats.forEach(c=>rows.push(`<a href="#troubleshoot?cat=${encodeURIComponent(c.category)}" class="ld-row"><span class="ld-sev" style="background:${c.technical>50?"#dc2626":c.technical>0?"#d97706":"#2563eb"}">${num(c.total)}</span><span class="ld-row-t">${esc(c.label||c.category)}</span><span class="ld-row-s">${num(c.business)} business · ${num(c.technical)} technical · ${esc(c.team||"")}</span></a>`));

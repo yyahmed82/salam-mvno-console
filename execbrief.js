@@ -54,10 +54,11 @@
   const rcaPill = r => { const c = r.status === 'overdue' ? 'red' : r.status === 'due' ? 'amber' : r.status === 'pending' ? 'info' : 'muted'; return `<span class="xb-rca ${c}" title="${esc(r.text || '')}">${r.status === 'n/a' ? 'no clause' : esc(r.status)}${r.due ? ` · ${ksa(r.due).slice(5, 16)}` : ''}</span>`; };
   const halvesOf = d => [d.mobile, d.fixed].filter(h => h && h.status);
   const missingOf = d => [d.mobile, d.fixed].filter(h => h && h.configured === false);
-  /* exec-level destinations per business: every number leads to the page where the detail lives */
+  /* exec-level destinations per business: every number leads to the page where the detail lives
+   * (SLO / SLA opens the SLA page on that business's tab — #slo?tab=mobile|fixed, 21 Sep 2026) */
   const L = h => h.biz === 'fixed'
-    ? { dash: '#fixed?tab=overview', alerts: '#fixed-alerts', errors: '#fixed?tab=errors', money: '#fixed?tab=errors', oncall: '#fixed-oncall', slo: '#slo', c360: '#sub360', contracts: '#vendor-contracts', dashLabel: 'Fixed overview', errLabel: 'Fixed errors' }
-    : { dash: '#dashboard', alerts: '#alerts', errors: '#troubleshoot', money: '#troubleshoot?cat=payment', oncall: '#oncall', slo: '#slo', c360: '#sub360', contracts: '#vendor-contracts', dashLabel: 'Mobile dashboard', errLabel: 'Troubleshoot' };
+    ? { dash: '#fixed?tab=overview', alerts: '#fixed-alerts', errors: '#fixed?tab=errors', money: '#fixed?tab=errors', oncall: '#fixed-oncall', slo: '#slo?tab=fixed', c360: '#sub360', contracts: '#vendor-contracts', dashLabel: 'Fixed overview', errLabel: 'Fixed errors' }
+    : { dash: '#dashboard', alerts: '#alerts', errors: '#troubleshoot', money: '#troubleshoot?cat=payment', oncall: '#oncall', slo: '#slo?tab=mobile', c360: '#sub360', contracts: '#vendor-contracts', dashLabel: 'Mobile dashboard', errLabel: 'Troubleshoot' };
   const lnk = (href, text, title) => `<a href="${esc(href)}" class="xb-lnk" title="${esc(title || text)}">${text}</a>`;
   const grp = (h, inner, head, links) => `<div class="xb-panel"><div class="xb-ph">${badge(h)}${head ? `<span class="xb-phh">${head}</span>` : ''}${links ? `<span class="xb-pl">${links}</span>` : ''}</div>${inner}</div>`;
   const cols = inner => `<div class="xb-cols">${inner}</div>`;
