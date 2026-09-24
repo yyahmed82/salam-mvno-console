@@ -3,6 +3,16 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.75] — 2026-09-24 — Fixed range control: minute presets and custom start / end (TKT-000064)
+### Added
+- **TKT-000064 · Time range across all Fixed pages** (`fixed.js` range control, used by SDA map, QR map, Reports,
+  Overview and the channel pages): quick presets **5 min · 15 min · 30 min · 1 h · 6 h · 24 h · 7 d · 30 d · 90 d** plus
+  **Custom** with From / To date-time fields in KSA, Today / Yesterday / This week / This month shortcuts, validation
+  (end after start, ≤ 92 days, not in the future) and the resolved window printed under the chips
+  (`09/23 14:05 → 09/24 14:05 KSA · 24 h · live`). The window travels as `range=<key>` or `range=custom&from=&to=`
+  (ISO), which every `/api/fixed` endpoint already accepts through `fixed360.parseScope` (minute presets added there),
+  is remembered per browser and works in deep links (`#fixed?tab=map&range=custom&from=…&to=…`).
+
 ## [2.0.0-alpha.74] — 2026-09-24 — Alert journey: step player, narrated samples; Sigma is Fixed-only
 ### Fixed
 - **TKT-000067 · Raise-a-ticket form cut off at 100 % zoom**: the ticket card overrode the modal's `overflow:auto` with

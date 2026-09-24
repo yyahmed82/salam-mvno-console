@@ -31,7 +31,7 @@
   const filterQs=()=>{ const p=[]; if(S.regions.length) p.push("regions="+encodeURIComponent(S.regions.join(","))); if(S.plans.length) p.push("plans="+encodeURIComponent(S.plans.join(",")));
     if(S.outcomes.length) p.push("outcomes="+encodeURIComponent(S.outcomes.join(","))); if(S.consent!=="all") p.push("consent="+S.consent); return p.length?"&"+p.join("&"):""; };
   // the hub's range applies; the hub's channel chip is ignored here (QR = epurchase + referral by definition)
-  const qs=()=>"range="+encodeURIComponent(fx.state.range)+filterQs();
+  const qs=()=>(fx.rangeQs?fx.rangeQs():"range="+encodeURIComponent(fx.state.range))+filterQs();
 
   let host=null, fx=null, D={sum:null,pins:[],code:null,config:null,error:null}, gmap=null, markers=[], cluster=null, mapEl=null, seq=0;
 

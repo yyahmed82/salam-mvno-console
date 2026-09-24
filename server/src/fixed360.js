@@ -32,10 +32,11 @@ function poolFor(channel) {
 function parseScope(q = {}) {
   const now = Date.now();
   const H = 3600e3;
-  const RANGES = { '1h': 1, '6h': 6, '24h': 24, '7d': 168, '30d': 720, '90d': 2160 };
+  const RANGES = { '5m': 5 / 60, '15m': 0.25, '30m': 0.5, '1h': 1, '6h': 6, '24h': 24, '7d': 168, '30d': 720, '90d': 2160 };   // minute presets: TKT-000064
   let to = q.to ? new Date(q.to) : new Date(now);
   let from = q.from ? new Date(q.from) : new Date(to.getTime() - (RANGES[q.range] || 168) * H);
-  if (isNaN(from) || isNaN(to)) { from = new Date(now - 168 * H); to = new Date(now); }
+  if (isNaN(from) || isNaN(to) || to <= from) { from = new Date(now - 168 * H); to = new Date(now); }
+  if (to.getTime() - from.getTime() > 92 * 24 * H) from = new Date(to.getTime() - 92 * 24 * H);   // custom windows capped at 92 days
   const channel = ['sda', 'epurchase', 'salamhome'].includes(q.channel) ? q.channel : null;
   const consumerDirect = q.consumerDirect === '1' || q.consumerDirect === 'true';
   const workflow = q.workflow ? String(q.workflow).replace(/[^a-zA-Z0-9]/g, '') : null;

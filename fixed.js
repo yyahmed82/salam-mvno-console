@@ -31,18 +31,80 @@
   }
   // The hub carries no filters (Yosri, 6 Sep): channel is always "All" — pages that need one (Errors, Reports) own it —
   // and the range is chosen inside the page that uses it via fx.rangeChips()/fx.bindRange().
-  const state={ range:localStorage.getItem("fixed_range")||"7d", channel:"", find:"", outcome:"" };
+  /* RANGE CONTROL (TKT-000064, 24 Sep 2026) — one control for every Fixed page: quick presets from the last 5 minutes to
+   * 90 days plus a custom start / end (KSA). The window is carried as range=<key> or range=custom&from=&to= (ISO UTC), which
+   * fixed360.parseScope already understands, so every /api/fixed endpoint follows it; the chosen window is kept in
+   * localStorage (fixed_range / fixed_from / fixed_to) and in deep links (#fixed?tab=map&range=custom&from=…&to=…). */
+  const RANGES=[["5m","5 min"],["15m","15 min"],["30m","30 min"],["1h","1 h"],["6h","6 h"],["24h","24 h"],["7d","7 d"],["30d","30 d"],["90d","90 d"]];
+  const RANGE_MIN={"5m":5,"15m":15,"30m":30,"1h":60,"6h":360,"24h":1440,"7d":10080,"30d":43200,"90d":129600};
+  const state={ range:localStorage.getItem("fixed_range")||"7d", from:localStorage.getItem("fixed_from")||"", to:localStorage.getItem("fixed_to")||"", channel:"", find:"", outcome:"" };
+  if(state.range!=="custom"&&!RANGE_MIN[state.range]) state.range="7d";
+  if(state.range==="custom"&&!(state.from&&state.to)) state.range="7d";
   try{ localStorage.removeItem("fixed_channel"); }catch(e){}
-  const RANGES=[["24h","24h"],["7d","7d"],["30d","30d"],["90d","90d"]];
-  const rangeChips=(label="Range")=>`<span class="fx-range" style="display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap">${label?`<span class="rl" style="font-size:10.5px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase">${label}</span>`:""}${RANGES.map(([m,l])=>`<button type="button" class="fx-r${state.range===m?" on":""}" data-m="${m}" style="cursor:pointer;font:inherit;font-size:11.5px;font-weight:700;padding:5px 12px;border:1px solid ${state.range===m?"var(--green,#0e9f5a)":"var(--line)"};border-radius:999px;background:${state.range===m?"var(--green,#0e9f5a)":"var(--card,#fff)"};color:${state.range===m?"#fff":"inherit"};transition:transform .14s,box-shadow .14s,border-color .14s">${l}</button>`).join("")}</span>`;
-  const bindRange=(root,onChange)=>{ (root||document).querySelectorAll(".fx-r").forEach(b=>b.onclick=()=>{ state.range=b.dataset.m; localStorage.setItem("fixed_range",state.range); if(onChange) onChange(state.range); else render(curTab); }); };
-  const qs=()=>`range=${state.range}${state.channel?`&channel=${state.channel}`:""}`;
+  const KSA_MS=3*3600e3;
+  const isoToKsaLocal=iso=>{ const d=new Date(iso); if(isNaN(d)) return ""; return new Date(d.getTime()+KSA_MS).toISOString().slice(0,16); };   // for <input type=datetime-local>, shown as KSA
+  const ksaLocalToIso=v=>{ if(!v) return ""; const d=new Date(v+":00+03:00"); return isNaN(d)?"":d.toISOString(); };
+  const fmtKsa=iso=>{ const d=new Date(iso); if(isNaN(d)) return "—"; const s=new Date(d.getTime()+KSA_MS).toISOString(); return s.slice(5,10).replace("-","/")+" "+s.slice(11,16); };
+  const windowOf=()=>{ const now=Date.now(); if(state.range==="custom") return { from:new Date(state.from), to:new Date(state.to) }; const m=RANGE_MIN[state.range]||10080; return { from:new Date(now-m*60000), to:new Date(now) }; };
+  const windowLabel=()=>{ const w=windowOf(); const mins=Math.round((w.to-w.from)/60000); const len=mins<60?`${mins} min`:mins<1440?`${Math.round(mins/60*10)/10} h`:`${Math.round(mins/1440*10)/10} d`; return `${fmtKsa(w.from)} → ${fmtKsa(w.to)} KSA · ${len}${state.range==="custom"?"":" · live"}`; };
+  const rangeChips=(label="Range")=>{
+    const on=k=>state.range===k;
+    const btn=(k,l)=>`<button type="button" class="fx-r${on(k)?" on":""}" data-m="${k}" style="cursor:pointer;font:inherit;font-size:11.5px;font-weight:700;padding:5px 11px;border:1px solid ${on(k)?"var(--green,#0e9f5a)":"var(--line)"};border-radius:999px;background:${on(k)?"var(--green,#0e9f5a)":"var(--card,#fff)"};color:${on(k)?"#fff":"inherit"};transition:transform .14s,box-shadow .14s,border-color .14s">${l}</button>`;
+    const w=windowOf();
+    return `<div class="fx-range" style="display:flex;flex-direction:column;gap:6px;min-width:0">
+      ${label?`<span class="rl" style="font-size:10.5px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase">${label}</span>`:""}
+      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">${RANGES.map(([m,l])=>btn(m,l)).join("")}${btn("custom","🗓 Custom")}</div>
+      <div class="fx-rcustom" ${on("custom")?"":"hidden"} style="display:${on("custom")?"grid":"none"};grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 8px;align-items:end;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card2,rgba(148,163,184,.08))">
+        <label style="display:block;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">From · KSA<input type="datetime-local" class="fx-rfrom" step="60" value="${isoToKsaLocal(state.from||w.from.toISOString())}" style="display:block;width:100%;margin-top:3px;font:inherit;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink);box-sizing:border-box"></label>
+        <label style="display:block;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">To · KSA<input type="datetime-local" class="fx-rto" step="60" value="${isoToKsaLocal(state.to||w.to.toISOString())}" style="display:block;width:100%;margin-top:3px;font:inherit;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink);box-sizing:border-box"></label>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;grid-column:1/-1;align-items:center">
+          ${[["today","Today"],["yesterday","Yesterday"],["week","This week"],["month","This month"]].map(([k,l])=>`<button type="button" class="fx-rq" data-q="${k}" style="cursor:pointer;font:inherit;font-size:10.5px;font-weight:700;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:var(--ink)">${l}</button>`).join("")}
+          <button type="button" class="fx-rapply" style="margin-left:auto;cursor:pointer;font:inherit;font-size:11.5px;font-weight:800;padding:5px 12px;border:1px solid var(--green,#0e9f5a);border-radius:999px;background:var(--green,#0e9f5a);color:#fff">Apply</button>
+        </div>
+        <div class="fx-rerr rl" style="grid-column:1/-1;font-size:10.5px;color:#dc2626;display:none"></div>
+      </div>
+      <div class="fx-rwin rl" style="font-size:10.5px;color:var(--muted);font-family:var(--mono,ui-monospace,monospace)">${windowLabel()}</div>
+    </div>`;
+  };
+  const saveRange=()=>{ try{ localStorage.setItem("fixed_range",state.range); localStorage.setItem("fixed_from",state.from||""); localStorage.setItem("fixed_to",state.to||""); }catch(e){} };
+  const bindRange=(root,onChange)=>{
+    const R=root||document; const fire=()=>{ saveRange(); if(onChange) onChange(state.range); else render(curTab); };
+    R.querySelectorAll(".fx-r").forEach(b=>b.onclick=()=>{
+      const k=b.dataset.m;
+      if(k==="custom"){ const box=R.querySelector(".fx-rcustom"); if(box){ box.hidden=false; box.style.display="grid"; } R.querySelectorAll(".fx-r").forEach(x=>{ const on=x.dataset.m==="custom"; x.classList.toggle("on",on); x.style.background=on?"var(--green,#0e9f5a)":"var(--card,#fff)"; x.style.color=on?"#fff":"inherit"; x.style.borderColor=on?"var(--green,#0e9f5a)":"var(--line)"; }); const f=R.querySelector(".fx-rfrom"); if(f) f.focus(); return; }
+      state.range=k; state.from=""; state.to=""; fire();
+    });
+    const err=m=>{ const e=R.querySelector(".fx-rerr"); if(e){ e.textContent=m||""; e.style.display=m?"block":"none"; } };
+    const apply=()=>{
+      const f=R.querySelector(".fx-rfrom"), t=R.querySelector(".fx-rto"); if(!f||!t) return;
+      const from=ksaLocalToIso(f.value), to=ksaLocalToIso(t.value);
+      if(!from||!to) return err("Pick both a start and an end.");
+      if(new Date(to)<=new Date(from)) return err("End must be after start.");
+      if(new Date(to)-new Date(from)>92*86400e3) return err("Windows are limited to 92 days — use the reports export for longer.");
+      if(new Date(to)>Date.now()+60000) return err("End cannot be in the future.");
+      err(""); state.range="custom"; state.from=from; state.to=to; fire();
+    };
+    const ap=R.querySelector(".fx-rapply"); if(ap) ap.onclick=apply;
+    R.querySelectorAll(".fx-rfrom,.fx-rto").forEach(i=>i.addEventListener("keydown",e=>{ if(e.key==="Enter") apply(); }));
+    R.querySelectorAll(".fx-rq").forEach(b=>b.onclick=()=>{
+      const now=new Date(Date.now()+KSA_MS); const y=now.getUTCFullYear(), mo=now.getUTCMonth(), d=now.getUTCDate(), dow=(now.getUTCDay()+1)%7;   // KSA week starts Sunday
+      let a,z; const q=b.dataset.q;
+      if(q==="today"){ a=Date.UTC(y,mo,d); z=Date.now()+KSA_MS; }
+      else if(q==="yesterday"){ a=Date.UTC(y,mo,d-1); z=Date.UTC(y,mo,d); }
+      else if(q==="week"){ a=Date.UTC(y,mo,d-dow); z=Date.now()+KSA_MS; }
+      else { a=Date.UTC(y,mo,1); z=Date.now()+KSA_MS; }
+      const f=R.querySelector(".fx-rfrom"), t=R.querySelector(".fx-rto"); if(f) f.value=new Date(a).toISOString().slice(0,16); if(t) t.value=new Date(z).toISOString().slice(0,16); apply();
+    });
+  };
+  const qs=()=>`range=${encodeURIComponent(state.range)}${state.range==="custom"?`&from=${encodeURIComponent(state.from)}&to=${encodeURIComponent(state.to)}`:""}${state.channel?`&channel=${state.channel}`:""}`;
+  const rangeQs=()=>qs().replace(/&channel=[^&]*/,"");
   function applyRouteQuery(){
     try{
       const raw=(location.hash.split("?")[1]||""); if(!raw) return;
       const P=new URLSearchParams(raw), range=P.get("range");
       if(/(?:^|&)(range|find|outcome|channel)=/.test(raw)){ state.find=""; state.outcome=""; state.channel=""; }
-      if(range&&RANGES.some(([k])=>k===range)){ state.range=range; try{ localStorage.setItem("fixed_range",range); }catch(e){} }
+      if(range==="custom"&&P.get("from")&&P.get("to")){ state.range="custom"; state.from=P.get("from"); state.to=P.get("to"); saveRange(); }
+      else if(range&&RANGE_MIN[range]){ state.range=range; state.from=""; state.to=""; saveRange(); }
       if(P.has("find")) state.find=P.get("find")||"";
       if(P.has("outcome")) state.outcome=P.get("outcome")||"";
       if(P.has("channel")) state.channel=P.get("channel")||"";
@@ -183,5 +245,5 @@
 
   document.querySelectorAll(".navtab").forEach(b=>{ if(b.dataset.view==="fixed") b.addEventListener("click", ()=>render(curTab)); });
   window.openFixed=render;   // openFixed("map") deep-links a sub-tab
-  window.FX={ api, esc, ts, fmt, tbl, card, chip, bar, state, qs, OUT_COLOR, KSA, rangeChips, bindRange, rerender:()=>render(curTab) };
+  window.FX={ api, esc, ts, fmt, tbl, card, chip, bar, state, qs, rangeQs, windowOf, windowLabel, RANGE_MIN, OUT_COLOR, KSA, rangeChips, bindRange, rerender:()=>render(curTab) };
 })();

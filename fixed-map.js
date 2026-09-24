@@ -103,7 +103,7 @@
         const list=k=>P.has(k)?P.get(k).split(",").map(s=>s.trim()).filter(Boolean):[];
         Object.assign(S,{regions:list("regions"),roles:list("roles"),plans:list("plans"),outcomes:list("outcomes"),
           nafath:P.get("nafath")||"all",semati:P.get("semati")||"all",dealerId:P.get("dealerId")||null,dealerName:""});
-        if(P.get("range")&&fx.state){ fx.state.range=P.get("range"); try{ localStorage.setItem("fixed_range",fx.state.range); }catch(e){} }
+        if(P.get("range")&&fx.state){ fx.state.range=P.get("range"); if(fx.state.range==="custom"){ fx.state.from=P.get("from")||""; fx.state.to=P.get("to")||""; if(!(fx.state.from&&fx.state.to)) fx.state.range="24h"; } else { fx.state.from=""; fx.state.to=""; } try{ localStorage.setItem("fixed_range",fx.state.range); localStorage.setItem("fixed_from",fx.state.from||""); localStorage.setItem("fixed_to",fx.state.to||""); }catch(e){} }
         save(); } }catch(e){}
     host.innerHTML=`<div id="fxm" style="display:grid;grid-template-columns:262px minmax(0,1fr) 360px;gap:12px;height:calc(100vh - 205px);min-height:600px">
       <aside id="fxmSide" class="topo-card" style="padding:12px;overflow:auto;display:flex;flex-direction:column;gap:12px"></aside>
