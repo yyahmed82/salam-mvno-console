@@ -1,3 +1,7 @@
+## 2.0.0-alpha.85 — 24 Sep 2026 — Mission control: orphan runs after a restart
+
+- A deploy restarts the agents mid-tick and leaves the `agent_runs` row without `finished_at`; the pulse showed that agent as *working* for 30 minutes. Now only the newest run per agent counts (20-minute cap) and orphans older than 20 minutes are closed as "interrupted (process restarted before the tick finished)" — they appear as a red dot in *what it did* instead of a phantom "running…".
+
 ## 2.0.0-alpha.84 — 24 Sep 2026 — Mission control: the robots react in real time
 
 - `llm.js` keeps an in-flight register of every model call (purpose, caller, actor, started at) — `llm.inflight()`; `GET /api/agents/pulse` returns it with the agent runs in progress and the calls of the last 3 minutes.

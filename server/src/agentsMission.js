@@ -88,7 +88,7 @@ async function mission() {
   ]);
   const byAgent = k => runs.filter(r => r.agent === k);
   const last = k => byAgent(k)[0] || null;
-  const running = r => r && r.finished_at == null && (now - new Date(r.started_at).getTime()) < 30 * 60e3;
+  const running = r => r && r.finished_at == null && (now - new Date(r.started_at).getTime()) < 20 * 60e3;
   const stateOf = (k, enabled) => {
     const r = last(k); if (!enabled) return 'disabled';
     if (!r) return 'never';
@@ -155,9 +155,11 @@ function pulseInflight() {
 async function pulse() {
   const q = async (sql, p) => { try { return (await C().query(sql, p)).rows; } catch (_) { return []; } };
   const [running, recent] = await Promise.all([
-    q(`SELECT agent, started_at FROM agent_runs WHERE finished_at IS NULL AND started_at >= now() - interval '30 minutes' ORDER BY started_at DESC`),
+    q(`SELECT DISTINCT ON (agent) agent, started_at, finished_at FROM agent_runs WHERE started_at >= now() - interval '30 minutes' ORDER BY agent, started_at DESC`).then(rows => rows.filter(r => r.finished_at == null && Date.now() - new Date(r.started_at).getTime() < 20 * 60e3)),
     q(`SELECT coalesce(caller,'console') AS caller, purpose, actor, at, ms, ok FROM llm_calls WHERE at >= now() - interval '3 minutes' ORDER BY at DESC LIMIT 20`),
   ]);
+  /* a deploy restarts the agents mid-tick and leaves the run row open forever — close such orphans (older than 20 min) */
+  q(`UPDATE agent_runs SET finished_at = now(), ok = false, error = 'interrupted (process restarted before the tick finished)' WHERE finished_at IS NULL AND started_at < now() - interval '20 minutes'`).catch(() => {});
   const inflight = pulseInflight();
   const runs = running.map(r => ({ agent: r.agent === 'incident.map' ? 'map' : r.agent, since: r.started_at }));
   const recentCalls = recent.map(x => ({ agent: AGENT_OF(x), purpose: x.purpose, actor: x.actor ? String(x.actor).replace(/@.*/, '') : null, at: x.at, ms: x.ms, ok: x.ok }));
