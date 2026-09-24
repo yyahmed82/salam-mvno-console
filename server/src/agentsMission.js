@@ -138,10 +138,30 @@ async function mission() {
   let brain = null; try { brain = await require('./llm').status(); } catch (e) { brain = { error: e.message }; }
   const budget = { today: tokensToday, total: tokensToday.reduce((a, t) => a + n(t.tokens), 0) };
   const [pf, usage] = await Promise.all([perf(), usage7d(q)]);
+  const inflight = pulseInflight();
+  for (const a of agents) { const mine = inflight.filter(x => x.agent === a.key); a.inflight = mine; if (mine.length) a.state = 'working'; }
   const PROC = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', yusr: 'salam-unified' };
   const CALLER = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', yusr: 'console' };
   for (const a of agents) { a.proc = pf.procs[PROC[a.key]] || null; a.usage = usage.byCaller[CALLER[a.key]] || null; }
   return { at: new Date().toISOString(), agents, brain, budget, perf: pf, usage, timeline: { runs: hourly, calls: callsHour }, intervals: INTERVALS, reportHour: REPORT_HOUR };
+}
+
+/* ---------------- pulse: what the model is answering right now (llm.inflight) ---------------- */
+const AGENT_OF = x => x.purpose === 'agent-incident.map' ? 'map' : x.caller === 'salam-agent-incident' ? 'incident' : x.caller === 'salam-agent-log' ? 'log' : 'yusr';
+function pulseInflight() {
+  let list = []; try { list = require('./llm').inflight(); } catch (_) {}
+  return list.map(x => ({ agent: AGENT_OF(x), purpose: x.purpose, caller: x.caller, actor: x.actor ? String(x.actor).replace(/@.*/, '') : null, ms: x.ms, at: new Date(x.at).toISOString() }));
+}
+async function pulse() {
+  const q = async (sql, p) => { try { return (await C().query(sql, p)).rows; } catch (_) { return []; } };
+  const [running, recent] = await Promise.all([
+    q(`SELECT agent, started_at FROM agent_runs WHERE finished_at IS NULL AND started_at >= now() - interval '30 minutes' ORDER BY started_at DESC`),
+    q(`SELECT coalesce(caller,'console') AS caller, purpose, actor, at, ms, ok FROM llm_calls WHERE at >= now() - interval '3 minutes' ORDER BY at DESC LIMIT 20`),
+  ]);
+  const inflight = pulseInflight();
+  const runs = running.map(r => ({ agent: r.agent === 'incident.map' ? 'map' : r.agent, since: r.started_at }));
+  const recentCalls = recent.map(x => ({ agent: AGENT_OF(x), purpose: x.purpose, actor: x.actor ? String(x.actor).replace(/@.*/, '') : null, at: x.at, ms: x.ms, ok: x.ok }));
+  return { at: new Date().toISOString(), inflight, runs, recent: recentCalls };
 }
 
 /* ---------------- performance: the host, the PM2 processes, the model server ---------------- */
@@ -209,6 +229,7 @@ function mount(app, { requireCap }) {
     return res.status(403).json({ error: `role ${req.roleName} cannot read the agents' mission` });
   };
   app.get('/api/agents/mission', gate, async (req, res) => { try { res.json(await mission()); } catch (e) { res.status(500).json({ error: e.message }); } });
+  app.get('/api/agents/pulse', gate, async (req, res) => { try { res.json(await pulse()); } catch (e) { res.status(500).json({ error: e.message }); } });
   void requireCap;
 }
-module.exports = { mount, mission, perf, usage7d };
+module.exports = { mount, mission, pulse, perf, usage7d };

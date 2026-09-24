@@ -189,8 +189,9 @@
     catch(e){ if(!S.data||force) h.innerHTML=`<div class="albanner" style="border-left:4px solid #dc2626;padding:12px 14px"><b>Mission control unavailable</b> — ${esc(e.message)}</div>`; }
   }
 
-  function stateOf(a){ if(S.play.i>=0){ const st=S.play.steps[S.play.i]; if(st&&st.agent===a.key) return "working"; if(st) return "idle"; } if(a.calls&&a.calls.length&&a.state==="idle"&&a.calls.some(c=>Date.now()-new Date(c.last_at).getTime()<90e3)) return "working"; return a.state; }
+  function stateOf(a){ if(S.play.i>=0){ const st=S.play.steps[S.play.i]; if(st&&st.agent===a.key) return "working"; if(st) return "idle"; } if((S.pulse&&S.pulse.inflight||[]).some(x=>x.agent===a.key)||(S.pulse&&S.pulse.runs||[]).some(x=>x.agent===a.key)) return "working"; if(a.calls&&a.calls.length&&a.state==="idle"&&a.calls.some(c=>Date.now()-new Date(c.last_at).getTime()<90e3)) return "working"; return a.state; }
   function lastSentence(a){
+    const inf=(S.pulse&&S.pulse.inflight||[]).filter(x=>x.agent===a.key); if(inf.length){ const x=inf[0]; return `<span class="t">now · thinking for ${Math.round(x.ms/1000)} s</span>${a.key==="yusr"?`answering ${x.actor?esc(x.actor)+"'s":"a"} question…`:esc(x.purpose.replace(/^agent-\w+\./,""))+" — asking the model…"}`; }
     if(a.key==="yusr"){ const y=a.outputs.yusr||{}; return y.calls24?`answered <b>${n(y.calls24)}</b> questions from ${n(y.people24)} people in 24 h · last ${esc(ago(y.last_at))}${y.blocked?` · ${n(y.blocked)} refused (budget)`:""}`:"no question in the last 24 h"; }
     const d=a.did&&a.did[0]; if(!d) return a.state==="disabled"?"switched off in the environment (AGENT_*_ENABLED=0)":"no run recorded yet";
     return `<span class="t">${esc(hm(d.at))} KSA</span>${esc(d.text)}`;
@@ -234,7 +235,7 @@
     if(a.key==="yusr"){ const y=o.yusr||{}; outputs+=`<div class="am-kv"><b class="am-big">${n(y.calls24)}</b> questions in 24 h<br><span>people</span> ${n(y.people24)} · <span>median answer</span> ${y.avg_ms?n(y.avg_ms)+" ms":"—"} · <span>refused by budget</span> ${n(y.blocked)}<br><span>last question</span> ${esc(ago(y.last_at))}</div>`; }
     const tk=a.tokens||{};
     const now=`<div class="am-kv"><div class="am-big" style="color:${sm.fg}">${esc(sm.label)}</div>
-      ${st==="working"&&a.last&&!a.last.finished_at?`<div>running for <b data-since="${a.last.started_at}">${esc(dur(a.last.started_at))}</b></div>`:a.last?`<div><span>last run</span> ${esc(ago(a.last.started_at))} · ${a.last.ok===false?`<span style="color:#dc2626;font-weight:700">failed</span>`:`took ${esc(dur(a.last.started_at,a.last.finished_at))}`}</div>`:""}
+      ${(a.inflight||[]).length?`<div>model call in progress: <b>${esc(a.inflight[0].purpose)}</b>${a.inflight[0].actor?` for <b>${esc(a.inflight[0].actor)}</b>`:""} · <b data-since="${a.inflight[0].at}">${esc(dur(a.inflight[0].at))}</b></div>`:""}${st==="working"&&a.last&&!a.last.finished_at?`<div>running for <b data-since="${a.last.started_at}">${esc(dur(a.last.started_at))}</b></div>`:a.last?`<div><span>last run</span> ${esc(ago(a.last.started_at))} · ${a.last.ok===false?`<span style="color:#dc2626;font-weight:700">failed</span>`:`took ${esc(dur(a.last.started_at,a.last.finished_at))}`}</div>`:""}
       ${a.every?`<div><span>cadence</span> every ${a.every>=3600e3?(a.every/3600e3)+" h":(a.every/60e3)+" min"}</div>`:""}
       <div><span>model calls · last 5 min</span> ${(a.calls||[]).length?a.calls.map(x=>`<b>${n(x.calls)}</b> ${esc(x.purpose)}${x.failed?` <span style="color:#dc2626">(${x.failed} failed)</span>`:""}`).join(", "):"none"}</div>
       <div><span>today</span> <b>${n(tk.calls)}</b> calls · <b>${n(tk.tokens)}</b> tokens${tk.avg_ms?` · ${n(tk.avg_ms)} ms avg`:""}${tk.blocked?` · <span style="color:#dc2626">${n(tk.blocked)} refused by budget</span>`:""}</div></div>${spark(a)}`;
@@ -457,6 +458,24 @@ LLM_FALLBACK_KEY=            # empty on-prem, or the vLLM --api-key
     const cm=h.querySelector("#amCloudM"); if(cm) cm.onchange=e=>{ S.plan.cloudM=Math.max(0,Number(e.target.value)||0); rr(); };
     const ca=h.querySelector("#amApi"); if(ca) ca.onchange=e=>{ S.plan.apiPer1M=Math.max(0,Number(e.target.value)||0); rr(); }; }
 
+  /* the pulse: every 4 s, what the model is answering right now → robots switch to "working" instantly, bubbles narrate */
+  async function pulseTick(){
+    const v=document.getElementById("view-agentsmission"); if(!v||!v.classList.contains("active")){ clearInterval(S.pulseTimer); S.pulseTimer=null; return; }
+    if(document.visibilityState!=="visible"||S.tab!=="live"||S.play.i>=0||!S.data) return;
+    let p; try{ p=await api("/api/agents/pulse"); }catch(e){ return; }
+    const before=JSON.stringify(S.pulse&&{i:S.pulse.inflight,r:S.pulse.runs}); S.pulse=p;
+    if(before===JSON.stringify({i:p.inflight,r:p.runs})) return;           // nothing changed — no DOM work
+    const h=host(); if(!h) return;
+    for(const a of S.data.agents){ a.inflight=p.inflight.filter(x=>x.agent===a.key); const el=h.querySelector(`.am-rb[data-k="${a.key}"]`); if(!el) continue;
+      const st=stateOf(a); el.className="am-rb st-"+st+(S.sel===a.key?" sel":"")+(S.pin===a.key?" pin":"");
+      const b=el.querySelector(".am-bub"); if(b) b.innerHTML=lastSentence(a);
+      const sm=a.key==="yusr"&&st==="idle"?{label:"idle · waiting for a question",fg:"#2563eb"}:(STATE[st]||STATE.idle); const stEl=el.querySelector(".st"); if(stEl){ stEl.style.color=sm.fg; if(st==="idle"&&a.next&&a.next.tick){ stEl.dataset.next=a.next.tick; stEl.textContent="● idle · next "+until(a.next.tick); } else { delete stEl.dataset.next; stEl.textContent="● "+(a.inflight.length&&a.key==="yusr"?"thinking…":sm.label); } }
+      const card=h.querySelector(`.am-card[data-k="${a.key}"] .stt`); if(card){ card.style.color=sm.fg; card.innerHTML=`<i></i>${esc(a.inflight.length&&a.key==="yusr"?"thinking…":sm.label)}`; } }
+    /* wires: packets flow while a call is in flight */
+    h.querySelectorAll(".am-wires path[id^=amW]").forEach((path,i)=>{ const a=S.data.agents[i]; if(!a) return; const hot=(a.inflight||[]).length>0||(a.calls||[]).length>0; path.setAttribute("opacity",hot?".9":".3"); const has=h.querySelector(`.am-wires .am-pkt[data-i="${i}"]`);
+      if(hot&&!has){ const d=path.getAttribute("d"); path.insertAdjacentHTML("afterend",[1,2,3].map(k=>`<circle r="4" fill="${COLOR[a.key]}" class="am-pkt d${k}" data-i="${i}" style="offset-path:path('${d}')"/>`).join("")); }
+      if(!hot&&has) h.querySelectorAll(`.am-wires .am-pkt[data-i="${i}"]`).forEach(x=>x.remove()); });
+  }
   window.openAgentsMission=function(){
     ensureView();
     document.querySelectorAll(".navtab").forEach(x=>x.classList.remove("active"));
@@ -467,5 +486,7 @@ LLM_FALLBACK_KEY=            # empty on-prem, or the vLLM --api-key
     load(true);
     if(S.timer) clearInterval(S.timer);
     S.timer=setInterval(()=>{ const v=document.getElementById("view-agentsmission"); if(!v||!v.classList.contains("active")){ clearInterval(S.timer); S.timer=null; return; } if(document.visibilityState==="visible"&&!S.play.auto) load(false); },30000);
+    if(S.pulseTimer) clearInterval(S.pulseTimer);
+    S.pulseTimer=setInterval(pulseTick,4000);
   };
 })();

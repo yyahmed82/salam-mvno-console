@@ -150,8 +150,17 @@ function extractJson(text) {
   const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b <= a) return null;
   return tryParse(t.slice(a, b + 1));
 }
-/* chat({ system, messages|user, purpose, caller, maxTokens, temperature, numCtx, json }) → { text, json?, provider, model, ms, fallback } */
+/* IN-FLIGHT calls (24 Sep 2026, Mission control): what the model is answering RIGHT NOW — a Yusr question shows as
+ * "thinking" on the robot while it runs, not only after the llm_calls row lands. */
+const INFLIGHT = new Map(); let inflightSeq = 0;
+function inflight() { return [...INFLIGHT.values()].map(x => ({ ...x, ms: Date.now() - x.at })); }
 async function chat(opts = {}) {
+  const inf = { id: ++inflightSeq, purpose: opts.purpose || 'chat', caller: opts.caller || 'console', actor: opts.actor || null, at: Date.now() };
+  INFLIGHT.set(inf.id, inf);
+  try { return await chatInner(opts); } finally { INFLIGHT.delete(inf.id); }
+}
+/* chat({ system, messages|user, purpose, caller, maxTokens, temperature, numCtx, json }) → { text, json?, provider, model, ms, fallback } */
+async function chatInner(opts = {}) {
   const cfg = await getConfig(); await ensureSchema();
   const messages = opts.messages ? opts.messages.slice() : [];
   if (opts.system && !messages.some(m => m.role === 'system')) messages.unshift({ role: 'system', content: opts.system });
@@ -263,4 +272,4 @@ async function status() {
 let timer = null;
 function start() { if (timer) clearInterval(timer); probe().catch(() => {}); timer = setInterval(() => probe().catch(() => {}), 60000); if (timer.unref) timer.unref(); return { armed: true }; }
 
-module.exports = { selftest, budget, chat, getConfig, setConfig, probe, status, start, ensureSchema };
+module.exports = { selftest, budget, chat, inflight, getConfig, setConfig, probe, status, start, ensureSchema };

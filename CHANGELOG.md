@@ -1,3 +1,8 @@
+## 2.0.0-alpha.84 — 24 Sep 2026 — Mission control: the robots react in real time
+
+- `llm.js` keeps an in-flight register of every model call (purpose, caller, actor, started at) — `llm.inflight()`; `GET /api/agents/pulse` returns it with the agent runs in progress and the calls of the last 3 minutes.
+- The page polls the pulse every 4 s: a robot switches to *working* the moment its call starts (Yusr shows "thinking… · answering <name>'s question", an agent shows "assess / triage / map — asking the model…"), packets flow on its wire, the card header follows — instead of waiting for the `llm_calls` row and the 30 s refresh. The "doing now" column shows the call in progress with a live timer.
+
 ## 2.0.0-alpha.83 — 24 Sep 2026 — vLLM tab in SAR, KSA market, references and the Salam sequence
 
 - Costs in **SAR** (1 USD = 3.75) with KSA-market figures: on-prem L40S server ≈ 45–70 k SAR (L4 ≈ 22–35 k), in-Kingdom GPU rental (DCP L40S 5.2 SAR/h ≈ 3 800 SAR/month, A100 7.3 SAR/h, H100 17.27 SAR/h; Google Cloud Dammam G2/L4 via CNTXT ≈ 2 000 SAR/month), managed API per 1M tokens (DCP from 0.05 SAR) — all three editable in the 24-month cost chart, break-even A vs B in months.
