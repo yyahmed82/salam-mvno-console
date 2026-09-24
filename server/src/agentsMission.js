@@ -137,7 +137,69 @@ async function mission() {
   ];
   let brain = null; try { brain = await require('./llm').status(); } catch (e) { brain = { error: e.message }; }
   const budget = { today: tokensToday, total: tokensToday.reduce((a, t) => a + n(t.tokens), 0) };
-  return { at: new Date().toISOString(), agents, brain, budget, timeline: { runs: hourly, calls: callsHour }, intervals: INTERVALS, reportHour: REPORT_HOUR };
+  const [pf, usage] = await Promise.all([perf(), usage7d(q)]);
+  const PROC = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', yusr: 'salam-unified' };
+  const CALLER = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', yusr: 'console' };
+  for (const a of agents) { a.proc = pf.procs[PROC[a.key]] || null; a.usage = usage.byCaller[CALLER[a.key]] || null; }
+  return { at: new Date().toISOString(), agents, brain, budget, perf: pf, usage, timeline: { runs: hourly, calls: callsHour }, intervals: INTERVALS, reportHour: REPORT_HOUR };
+}
+
+/* ---------------- performance: the host, the PM2 processes, the model server ---------------- */
+const os = require('os'); const fs = require('fs'); const { execFile } = require('child_process');
+let perfCache = { at: 0, v: null };
+function cpuSnap() { try { const l = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0].trim().split(/\s+/).slice(1).map(Number); const idle = l[3] + (l[4] || 0); const total = l.reduce((a, b) => a + b, 0); return { idle, total }; } catch (_) { return null; } }
+let lastCpu = cpuSnap(), lastCpuAt = Date.now(), cpuPct = null;
+async function hostPerf() {
+  const now = Date.now(); const c = cpuSnap();
+  if (c && lastCpu && c.total > lastCpu.total && now - lastCpuAt > 2000) { cpuPct = Math.round((1 - (c.idle - lastCpu.idle) / (c.total - lastCpu.total)) * 100); lastCpu = c; lastCpuAt = now; }
+  const mem = (() => { try { const m = {}; for (const l of fs.readFileSync('/proc/meminfo', 'utf8').split('\n')) { const x = /^(\w+):\s+(\d+)/.exec(l); if (x) m[x[1]] = Number(x[2]) * 1024; } return { total: m.MemTotal, avail: m.MemAvailable, used: m.MemTotal - m.MemAvailable }; } catch (_) { return { total: os.totalmem(), avail: os.freemem(), used: os.totalmem() - os.freemem() }; } })();
+  return { hostname: os.hostname(), cores: os.cpus().length, cpuModel: (os.cpus()[0] || {}).model || '', load: os.loadavg().map(x => Math.round(x * 100) / 100), cpuPct, mem, uptimeSec: Math.round(os.uptime()), gpu: await gpuPerf() };
+}
+function run(cmd, args, ms = 5000) { return new Promise(res => { try { execFile(cmd, args, { timeout: ms, env: { ...process.env, PATH: (process.env.PATH || '') + ':/usr/local/bin:/usr/bin:/bin' }, maxBuffer: 8e6 }, (e, out) => res(e ? null : String(out))); } catch (_) { res(null); } }); }
+async function gpuPerf() {
+  const out = await run('nvidia-smi', ['--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu', '--format=csv,noheader,nounits'], 3000);
+  if (!out) return null;
+  return out.trim().split('\n').filter(Boolean).map(l => { const [name, mu, mt, util, temp] = l.split(',').map(x => x.trim()); return { name, memUsedMb: Number(mu), memTotalMb: Number(mt), utilPct: Number(util), tempC: Number(temp) }; });
+}
+async function pm2Perf() {
+  const out = await run('pm2', ['jlist'], 6000); const procs = {};
+  if (out) { try { for (const p of JSON.parse(out)) { const e = p.pm2_env || {}; procs[p.name] = { pid: p.pid, status: e.status, cpuPct: p.monit ? p.monit.cpu : null, memBytes: p.monit ? p.monit.memory : null, uptimeSec: e.pm_uptime ? Math.round((Date.now() - e.pm_uptime) / 1000) : null, restarts: e.restart_time || 0, node: e.node_version || null }; } } catch (_) {} }
+  if (!Object.keys(procs).length) { const mu = process.memoryUsage(); procs[process.env.PM2_NAME || process.env.name || 'salam-unified'] = { pid: process.pid, status: 'online', cpuPct: null, memBytes: mu.rss, uptimeSec: Math.round(process.uptime()), restarts: null, self: true }; }
+  return procs;
+}
+async function modelServerPerf() {
+  let cfg = null; try { cfg = await require('./llm').getConfig(); } catch (_) {}
+  const p = cfg && cfg.primary; if (!p || !p.url) return null;
+  if (p.kind !== 'ollama') return { kind: p.kind, url: p.url, note: 'OpenAI-compatible server — no process view from here' };
+  try { const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 2500);
+    const r = await fetch(p.url.replace(/\/+$/, '') + '/api/ps', { signal: ctl.signal }); clearTimeout(t); const j = await r.json();
+    return { kind: 'ollama', url: p.url, models: (j.models || []).map(m => ({ name: m.name, sizeBytes: m.size, vramBytes: m.size_vram, processor: m.size_vram ? (m.size_vram >= m.size ? 'GPU' : `${Math.round(m.size_vram / m.size * 100)}% GPU`) : 'CPU', params: m.details && m.details.parameter_size, quant: m.details && m.details.quantization_level, expiresAt: m.expires_at })) };
+  } catch (e) { return { kind: 'ollama', url: p.url, error: e.name === 'AbortError' ? 'no answer in 2.5 s' : e.message }; }
+}
+async function perf() {
+  if (Date.now() - perfCache.at < 10e3 && perfCache.v) return perfCache.v;
+  const [host, procs, model] = await Promise.all([hostPerf(), pm2Perf(), modelServerPerf()]);
+  perfCache = { at: Date.now(), v: { host, procs, model } }; return perfCache.v;
+}
+/* the last 7 days of model calls — what a GPU move has to carry (sizing) */
+let usageCache = { at: 0, v: null };
+async function usage7d(q) {
+  if (Date.now() - usageCache.at < 60e3 && usageCache.v) return usageCache.v;
+  const v = await usage7dRaw(q); usageCache = { at: Date.now(), v }; return v;
+}
+async function usage7dRaw(q) {
+  const rows = await q(`SELECT coalesce(caller,'console') AS caller, count(*)::int AS calls, count(*) FILTER (WHERE ok)::int AS ok, count(*) FILTER (WHERE blocked)::int AS blocked,
+      coalesce(sum(tokens),0)::bigint AS tokens, coalesce(sum(prompt_tokens),0)::bigint AS prompt_tokens, coalesce(sum(answer_tokens),0)::bigint AS answer_tokens,
+      round(avg(ms) FILTER (WHERE ok))::int AS avg_ms, percentile_cont(0.95) WITHIN GROUP (ORDER BY ms) FILTER (WHERE ok)::int AS p95_ms, max(ms)::int AS max_ms,
+      round((sum(answer_tokens) FILTER (WHERE ok AND ms > 0))::numeric * 1000 / nullif(sum(ms) FILTER (WHERE ok AND ms > 0), 0), 1)::float AS tok_s
+    FROM llm_calls WHERE at >= now() - interval '7 days' GROUP BY 1`);
+  const days = await q(`SELECT date_trunc('day', at + interval '3 hours') AS d, count(*)::int AS calls, coalesce(sum(tokens),0)::bigint AS tokens FROM llm_calls WHERE at >= now() - interval '7 days' GROUP BY 1 ORDER BY 1`);
+  const peakHour = (await q(`SELECT date_trunc('hour', at) AS h, count(*)::int AS calls, coalesce(sum(tokens),0)::bigint AS tokens, coalesce(sum(answer_tokens),0)::bigint AS answer_tokens FROM llm_calls WHERE at >= now() - interval '7 days' GROUP BY 1 ORDER BY tokens DESC LIMIT 1`))[0] || null;
+  const conc = (await q(`SELECT max(c)::int AS max_concurrent FROM (SELECT count(*) AS c FROM llm_calls a JOIN llm_calls b ON b.at < a.at + (a.ms || ' ms')::interval AND b.at + (b.ms || ' ms')::interval > a.at WHERE a.at >= now() - interval '24 hours' AND b.at >= now() - interval '24 hours' GROUP BY a.id) x`))[0] || {};
+  const byCaller = {}; for (const r of rows) byCaller[r.caller] = r;
+  const tot = { calls: 0, tokens: 0, prompt_tokens: 0, answer_tokens: 0, ms: 0 }; for (const r of rows) { tot.calls += n(r.calls); tot.tokens += n(r.tokens); tot.prompt_tokens += n(r.prompt_tokens); tot.answer_tokens += n(r.answer_tokens); tot.ms += n(r.avg_ms) * n(r.ok); }
+  const okCalls = rows.reduce((a, r) => a + n(r.ok), 0);
+  return { byCaller, days, peakHour, maxConcurrent: n(conc.max_concurrent), total: { ...tot, avg_ms: okCalls ? Math.round(tot.ms / okCalls) : null, perDay: { calls: Math.round(tot.calls / 7), tokens: Math.round(tot.tokens / 7) } } };
 }
 
 function mount(app, { requireCap }) {
@@ -149,4 +211,4 @@ function mount(app, { requireCap }) {
   app.get('/api/agents/mission', gate, async (req, res) => { try { res.json(await mission()); } catch (e) { res.status(500).json({ error: e.message }); } });
   void requireCap;
 }
-module.exports = { mount, mission };
+module.exports = { mount, mission, perf, usage7d };

@@ -17,9 +17,33 @@
   const ago=iso=>{ if(!iso) return "never"; const s=Math.round((Date.now()-new Date(iso).getTime())/1000); if(s<0) return "just now"; if(s<60) return s+" s ago"; const m=Math.floor(s/60); if(m<60) return m+" min ago"; const h=Math.floor(m/60); if(h<48) return h+" h "+(m%60)+" min ago"; return Math.floor(h/24)+" d ago"; };
   const until=iso=>{ if(!iso) return "—"; const s=Math.round((new Date(iso).getTime()-Date.now())/1000); if(s<=0) return "now"; if(s<60) return "in "+s+" s"; const m=Math.floor(s/60); if(m<60) return "in "+m+" min "+(s%60)+" s"; const h=Math.floor(m/60); return "in "+h+" h "+(m%60)+" min"; };
   const dur=(a,b)=>{ if(!a) return ""; const ms=(b?new Date(b):new Date()).getTime()-new Date(a).getTime(); if(ms<1000) return "<1 s"; const s=Math.round(ms/1000); return s<60?s+" s":Math.floor(s/60)+" min "+(s%60)+" s"; };
+  const gb=b=>b==null?"—":(b>=1e9?(b/1e9).toFixed(1)+" GB":Math.round(b/1e6)+" MB");
+  const up=s=>{ if(s==null) return "—"; if(s<3600) return Math.floor(s/60)+" min"; if(s<86400) return Math.floor(s/3600)+" h "+Math.floor(s%3600/60)+" min"; return Math.floor(s/86400)+" d "+Math.floor(s%86400/3600)+" h"; };
+  const bar=(v,max,label,txt)=>{ const p=max?Math.max(0,Math.min(100,v/max*100)):0; return `<div class="am-m"><span class="l">${label}</span><div class="am-bar"><i class="${p>85?"hot":p>60?"warm":""}" style="width:${p.toFixed(0)}%"></i></div><span class="v">${txt}</span></div>`; };
+  function hudAgent(a,d){
+    const pr=a.proc||{}; const u=a.usage||{}; const tk=a.tokens||{}; const host=(d.perf&&d.perf.host)||{}; const cores=host.cores||1;
+    return `<div class="am-hud"><h6>${esc(a.pm2)} <span>${pr.status?esc(pr.status):"no pm2 view"}${pr.pid?" · pid "+pr.pid:""}</span></h6>
+      ${bar(pr.cpuPct||0,100,"CPU",pr.cpuPct==null?"—":pr.cpuPct+" %")}
+      ${bar(pr.memBytes||0,1.5e9,"RAM",gb(pr.memBytes))}
+      ${bar(tk.tokens||0,600000,"tokens today",n(tk.tokens))}
+      ${bar(u.tok_s||0,40,"speed",u.tok_s?u.tok_s+" tok/s":"—")}
+      ${bar(u.avg_ms||0,60000,"latency",u.avg_ms?Math.round(u.avg_ms/1000)+" s avg":"—")}
+      <div class="ft">7 d: <b>${n(u.calls)}</b> calls · p95 ${u.p95_ms?Math.round(u.p95_ms/1000)+" s":"—"} · fail ${u.calls?Math.round((u.calls-(u.ok||0))/u.calls*100):0} % · ${n(u.tokens)} tokens<br>up ${esc(up(pr.uptimeSec))}${pr.restarts!=null?" · "+pr.restarts+" restart(s)":""} · host ${cores} cores</div></div>`;
+  }
+  function hudBrain(d){
+    const h=(d.perf&&d.perf.host)||{}; const m=(d.perf&&d.perf.model)||{}; const mem=h.mem||{}; const u=(d.usage&&d.usage.total)||{};
+    const models=(m.models||[]).map(x=>`<div class="am-m" style="grid-template-columns:1fr auto"><span><b>${esc(x.name)}</b> <span class="l">${esc(x.params||"")} ${esc(x.quant||"")}</span></span><span class="v">${esc(x.processor)} · ${gb(x.sizeBytes)}</span></div>`).join("");
+    return `<div class="am-hud"><h6>${esc(h.hostname||"host")} <span>${h.cores||"?"} cores${h.gpu&&h.gpu.length?" · GPU":" · no GPU"}</span></h6>
+      ${bar(h.cpuPct||0,100,"CPU",h.cpuPct==null?"—":h.cpuPct+" %")}
+      ${bar(mem.used||0,mem.total||1,"RAM",gb(mem.used)+" / "+gb(mem.total))}
+      ${bar((h.load||[0])[0],h.cores||1,"load 1 m",((h.load||[0])[0]||0).toFixed(2))}
+      ${(h.gpu||[]).map(g=>bar(g.memUsedMb,g.memTotalMb,"GPU",g.utilPct+" % · "+Math.round(g.memUsedMb/1024)+"/"+Math.round(g.memTotalMb/1024)+" GB")).join("")}
+      <div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px"><div class="ft" style="margin:0 0 2px">model server · ${esc(m.kind||"?")}${m.error?` · <span style="color:#dc2626">${esc(m.error)}</span>`:""}</div>${models||`<div class="ft">no model resident (loads on the next call — first answer slower)</div>`}</div>
+      <div class="ft">7 d: ${n(u.calls)} calls · ${n(u.tokens)} tokens · avg ${u.avg_ms?Math.round(u.avg_ms/1000)+" s":"—"} · up ${esc(up(h.uptimeSec))}</div></div>`;
+  }
   const COLOR={ log:"#2563eb", incident:"#0e9f5a", map:"#7c3aed", yusr:"#d97706" };
   const STATE={ working:{label:"working",fg:"#0e9f5a"}, idle:{label:"idle · waiting for the next tick",fg:"#2563eb"}, stale:{label:"stale — no run when one was due",fg:"#d97706"}, error:{label:"last run failed",fg:"#dc2626"}, disabled:{label:"disabled",fg:"#64748b"}, never:{label:"never ran yet",fg:"#64748b"} };
-  const S={ data:null, timer:null, tick:null, sel:null, play:{steps:[],i:-1,auto:null,speed:1}, open:false };
+  const S={ data:null, timer:null, tick:null, sel:null, play:{steps:[],i:-1,auto:null,speed:1}, open:false, tab:"live", pin:null, plan:{target:"onprem",model:"14b",conc:null} };
 
   const CSS=`
   #view-agentsmission .am-wrap{display:flex;flex-direction:column;gap:14px}
@@ -30,7 +54,7 @@
   /* ---- the stage ---- */
   #view-agentsmission .am-stage{position:relative;border:1px solid var(--line);border-radius:18px;padding:18px 18px 12px;overflow:hidden;background:radial-gradient(120% 90% at 50% 0%,rgba(14,159,90,.10) 0%,transparent 55%),linear-gradient(180deg,var(--card,#fff),var(--card2,#f8fafc));box-shadow:0 1px 3px rgba(2,6,23,.05)}
   #view-agentsmission .am-stage:before{content:"";position:absolute;inset:0;background-image:linear-gradient(var(--line-soft,var(--line)) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft,var(--line)) 1px,transparent 1px);background-size:28px 28px;opacity:.35;pointer-events:none}
-  #view-agentsmission .am-brain{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  #view-agentsmission .am-brain{position:relative;z-index:7;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;margin-bottom:6px}
   #view-agentsmission .am-core{position:relative;width:88px;height:88px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#fff,var(--green,#0e9f5a) 55%,#065f46);color:#fff;font-size:30px;box-shadow:0 10px 30px rgba(14,159,90,.35)}
   #view-agentsmission .am-core:before,#view-agentsmission .am-core:after{content:"";position:absolute;inset:-10px;border-radius:50%;border:2px solid var(--green,#0e9f5a);opacity:0;animation:amRing 2.6s ease-out infinite} #view-agentsmission .am-core:after{animation-delay:1.3s}
   #view-agentsmission .am-core.off{background:radial-gradient(circle at 35% 30%,#fff,#94a3b8 55%,#475569);box-shadow:none} #view-agentsmission .am-core.off:before,#view-agentsmission .am-core.off:after{animation:none}
@@ -91,7 +115,30 @@
   #view-agentsmission .am-track{position:relative;height:56px;margin-top:8px;border-radius:10px;background:var(--card2,#f8fafc);border:1px solid var(--line);overflow:hidden}
   #view-agentsmission .am-track .lane{position:absolute;left:0;right:0;height:12px} #view-agentsmission .am-track .lane i{position:absolute;top:2px;width:7px;height:7px;border-radius:50%;transform:translateX(-50%);cursor:pointer;opacity:.75} #view-agentsmission .am-track .lane i.on{opacity:1;transform:translateX(-50%) scale(1.5);box-shadow:0 0 0 2px var(--card,#fff)}
   #view-agentsmission .am-track .cur{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);opacity:.6;transform:translateX(-50%)} #view-agentsmission .am-track .hr{position:absolute;bottom:0;font-size:9.5px;color:var(--muted);transform:translateX(-50%)}
-  @media (max-width:820px){#view-agentsmission .am-robots{grid-template-columns:1fr 1fr} #view-agentsmission .am-rb svg{width:96px;height:108px} #view-agentsmission .am-wires{display:none} #view-agentsmission .am-bub{max-width:100%}}
+  /* ---- tabs ---- */
+  #view-agentsmission .am-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 2px} #view-agentsmission .am-tab{cursor:pointer;font:inherit;font-size:13px;font-weight:700;padding:8px 16px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:var(--ink);transition:all .14s} #view-agentsmission .am-tab:hover{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a)} #view-agentsmission .am-tab.on{background:var(--green,#0e9f5a);border-color:var(--green,#0e9f5a);color:#fff}
+  /* ---- perf HUD ---- */
+  #view-agentsmission .am-hud{display:none;position:absolute;left:50%;top:6px;transform:translateX(-50%);z-index:6;width:262px;text-align:left;background:var(--card,#fff);border:1px solid var(--ac);border-radius:12px;padding:10px 12px;box-shadow:0 12px 30px rgba(2,6,23,.22);font-size:11.5px}
+  #view-agentsmission .am-rb:hover .am-hud,#view-agentsmission .am-rb.pin .am-hud,#view-agentsmission .am-brainw:hover .am-hud,#view-agentsmission .am-brainw.pin .am-hud{display:block}
+  #view-agentsmission .am-hud h6{margin:0 0 6px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ac);font-weight:800;display:flex;justify-content:space-between;gap:8px;white-space:nowrap;overflow:hidden} #view-agentsmission .am-hud h6 span{overflow:hidden;text-overflow:ellipsis} #view-agentsmission .am-hud h6 span{color:var(--muted);font-weight:600;letter-spacing:0;text-transform:none}
+  #view-agentsmission .am-m{display:grid;grid-template-columns:54px 1fr auto;gap:6px;align-items:center;padding:3px 0} #view-agentsmission .am-m .l{color:var(--muted)} #view-agentsmission .am-m .v{text-align:right;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+  #view-agentsmission .am-bar{height:7px;border-radius:4px;background:var(--line-soft,var(--line));overflow:hidden} #view-agentsmission .am-bar i{display:block;height:100%;border-radius:4px;background:var(--ac);transition:width .6s} #view-agentsmission .am-bar i.hot{background:#dc2626} #view-agentsmission .am-bar i.warm{background:#d97706}
+  #view-agentsmission .am-hud .ft{margin-top:6px;color:var(--muted);font-size:10.5px}
+  #view-agentsmission .am-brainw{position:relative;cursor:pointer} #view-agentsmission .am-brainw .am-hud{width:300px;--ac:var(--green,#0e9f5a);left:0;transform:none}
+  #view-agentsmission .am-hint{font-size:10.5px;color:var(--muted);text-align:center;margin-top:4px}
+  /* ---- the move plan ---- */
+  #view-agentsmission .am-plan{display:flex;flex-direction:column;gap:14px}
+  #view-agentsmission .am-pk{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px} #view-agentsmission .am-pk .k{background:var(--card,#fff);border:1px solid var(--line);border-radius:12px;padding:12px 14px} #view-agentsmission .am-pk .k b{display:block;font-size:22px;font-weight:800;letter-spacing:-.3px;line-height:1.1} #view-agentsmission .am-pk .k span{font-size:11.5px;color:var(--muted)}
+  #view-agentsmission .am-opts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px} @media (max-width:960px){#view-agentsmission .am-opts{grid-template-columns:1fr}}
+  #view-agentsmission .am-opt{background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;padding:16px 18px;border-top:4px solid var(--oc);cursor:pointer;transition:transform .15s,box-shadow .15s} #view-agentsmission .am-opt:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(2,6,23,.10)} #view-agentsmission .am-opt.on{box-shadow:0 0 0 3px rgba(14,159,90,.18)}
+  #view-agentsmission .am-opt h3{margin:0 0 2px;font-size:15px;font-weight:800} #view-agentsmission .am-opt .who{font-size:11.5px;color:var(--muted);margin-bottom:8px} #view-agentsmission .am-opt ul{margin:6px 0 0;padding-left:16px;font-size:12.5px;line-height:1.5} #view-agentsmission .am-opt .verdict{margin-top:10px;font-size:12px;font-weight:700;padding:6px 10px;border-radius:9px;background:rgba(125,133,144,.12)} #view-agentsmission .am-opt .verdict.go{background:rgba(14,159,90,.14);color:var(--green,#0e9f5a)} #view-agentsmission .am-opt .verdict.no{background:rgba(220,38,38,.12);color:#dc2626} #view-agentsmission .am-opt .verdict.mid{background:rgba(217,119,6,.14);color:#b45309}
+  #view-agentsmission .am-sec{background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;padding:16px 18px} #view-agentsmission .am-sec h2{margin:0 0 4px;font-size:15px;font-weight:800} #view-agentsmission .am-sec .sub{margin-bottom:10px}
+  #view-agentsmission table.am-t{width:100%;border-collapse:collapse;font-size:12.5px} #view-agentsmission .am-t th{text-align:left;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line)} #view-agentsmission .am-t td{padding:8px 10px;border-bottom:1px solid var(--line-soft,var(--line));vertical-align:top} #view-agentsmission .am-t tr.hl td{background:rgba(14,159,90,.07)} #view-agentsmission .am-t .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  #view-agentsmission .am-ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12.5px} #view-agentsmission .am-ctl label{display:flex;align-items:center;gap:6px} #view-agentsmission .am-ctl select,#view-agentsmission .am-ctl input{font:inherit;font-size:12.5px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card2,#f1f5f9);color:var(--ink)} #view-agentsmission .am-ctl input{width:90px}
+  #view-agentsmission .am-steps{counter-reset:st;list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px} #view-agentsmission .am-steps li{position:relative;padding:12px 12px 12px 44px;border:1px solid var(--line);border-radius:12px;background:var(--card2,#f8fafc);font-size:12.5px;line-height:1.45} #view-agentsmission .am-steps li:before{counter-increment:st;content:counter(st);position:absolute;left:12px;top:12px;width:24px;height:24px;border-radius:50%;background:var(--green,#0e9f5a);color:#fff;font-weight:800;font-size:12px;display:grid;place-items:center} #view-agentsmission .am-steps li b{display:block;margin-bottom:2px} #view-agentsmission .am-steps li .d{color:var(--muted);font-size:11px}
+  #view-agentsmission .am-code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--card2,#f8fafc);border:1px solid var(--line);border-radius:10px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;line-height:1.5}
+  #view-agentsmission .am-note{font-size:11.5px;color:var(--muted);border-left:3px solid #d97706;padding:6px 10px;background:rgba(217,119,6,.06);border-radius:0 8px 8px 0}
+  @media (max-width:820px){#view-agentsmission .am-hud{width:220px} #view-agentsmission .am-robots{grid-template-columns:1fr 1fr} #view-agentsmission .am-rb svg{width:96px;height:108px} #view-agentsmission .am-wires{display:none} #view-agentsmission .am-bub{max-width:100%}}
   @media (max-width:520px){#view-agentsmission .am-robots{grid-template-columns:1fr 1fr;gap:6px} #view-agentsmission .am-card{padding:12px} #view-agentsmission .am-player{bottom:4px;padding:10px}}
   @media (prefers-reduced-motion:reduce){#view-agentsmission *{animation-duration:0s!important}}
   `;
@@ -120,9 +167,10 @@
     const main=document.querySelector("main")||document.body;
     v=document.createElement("section"); v.id="view-agentsmission"; v.className="view";
     v.innerHTML=`<div class="page-head"><div class="am-head"><div><h1 style="margin:0">AI agents · Mission control</h1><div class="sub">Four autonomous services on the on-prem model — what each one <b>did</b>, is <b>doing now</b>, and <b>should do next</b>. Nothing leaves the network; nothing is applied without a human.</div></div>
-      <div class="sp"><span class="am-live"><i></i>live · <span id="amAge">—</span></span><button class="am-btn" id="amReplay">▶ Replay last 24 h</button><button class="am-btn" id="amRefresh">↻ Refresh</button></div></div></div><div id="amHost" class="am-wrap" style="margin-top:12px"><div class="sub" style="padding:24px">${window.salamLoader?window.salamLoader("Waking the robots…"):"Loading…"}</div></div>`;
+      <div class="sp"><span class="am-live"><i></i>live · <span id="amAge">—</span></span><button class="am-btn" id="amReplay">▶ Replay last 24 h</button><button class="am-btn" id="amRefresh">↻ Refresh</button></div></div></div><div class="am-tabs"><button class="am-tab on" data-tab="live">🤖 Mission control</button><button class="am-tab" data-tab="plan">🚀 Move to vLLM / GPU — effort &amp; options</button></div><div id="amHost" class="am-wrap" style="margin-top:12px"><div class="sub" style="padding:24px">${window.salamLoader?window.salamLoader("Waking the robots…"):"Loading…"}</div></div>`;
     main.appendChild(v);
     v.querySelector("#amRefresh").onclick=()=>load(true); v.querySelector("#amReplay").onclick=()=>toggleReplay();
+    v.querySelectorAll(".am-tab").forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; v.querySelectorAll(".am-tab").forEach(x=>x.classList.toggle("on",x===b)); v.querySelector("#amReplay").style.display=S.tab==="live"?"":"none"; render(); });
     return v;
   }
   const host=()=>document.getElementById("amHost");
@@ -146,15 +194,17 @@
     const br=d.brain||{}; const hp=br.health||{}; const okBrain=hp.ok!==false&&!br.error; const prim=br.primary||{};
     const calls5=d.agents.reduce((a,x)=>a+(x.calls||[]).reduce((s,c)=>s+c.calls,0),0);
     const stage=`<div class="am-stage">
-      <div class="am-brain"><div class="am-core ${okBrain?"":"off"}" title="the on-prem model every agent talks to">🧠</div>
+      <div class="am-brain"><div class="am-brainw${S.pin==="brain"?" pin":""}" data-pin="brain" title="hover / click: host · CPU · RAM · loaded model"><div class="am-core ${okBrain?"":"off"}">🧠</div>${hudBrain(d)}</div>
         <div class="am-brainx"><b>${esc(prim.model||"model not configured")}</b>${esc(prim.kind||"")} · ${esc((prim.url||"").replace(/^https?:\/\//,""))}<br>${okBrain?`<span style="color:var(--green,#0e9f5a);font-weight:700">answering</span>`:`<span style="color:#dc2626;font-weight:700">not answering</span>`}${hp.ms?` · ${n(hp.ms)} ms probe`:""} · <b style="display:inline;font-size:12.5px">${n(d.budget.total)}</b> tokens today · ${calls5?`<span style="color:var(--green,#0e9f5a);font-weight:700">${n(calls5)} call(s) in the last 5 min</span>`:"quiet for 5 min"}</div></div>
       <svg class="am-wires" viewBox="0 0 1000 70" preserveAspectRatio="none">${d.agents.map((a,i)=>{ const x=125+i*250; const path=`M500,0 C500,45 ${x},25 ${x},70`; const hot=(a.calls||[]).length>0||stateOf(a)==="working"; return `<path id="amW${i}" d="${path}" fill="none" stroke="${COLOR[a.key]}" stroke-width="2" stroke-dasharray="6 6" opacity="${hot?".9":".3"}"/>${hot?[1,2,3].map(k=>`<circle r="4" fill="${COLOR[a.key]}" class="am-pkt d${k}" style="offset-path:path('${path}')"/>`).join(""):""}`; }).join("")}</svg>
-      <div class="am-robots">${d.agents.map(a=>{ const st=stateOf(a); const sm=a.key==="yusr"&&st==="idle"?{label:"idle · waiting for a question",fg:"#2563eb"}:(STATE[st]||STATE.idle); return `<div class="am-rb st-${st}${S.sel===a.key?" sel":""}" data-k="${a.key}" title="Open ${esc(a.name)}">${robot(COLOR[a.key],a.key==="yusr"?"smile":"")}
+      <div class="am-robots">${d.agents.map(a=>{ const st=stateOf(a); const sm=a.key==="yusr"&&st==="idle"?{label:"idle · waiting for a question",fg:"#2563eb"}:(STATE[st]||STATE.idle); return `<div class="am-rb st-${st}${S.sel===a.key?" sel":""}${S.pin===a.key?" pin":""}" data-k="${a.key}" data-pin="${a.key}" title="${esc(a.name)} — click: pin the performance panel · double-click: open the card">${robot(COLOR[a.key],a.key==="yusr"?"smile":"")}
           <div class="nm">${esc(a.name)}</div><div class="st" style="color:${sm.fg}">● ${esc(st==="idle"&&a.next&&a.next.tick?"idle · next "+until(a.next.tick):sm.label)}</div><div class="pm">${esc(a.short)} · <span class="mono">${esc(a.pm2)}</span></div>
-          <div class="am-bub" data-bub="${a.key}">${lastSentence(a)}</div></div>`; }).join("")}</div></div>`;
+          <div class="am-bub" data-bub="${a.key}">${lastSentence(a)}</div><div style="--ac:${COLOR[a.key]}">${hudAgent(a,d)}</div></div>`; }).join("")}</div><div class="am-hint">hover a robot for CPU · RAM · tokens · speed · latency — click to pin</div></div>`;
+    if(S.tab==="plan"){ h.innerHTML=plan(d); bindPlan(); if(S.tick) clearInterval(S.tick); return; }
     const cards=`<div class="am-cards">${d.agents.map(card).join("")}</div>`;
     h.innerHTML=stage+cards+(S.open?player():"");
-    h.querySelectorAll(".am-rb").forEach(el=>el.onclick=()=>{ S.sel=el.dataset.k; h.querySelectorAll(".am-rb").forEach(x=>x.classList.toggle("sel",x.dataset.k===S.sel)); h.querySelectorAll(".am-card").forEach(x=>x.classList.toggle("sel",x.dataset.k===S.sel)); const c=h.querySelector(`.am-card[data-k="${S.sel}"]`); if(c) c.scrollIntoView({behavior:"smooth",block:"start"}); });
+    h.querySelectorAll("[data-pin]").forEach(el=>el.onclick=e=>{ if(e.target.closest(".am-hud")) return; const k=el.dataset.pin; S.pin=(S.pin===k)?null:k; h.querySelectorAll("[data-pin]").forEach(x=>x.classList.toggle("pin",x.dataset.pin===S.pin)); });
+    h.querySelectorAll(".am-rb").forEach(el=>el.ondblclick=()=>{ S.sel=el.dataset.k; h.querySelectorAll(".am-rb").forEach(x=>x.classList.toggle("sel",x.dataset.k===S.sel)); h.querySelectorAll(".am-card").forEach(x=>x.classList.toggle("sel",x.dataset.k===S.sel)); const c=h.querySelector(`.am-card[data-k="${S.sel}"]`); if(c) c.scrollIntoView({behavior:"smooth",block:"start"}); });
     if(S.open) bindPlayer();
     if(S.tick) clearInterval(S.tick);
     S.tick=setInterval(()=>{ if(!h.isConnected){ clearInterval(S.tick); return; } h.querySelectorAll("[data-until]").forEach(el=>el.textContent=until(el.dataset.until)); h.querySelectorAll("[data-since]").forEach(el=>el.textContent=dur(el.dataset.since)); h.querySelectorAll(".am-rb .st[data-next]").forEach(el=>el.textContent="● idle · next "+until(el.dataset.next)); },1000);
@@ -211,7 +261,7 @@
   function bindPlayer(){
     const h=host(); const p=S.play; const go=i=>{ if(!p.steps.length) return; p.i=Math.max(0,Math.min(p.steps.length-1,i)); const nr=h.querySelector("#amNarr"); if(nr) nr.innerHTML=narr(p.steps[p.i]); const c=h.querySelector("#amCnt"); if(c) c.textContent=(p.i+1)+" / "+p.steps.length;
       h.querySelectorAll("#amTrack .lane i").forEach(el=>el.classList.toggle("on",Number(el.dataset.i)===p.i)); const cur=h.querySelector("#amTrack .cur"); const since=Date.now()-24*3600e3; const left=((new Date(p.steps[p.i].at).getTime()-since)/(24*3600e3)*100).toFixed(2)+"%"; if(cur) cur.style.left=left; else h.querySelector("#amTrack").insertAdjacentHTML("beforeend",`<div class="cur" style="left:${left}"></div>`);
-      h.querySelectorAll(".am-rb").forEach(el=>{ const a=S.data.agents.find(x=>x.key===el.dataset.k); el.className="am-rb st-"+stateOf(a)+(S.sel===a.key?" sel":""); const b=el.querySelector(".am-bub"); if(b&&a.key===p.steps[p.i].agent) b.innerHTML=`<span class="t">${esc(hm(p.steps[p.i].at))} KSA · replay</span>${esc(p.steps[p.i].text)}`; });
+      h.querySelectorAll(".am-rb").forEach(el=>{ const a=S.data.agents.find(x=>x.key===el.dataset.k); el.className="am-rb st-"+stateOf(a)+(S.sel===a.key?" sel":"")+(S.pin===a.key?" pin":""); const b=el.querySelector(".am-bub"); if(b&&a.key===p.steps[p.i].agent) b.innerHTML=`<span class="t">${esc(hm(p.steps[p.i].at))} KSA · replay</span>${esc(p.steps[p.i].text)}`; });
       if(p.i===p.steps.length-1&&p.auto) stopAuto(); };
     const stopAuto=()=>{ if(p.auto){ clearInterval(p.auto); p.auto=null; } const b=h.querySelector("#amAuto"); if(b) b.textContent="▶ Auto-play"; };
     h.querySelector("#amPrev").onclick=()=>go(p.i-1); h.querySelector("#amNext").onclick=()=>go(p.i+1);
@@ -223,6 +273,80 @@
     S.play.go=go;
   }
   function toggleReplay(){ S.open=!S.open; if(S.open){ S.play={steps:buildSteps(),i:-1,auto:null,speed:S.play.speed||2.5}; } else { if(S.play.auto) clearInterval(S.play.auto); S.play.i=-1; S.play.auto=null; } render(); const b=document.getElementById("amReplay"); if(b) b.textContent=S.open?"■ Stop replay":"▶ Replay last 24 h"; if(S.open){ const pl=host().querySelector(".am-player"); if(pl) pl.scrollIntoView({behavior:"smooth",block:"end"}); } }
+
+  /* ---------------- the move: vLLM on a GPU server — on-prem or cloud ---------------- */
+  const MODELS={ "8b":{name:"Llama 3.1 8B Instruct",vram:"~16 GB fp16 · ~8 GB AWQ/INT4",gpu:"1 × L4 (24 GB) or A10G",tps:"~600–1 200 tok/s aggregate, ~60–90 tok/s per stream",note:"same model as today — the safest first step, quality unchanged, only speed"},
+    "14b":{name:"Qwen2.5 14B Instruct",vram:"~28 GB fp16 · ~10 GB AWQ/INT4",gpu:"1 × L40S / A100 40 GB (fp16) or 1 × L4 with AWQ",tps:"~400–900 tok/s aggregate, ~40–70 tok/s per stream",note:"noticeably better JSON discipline and Arabic — the GPU VM request already names it"},
+    "32b":{name:"Qwen2.5 32B Instruct",vram:"~64 GB fp16 · ~20 GB AWQ/INT4",gpu:"1 × A100 80 GB / H100, or 2 × L40S",tps:"~250–600 tok/s aggregate, ~25–45 tok/s per stream",note:"best reasoning on triage; only worth it once the agents' prompts grow (evidence packs, RCA drafts)"} };
+  const OPTS=[
+    {k:"onprem",c:"#0e9f5a",name:"A · On-prem GPU server + vLLM",who:"Salam data centre · Infra team · same VLAN as 152",bul:["one GPU VM/server (L4 24 GB minimum, L40S recommended) · Ubuntu 22.04 · NVIDIA driver + CUDA · Docker","vLLM (OpenAI-compatible /v1) as a systemd/Docker service, model weights pulled once from Hugging Face through the proxy","console: set LLM_FALLBACK_KIND=openai + URL + model, verify with Self-test, then switch order to fallback-first — no code change","data never leaves the network; the same budget, audit and masking apply"],
+      effort:"1–2 weeks elapsed · ~3 person-days Infra · ~1 person-day console",cost:"capex: one GPU server (L40S-class) — indicative 8–20 k USD one-off; L4-class 3–6 k USD · power/rack only afterwards",verdict:{c:"go",t:"Recommended — matches the on-prem-only decision; the console already supports it"}},
+    {k:"cloudvm",c:"#d97706",name:"B · Cloud GPU VM + vLLM (self-hosted)",who:"a KSA-region cloud (e.g. a regional/sovereign provider) · Salam-managed VM",bul:["same vLLM image, but the VM lives outside Salam's network → private link / VPN / IP allowlist from 152","prompts carry masked incident context, customer counts, dealer names — a DPA and a residency check (PDPL, CST) are needed before the first packet","pay per hour while the VM is up; the agents run 24/7, so it is a full-month VM, not a burst","console side identical to A (LLM_FALLBACK_*)"],
+      effort:"2–4 weeks elapsed (security review + network) · ~4 person-days Infra/Sec · ~1 person-day console",cost:"opex: indicative 0.7–1.5 USD/h for L4/A10G class, 2–4 USD/h for A100 class → ~500–3 000 USD/month always-on · plus egress and the private link",verdict:{c:"mid",t:"Possible as a bridge if the on-prem server is months away — needs a residency decision first"}},
+    {k:"cloudapi",c:"#dc2626",name:"C · Managed LLM API (cloud)",who:"a hosted model API (per-token billing)",bul:["fastest to try (an API key) and the strongest models","every prompt leaves the network to a third party — conflicts with the on-prem-only decision and with what the prompts contain","per-token pricing: today's volume is small (see the numbers) but grows with every new agent","console: llm.js speaks OpenAI-compatible APIs already (kind=openai + key) — technically one .env change"],
+      effort:"1–2 days technically · weeks for legal / DPA / security approval",cost:"opex: at today's volume a few USD/day; at 10× volume tens of USD/day — cheap, the cost is the policy exception, not the bill",verdict:{c:"no",t:"Not recommended for incident data — keep for non-sensitive experiments only"}} ];
+  function plan(d){
+    const u=(d.usage&&d.usage.total)||{}; const bc=(d.usage&&d.usage.byCaller)||{}; const peak=(d.usage&&d.usage.peakHour)||null; const h=(d.perf&&d.perf.host)||{}; const md=(d.perf&&d.perf.model)||{};
+    const tokS=Object.values(bc).map(x=>x.tok_s).filter(Boolean); const curTps=tokS.length?Math.round(tokS.reduce((a,b)=>a+b,0)/tokS.length*10)/10:null;
+    const avgS=u.avg_ms?Math.round(u.avg_ms/1000):null; const perDay=(u.perDay||{}); const conc=S.plan.conc||Math.max(2,(d.usage&&d.usage.maxConcurrent)||1);
+    const answerPerDay=Math.round((u.answer_tokens||0)/7); const peakTok=peak?Number(peak.answer_tokens||0):0;
+    const needTps=Math.max(20,Math.round(peakTok/3600*3)); // sustain 3× the busiest hour's answer tokens
+    const m=MODELS[S.plan.model]; const opt=OPTS.find(o=>o.k===S.plan.target)||OPTS[0];
+    const inc=bc["salam-agent-incident"]||{}; const gpuSpeed={"8b":75,"14b":55,"32b":35}[S.plan.model]; const gain=curTps?Math.round(gpuSpeed/curTps):null;
+    const backlog=(d.agents.find(a=>a.key==="log")||{}).queue||[]; const unassessed=(backlog.find(q=>/assess/.test(q.label))||{}).n||0;
+    return `<div class="am-plan">
+      <div class="am-sec"><h2>Where we are — measured on this console, last 7 days</h2><div class="sub">The numbers below come from <code>llm_calls</code> and the host — they are the load a new server has to carry from day one.</div>
+        <div class="am-pk">
+          <div class="k"><b>${n(perDay.calls)}</b><span>model calls / day (${n(u.calls)} in 7 d)</span></div>
+          <div class="k"><b>${n(perDay.tokens)}</b><span>tokens / day · ${n(answerPerDay)} generated</span></div>
+          <div class="k"><b>${curTps!=null?curTps+" tok/s":"—"}</b><span>generation speed today (CPU · ${esc((md.models&&md.models[0]&&md.models[0].name)||(d.brain&&d.brain.primary&&d.brain.primary.model)||"model")})</span></div>
+          <div class="k"><b>${avgS!=null?avgS+" s":"—"}</b><span>average answer · p95 ${inc.p95_ms?Math.round(inc.p95_ms/1000)+" s":"—"} on triage</span></div>
+          <div class="k"><b>${n(d.usage&&d.usage.maxConcurrent)}</b><span>max concurrent calls (24 h) · ${h.cores||"?"} CPU cores, ${gb((h.mem||{}).total)} RAM, ${h.gpu&&h.gpu.length?"GPU present":"no GPU"}</span></div>
+          <div class="k"><b>${n(unassessed)}</b><span>signatures waiting for the model — the CPU cannot keep up with the log agent</span></div>
+        </div>
+        ${peak?`<div class="am-note" style="margin-top:10px">Busiest hour of the week: ${esc(ksa(peak.h))} KSA — ${n(peak.calls)} calls, ${n(peak.tokens)} tokens. A GPU server should sustain about <b>3 × that hour</b> without queueing: <b>≈ ${n(needTps)} tok/s aggregate</b>. Every option below does that with one mid-range GPU.</div>`:""}</div>
+
+      <div class="am-sec"><h2>What changes for the console — almost nothing</h2><div class="sub">llm.js already speaks two dialects (Ollama and OpenAI-compatible) with fail-over, JSON mode, probe, budget and audit. vLLM is OpenAI-compatible, so the move is configuration, tested live with the Self-test on Settings › Agents.</div>
+        <div class="am-code">LLM_FALLBACK_KIND=openai
+LLM_FALLBACK_URL=http://&lt;gpu-server&gt;:8000/v1
+LLM_FALLBACK_MODEL=${S.plan.model==="8b"?"meta-llama/Llama-3.1-8B-Instruct":S.plan.model==="14b"?"Qwen/Qwen2.5-14B-Instruct":"Qwen/Qwen2.5-32B-Instruct"}
+LLM_FALLBACK_KEY=            # empty on-prem, or the vLLM --api-key
+LLM_ORDER=fallback-first     # once the Self-test is green for a day · Ollama on 152 stays as the safety net</div>
+        <div class="sub" style="margin-top:8px">Then: Settings › Agents › <b>Probe</b> and <b>Self-test</b> (all five probes, JSON grammar on/off) → watch Mission control for a day (speed, p95, fail %) → flip the order. Rollback = one line.</div></div>
+
+      <div class="am-sec"><h2>Pick the scenario</h2>
+        <div class="am-ctl"><label>Where <select id="amTarget">${OPTS.map(o=>`<option value="${o.k}"${S.plan.target===o.k?" selected":""}>${esc(o.name)}</option>`).join("")}</select></label>
+          <label>Model <select id="amModel">${Object.entries(MODELS).map(([k,x])=>`<option value="${k}"${S.plan.model===k?" selected":""}>${esc(x.name)}</option>`).join("")}</select></label>
+          <label>Concurrency to plan for <input id="amConc" type="number" min="1" max="64" value="${conc}"></label></div>
+        <div class="am-pk" style="margin-top:12px">
+          <div class="k"><b>${esc(m.gpu)}</b><span>GPU for ${esc(m.name)} · VRAM ${esc(m.vram)}</span></div>
+          <div class="k"><b>${gain?"≈ "+gain+"×":"—"}</b><span>faster per answer than today (${esc(m.tps)})</span></div>
+          <div class="k"><b>${avgS!=null?Math.max(1,Math.round(avgS/(gain||1)))+" s":"—"}</b><span>expected average triage answer instead of ${avgS!=null?avgS+" s":"—"}</span></div>
+          <div class="k"><b>${conc} streams</b><span>vLLM batches them on one GPU — no queueing at this concurrency</span></div>
+        </div>
+        <div class="am-note" style="margin-top:10px">${esc(m.note)}. Throughput figures are indicative public vLLM numbers for these GPU classes — confirm with a one-hour benchmark on the real server (the Self-test reports tok/s).</div></div>
+
+      <div class="am-opts">${OPTS.map(o=>`<div class="am-opt${S.plan.target===o.k?" on":""}" data-opt="${o.k}" style="--oc:${o.c}"><h3>${esc(o.name)}</h3><div class="who">${esc(o.who)}</div><ul>${o.bul.map(b=>`<li>${esc(b)}</li>`).join("")}</ul>
+          <div class="am-kv" style="margin-top:8px"><span>effort</span> ${esc(o.effort)}<br><span>cost</span> ${esc(o.cost)}</div><div class="verdict ${o.verdict.c}">${esc(o.verdict.t)}</div></div>`).join("")}</div>
+
+      <div class="am-sec"><h2>The plan for ${esc(opt.name)}</h2><div class="sub">Sequenced so that production never depends on the new server until it has answered for a full day.</div>
+        <ol class="am-steps">${steps(S.plan.target).map(s=>`<li><b>${esc(s[0])}</b>${esc(s[1])}<div class="d">${esc(s[2])}</div></li>`).join("")}</ol></div>
+
+      <div class="am-sec"><h2>Comparison</h2><table class="am-t"><thead><tr><th>Criterion</th><th>Today · CPU on 152</th>${OPTS.map(o=>`<th style="color:${o.c}">${esc(o.name.slice(0,1))}</th>`).join("")}</tr></thead><tbody>
+        ${[["Data stays in Salam's network","yes","yes","only with private link + DPA","no"],["Answer speed (8B–14B)",curTps?curTps+" tok/s":"~15 tok/s","40–90 tok/s per stream","40–90 tok/s per stream","fast"],["Concurrent agents + Yusr","one at a time (shared CPU)","batched on GPU","batched on GPU","unlimited"],["Console change","—","2 .env lines","2 .env lines + network","2 .env lines + key"],["Time to first answer","—","1–2 weeks","2–4 weeks","days (policy: weeks)"],["Monthly run cost","0 (existing VM)","power only","~500–3 000 USD","few USD → grows with use"],["Model choice","8B (RAM-bound)","up to 32B","up to 70B+","any"],["Policy fit (on-prem only)","✓","✓","exception needed","✗"]].map(r=>`<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td>${r.slice(2).map((c,i)=>`<td class="${OPTS[i].k===S.plan.target?"hl":""}">${esc(c)}</td>`).join("")}</tr>`).join("")}
+      </tbody></table><div class="am-note" style="margin-top:10px">Prices and throughput are indicative ranges (public list prices, vLLM published benchmarks, September 2026) — not a quote. Get two quotes for the on-prem server and one hour of benchmark before deciding.</div></div></div>`;
+  }
+  function steps(t){
+    const common=[["Benchmark on the real box","one hour of the Self-test + a replay of yesterday's triage prompts: tok/s, p95, JSON validity","Infra + console · ½ day"],["Wire as FALLBACK","LLM_FALLBACK_* on /apps/unified/.env, restart the three PM2 apps, Probe green","console · 1 h"],["Shadow for a day","order primary-first: Ollama answers, vLLM takes over only on timeout — Mission control shows both","console · 1 day wait"],["Flip the order","LLM_ORDER=fallback-first · Ollama on 152 stays the safety net · raise AGENT_INCIDENT_MAX_PER_TICK and let Agent 1 drain the backlog","console · 1 h"],["Retune budgets","per-agent ceilings up (600k → 2M tokens/day), Yusr numCtx 8192, longer evidence packs in the prompts","console · ½ day"]];
+    if(t==="onprem") return [["Order / allocate the GPU server","L40S 48 GB (or L4 24 GB minimum), 128 GB RAM, NVMe, same VLAN as 152 and 121","Infra · procurement 1–6 weeks"],["OS + driver + Docker","Ubuntu 22.04, NVIDIA driver 550+, CUDA 12, nvidia-container-toolkit","Infra · ½ day"],["vLLM service","docker run vllm/vllm-openai --model <model> --max-model-len 8192 --api-key <key> --gpu-memory-utilization 0.9 · weights pulled through the proxy once","Infra · ½ day"],["Firewall + allowlist","152 → gpu:8000 only · monitoring probe · nvidia-smi exporter to the console (the brain HUD shows GPU % when nvidia-smi is on 152; add the exporter for a remote box)","Infra + Sec · ½ day"],...common];
+    if(t==="cloudvm") return [["Residency & security decision","PDPL / CST check on what the prompts contain (masked incident context) · DPA with the provider · KSA region","Legal + Sec · 1–3 weeks"],["Private connectivity","site-to-site VPN or private link from Salam DC to the cloud VNet · IP allowlist both ways","Network · 2–5 days"],["GPU VM + vLLM","same image as on-prem · disk for weights · auto-restart · monthly reservation to cut the hourly rate","Infra · 1 day"],["Egress budget & monitoring","prompt+answer traffic is small; watch the private-link and VM bill monthly","Infra · ½ day"],...common];
+    return [["Policy exception","a written exception to the on-prem-only decision, scoped to non-sensitive purposes","Management + Sec · weeks"],["Prompt scrubbing","strip dealer names, MSISDN tails, customer ids before the call — new code in llm.js","console · 2 days"],["Key + kind=openai","LLM_FALLBACK_KIND=openai, URL of the provider, key in .env","console · 1 h"],...common.slice(0,3)];
+  }
+  function bindPlan(){ const h=host(); const rr=()=>render();
+    const t=h.querySelector("#amTarget"); if(t) t.onchange=e=>{ S.plan.target=e.target.value; rr(); };
+    const m=h.querySelector("#amModel"); if(m) m.onchange=e=>{ S.plan.model=e.target.value; rr(); };
+    const c=h.querySelector("#amConc"); if(c) c.onchange=e=>{ S.plan.conc=Math.max(1,Math.min(64,Number(e.target.value)||1)); rr(); };
+    h.querySelectorAll(".am-opt").forEach(el=>el.onclick=()=>{ S.plan.target=el.dataset.opt; rr(); }); }
 
   window.openAgentsMission=function(){
     ensureView();
