@@ -289,6 +289,16 @@
   .pill .tag{font-size:8.5px;color:var(--muted);font-weight:700;margin-left:6px;letter-spacing:.5px;background:var(--bg);padding:2px 5px;border-radius:5px}
   .pill.active{background:var(--pc,var(--green));border-color:var(--pc,var(--green));color:#fff}
   .pill.active .tag{color:#fff;background:rgba(255,255,255,.22)}
+  /* responder teams (24 Sep 2026): team tag on incidents / rules, contract clocks in the incident drawer, Agent 2 mapping review */
+  .teamtag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:var(--tc,#64748b);border:1px solid var(--tc,#64748b);border-radius:999px;padding:1px 8px 1px 7px;background:color-mix(in srgb,var(--tc,#64748b) 10%,transparent);white-space:nowrap;max-width:100%}
+  .teamtag i{font-style:normal;font-size:9.5px;font-weight:900;opacity:.85;letter-spacing:.04em}
+  .ctbox{border:1px solid var(--line);border-left:4px solid var(--green);border-radius:8px;padding:8px 10px;background:var(--card2,rgba(148,163,184,.08))}
+  .ctclocks{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;margin-top:6px}
+  .ctclock{border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:var(--card)} .ctclock span{display:block;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)} .ctclock b{font-size:12px;display:block;margin-top:1px;word-break:break-word}
+  .tmbox{border:1px solid #d97706;border-left:4px solid #d97706;border-radius:8px;padding:8px 10px;margin:0 0 12px;background:color-mix(in srgb,#d97706 8%,transparent)}
+  .tmbox.quiet{border-color:var(--line);border-left-color:var(--muted);background:var(--card2,rgba(148,163,184,.06));display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+  .tmhead{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+  .tmtab td{vertical-align:top} .tmconf{display:inline-block;position:relative;font-size:12px;font-weight:800;padding-left:0} .tmconf i{display:block;height:4px;border-radius:2px;background:var(--line);margin-bottom:3px;width:70px;position:relative;overflow:hidden} .tmconf i::after{content:"";position:absolute;inset:0;width:var(--w,0%);background:var(--green)}
   /* journey filter bar */
   .jfilter{display:flex;flex-direction:column;align-items:stretch;gap:0;margin:12px 0 2px}
   .jsearch{flex:0 0 220px;border:1px solid var(--line);border-radius:9px;padding:8px 12px 8px 32px;font-size:12.5px;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") no-repeat 10px center}
@@ -1763,6 +1773,7 @@
     <div class="helpmenu" id="settingsMenu">
       <div class="hm-group" data-i18n="group.settings">SETTINGS</div>
       <button class="hm-tour" data-seg="users"><span class="hm-ic">◱</span><span data-i18n-html="menu.users">User management<small>Create users · roles · access</small></span></button>
+      <button class="hm-tour" data-teams="1" id="teamsMenuItem" style="display:none"><span class="hm-ic">◫</span><span>Responder teams<small>Who owns which incident · members · contract clocks</small></span></button>
       <button class="hm-tour" data-seg="sync"><span class="hm-ic">⟳</span><span data-i18n-html="menu.sync">Sync engine<small>Watcher mode &amp; change log</small></span></button>
       <button class="hm-tour" data-seg="notify"><span class="hm-ic">◧</span><span data-i18n-html="menu.notify">Notifications &amp; escalation<small>Slack / Teams &amp; on-call ladder</small></span></button>
       <button class="hm-tour" data-seg="nav"><span class="hm-ic">▤</span><span data-i18n-html="menu.nav">Navigation &amp; tabs<small>Reorder · show / hide tabs</small></span></button>
@@ -2119,6 +2130,7 @@
   <section id="view-slo" class="view"></section>
   <section id="view-slo-settings" class="view"></section>
   <section id="view-vendor-contracts" class="view"></section>
+  <section id="view-teams" class="view"></section>
   <section id="view-semati-clearance" class="view"></section>
   <section id="view-cst" class="view"></section>
 
@@ -2187,9 +2199,9 @@
 <script src="app.js?v=20260910c"></script>
 <script src="uinav.js?v=20260910c"></script>
 <script src="latencycfg.js?v=20260910c"></script>
-<script src="alertsview.js?v=20260920a"></script>
+<script src="alertsview.js?v=20260924a"></script>
 <script src="metricdefs.js?v=20260916c"></script>
-<script src="ops.js?v=20260920b"></script>
+<script src="ops.js?v=20260924a"></script>
 <script src="opsbar.js?v=20260910c"></script>
 <script src="analytics.js?v=20260912d"></script>
 <script src="topo2data.js?v=20260910c"></script>
@@ -2231,9 +2243,10 @@
 <script src="otodocs.js?v=20260910c"></script>
 <script src="salamdocs.js?v=20260910c"></script>
 <script src="acksla.js?v=20260921a"></script>
-<script src="usersmgmt.js?v=20260910c"></script>
+<script src="usersmgmt.js?v=20260924a"></script>
 <script src="slo.js?v=20260921b"></script>
 <script src="vendor-contracts.js?v=20260924a"></script>
+<script src="teams.js?v=20260924a"></script>
 <script src="semati-clearance.js?v=20260919d"></script>
 <script src="audit.js?v=20260912a"></script>
 <script src="notifycfg.js?v=20260919a"></script>
@@ -2242,7 +2255,7 @@
 <script src="sub360.js?v=20260921a"></script>
 <script src="rolesmatrix.js?v=20260919a"></script>
 <script src="i18n.js?v=20260918m"></script>
-<script src="settingsmenu.js?v=20260919b"></script>
+<script src="settingsmenu.js?v=20260924a"></script>
 <script src="tour.js?v=20260910c"></script>
 <script src="helpmenu.js?v=20260918n"></script>
 <script src="assist.js?v=20260911a"></script>
@@ -2252,7 +2265,7 @@
 <script src="navcfg.js?v=20260910c"></script>
 <script src="tickets.js?v=20260911p"></script>
 <script src="theme.js?v=20260911v"></script>
-<script src="router.js?v=20260919b"></script>
+<script src="router.js?v=20260924a"></script>
 <script src="live.js?v=20260910c"></script>
 <script src="oncall.js?v=20260910c"></script>
 </body>

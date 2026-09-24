@@ -19,6 +19,7 @@
 process.env.TZ = process.env.TZ || 'UTC';
 const db = require('./db');
 const llm = require('./llm');
+const teams = require('./teams');   // responder teams registry (24 Sep 2026) — the model picks from it, never invents a team
 
 const CFG = {
   retryMin: Number(process.env.AGENT_INCIDENT_RETRY_MIN) || 10,     // wait this long before retrying a model-less triage
@@ -69,9 +70,20 @@ async function evidence(a) {
   return { seg, dup, hist, lastClose: lastClose ? lastClose.body : null, corr, sigs, rule, comments };
 }
 
+/* the team list is read from Settings › Teams at every call, so a team added by an admin is offered to the model at once */
+async function teamCatalog() {
+  const rows = await teams.list().catch(() => []);
+  return rows.map(t => `${t.key} = ${t.name} [${t.business}, ${t.domain} ${t.level}${t.vendor_id ? ', vendor ' + t.vendor_id : ''}]`).join(' | ') || 'digital-l1 = Salam Digital Ops';
+}
+async function toTeamKey(label, fallback) {
+  const t = await teams.resolve(label).catch(() => null);
+  if (t) return t.key;
+  const f = await teams.resolve(fallback).catch(() => null);
+  return f ? f.key : (fallback || null);
+}
 const SYSTEM = `You are the incident-triage agent of the Salam Operations Console (telecom digital channels: Mobile MVNO on Rails/17-18 and Fixed FTTH/5G on Node nexus/146, payments via Tap/UPG/HyperPay, OTP via Unifonic, KYC via Nafath/Absher/Semati, BSS Oracle).
 You receive ONE open alert with deterministic evidence: what the rule measures, how the same rule behaved in the last 30 days and how it was closed, what fired around the same minute, and the busiest backend error signatures right now.
-Output ONLY a JSON object: {"probable_cause":"<= 30 words, concrete","impact":"<= 20 words, who/what is affected","suggested_team":"one of: TCS Mobile L2 | Sigma Fixed L2 | Salam Ops | Payments/Tap | BSS | Network | Vendor-OTP | Unknown","suggested_action":"<= 30 words, the first concrete check or fix","priority_hint":"P1|P2|P3|P4","confidence":0.0-1.0,"is_noise":true|false}
+Output ONLY a JSON object: {"probable_cause":"<= 30 words, concrete","impact":"<= 20 words, who/what is affected","suggested_team":"the KEY of one team from the TEAMS list (e.g. bss-l2), or Unknown","suggested_action":"<= 30 words, the first concrete check or fix","priority_hint":"P1|P2|P3|P4","confidence":0.0-1.0,"is_noise":true|false}
 Rules: do not invent numbers; if the evidence says the rule usually self-resolves in minutes and nothing else fired, say so and set is_noise=true; prefer the team that closed it last time; be specific about the endpoint/code when a signature matches the alert.`;
 
 async function triageOne(a, policy) {
@@ -100,12 +112,12 @@ Busiest backend signatures last 2 h (${ev.seg}): ${ev.sigs.length ? ev.sigs.map(
 Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${String(c.body).slice(0, 120)}`).join(' | ') : 'none'}${flapping ? '\nNOTE: this incident is FLAPPING (re-opened ' + a.reopen_count + ' times).' : ''}`;
   let out = null, j = null;
   try {
-    out = await llm.chat({ system: SYSTEM, user, purpose: 'agent-incident.triage', caller: 'salam-agent-incident', json: true, maxTokens: 320, numCtx: 4096, temperature: 0.1 });
+    out = await llm.chat({ system: SYSTEM + `\nTEAMS: ${await teamCatalog()}`, user, purpose: 'agent-incident.triage', caller: 'salam-agent-incident', json: true, maxTokens: 320, numCtx: 4096, temperature: 0.1 });
     j = (out.json && typeof out.json === 'object' && (out.json.probable_cause || out.json.suggested_action)) ? out.json : null;
     if (!j) log(`triage #${a.id}: unusable model answer (${out.provider} ${out.model}, ${out.ms} ms, ${String(out.text || '').length} chars${out.jsonError ? ', ' + out.jsonError : ''}): ${String(out.text || '').slice(0, 160).replace(/\s+/g, ' ')}`);
   }
   catch (e) { if (e.llm) throw e; log('triage LLM failed', a.id, e.message); }
-  const team = j && j.suggested_team ? String(j.suggested_team).slice(0, 40) : (ev.rule.team || a.team || null);
+  const team = j && j.suggested_team && !/^unknown$/i.test(String(j.suggested_team)) ? await toTeamKey(String(j.suggested_team).slice(0, 60), ev.rule.team || a.team) : await toTeamKey(ev.rule.team || a.team, null);
   await q.query(`INSERT INTO agent_triage (alert_id, segment, rule_key, severity, kind, probable_cause, impact, suggested_team, suggested_action, priority_hint, confidence, similar_30d, median_life_min, usual_close, correlated, top_signatures, model, ms)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
       ON CONFLICT (alert_id) DO UPDATE SET
@@ -133,6 +145,75 @@ Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${Str
   const already = (await q.query(`SELECT count(*)::int n FROM incident_comments WHERE alert_id=$1 AND author='agent'`, [a.id])).rows[0].n;
   if (j || !already) await comment(a.id, body);
   return { kind: flapping ? 'flapping' : 'triage', model: !!j, applied, retry: already > 0 };
+}
+
+/* ---- RULE → TEAM MAPPING (24 Sep 2026) ----
+ * Every enabled rule gets a proposed owning team: deterministic first (teams.scoreRule — the team keywords against
+ * the rule key / name / metric / description, side-aware), the model only for the ambiguous ones, with the ranked
+ * candidates in the prompt so it can only pick from the registry. Proposals land in alert_rule_team_suggestions and
+ * WAIT for a human (Alerts › Alert rules › Team mapping): approve writes alert_rules.team and the open incidents of
+ * that rule; reject is remembered until the rule changes. Never applied on its own, in any mode. */
+const MAP_SYSTEM = `You map an alert rule of the Salam Operations Console (telecom: Mobile MVNO and Fixed FTTH digital channels, BSS Oracle/Siebel/BRM, OSS, payments Tap/UPG/HyperPay, OTP Unifonic, KYC Nafath/Absher) to the ONE responder team that should own incidents of this rule first.
+Output ONLY a JSON object: {"team":"<team key from TEAMS>","confidence":0.0-1.0,"reason":"<= 25 words"}
+Rules: choose only a key that is in TEAMS; prefer the L2 team of the business side over L1; L3 only for product-defect rules; if truly unclear pick the L1 team with confidence <= 0.4.`;
+let mapBusy = false;
+async function mapRules({ force = false, maxModel = 15 } = {}) {
+  if (mapBusy) return { skipped: true }; mapBusy = true; const q = C(); const t0 = Date.now();
+  const run = (await q.query(`INSERT INTO agent_runs (agent) VALUES ('incident.map') RETURNING id`)).rows[0].id;
+  const stats = { rules: 0, unchanged: 0, deterministic: 0, modelled: 0, lowConfidence: 0, proposed: 0, errors: 0, modelUnavailable: false };
+  try {
+    await teams.ensureSchema().catch(() => {});
+    const list = await teams.list({ all: false });
+    const rules = (await q.query(`SELECT r.*, s.id AS sid, s.status AS sstatus, s.rule_updated_at AS srule_at, s.suggested_team AS ssuggested FROM alert_rules r
+        LEFT JOIN alert_rule_team_suggestions s ON s.rule_key=r.key WHERE r.enabled ORDER BY r.severity, r.key`)).rows;
+    let modelCalls = 0;
+    for (const r of rules) {
+      stats.rules++;
+      try {
+        const stale = !r.sid || force || (r.srule_at && r.updated_at && new Date(r.updated_at) > new Date(r.srule_at));
+        if (!stale) { stats.unchanged++; continue; }
+        const current = await teams.resolve(r.team);
+        const sc = teams.scoreRule(r, list);
+        let pick = null, confidence = 0, method = 'rule', reason = '';
+        if (sc.top && sc.confident) { pick = sc.top.key; confidence = Math.min(0.95, 0.55 + sc.top.score * 0.08); reason = `keywords: ${sc.top.hits.join(', ')}`; stats.deterministic++; }
+        else if (modelCalls < maxModel && !stats.modelUnavailable) {
+          modelCalls++;
+          const cands = sc.ranked.filter(x => x.score > 0).map(x => `${x.key} (score ${x.score}${x.hits.length ? ': ' + x.hits.join(', ') : ''})`).join('; ') || 'none scored — consider every team';
+          const user = `RULE ${r.key} (${sc.seg === 'fixed' ? 'Fixed' : 'Mobile'}) · ${r.name} · severity ${r.severity} · metric ${r.metric_key} · class ${r.alert_class || '?'}
+Description: ${String(r.description || '-').slice(0, 300)}
+Trigger codes: ${String(r.trigger_codes || '-').slice(0, 120)}
+Current owner on the rule: ${current ? current.key : (r.team || 'none')}
+Keyword candidates: ${cands}
+TEAMS: ${await teamCatalog()}`;
+          try {
+            const out = await llm.chat({ system: MAP_SYSTEM, user, purpose: 'agent-incident.map', caller: 'salam-agent-incident', json: true, maxTokens: 120, numCtx: 4096, temperature: 0.1 });
+            const j = out.json && typeof out.json === 'object' ? out.json : null;
+            const t = j && j.team ? await teams.resolve(j.team) : null;
+            if (t) { pick = t.key; confidence = Math.max(0.1, Math.min(0.9, Number(j.confidence) || 0.5)); method = 'model'; reason = String(j.reason || '').slice(0, 200); stats.modelled++; }
+          } catch (e) { if (e.llm) stats.modelUnavailable = true; log('map: model failed for', r.key, e.message); }
+          if (!pick && sc.top) { pick = sc.top.key; confidence = 0.35; method = 'rule'; reason = `weak keyword match: ${sc.top.hits.join(', ')}`; stats.lowConfidence++; }
+        } else if (sc.top) { pick = sc.top.key; confidence = 0.35; method = 'rule'; reason = `weak keyword match: ${sc.top.hits.join(', ')}`; stats.lowConfidence++; }
+        if (!pick) continue;
+        if (current && current.key === pick) {                       // already right — remember that so it is not re-asked
+          await q.query(`INSERT INTO alert_rule_team_suggestions (rule_key, segment, current_team, suggested_team, confidence, method, reason, status, rule_updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'applied',$8)
+              ON CONFLICT (rule_key) DO UPDATE SET current_team=EXCLUDED.current_team, suggested_team=EXCLUDED.suggested_team, confidence=EXCLUDED.confidence, method=EXCLUDED.method, reason=EXCLUDED.reason, status='applied', rule_updated_at=EXCLUDED.rule_updated_at, updated_at=now()`,
+            [r.key, sc.seg, current.key, pick, confidence, method, 'already the owner on the rule', r.updated_at]);
+          continue;
+        }
+        if (r.sid && r.sstatus === 'rejected' && r.ssuggested === pick && !force && !stale) continue;
+        await q.query(`INSERT INTO alert_rule_team_suggestions (rule_key, segment, current_team, suggested_team, confidence, method, reason, alternatives, status, rule_updated_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'proposed',$9)
+            ON CONFLICT (rule_key) DO UPDATE SET current_team=EXCLUDED.current_team, suggested_team=EXCLUDED.suggested_team, confidence=EXCLUDED.confidence, method=EXCLUDED.method, reason=EXCLUDED.reason,
+              alternatives=EXCLUDED.alternatives, status='proposed', decided_by=NULL, decided_at=NULL, rule_updated_at=EXCLUDED.rule_updated_at, updated_at=now()`,
+          [r.key, sc.seg, current ? current.key : (r.team || null), pick, confidence, method, reason, JSON.stringify(sc.ranked.filter(x => x.score > 0 && x.key !== pick).slice(0, 3).map(x => ({ key: x.key, score: x.score }))), r.updated_at]);
+        stats.proposed++;
+      } catch (e) { stats.errors++; log('map failed', r.key, e.message); }
+    }
+    await q.query(`UPDATE agent_runs SET finished_at=now(), ok=true, stats=$2 WHERE id=$1`, [run, JSON.stringify(stats)]);
+    log(`map: ${stats.rules} rules → ${stats.proposed} proposed (${stats.deterministic} deterministic · ${stats.modelled} model · ${stats.lowConfidence} weak) · ${stats.unchanged} unchanged · ${Date.now() - t0} ms`);
+  } catch (e) { log('map failed:', e.message); await q.query(`UPDATE agent_runs SET finished_at=now(), ok=false, error=$2, stats=$3 WHERE id=$1`, [run, e.message, JSON.stringify(stats)]).catch(() => {}); }
+  finally { mapBusy = false; }
+  return { ...stats, ms: Date.now() - t0 };
 }
 
 /* ---- the loop ---- */
@@ -168,10 +249,12 @@ async function tick(limit) {
 }
 
 async function main() {
-  await ensureSchema(); await llm.ensureSchema(); llm.start();
+  await ensureSchema(); await llm.ensureSchema(); await teams.ensureSchema().catch(e => log('teams schema', e.message)); llm.start();
   if (!CFG.enabled) { log('disabled (AGENT_INCIDENT_ENABLED=0) — idle'); setInterval(() => {}, 3600e3); return; }
   log(`armed: every ${CFG.intervalMin} min · up to ${CFG.maxPerTick} incidents per tick · lookback ${CFG.lookbackHours} h`);
   setTimeout(() => tick(), 15000); setInterval(() => tick(), CFG.intervalMin * 60000);
+  /* rule → team proposals: once shortly after boot, then every 6 h (only rules that changed or were never mapped) */
+  setTimeout(() => mapRules().catch(e => log('map', e.message)), 60000); setInterval(() => mapRules().catch(e => log('map', e.message)), 6 * 3600e3);
 }
 if (require.main === module) main().catch(e => { console.error('[AGENT-INC] fatal', e); process.exit(1); });
-module.exports = { tick, triageOne, evidence, ensureSchema, getPolicy, setPolicy };
+module.exports = { tick, triageOne, evidence, ensureSchema, getPolicy, setPolicy, mapRules };

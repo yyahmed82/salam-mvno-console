@@ -345,6 +345,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     document.querySelectorAll('#settingsMenu .navtab[data-view="nocwall"]').forEach(b=>b.classList.toggle("hidden", !has("noc")));
     // Agents & LLM stays a root-tier surface: it configures the models, not a business page.
     show("agentsMenuItem", !!(SES.me && SES.me.root!==false && isSuper));
+    show("teamsMenuItem", !!isSuper);   // responder teams (24 Sep 2026)
     // if current active tab is hidden, jump to first visible
     const active = document.querySelector(".navtab.active");
     if(active && active.classList.contains("hidden")){
@@ -1682,6 +1683,8 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <div class="um-checks" id="udRoles">${UM_ROLES.map(([v,l])=>`<label class="um-check"><input type="checkbox" value="${v}" ${urs.includes(v)?'checked':''}><span>${l}</span></label>`).join("")}</div>
         <div class="um-lbl">TEAM TAGS</div>
         <div class="um-tags" id="udTags">${UM_TAGS.map(t=>`<button type="button" class="tagchip ${utags.includes(t)?'on':''}" data-tag="${t}">${t}</button>`).join("")}</div>
+        <div class="um-lbl">RESPONDER TEAMS <span class="ud-hint">— incidents of these teams: may ack · resolve · re-assign (Settings › Teams)</span></div>
+        <div class="um-checks" id="udTeams"><span class="rl">Loading teams…</span></div>
         <div class="um-lbl">NOTIFICATIONS &amp; ONBOARDING</div>
         <div class="um-checks">
           <label class="um-check"><input type="checkbox" id="udMailReport" ${u.mail_report?'checked':''}><span>Mail report</span></label>
@@ -1704,6 +1707,16 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     body.querySelector("#udX").onclick=closeUserPanel; body.querySelector("#udCancel").onclick=closeUserPanel;
     body.querySelectorAll("#udBiz .bizchip").forEach(c=>c.onclick=()=>{ body.querySelectorAll("#udBiz .bizchip").forEach(x=>x.classList.remove("on")); c.classList.add("on"); });
     body.querySelectorAll("#udTags .tagchip").forEach(c=>c.onclick=()=>c.classList.toggle("on"));
+    /* responder-team memberships (24 Sep 2026) — the registry + this person's current teams, saved with the rest */
+    let teamsLoaded=false;
+    (async()=>{ try{
+      const [reg, mem]=await Promise.all([api("/api/teams"), api("/api/teams/memberships").catch(()=>({memberships:{}}))]);
+      const mine=((mem.memberships||{})[String(u.email||"").toLowerCase()]||[]).map(x=>x.key);
+      const groups={}; (reg.teams||[]).forEach(t=>{ (groups[t.domain]=groups[t.domain]||[]).push(t); });
+      const host=body.querySelector("#udTeams"); if(!host) return;
+      host.innerHTML=Object.keys(groups).map(d=>`<div style="flex-basis:100%;font-size:10.5px;font-weight:800;letter-spacing:.08em;color:var(--muted);margin:4px 0 0">${esc((reg.domains||{})[d]||d).toUpperCase()}</div>`+groups[d].map(t=>`<label class="um-check" title="${esc(t.description||'')}"><input type="checkbox" data-teamkey="${esc(t.key)}" ${mine.includes(t.key)?'checked':''}><span>${esc(t.name)} <span class="ud-hint">${esc(t.level)}${t.business!=='both'?' · '+t.business:''}</span></span></label>`).join("")).join("")||`<span class="rl">No teams yet — create them in Settings › Teams.</span>`;
+      teamsLoaded=true;
+    }catch(e){ const host=body.querySelector("#udTeams"); if(host) host.innerHTML=`<span class="rl">${esc(e.message)}</span>`; } })();
     const msg=(t,bad)=>{ const m=body.querySelector("#udMsg"); m.textContent=t; m.style.color=bad?"var(--red)":"var(--green-dark)"; };
     body.querySelector("#udSave").onclick=async()=>{
       const roles=[...body.querySelectorAll("#udRoles input:checked")].map(x=>x.value);
@@ -1714,7 +1727,9 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         mail_report:body.querySelector("#udMailReport").checked, mail_alert:body.querySelector("#udMailAlert").checked, tour_seen:body.querySelector("#udTour").checked,
         ack_mobile:body.querySelector("#udAckMobile").checked, ack_fixed:body.querySelector("#udAckFixed").checked };
       const btn=body.querySelector("#udSave"); btn.disabled=true; msg("Saving…");
-      try{ await api("/api/users/"+u.id,{method:"PATCH",body:JSON.stringify(payload)}); msg("Saved."); setTimeout(closeUserPanel,350); renderUserMgmt(); }
+      try{ await api("/api/users/"+u.id,{method:"PATCH",body:JSON.stringify(payload)});
+        if(teamsLoaded){ const teams=[...body.querySelectorAll("#udTeams [data-teamkey]:checked")].map(x=>({key:x.dataset.teamkey})); await api("/api/teams/memberships/"+encodeURIComponent(u.email),{method:"PUT",body:JSON.stringify({teams})}); }
+        msg("Saved."); setTimeout(closeUserPanel,350); renderUserMgmt(); }
       catch(e){ msg(e.message,true); btn.disabled=false; }
     };
     const blk=body.querySelector("#udBlock");

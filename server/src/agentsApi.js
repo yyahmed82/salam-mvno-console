@@ -165,7 +165,8 @@ function mount(app, { audit, requireCap, requireRoot }) {
       if (which === 'log') { const al = require('./agentLog'); await al.ensureSchema(); out = await al.tick(); out = out || { ran: true }; }
       else if (which === 'incident') { const ai = require('./agentIncident'); await ai.ensureSchema(); out = await ai.tick(Math.min(20, Number((req.body || {}).limit) || 5)); }
       else if (which === 'report') { const al = require('./agentLog'); await al.ensureSchema(); out = await al.dailyReport(new Date()); }
-      else return res.status(400).json({ error: 'agent must be log | incident | report' });
+      else if (which === 'map') { const ai = require('./agentIncident'); await ai.ensureSchema(); out = await ai.mapRules({ force: !!(req.body || {}).force }); }
+      else return res.status(400).json({ error: 'agent must be log | incident | report | map' });
       await audit(req, 'agent.run', which, out);
       res.json({ agent: which, result: out });
     } catch (e) { res.status(500).json({ error: e.message }); }

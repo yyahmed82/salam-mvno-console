@@ -482,17 +482,49 @@
     }
   }
 
+  /* RESPONDER TEAMS (24 Sep 2026): the registry from Settings › Teams — alerts.team / alert_rules.team carry the team
+   * KEY (legacy labels such as "BSS Ops" resolve through the team aliases), so every place that shows a team goes
+   * through teamOf() / teamName(). Cached 60 s; window.TEAMS is shared with ops.js (user panel) and teams.js. */
+  let TEAMS={ at:0, list:[], byKey:{}, mine:[] };
+  async function loadTeams(force){
+    if(!force && Date.now()-TEAMS.at<60000) return TEAMS;
+    try{ const d=await api("/api/teams"); const byKey={}; (d.teams||[]).forEach(t=>{ byKey[t.key]=t; }); TEAMS={ at:Date.now(), list:d.teams||[], byKey, mine:d.mine||[], domains:d.domains||{} }; window.TEAMS=TEAMS; }catch(e){ TEAMS.at=Date.now(); }
+    return TEAMS;
+  }
+  function teamOf(label){
+    if(!label) return null; const s=String(label).trim().toLowerCase(); if(!s) return null;
+    return TEAMS.byKey[s] || TEAMS.list.find(t=>String(t.name).toLowerCase()===s) || TEAMS.list.find(t=>(t.aliases||[]).some(a=>String(a).toLowerCase()===s)) || null;
+  }
+  const teamName = label => { const t=teamOf(label); return t ? t.name : (label||""); };
+  const DOMAIN_COLOR={ digital:"#0e9f5a", bss:"#7c3aed", oss:"#0891b2", infra:"#64748b", adm:"#d97706", network:"#2563eb", soc:"#dc2626", payments:"#db2777", rafm:"#9333ea", sales:"#ca8a04", other:"#64748b" };
+  function teamChip(label, small){
+    const t=teamOf(label);
+    if(!t) return label ? `<span class="rl" title="not in Settings › Teams — Agent 2 can propose the owning team">· ${esc(label)}</span>` : `<span class="rl" style="color:#d97706">· no team</span>`;
+    const c=DOMAIN_COLOR[t.domain]||"#64748b";
+    return `<span class="teamtag" style="--tc:${c}" title="${esc(t.description||'')}${t.vendor_id?' · vendor '+esc(t.vendor_id):''}">${esc(t.name)}<i>${esc(t.level)}${t.business!=='both'?' · '+(t.business==='fixed'?'🏠':'📱'):''}</i></span>`;
+  }
+  const teamOptions=(cur, seg)=>{
+    const biz=seg==="fixed"?"fixed":"mobile"; const groups={};
+    TEAMS.list.filter(t=>t.business==="both"||t.business===biz).forEach(t=>{ (groups[t.domain]=groups[t.domain]||[]).push(t); });
+    const curT=teamOf(cur); const curKey=curT?curT.key:(cur||"");
+    let h=`<option value="">— no team</option>`;
+    Object.keys(groups).forEach(d=>{ h+=`<optgroup label="${esc((TEAMS.domains||{})[d]||d)}">${groups[d].map(t=>`<option value="${esc(t.key)}"${t.key===curKey?" selected":""}>${esc(t.name)} · ${esc(t.level)}</option>`).join("")}</optgroup>`; });
+    if(cur && !curT) h+=`<optgroup label="Legacy label"><option value="${esc(cur)}" selected>${esc(cur)} (not in the registry)</option></optgroup>`;
+    return h;
+  };
   /* OPEN-TAB QUICK FILTERS (11 Sep 2026): what an L1 needs first — unacknowledged, mine, my team, a severity */
   let AF = { who:"all", sev:"all", q:"" };
   const meEmail = ()=>(((window.opsSession&&window.opsSession().me)||{}).email||"").toLowerCase();
-  const myTeam = ()=>((window.opsSession&&window.opsSession().me)||{}).team||"";
+  const myTeamKeys = ()=>{ const m=((window.opsSession&&window.opsSession().me)||{}).teams; return new Set((Array.isArray(m)&&m.length?m:TEAMS.mine).map(t=>t.key)); };
+  const inMyTeam = a=>{ const t=teamOf(a.team); return !!(t && myTeamKeys().has(t.key)); };
+  const myTeam = ()=>{ const k=[...myTeamKeys()]; return k.length ? k.map(x=>(TEAMS.byKey[x]||{}).name||x).join(" / ") : ""; };
   const SEV_RANK = {P1:1,P2:2,P3:3,P4:4};
   function quickBar(all){
     const me=meEmail(), team=myTeam();
     const n=f=>all.filter(f).length;
     const chips=[["all","All",all.length],["unacked","Unacked",n(a=>a.status==="open"&&!a.ack_at)],["mine","Mine",n(a=>(a.ack_by||"").toLowerCase()===me||(a.assignee||"").toLowerCase()===me)],["single","1 customer",n(a=>a.customers===1)]];
-    if(team) chips.splice(3,0,["team","My team · "+team,n(a=>a.team===team)]);
-    return `<div class="rfbar" style="margin:0 0 8px"><div class="rfchips">${chips.map(([v,l,c])=>`<button class="pill rfc${AF.who===v?" active":""}" data-afwho="${v}" style="padding:3px 10px;${v==="unacked"?"border-left-color:#dc2626":v==="single"?"border-left-color:#7c3aed":""}">${l} · ${c}</button>`).join("")}</div>
+    if(team) chips.splice(3,0,["team","My team"+(myTeamKeys().size===1?" · "+team:""),n(inMyTeam)]);
+    return `<div class="rfbar" style="margin:0 0 8px"><div class="rfchips">${chips.map(([v,l,c])=>`<button class="pill rfc${AF.who===v?" active":""}" data-afwho="${v}" style="padding:3px 10px;${v==="unacked"?"border-left-color:#dc2626":v==="single"?"border-left-color:#7c3aed":""}">${l} · ${c}</button>`).join("")}${canAck()?`<button class="pill" id="alNewTicket" style="padding:3px 10px;border-left-color:var(--green)" title="Open an incident by hand and hand it to a team — same ack SLA, reminders and vendor clocks as a fired rule">＋ New ticket</button>`:""}</div>
       <div class="rfchips">${["all","P1","P2","P3","P4"].map(v=>`<button class="pill rfc${AF.sev===v?" active":""}" data-afsev="${v}" style="padding:3px 10px;${v!=="all"?`border-left-color:${sevColor(v)}`:""}">${v==="all"?"Any sev":v}${v!=="all"?" · "+n(a=>a.severity===v):""}</button>`).join("")}</div>
       <input id="afQ" class="jsearch" type="search" placeholder="search incident · metric · owner…" value="${esc(AF.q)}" style="flex:1 1 200px"></div>`;
   }
@@ -500,6 +532,7 @@
     const b=$("#alBody"); b.querySelectorAll("[data-afwho]").forEach(x=>x.addEventListener("click",()=>{ AF.who=x.dataset.afwho; renderAlerts(); }));
     b.querySelectorAll("[data-afsev]").forEach(x=>x.addEventListener("click",()=>{ AF.sev=x.dataset.afsev; renderAlerts(); }));
     const q=$("#afQ"); if(q){ let t=null; q.addEventListener("input",e=>{ AF.q=e.target.value; clearTimeout(t); t=setTimeout(renderAlerts,250); }); }
+    const nt=$("#alNewTicket"); if(nt) nt.addEventListener("click", newTicketPanel);
   }
   /* OWNER CARD (11 Sep 2026): the person, not the login — name · role · team, how fast they took it, how long they
    * have held it, and their live load (open incidents held · acked in 24 h · avg time-to-ack 7 d). */
@@ -536,6 +569,7 @@
   async function renderAlerts(){
     let stats={}; try{ stats=await api("/api/incidents/stats"); }catch(e){}
     loadRunbooks();                                     // prefetch rule runbooks (cached; never blocks render)
+    await loadTeams();                                  // team names / memberships for chips, filters and re-assign
     const data = await api("/api/alerts?status="+(atab==="all"?"all":"open"));
     const allRows = data.alerts||[];
     OWNERS = data.owners||{}; NOW_SRV = data.now ? new Date(data.now) : new Date();
@@ -544,8 +578,8 @@
     const me=meEmail(), team=myTeam(), q=AF.q.trim().toLowerCase();
     let rows = CLSFILTER.alerts==="all" ? allRows : allRows.filter(a=>a.alert_class===CLSFILTER.alerts);
     rows = rows.filter(a=>(AF.sev==="all"||a.severity===AF.sev)
-      && (AF.who==="all" || (AF.who==="unacked"?(a.status==="open"&&!a.ack_at):AF.who==="mine"?((a.ack_by||"").toLowerCase()===me||(a.assignee||"").toLowerCase()===me):AF.who==="team"?a.team===team:a.customers===1))
-      && (!q||[a.name,a.metric_key,a.team,a.ack_by,a.assignee,a.message,a.rule_key].join(" ").toLowerCase().includes(q)));
+      && (AF.who==="all" || (AF.who==="unacked"?(a.status==="open"&&!a.ack_at):AF.who==="mine"?((a.ack_by||"").toLowerCase()===me||(a.assignee||"").toLowerCase()===me):AF.who==="team"?inMyTeam(a):a.customers===1))
+      && (!q||[a.name,a.metric_key,a.team,teamName(a.team),a.ack_by,a.assignee,a.message,a.rule_key].join(" ").toLowerCase().includes(q)));
     // SEE: within a severity, the incidents nobody owns come first — that is the queue an L1 works top-down
     rows.sort((x,y)=>(x.status==="open"?0:1)-(y.status==="open"?0:1) || (SEV_RANK[x.severity]||9)-(SEV_RANK[y.severity]||9) || ((x.status==="open"&&!x.ack_at)?0:1)-((y.status==="open"&&!y.ack_at)?0:1) || (new Date(y.last_seen_at)-new Date(x.last_seen_at)));
     const byId = {}; rows.forEach(a=>{ byId[a.id]=a; });
@@ -600,6 +634,7 @@
         const more=[];
         if(a.ack_at){ if(a.ack_by&&a.ack_by!==me) more.push(["reack","Take over the ack",`from ${esc((a.ack_by||'').split('@')[0])}`,"own"]); more.push(["handover","Hand over","to a colleague on this side","own"]); }
         if((a.assignee||"").toLowerCase()!==me) more.push(["assignme","Assign to me","your name as assignee; the ack stays","own"]);
+        if(TEAMS.list.length) more.push(["reassign","Re-assign to a team",`${teamOf(a.team)?"from "+esc(teamName(a.team)):"pick the owning team"} · reason required`,"own"]);
         if(a.ack_at&&!a.sn_number) more.push(["sn","🎫 Raise in ServiceNow","one INC per incident","esc"]);
         if(a.sn_number) more.push(["snopen",`🎫 ${esc(a.sn_number)}`,esc(a.sn_state||'New'),"esc"]);
         if(a.ack_at) more.push(["comms","✉ Send incident comms","L1 notification mail","esc"]);
@@ -611,7 +646,7 @@
       }
       h += `<tr${isChild?' style="opacity:.62"':''} class="${a.status==='open'&&!a.ack_at?'unacked':''}">
         <td style="border-left:4px solid ${sevColor(a.severity)}"><span class="sevpill" style="background:${sevColor(a.severity)}">${esc(a.severity)}</span></td>
-        <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span> <span class="rl">· ${esc(a.team||"no team")}</span>${corrLine}</td>
+        <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span> ${teamChip(a.team)}${a.source==='manual'?` <span class="rl" title="opened by hand by ${esc(a.created_by||'')}">· manual ticket</span>`:''}${a.reassign_count?` <span class="rl" title="re-assigned ${a.reassign_count}×">· ↪${a.reassign_count}</span>`:''}${corrLine}</td>
         <td>${impact}</td>
         <td><b>${esc(a.message? (a.message.split("observed ")[1]||"").split(" · ")[0] : "")}</b><br><span class="rl">${esc(a.window_hours)}h window</span></td>
         <td>${stateTag}</td>
@@ -638,6 +673,7 @@
     body.querySelectorAll("[data-assignme]").forEach(b=>b.addEventListener("click",()=>incAction(b.dataset.assignme,"assign",{assignee:me})));
     body.querySelectorAll("[data-reack]").forEach(b=>b.addEventListener("click",()=>{ const a=byId[b.dataset.reack]||{}; if(confirm(`Take over the acknowledgement from ${a.ack_by||"the current holder"}? This is logged on the incident.`)) incAction(b.dataset.reack,"ack"); }));
     body.querySelectorAll("[data-handover]").forEach(b=>b.addEventListener("click",()=>handoverPanel(b, byId[b.dataset.handover])));
+    body.querySelectorAll("[data-reassign]").forEach(b=>b.addEventListener("click",()=>reassignPanel(b, byId[b.dataset.reassign])));
     SEG_ROWS=byId;
     body.querySelectorAll("[data-sn],[data-snopen]").forEach(b=>b.addEventListener("click",()=>snPanel(b.dataset.sn||b.dataset.snopen)));
     body.querySelectorAll("[data-comms]").forEach(b=>b.addEventListener("click",()=>snPanel(b.dataset.comms,"comms")));
@@ -706,6 +742,63 @@
     cancel.onclick=()=>p.remove();
     ok.onclick=()=>{ const to=sel.value; if(!to) return; incAction(a.id,"ack",{to, note:note.value.trim()}); };
     sel.focus();
+  }
+  /* RE-ASSIGN TO A TEAM (24 Sep 2026): the incident moves to another responder team; the ack is released so the new
+   * team's ack clock starts (the first ack is kept for MTTA), the team is mailed, everything is on the timeline. */
+  function reassignPanel(btn, a){
+    const cell=actCell(btn, a); if(!cell||cell.querySelector(".raPanel")) return;
+    const p=el("div","raPanel"); p.style.cssText="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px";
+    const IN="font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink)";
+    p.innerHTML=`<span class="rl" style="color:var(--muted)">re-assign ${teamOf(a.team)?`from <b>${esc(teamName(a.team))}</b>`:""} to</span>
+      <select class="fe-in" style="${IN};max-width:300px">${teamOptions("", SEG)}</select>
+      <input placeholder="reason — the receiving team reads it first" maxlength="300" style="${IN};width:280px">
+      <button class="pill" style="padding:3px 8px;border-left-color:var(--green,#0e9f5a)">Confirm</button><button class="pill" style="padding:3px 8px">Cancel</button>`;
+    cell.appendChild(p);
+    const [ok,cancel]=p.querySelectorAll("button"); const sel=p.querySelector("select"), note=p.querySelector("input");
+    cancel.onclick=()=>p.remove();
+    ok.onclick=async()=>{
+      const team=sel.value; if(!team){ banner("Pick the team that should own this incident."); return; }
+      if(!note.value.trim()){ note.focus(); note.style.borderColor="#dc2626"; return; }
+      ok.disabled=true; const lbl=ok.textContent; ok.textContent="Moving…";
+      try{ const r=await api(`/api/alerts/${a.id}/reassign`,{method:"POST",body:JSON.stringify({team, note:note.value.trim()})});
+        banner(`✓ <b>${esc(a.name)}</b> re-assigned to <b>${esc(r.team&&r.team.name||team)}</b>${r.mailed&&r.mailed.sent?` — team mailed (${r.mailed.recipients?r.mailed.recipients.length:''})`:r.mailed&&r.mailed.reason?` — not mailed: ${esc(r.mailed.reason)}`:""}. The ack is released; their ack clock starts now.`); renderAlerts(); }
+      catch(e){ banner(`re-assign failed: ${esc(e.message)}`); ok.disabled=false; ok.textContent=lbl; }
+    };
+    sel.focus();
+  }
+  /* NEW TICKET (24 Sep 2026): an incident opened by hand — it is a normal alert row (rule manual_ticket) owned by a
+   * team from the first second, so the ack SLA, the reminders, the radar and the vendor clocks all apply. */
+  function newTicketPanel(){
+    let ov=document.getElementById("ntPanel");
+    if(!ov){ ov=document.createElement("div"); ov.id="ntPanel"; ov.className="drawer-ov"; ov.innerHTML=`<div class="drawer" id="ntBody"></div>`; document.body.appendChild(ov); ov.addEventListener("click",e=>{ if(e.target===ov) ov.classList.remove("open"); }); }
+    const body=ov.querySelector("#ntBody"); const IN="width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card,#fff);color:var(--ink);box-sizing:border-box";
+    const mineKeys=myTeamKeys(); const pre=[...mineKeys][0]||"";
+    body.innerHTML=`<div class="drawer-hd"><span class="av ud-av">＋</span><div style="min-width:0"><div style="font-weight:800;font-size:14px">New ticket · ${SEG==="fixed"?"🏠 Fixed":"📱 Mobile"}</div><div style="font-size:11px;opacity:.8">Opens an incident by hand and hands it to a team — same ack SLA, reminders, radar and vendor clocks as a fired rule</div></div><span class="x" id="ntX" title="Close">×</span></div>
+      <div class="ud-body">
+        <div class="um-lbl">TITLE</div><input id="ntTitle" maxlength="140" placeholder="e.g. Customers cannot pay with Tap — 3 complaints from the call center" style="${IN}">
+        <div class="um-lbl" style="margin-top:10px">SEVERITY</div><div class="sevrow" id="ntSevRow">${["P1","P2","P3","P4"].map(v=>`<button type="button" class="pill${v==="P3"?" active":""}" data-sev="${v}" style="padding:4px 12px;border-left-color:${sevColor(v)}">${v}</button>`).join("")}</div>
+        <div class="um-lbl" style="margin-top:10px">OWNING TEAM</div><select id="ntTeam" style="${IN}">${teamOptions(pre, SEG)}</select>
+        <div class="rl" id="ntTeamHint" style="margin-top:4px"></div>
+        <div class="um-lbl" style="margin-top:10px">WHAT IS HAPPENING <span class="ud-hint">— what the receiving team reads first</span></div><textarea id="ntMsg" rows="5" maxlength="2000" placeholder="Symptom · since when · who reported it · what was already checked" style="${IN};resize:vertical"></textarea>
+        <div class="ud-grid" style="margin-top:10px"><div><div class="um-lbl">CUSTOMERS AFFECTED <span class="ud-hint">optional</span></div><input id="ntCust" type="number" min="0" placeholder="e.g. 3" style="${IN}"></div><div><div class="um-lbl">CHANNEL <span class="ud-hint">optional</span></div><input id="ntChan" maxlength="40" placeholder="app · web · call center · dealer" style="${IN}"></div></div>
+        <div class="ud-actions"><button type="button" class="um-btn" id="ntCreate">Open ticket</button><button type="button" class="tkm-btn" id="ntCancel">Cancel</button><span class="ud-msg" id="ntMsgOut"></span></div>
+      </div>`;
+    const close=()=>ov.classList.remove("open"); body.querySelector("#ntX").onclick=close; body.querySelector("#ntCancel").onclick=close;
+    let sev="P3"; body.querySelectorAll("#ntSevRow [data-sev]").forEach(b=>b.onclick=()=>{ body.querySelectorAll("#ntSevRow [data-sev]").forEach(x=>x.classList.remove("active")); b.classList.add("active"); sev=b.dataset.sev; });
+    const hint=()=>{ const t=TEAMS.byKey[body.querySelector("#ntTeam").value]; body.querySelector("#ntTeamHint").innerHTML=t?`${esc(t.description||"")}${t.vendor_id?` · contract clocks of <b>${esc(t.vendor_id)}</b> apply`:""}${t.members?` · ${t.members} member${t.members===1?"":"s"}`:` · <span style="color:#d97706">no members yet — the ${SEG==="fixed"?"Fixed":"Mobile"} ACK holders get the reminders</span>`}`:""; };
+    body.querySelector("#ntTeam").onchange=hint; hint();
+    body.querySelector("#ntCreate").onclick=async()=>{
+      const title=body.querySelector("#ntTitle").value.trim(); const m=body.querySelector("#ntMsgOut");
+      if(!title){ m.textContent="A title is needed."; m.style.color="var(--red)"; body.querySelector("#ntTitle").focus(); return; }
+      const btn=body.querySelector("#ntCreate"); btn.disabled=true; m.textContent="Opening…"; m.style.color="var(--muted)";
+      try{
+        const r=await api("/api/alerts/manual",{method:"POST",body:JSON.stringify({ segment:SEG, severity:sev, title, message:body.querySelector("#ntMsg").value.trim(), team:body.querySelector("#ntTeam").value||null, customers:body.querySelector("#ntCust").value, channel:body.querySelector("#ntChan").value.trim()||null })});
+        close(); atab="open"; if(window.pf) window.pf.set('alerts_tab',atab); $("#alTabs")&&$("#alTabs").querySelectorAll(".pill").forEach(p=>p.classList.toggle("active",p.dataset.atab==="open"));
+        banner(`✓ Ticket <b>#${r.alert.id}</b> opened${r.team?` for <b>${esc(r.team.name)}</b>`:""}${r.mailed&&r.mailed.sent?" — team mailed":r.mailed&&r.mailed.reason?` — not mailed: ${esc(r.mailed.reason)}`:""}. It follows the ${sev} ack SLA from now.`);
+        load();
+      }catch(e){ m.textContent=e.message; m.style.color="var(--red)"; btn.disabled=false; }
+    };
+    ov.classList.add("open"); setTimeout(()=>body.querySelector("#ntTitle").focus(),120);
   }
   let SEG_ROWS={};
   /* CLOSE with a reason (11 Sep 2026): the reason feeds the Noise scorecard — inline in the row, no prompt() */
@@ -936,8 +1029,17 @@
       ? `<div style="margin:4px 0;padding:5px 8px;border-left:3px solid var(--green);background:var(--green-bg);border-radius:6px;white-space:pre-wrap"><span class="rl" style="color:var(--green);font-weight:700">agent triage</span> <span class="rl">${timeAgo(c.created_at)}</span><br>${esc(c.body)}</div>`
       : `<div style="margin:4px 0"><b>${esc((c.author||'').split("@")[0]||'—')}</b> <span class="rl">${timeAgo(c.created_at)}</span><br>${esc(c.body)}</div>`).join("")||`<div class="rl">No comments yet.</div>`;
     const A=d.alert||{};
+    const T=d.team||null, K=d.contract||null, FS=K&&K.forSeverity||{};
+    const clock=(l,v)=>`<div class="ctclock"><span>${l}</span><b>${v?esc(v):"—"}</b></div>`;
+    const teamBlock=`<h5 style="margin:0 0 6px">OWNING TEAM &amp; CONTRACT <span class="rl" style="font-weight:400">· who must act, and what the contract says for ${esc(A.severity||"")}</span></h5>
+      <div class="ctbox">${T?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${teamChip(T.key)}<span class="rl">${esc((TEAMS.domains||{})[T.domain]||T.domain)} · ${T.business==="both"?"Mobile + Fixed":T.business}${T.mail_dl?` · ${esc(T.mail_dl)}`:""}</span>${d.rights?`<span class="rl" style="margin-left:auto;color:${d.rights.ok?"var(--green)":"#d97706"}">${d.rights.ok?`you may act (${esc(d.rights.via)})`:"you cannot act on this team's incident"}</span>`:""}</div>
+        ${K?`<div class="rl" style="margin:6px 0 4px"><b>${esc(K.vendor&&K.vendor.name||"")}</b>${K.contract?` · ${esc(K.contract.title||K.contract.id)}${K.contract.effectiveTo?` · to ${esc(K.contract.effectiveTo)}`:""}${K.contract.monthlyPenaltyCapPercent?` · penalty cap ${esc(K.contract.monthlyPenaltyCapPercent)}%`:""}`:""}</div>
+        <div class="ctclocks">${clock("Response",FS.response)}${clock("Restoration",FS.restoration)}${clock("Resolution",FS.resolution)}${clock("RCA",FS.rca)}</div>
+        ${K.escalation?`<div class="rl" style="margin-top:4px">Escalation ladder: ${esc(K.escalation.title)}${K.escalation.ownerGroup?` · ${esc(K.escalation.ownerGroup)}`:""} · <a href="#vendor-contracts" style="color:var(--green)">Vendors &amp; contracts ›</a></div>`:""}`
+        :`<div class="rl" style="margin-top:6px">No vendor contract bound to this team${T.level==="L1"?" — Salam internal":""}. Bind one in Settings › Teams to see the signed clocks here.</div>`}`
+        :`<span class="rl" style="color:#d97706">No owning team${A.team?` — "${esc(A.team)}" is not in Settings › Teams`:""}. Re-assign it from ⋯ › Re-assign to a team, or let Agent 2 propose the mapping on the rule.</span>`}</div>`;
     cell.innerHTML=`<div class="incgrid" style="padding:10px 6px">
-      <div><h5 style="margin:0 0 6px">TIMELINE <span class="rl" style="font-weight:400">· everything that happened, in order</span></h5><div id="inctl_${id}"><div class="rl">Loading…</div></div>
+      <div>${teamBlock}<h5 style="margin:14px 0 6px">TIMELINE <span class="rl" style="font-weight:400">· everything that happened, in order</span></h5><div id="inctl_${id}"><div class="rl">Loading…</div></div>
         <h5 style="margin:14px 0 6px">MESSAGE</h5><div class="mono" style="font-size:11.5px">${esc(A.message||'')}</div>${A.customers!=null?`<div class="rl" style="margin-top:4px">Impact at last evaluation: <b>${A.customers}</b> customer(s)${A.services!=null?`, ${A.services} service(s)`:''}${A.rule_severity&&A.rule_severity!==A.severity?` · rule severity ${esc(A.rule_severity)}, fired as ${esc(A.severity)} (customer floor)`:''}</div>`:''}</div>
       <div><h5 style="margin:0 0 6px">RUNBOOK CHECKLIST <span class="rl" style="font-weight:400" id="incck_n_${id}"></span></h5><div id="incck_${id}"><div class="rl">Loading…</div></div>
         <h5 style="margin:14px 0 6px">DISCUSSION</h5><div id="inccomm_${id}">${comments}</div>
@@ -1059,7 +1161,34 @@
   /* ---- ALERT RULES (redesigned 11 Sep 2026): filter bar + 7-day scorecard badges + drawer editor ---- */
   let RF = { q:"", sev:"all", team:"all", state:"all", count:"all", noisy:false };
   let _rulesCache = [];
+  let _teamSug=[], _teamSugMeta={};
+  async function loadTeamSuggestions(){ try{ const d=await api("/api/rules/team-suggestions?status=proposed&segment="+SEG); _teamSug=d.suggestions||[]; _teamSugMeta={ counts:d.counts||{}, lastRun:d.lastRun||null }; }catch(e){ _teamSug=[]; _teamSugMeta={}; } }
+  /* TEAM MAPPING REVIEW (24 Sep 2026): Agent 2 proposes the owning team per rule — deterministic keyword scoring first,
+   * the model for the ambiguous ones — and a human approves. Approve writes the rule (and its open incidents). */
+  function renderTeamMap(){
+    const host=$("#ruleTeamMap"); if(!host) return;
+    const canEdit=window.opsCan&&window.opsCan("editRules"); const sug=_teamSug; const c=_teamSugMeta.counts||{}; const lr=_teamSugMeta.lastRun;
+    const unmapped=(_rulesCache||[]).filter(r=>r.enabled&&!teamOf(r.team)).length;
+    const runLine=lr?`last run ${timeAgo(lr.finished_at||lr.started_at)}${lr.stats?` · ${lr.stats.rules||0} rules · ${lr.stats.proposed||0} proposed (${lr.stats.deterministic||0} by keyword · ${lr.stats.modelled||0} by model)${lr.stats.modelUnavailable?' · <span style="color:#d97706">model unavailable</span>':''}`:''}`:"not run yet";
+    if(!sug.length){
+      host.innerHTML=`<div class="tmbox quiet"><div><b>Team mapping</b> <span class="rl">· ${unmapped?`<span style="color:#d97706">${unmapped} enabled rule${unmapped===1?"":"s"} without a registry team</span>`:"every enabled rule has an owning team"} · ${c.applied||0} applied · ${c.rejected||0} rejected · Agent 2 ${runLine}</span></div>${canEdit?`<button class="pill" id="tmRun" style="padding:3px 10px;border-left-color:#2563eb">🤖 Ask Agent 2 to map rules now</button>`:""}</div>`;
+    } else {
+      const hi=sug.filter(x=>(x.confidence||0)>=0.8).length;
+      host.innerHTML=`<div class="tmbox"><div class="tmhead"><div><b>Team mapping — ${sug.length} proposal${sug.length===1?"":"s"} waiting</b> <span class="rl">· Agent 2 ${runLine}. Nothing is applied until you approve.</span></div>
+          ${canEdit?`<div style="display:flex;gap:6px;flex-wrap:wrap">${hi?`<button class="pill" id="tmApproveAll" style="padding:3px 10px;border-left-color:var(--green)">✓ Approve the ${hi} at ≥ 80 %</button>`:""}<button class="pill" id="tmRun" style="padding:3px 10px;border-left-color:#2563eb">🤖 Re-run</button><button class="pill" id="tmHide" style="padding:3px 10px">Hide</button></div>`:""}</div>
+        <table class="alerts tmtab"><tr><th>RULE</th><th>TODAY</th><th>PROPOSED</th><th>WHY</th><th>CONF.</th><th></th></tr>
+        ${sug.slice(0,60).map(x=>`<tr><td><b>${esc(x.rule_name||x.rule_key)}</b><br><span class="mono rl">${esc(x.rule_key)}</span></td><td>${teamChip(x.current_team)}</td><td>${teamChip(x.suggested_team)}</td><td><span class="rl">${esc(x.reason||"")}${x.alternatives&&x.alternatives.length?`<br>also: ${x.alternatives.map(a=>esc(teamName(a.key))).join(", ")}`:""}</span></td><td><span class="tmconf" style="--w:${Math.round((x.confidence||0)*100)}%"><i></i>${Math.round((x.confidence||0)*100)} %</span><br><span class="rl">${x.method==="model"?"model":"keywords"}</span></td>
+          <td style="white-space:nowrap">${canEdit?`<button class="pill" data-tmok="${x.id}" style="padding:2px 8px;border-left-color:var(--green)">✓ Approve</button> <button class="pill" data-tmno="${x.id}" style="padding:2px 8px;border-left-color:#dc2626">✕</button>`:""}</td></tr>`).join("")}</table>${sug.length>60?`<div class="rl" style="margin-top:4px">showing 60 of ${sug.length} — approve or reject to see the rest</div>`:""}</div>`;
+    }
+    const act=async(url,label)=>{ try{ await api(url,{method:"POST",body:JSON.stringify({segment:SEG})}); await loadTeamSuggestions(); renderRules(); }catch(e){ banner(`${label} failed: ${esc(e.message)}`); } };
+    host.querySelectorAll("[data-tmok]").forEach(b=>b.addEventListener("click",()=>act(`/api/rules/team-suggestions/${b.dataset.tmok}/approve`,"approve")));
+    host.querySelectorAll("[data-tmno]").forEach(b=>b.addEventListener("click",()=>act(`/api/rules/team-suggestions/${b.dataset.tmno}/reject`,"reject")));
+    const aa=$("#tmApproveAll"); if(aa) aa.addEventListener("click",()=>{ if(confirm("Approve every proposal at 80 % confidence or more? Each rule's team is written and its open incidents move to that team.")) act("/api/rules/team-suggestions/approve-all","approve all"); });
+    const rn=$("#tmRun"); if(rn) rn.addEventListener("click",async()=>{ rn.disabled=true; rn.textContent="Mapping…"; try{ const r=await api("/api/rules/team-suggestions/run",{method:"POST",body:JSON.stringify({})}); banner(`🤖 Agent 2 mapped ${r.rules||0} rule(s): <b>${r.proposed||0}</b> proposal(s) (${r.deterministic||0} by keyword · ${r.modelled||0} by model${r.modelUnavailable?" · model unavailable, keyword-only":""}), ${r.unchanged||0} unchanged.`); await loadTeamSuggestions(); renderRules(); }catch(e){ banner(`mapping failed: ${esc(e.message)}`); rn.disabled=false; rn.textContent="🤖 Re-run"; } });
+    const hd=$("#tmHide"); if(hd) hd.addEventListener("click",()=>{ host.innerHTML=""; });
+  }
   async function renderRules(){
+    await loadTeamSuggestions();
     const data = await api("/api/rules");
     const rules = data.rules||[]; _rulesCache = rules;
     _catalog = data.catalog||[];
@@ -1071,17 +1200,19 @@
     h += `<span class="rl" style="align-self:center">Recipients = users with <b>Mail alert</b> on (Settings → User management). Digest also auto-emails when a new alert fires.</span></div>`;
     // PAYMENT GATEWAYS first — which gateways are live decides which per-gateway rules below can fire at all
     if(SEG!=="fixed") h += `<div id="gwSection" style="margin:4px 0 16px">${window.salamLoader?window.salamLoader("Loading payment gateways…"):"Loading payment gateways…"}</div>`;
+    await loadTeams();
     const teams=[...new Set(rules.map(r=>r.team).filter(Boolean))].sort();
     const noisyN=rules.filter(r=>r.stats7d&&(r.stats7d.noise>0||r.stats7d.single>0)).length;
     h += `<div class="rfbar">
       <input id="rfQ" class="jsearch" type="search" placeholder="search rule · metric · team…" value="${esc(RF.q)}">
       <div class="rfchips">${["all","P1","P2","P3","P4"].map(v=>`<button class="pill rfc${RF.sev===v?" active":""}" data-rfsev="${v}" style="padding:3px 10px;${v!=="all"?`border-left-color:${sevColor(v)}`:""}">${v==="all"?"All severities":v} · ${v==="all"?rules.length:rules.filter(r=>r.severity===v).length}</button>`).join("")}</div>
-      <select id="rfTeam" class="jsearch" style="flex:0 0 150px;padding-left:12px;background-image:none"><option value="all">All teams</option>${teams.map(t=>`<option ${RF.team===t?"selected":""}>${esc(t)}</option>`).join("")}</select>
+      <select id="rfTeam" class="jsearch" style="flex:0 0 150px;padding-left:12px;background-image:none"><option value="all">All teams</option>${teams.map(t=>`<option value="${esc(t)}" ${RF.team===t?"selected":""}>${esc(teamName(t))}</option>`).join("")}</select>
       <select id="rfState" class="jsearch" style="flex:0 0 130px;padding-left:12px;background-image:none">${[["all","On + off"],["on","Enabled"],["off","Disabled"]].map(([v,l])=>`<option value="${v}" ${RF.state===v?"selected":""}>${l}</option>`).join("")}</select>
       <select id="rfCount" class="jsearch" style="flex:0 0 170px;padding-left:12px;background-image:none">${[["all","Any counting"],["events","Counts events"],["customers","Unique customers"],["services","Unique services"],["floor","Has customer floor"]].map(([v,l])=>`<option value="${v}" ${RF.count===v?"selected":""}>${l}</option>`).join("")}</select>
       <button class="pill rfc${RF.noisy?" active":""}" id="rfNoisy" style="padding:3px 10px;border-left-color:#d97706" title="Rules with single-customer firings or firings closed as noise in the last 7 days">⚠ Noisy · ${noisyN}</button>
     </div>`;
     h += clsBar("rules", rules);
+    h += `<div id="ruleTeamMap"></div>`;
     const q=RF.q.trim().toLowerCase();
     const list = rules.filter(r=>(CLSFILTER.rules==="all"||r.alert_class===CLSFILTER.rules)
       && (RF.sev==="all"||r.severity===RF.sev) && (RF.team==="all"||r.team===RF.team)
@@ -1106,7 +1237,7 @@
         <td>${countCell}</td>
         <td class="mono">${esc(cond)}</td>
         <td>${esc(r.window_hours)}h</td>
-        <td>${esc(r.team||"—")}</td>
+        <td>${teamChip(r.team)}${(()=>{ const sg=(_teamSug||[]).find(x=>x.rule_key===r.key&&x.status==='proposed'); return sg?`<br><span class="rl" style="color:#d97706" title="${esc(sg.reason||'')}">↳ Agent 2: ${esc(teamName(sg.suggested_team))} · ${Math.round((sg.confidence||0)*100)} %</span>`:""; })()}</td>
         <td class="mono">${esc(active)}</td>
         <td style="white-space:nowrap"><button class="pill" data-hist="${r.id}" style="padding:3px 9px">History</button>${canEdit?` <button class="pill" data-edit="${r.id}" style="padding:3px 9px;border-left-color:var(--green)">Edit</button>`:''}</td>
       </tr>`;
@@ -1146,6 +1277,7 @@
     body.querySelectorAll("[data-hist]").forEach(b=>b.addEventListener("click",()=>openHistory(b.dataset.hist, byId(b.dataset.hist))));
     const nb=$("#newRuleBtn"); if(nb) nb.addEventListener("click", ()=>openRuleModal(null));
     const mb=$("#mailDigestBtn"); if(mb) mb.addEventListener("click", ()=>sendDigest(mb));
+    renderTeamMap();
     if(canEdit) renderAnomalySignals();
   }
 
@@ -1520,7 +1652,7 @@
         <section class="rd-sec" id="rd_route"><h4>4 · Severity &amp; routing</h4>
           <div class="fgrid">
             <div><label>SEVERITY</label><div class="sevrow" id="ru_sev_row">${sevBtns('ru_sev',g('severity','P3'))}</div><input type="hidden" id="ru_sev" value="${esc(g('severity','P3'))}"><div class="rl" style="margin-top:3px">P1 pages immediately with the shortest ack SLA · P4 is informational.</div></div>
-            <div><label>TEAM</label><select id="ru_team">${['','BSS Ops','Digital Ops','Sales Ops','OSS Ops'].map(t=>`<option value="${t}" ${sel(g('team',''),t)}>${t||'—'}</option>`).join("")}</select><div class="rl" style="margin-top:3px">Ack reminders (R1 → R3) and the digest go to this team's ACK holders.</div></div>
+            <div><label>TEAM</label><select id="ru_team">${teamOptions(g('team',''), SEG)}</select><div class="rl" style="margin-top:3px">Owning team from Settings › Teams — its members hear the ack reminders first, the per-business ACK holders remain the fallback; the team's vendor contract clocks show on the incident.${(()=>{ const sg=(_teamSug||[]).find(x=>x.rule_key===g('key','')&&x.status==='proposed'); return sg?` <span style="color:#d97706">Agent 2 proposes <b>${esc(teamName(sg.suggested_team))}</b> (${Math.round((sg.confidence||0)*100)} %${sg.reason?', '+esc(sg.reason):''}).</span>`:""; })()}</div></div>
           </div>
           <div class="ffull"><label>TRIGGER CODES <span class="lbl-soft">— which error codes / conditions fire this alert (shown to L2 on the incident)</span></label><input id="ru_codes" placeholder="e.g. 715, 5002 (Semati provider) · excludes 727/726 business declines" value="${esc(g('trigger_codes',''))}"></div>
         </section>

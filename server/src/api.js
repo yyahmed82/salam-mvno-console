@@ -14,6 +14,7 @@ const db = require('./db');
 const { syncOnce } = require('./sync');
 const { runAlerts, evaluate } = require('./alertRunner');
 const notify = require('./notify');
+const teamsMod = require('./teams');           // responder teams (24 Sep 2026)
 const plans = require('./plans');
 const syncHealth = require('./syncHealth');
 const prodSync = require('./prodSync');
@@ -474,6 +475,7 @@ app.get('/api/me', async (req, res) => {
     // visibility (matches the server-side failsafe in requireRoot).
     root: ROOT_SET.size ? !!req.isRoot : true,
     business: req.business || 'both', businessLabel: roles.BUSINESS_LABEL[req.business || 'both'],
+    teams: await teamsMod.teamsOf(who).catch(() => []),
     views: req.views, caps: req.caps, features, fixedTabViews: roles.FIXED_TAB_VIEW || {} });
 });
 // interface feature flags — read (any signed-in user) + update (admins)
@@ -3508,7 +3510,9 @@ app.get('/api/alerts/:id', async (req, res) => {
     if (!a) return res.status(404).json({ error: 'not found' });
     const comments = (await C.query(`SELECT author, body, created_at FROM incident_comments WHERE alert_id=$1 ORDER BY created_at`, [req.params.id])).rows;
     const rule = (await C.query(`SELECT runbook, trigger_codes FROM alert_rules WHERE key=$1`, [a.rule_key])).rows[0] || {};
-    res.json({ alert: a, comments, runbook: rule.runbook || null, trigger_codes: rule.trigger_codes || null });
+    let contract = { team: null }, rights = null;
+    try { contract = await teamsMod.incidentContract(a); rights = await teamsMod.canActOn(req, a, 'ack'); } catch (e) {}
+    res.json({ alert: a, comments, runbook: rule.runbook || null, trigger_codes: rule.trigger_codes || null, team: contract.team, contract: contract.contract, rights });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 /* ---- ServiceNow ticket for THIS incident (Phase 1, docs/SERVICENOW-INTEGRATION-PLAN.md) ----
@@ -3688,8 +3692,12 @@ app.post('/api/alerts/:id/ack', requireCap('ackErrors'), async (req, res) => {
       const u = (await C.query(`SELECT email, business, enabled, ack_mobile, ack_fixed FROM console_users WHERE lower(email)=$1`, [to])).rows[0];
       if (!u || !u.enabled) return res.status(400).json({ error: `${to} is not an enabled console user` });
       const segA = segment.segOf(a), flag = segA === 'fixed' ? u.ack_fixed : u.ack_mobile;
-      if (!flag) return res.status(400).json({ error: `${to} is not an ack holder for ${segment.LABEL[segA]} — tick ACK · ${segment.SHORT[segA].toUpperCase()} in Settings → Users first` });
+      /* 24 Sep 2026: a member of the incident's team may receive the ack too, not only the per-business ACK holders */
+      let member = false;
+      if (!flag && a.team) { const t = await teamsMod.resolve(a.team); if (t) member = !!(await C.query(`SELECT 1 FROM console_user_teams WHERE lower(email)=$1 AND team_key=$2 AND can_ack`, [to, t.key])).rowCount; }
+      if (!flag && !member) return res.status(400).json({ error: `${to} is not an ack holder for ${segment.LABEL[segA]} and not a member of ${a.team || 'this team'} — tick ACK · ${segment.SHORT[segA].toUpperCase()} in Settings → Users, or add them to the team in Settings → Teams` });
     } else to = req.actor;
+    { const can = await teamsMod.canActOn(req, a, 'ack'); if (!can.ok) return res.status(403).json({ error: can.why }); }
     const prev = a.ack_by || null;
     const kind = !prev ? 'ack' : (to === req.actor && prev !== req.actor ? 'reack' : (to !== req.actor ? 'handover' : 'ack'));
     if (prev === to && !note) return res.json({ ok: true, unchanged: true, ack_by: to });
@@ -3747,8 +3755,9 @@ app.post('/api/alerts/:id/resolve', requireCap('ackErrors'), async (req, res) =>
     const b = req.body || {}; const REASONS = require('./alertJourney').REASONS;
     const reason = REASONS[b.reason] ? b.reason : 'fixed';
     const note = String(b.note || '').slice(0, 500).trim() || null;
-    const a = (await C.query(`SELECT rule_key, window_hours FROM alerts WHERE id=$1`, [req.params.id])).rows[0];
+    const a = (await C.query(`SELECT rule_key, window_hours, team, severity, segment FROM alerts WHERE id=$1`, [req.params.id])).rows[0];
     if (!a) return res.status(404).json({ error: 'no such incident' });
+    { const can = await teamsMod.canActOn(req, a, 'resolve'); if (!can.ok) return res.status(403).json({ error: can.why }); }
     const hours = holdHours(b.hold, a.window_hours);
     await C.query(`UPDATE alerts SET status='resolved', resolved_at=COALESCE(resolved_at, now()), note=COALESCE($1, note), resolve_reason=$3, resolved_by=$4 WHERE id=$2`, [note, req.params.id, reason, req.actor]);
     let heldUntil = null;
@@ -4272,6 +4281,8 @@ app.get('/api/escalation/oncall', requireCap('manageSync'), async (req, res) => 
 });
 /* ── Agents & LLM layer (agentsApi.js): /api/llm/*, /api/agents/* — root tier ── */
 require('./agentsApi').mount(app, { audit, requireCap, requireRoot });
+/* ── Responder teams, re-assignment, manual tickets, Agent 2 rule → team mapping (teamsApi.js / teams.js, 24 Sep 2026) ── */
+require('./teamsApi').mount(app, { audit, requireCap, requireSuper });
 /* ── Acknowledgement SLA (ackSla.js): reminders 1/2/3 + management escalation for unacknowledged alerts ── */
 const ackSla = require('./ackSla');
 app.get('/api/ack-sla', requireCap('manageSync'), async (req, res) => {

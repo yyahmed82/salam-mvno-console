@@ -101,7 +101,7 @@
     return `<tr data-uid="${u.id}" class="${u.enabled?"":"u-blocked"}${SEL.has(u.id)?" sel":""}">
       <td class="um-c"><input type="checkbox" class="um-selchk" data-uid="${u.id}" ${SEL.has(u.id)?"checked":""}></td>
       <td class="um-who"><div class="um-av" style="background:hsl(${hue(u.email)} 55% 45%)">${esc(initials(u))}</div>
-        <div class="um-id"><b>${esc(u.name||u.email.split("@")[0])}</b>${isSuper(u)?' <span class="um-super">SUPER</span>':""}<div class="um-mail">${esc(u.email)}</div><div class="um-sub">${[u.team,u.mobile].filter(Boolean).map(esc).join(" · ")||'<span style="color:var(--muted)">no team / mobile</span>'}</div></div></td>
+        <div class="um-id"><b>${esc(u.name||u.email.split("@")[0])}</b>${isSuper(u)?' <span class="um-super">SUPER</span>':""}<div class="um-mail">${esc(u.email)}</div><div class="um-sub">${[u.team,u.mobile].filter(Boolean).map(esc).join(" · ")||'<span style="color:var(--muted)">no team / mobile</span>'}</div>${(MEMBERS[u.email.toLowerCase()]||[]).length?`<div class="um-tagrow">${(MEMBERS[u.email.toLowerCase()]||[]).map(m=>`<span class="tagchip mini on" style="pointer-events:none;padding:1px 7px;font-size:9.5px;border-color:var(--green)" title="responder team">${esc((TEAMREG[m.key]||{}).name||m.key)}</span>`).join("")}</div>`:""}</div></td>
       <td><span class="um-bizpill" style="background:${biz[2]}">${biz[0]} ${biz[1]}</span></td>
       <td><div class="um-roles">${rs.map(r=>`<span class="um-role${r==="super_admin"?" super":r==="admin"?" admin":""}">${esc(roleLabel(r))}</span>`).join("")||'<span class="rl">—</span>'}</div>
         ${(u.tags||[]).length?`<div class="um-tagrow">${u.tags.map(t=>`<span class="tagchip mini on" data-tag="${esc(t)}" style="pointer-events:none;padding:1px 7px;font-size:9.5px">${esc(t)}</span>`).join("")}</div>`:""}</td>
@@ -197,13 +197,17 @@
 
   function exportXlsx(){
     const list=filtered();
-    const rows=[["Name","E-mail","Team","Mobile","Business","Roles","Tags","Status","Last sign-in (KSA)","Mail alert","Mail report","ACK Mobile","ACK Fixed","Actions 30 d","Acks 30 d","MTTA (min)","Created (KSA)"]];
-    list.forEach(u=>{ const a=ACT[u.email.toLowerCase()]||{}; rows.push([u.name||"",u.email,u.team||"",u.mobile||"",u.business||"both",rolesOf(u).map(roleLabel).join(", "),(u.tags||[]).join(", "),u.enabled?"active":"blocked",u.last_login?ksa(u.last_login):"never",u.mail_alert?"yes":"no",u.mail_report?"yes":"no",u.ack_mobile?"yes":"no",u.ack_fixed?"yes":"no",a.actions30||0,a.acks30||0,a.mtta_min==null?"":a.mtta_min,u.created_at?ksa(u.created_at):""]); });
+    const rows=[["Name","E-mail","Team","Responder teams","Mobile","Business","Roles","Tags","Status","Last sign-in (KSA)","Mail alert","Mail report","ACK Mobile","ACK Fixed","Actions 30 d","Acks 30 d","MTTA (min)","Created (KSA)"]];
+    list.forEach(u=>{ const a=ACT[u.email.toLowerCase()]||{}; rows.push([u.name||"",u.email,u.team||"",(MEMBERS[u.email.toLowerCase()]||[]).map(m=>(TEAMREG[m.key]||{}).name||m.key).join(", "),u.mobile||"",u.business||"both",rolesOf(u).map(roleLabel).join(", "),(u.tags||[]).join(", "),u.enabled?"active":"blocked",u.last_login?ksa(u.last_login):"never",u.mail_alert?"yes":"no",u.mail_report?"yes":"no",u.ack_mobile?"yes":"no",u.ack_fixed?"yes":"no",a.actions30||0,a.acks30||0,a.mtta_min==null?"":a.mtta_min,u.created_at?ksa(u.created_at):""]); });
     const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`console_users_${new Date().toISOString().slice(0,10)}.csv`; document.body.appendChild(a); a.click(); a.remove();
   }
 
-  async function reload(){ try{ const d=await api("/api/users"); USERS=d.users||[]; ACT=d.activity||{}; }catch(e){ if(HOST) HOST.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; } render(); }
+  let TEAMREG={}, MEMBERS={};
+  async function reload(){ try{ const d=await api("/api/users"); USERS=d.users||[]; ACT=d.activity||{};
+      /* responder teams (24 Sep 2026): the memberships shown as chips under the name — edited in the user panel or Settings › Teams */
+      try{ const [r,m]=await Promise.all([api("/api/teams"), api("/api/teams/memberships")]); TEAMREG={}; (r.teams||[]).forEach(t=>{ TEAMREG[t.key]=t; }); MEMBERS=m.memberships||{}; }catch(e){}
+    }catch(e){ if(HOST) HOST.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; } render(); }
 
   window.renderUsersMgmt=async function(host){ HOST=host; ensureCss(); if(!HOST.firstChild) HOST.innerHTML=`<div class="sub">Loading users…</div>`; await loadRoles(); await reload(); };
   window.reloadUsersMgmt=reload;

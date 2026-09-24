@@ -747,3 +747,37 @@ CREATE TABLE IF NOT EXISTS nexus_link_cache (
   seen_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_nexus_link_seen ON nexus_link_cache (seen_at);
+
+-- Responder teams (24 Sep 2026, server/src/teams.js — the module creates/merges these itself; kept here for reference)
+CREATE TABLE IF NOT EXISTS console_teams (
+  key         text PRIMARY KEY,                 -- e.g. bss-l2, mobile-digital-l2 (alert_rules.team / alerts.team hold this key; legacy labels resolve via aliases)
+  name        text NOT NULL,
+  business    text NOT NULL DEFAULT 'both',     -- mobile | fixed | both
+  domain      text NOT NULL DEFAULT 'other',    -- digital | bss | oss | infra | adm | network | soc | payments | rafm | sales | other
+  level       text NOT NULL DEFAULT 'L2',       -- L1 | L2 | L3
+  vendor_id   text,                             -- vendorContracts.js vendor id (sigma, tcs, oracle, subex, comviva, infosys, evamp)
+  contract_id text,                             -- vendorContracts.js contract id — the obligations shown on the incident
+  description text, mail_dl text, channel text,
+  aliases     jsonb NOT NULL DEFAULT '[]',      -- legacy free-text team labels that map here ("BSS Ops", "Digital Ops"…)
+  keywords    jsonb NOT NULL DEFAULT '[]',      -- Agent 2 deterministic rule → team scoring
+  active      boolean NOT NULL DEFAULT true, seeded boolean NOT NULL DEFAULT false, sort integer NOT NULL DEFAULT 100,
+  created_at  timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), updated_by text
+);
+CREATE TABLE IF NOT EXISTS console_user_teams (
+  email text NOT NULL, team_key text NOT NULL REFERENCES console_teams(key) ON DELETE CASCADE,
+  can_ack boolean NOT NULL DEFAULT true, can_resolve boolean NOT NULL DEFAULT true, can_reassign boolean NOT NULL DEFAULT true,
+  added_at timestamptz NOT NULL DEFAULT now(), added_by text, PRIMARY KEY (email, team_key)
+);
+CREATE TABLE IF NOT EXISTS alert_rule_team_suggestions (
+  id bigserial PRIMARY KEY, rule_key text UNIQUE NOT NULL, segment text NOT NULL DEFAULT 'mvno', current_team text, suggested_team text NOT NULL,
+  confidence real, method text NOT NULL DEFAULT 'rule', reason text, alternatives jsonb NOT NULL DEFAULT '[]',
+  status text NOT NULL DEFAULT 'proposed',      -- proposed | applied | rejected
+  decided_by text, decided_at timestamptz, rule_updated_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source         text NOT NULL DEFAULT 'rule';   -- rule | manual
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS created_by     text;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reassign_count integer NOT NULL DEFAULT 0;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reassigned_at  timestamptz;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS first_ack_at   timestamptz;                    -- kept when a re-assignment releases the ack
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS priority_note  text;

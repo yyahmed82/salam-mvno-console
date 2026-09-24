@@ -249,8 +249,18 @@ async function buildMail(a, { level, repeat, elapsedMin, business, seg, cfg, sib
  *   R1        → the ack holders of that side only — the people who can actually press Ack
  *   R2 / R3   → the ack holders + every other member of that side with Alert mail on (the whole business is made aware;
  *               the holders remain the ones addressed). Management is a separate list, mailed separately at R3. */
-async function audience(seg, level) {
+async function audience(seg, level, teamLabel) {
   const col = seg === 'fixed' ? 'ack_fixed' : 'ack_mobile', biz = SEG.BUSINESS_OF[seg];
+  /* 24 Sep 2026: the incident's responder team (Settings › Teams) hears every reminder first — its members with
+   * can_ack, plus the team mail DL — ahead of the per-business ACK holders, who remain the on-call fallback. */
+  let teamRows = [];
+  try {
+    const teams = require('./teams'); const t = teamLabel ? await teams.resolve(teamLabel) : null;
+    if (t) {
+      teamRows = (await teams.membersOf(t.key)).filter(m => m.enabled !== false && m.can_ack).map(m => ({ email: m.email, name: m.name, business: m.business, holder: true, team: t.key }));
+      if (t.mail_dl) teamRows.push({ email: t.mail_dl, name: t.name, business: biz, holder: true, team: t.key });
+    }
+  } catch (e) {}
   /* 11 Sep 2026 fix: R1 passed [biz] to a query with no $1 (the mail_alert clause is R2/R3 only) → Postgres "bind message
    * supplies 1 parameters" → catch → [] → "not sent · 0 (0)" on EVERY reminder 1 since 9 Sep 09:52. The business filter
    * is now always in the query (holders are per side anyway), so the parameter is always bound. */
@@ -258,7 +268,8 @@ async function audience(seg, level) {
   const wide = level >= 2 ? ` OR (mail_alert = true AND ${bizWhere})` : '';
   try {
     const rows = (await db.console.query(`SELECT email, name, business, ${col} AS holder FROM console_users WHERE enabled = true AND ((${col} = true AND ${bizWhere})${wide}) ORDER BY ${col} DESC NULLS LAST, email`, [biz])).rows;
-    if (rows.length) return rows;
+    const seen = new Set(teamRows.map(r => r.email.toLowerCase())); const merged = teamRows.concat(rows.filter(r => !seen.has(String(r.email).toLowerCase())));
+    if (merged.length) return merged;
     // nobody flagged as ACK holder on this side yet (users list → ACK HOLDER) — never let a reminder go nowhere: fall back to the alert-mail audience
     return (await db.console.query(`SELECT email, name, business, false AS holder FROM console_users WHERE enabled = true AND mail_alert = true AND ${bizWhere} ORDER BY email`, [biz])).rows;
   } catch (e) { console.error('[ack-sla] audience query failed:', e.message); return []; }
@@ -267,7 +278,7 @@ async function sendReminder(a, ctx) {
   const notify = require('./notify');
   const { level, business, seg, cfg, elapsedMin, repeat } = ctx;
   const L = cfg[a.severity] || cfg.P3;
-  const team = await audience(seg, level);
+  const team = await audience(seg, level, a.team);
   let attachments = [];
   try { const rule = { key: a.rule_key, name: a.name, severity: a.severity, team: a.team, metric_key: a.metric_key, operator: a.operator, threshold: a.threshold, value: a.observed_value, sample: a.sample, window_hours: a.window_hours, segment: seg, fired: true, description: a.description, runbook: a.runbook, trigger_codes: a.trigger_codes };
     attachments = (await require('./alertReport').buildFiredReports(new Date(), [rule], { max: 1 })).attachments || []; } catch (_) { attachments = []; }

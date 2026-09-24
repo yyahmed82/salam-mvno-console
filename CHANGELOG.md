@@ -3,6 +3,41 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.72] — 2026-09-24 — Responder teams: incident ownership, re-assignment, manual tickets, Agent 2 rule → team mapping
+### Added
+- **Responder-team registry** (`server/src/teams.js`, tables `console_teams`, `console_user_teams`): business × domain ×
+  level (Digital · BSS · OSS · Infra · ADM L3 fixes & enhancements · Network · SOC · Payments · RAFM · Sales), each bound
+  to the vendor and the contract that carry its obligations. Seeded with 17 teams (Salam Digital Ops L1, TCS Mobile
+  Digital & BSS L2, Sigma Fixed Applications L2, BSS L2 / Oracle BSS L3, OSS L2 / Oracle OSS L3, Infrastructure & DC,
+  ADM Mobile L3 (TCS), ADM Fixed L3 (Sigma), Evamp DMS/UIL L3, Payments & Gateways, Subex RAFM, Network NOC, SOC, Sales
+  Ops, OTP vendor); legacy free-text rule teams ("Digital Ops", "BSS Ops", "OSS Ops", "Sales Ops"…) resolve through
+  the team **aliases**, so nothing had to be migrated. **Settings › Teams** (`teams.js`, super admin): edit teams, bind
+  vendor/contract, mail DL, aliases, Agent 2 keywords; members with per-team rights (ack · resolve · re-assign); the
+  team's contract clocks, open load, MTTR and the rules it owns.
+- **Rights on an incident** (`teams.canActOn`): admins always; a member of the incident's team; the per-business ACK
+  holders (`ack_mobile` / `ack_fixed`) as the on-call fallback; the current ack holder or the person who opened the
+  ticket; an incident with no team → any `ackErrors` user. Enforced on **ack, hand-over target, resolve and
+  re-assign** (`api.js`). Ack reminders (`ackSla.js`) now go to the team's members and DL first, ACK holders next.
+- **Re-assign to a team** — `POST /api/alerts/:id/reassign {team, note}` (reason required): the ack is released so the
+  new team's ack clock starts (first ack kept in `first_ack_at`), reminders reset, team mailed, system comment + audit
+  `incident.reassign`. Alerts › ⋯ › *Re-assign to a team*.
+- **Manual ticket** — `POST /api/alerts/manual`: an incident opened by hand (rule `manual_ticket` /
+  `fixed_manual_ticket`, `source='manual'`, `created_by`) owned by a team from the first second — same ack SLA,
+  reminders, exec radar, history and vendor clocks as a fired rule. Alerts › **＋ New ticket** drawer.
+- **Incident drawer › Owning team & contract**: the team, whether the reader may act and why, the vendor / contract,
+  and the signed **response · restoration · resolution · RCA** targets for this severity (from `vendorContracts.js`),
+  with the escalation ladder link.
+- **Agent 2 maps rules to teams** (`agentIncident.mapRules`, table `alert_rule_team_suggestions`): deterministic
+  keyword scoring first (team keywords vs rule key / name / metric / description, side-aware), the on-prem model only
+  for the ambiguous rules and only choosing from the registry; proposals wait for a human under **Alerts › Alert rules
+  › Team mapping** (approve · reject · approve all ≥ 80 % · run now). Approve writes `alert_rules.team` (marked
+  operator-edited so the seed keeps it) and moves the rule's open incidents. Runs 1 min after boot and every 6 h;
+  `POST /api/agents/run/map`. Incident triage now offers the model the live team list and stores the team **key**.
+- Users: responder-team memberships in the user panel (Settings › Users › Edit) and as chips in the list / CSV.
+### Changed
+- Rule editor › TEAM is a grouped dropdown of the registry (legacy label kept selectable); rules list shows the team tag
+  and Agent 2's pending proposal per rule.
+
 ## [2.0.0-alpha.71] — 2026-09-24 — Vendors & contracts: signed-document review, five vendors added, financials
 ### Changed
 - **Sigma and TCS re-baselined on the signed documents** (`server/src/vendorContracts.js`). Sigma: contract effective
