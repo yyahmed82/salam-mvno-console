@@ -157,6 +157,7 @@
       <div id="feChan" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feType" class="fe-chips" style="margin-bottom:4px"></div>
       <div id="feMsgRow" class="fe-msgrow"><span class="fe-dim">Error message:</span><select id="feMsg" class="fe-in fe-msg" title="Every distinct error message in the selected period, with its count — pick one to filter the board"><option value="">Loading…</option></select><button type="button" id="feMsgOff" class="fe-btn" hidden>✕ clear</button><input id="feResp" class="fe-in fe-resp" placeholder="or response contains… e.g. Accept Sync Request error" value="${esc(S.resp)}" autocomplete="off" spellcheck="false" title="Free text searched in the failing call's response body (and the message) — Enter to apply"></div>
+      <div id="feTrend"></div>
       <div id="feTiles" class="fe-tiles"><div class="fe-tile" style="cursor:default;color:var(--muted)">${window.salamLoader?window.salamLoader("Reading error events…"):"Loading…"}</div></div>
       <div class="fe-tablecard"><div id="feRows"></div><div id="feMore" style="padding:10px;text-align:center"></div></div>
       <div id="feStamp" class="rl" style="font-size:11px;color:var(--muted);margin-top:8px"></div></div>`;
@@ -246,6 +247,10 @@
         if(cur&&!msgs.some(m=>m.msg===cur)) sel.insertAdjacentHTML("beforeend",`<option value="${esc(cur)}" selected>${esc(cur)} · 0</option>`);
         sel.onchange=()=>{ S.msg=sel.value; load(host,fx,true); }; sel.classList.toggle("on",!!cur);
         const off=$("#feMsgOff"); if(off){ off.hidden=!cur; off.onclick=()=>{ S.msg=""; load(host,fx,true); }; } }
+      /* evolution by hour — its own fetch on the console-side rollup (never the read models), never blocks the board */
+      if(window.fixedErrTrend&&$("#feTrend")){ let tq=`range=${encodeURIComponent(S.win)}${S.channel?`&channel=${encodeURIComponent(S.channel)}`:""}${S.type?`&type=${encodeURIComponent(S.type)}`:""}${S.openOnly?"&openOnly=1":""}${S.tech!=="all"?`&tech=${S.tech}`:""}${S.provider?`&provider=${encodeURIComponent(S.provider)}`:""}${S.msg?`&msg=${encodeURIComponent(S.msg)}`:""}${S.cls?`&cls=${S.cls}`:""}${S.team?`&team=${S.team}`:""}${S.category?`&category=${encodeURIComponent(S.category)}`:""}`;
+        const idOn=!!(S.find||S.resp||Object.values(S.ids).some(Boolean)); $("#feTrend").hidden=idOn;
+        if(!idOn) window.fixedErrTrend.render($("#feTrend"),fx,{ qs:tq, msg:S.msg, openOnly:S.openOnly, onPick:m=>{ S.msg=(S.msg===m)?"":m; load(host,fx,true); } }).catch(()=>{}); }
       /* which read model answers which channel, and how fresh each is */
       const srcEl=$("#feSrc"); if(srcEl&&sum.sources&&sum.sources.length){ const SRC={ops:"sda_ops",beta:"sda_ops_beta"};
         srcEl.innerHTML=sum.sources.map(x=>{ const bk=(x.buckets||[]).map(k=>CH_LABEL[k]||k).join(" · "); if(x.error) return `<span><b>${esc(bk||SRC[x.src]||x.src)}</b> — <span class="stale">source unavailable</span> (${esc(SRC[x.src]||x.src)})</span>`;

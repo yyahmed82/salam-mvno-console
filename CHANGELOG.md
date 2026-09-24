@@ -1,3 +1,8 @@
+## 2.0.0-alpha.78 — 24 Sep 2026 — Fixed › Troubleshoot: evolution of each error by hour
+
+- **Evolution by hour** card on the error control board: one line per error message over the selected period (Top 5 / 8 / 12 / 20, the rest summed into a dashed *Other* line, optional *All errors* area), hourly points up to 8 days and daily beyond (or forced), hover crosshair with every message's count at that hour, legend chips that hide / show lines, ⌕ on a chip filters the board on that message, the message selected in the *Error message* dropdown drawn bold. Follows the board's window, channel, type, provider, class, category, team, message and *Open only*; hidden while an identifier / free-text search is active (the rollup cannot answer those).
+- **No read-model cost at page time**: new console-side rollup `fixed_error_msg_hourly` (hour × source × channel × type × provider × category × message → count, open, auto class) maintained by `fixedErrorTrend.js` — every 5 min the last 3 h are re-rolled, the last 48 h once an hour (resolved flags), history backfilled one day at a time (newest first) down to 92 days, retention 99 days. The chart reads the rollup only (`GET /api/fixed/errors/trend`, memoised per URL by respCache); business / technical honours the catalogue overrides at read time. `GET /api/fixed/errors/trend/status` shows rows, coverage and the last run.
+
 # Changelog
 
 All notable changes to the Salam MVNO Digital Console are documented here.

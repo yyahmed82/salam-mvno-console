@@ -6936,6 +6936,7 @@ app.listen(PORT, async () => {
   try { require('./yakeenProbe').start(); } catch (e) { console.error('Yakeen probe:', e.message); }
   try { require('./fixedErrCatalog').start(); } catch (e) { console.error('Error catalogue:', e.message); }
   try { require('./fixedChannelMetrics').start(); } catch (e) { console.error('Fixed channel metrics:', e.message); }
+  try { require('./fixedErrorTrend').start(); } catch (e) { console.error('Fixed error trend rollup:', e.message); }
   require('./customMetrics').load().catch(e => console.error('Custom metrics:', e.message));
   try { require('./smsProbe').start(); } catch (e) { console.error('SMS probe:', e.message); }
   try { require('./zipkinCollector').start(); } catch (e) { console.error('APIGW trace collector:', e.message); }
