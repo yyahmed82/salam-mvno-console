@@ -1,3 +1,8 @@
+## 2.0.0-alpha.82 — 24 Sep 2026 — vLLM tab: the value, drawn
+
+- New **What you really gain** block on the Move-to-vLLM tab, all computed from the real `llm_calls` of the last 7 days and the chosen scenario: five before → after tiles (triage note latency, incidents annotated per hour, time to clear the unassessed-signature backlog, Yusr answer time, model size), then five charts — **latency per answer** (measured today vs projected per target, per agent), **capacity** (answers per hour: one CPU stream vs vLLM batching the planned concurrency), **backlog drain** curves, **effort vs value** bubbles (weeks to first answer × value × monthly bill) and a **24-month cumulative cost** line chart with editable server price and cloud monthly rate (break-even A vs B). Projection = prompt tokens ÷ 2 500 tok/s prefill + answer tokens ÷ per-stream speed of the GPU class (+ network for cloud); every figure is labelled indicative.
+- The `LLM_ORDER` line in the config sample replaced by the real switch (Settings › Agents › Configure → order).
+
 ## 2.0.0-alpha.81 — 24 Sep 2026 — Mission control: performance HUD per robot · "Move to vLLM / GPU" tab
 
 - **Performance HUD** on every robot (hover, click to pin): the PM2 process CPU % and RAM (`pm2 jlist`, 10 s cache), tokens today, generation speed (tok/s measured from answer tokens ÷ ms over 7 days), average and p95 latency, fail %, uptime and restarts. The brain's HUD shows the host (CPU % from /proc/stat, RAM, load, GPU via nvidia-smi when present) and the resident model on the model server (`/api/ps`: size, quantisation, CPU vs GPU).

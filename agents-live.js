@@ -137,6 +137,10 @@
   #view-agentsmission .am-ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12.5px} #view-agentsmission .am-ctl label{display:flex;align-items:center;gap:6px} #view-agentsmission .am-ctl select,#view-agentsmission .am-ctl input{font:inherit;font-size:12.5px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card2,#f1f5f9);color:var(--ink)} #view-agentsmission .am-ctl input{width:90px}
   #view-agentsmission .am-steps{counter-reset:st;list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px} #view-agentsmission .am-steps li{position:relative;padding:12px 12px 12px 44px;border:1px solid var(--line);border-radius:12px;background:var(--card2,#f8fafc);font-size:12.5px;line-height:1.45} #view-agentsmission .am-steps li:before{counter-increment:st;content:counter(st);position:absolute;left:12px;top:12px;width:24px;height:24px;border-radius:50%;background:var(--green,#0e9f5a);color:#fff;font-weight:800;font-size:12px;display:grid;place-items:center} #view-agentsmission .am-steps li b{display:block;margin-bottom:2px} #view-agentsmission .am-steps li .d{color:var(--muted);font-size:11px}
   #view-agentsmission .am-code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--card2,#f8fafc);border:1px solid var(--line);border-radius:10px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;line-height:1.5}
+  #view-agentsmission .am-charts{display:grid;grid-template-columns:1fr 1fr;gap:14px} @media (max-width:980px){#view-agentsmission .am-charts{grid-template-columns:1fr}}
+  #view-agentsmission .am-ch2{background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;padding:14px 16px} #view-agentsmission .am-ch2 h3{margin:0 0 2px;font-size:14px;font-weight:800} #view-agentsmission .am-ch2 .sub{font-size:11.5px;margin-bottom:8px} #view-agentsmission .am-ch2 svg{width:100%;height:auto;display:block;overflow:visible}
+  #view-agentsmission .am-ch2 .big{font-size:26px;font-weight:800;letter-spacing:-.4px;line-height:1} #view-agentsmission .am-delta{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px} #view-agentsmission .am-delta div{font-size:11.5px;color:var(--muted)} #view-agentsmission .am-delta b{display:block;font-size:18px;color:var(--ink);letter-spacing:-.3px}
+  #view-agentsmission .am-val{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px} #view-agentsmission .am-val .v{border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--card2,#f8fafc);border-left:4px solid var(--green,#0e9f5a)} #view-agentsmission .am-val .v b{display:block;font-size:22px;letter-spacing:-.4px;line-height:1.1} #view-agentsmission .am-val .v small{color:var(--muted);font-size:11.5px;display:block;margin-top:3px;line-height:1.35} #view-agentsmission .am-val .v .from{font-size:12px;color:var(--muted);text-decoration:line-through;margin-right:6px}
   #view-agentsmission .am-note{font-size:11.5px;color:var(--muted);border-left:3px solid #d97706;padding:6px 10px;background:rgba(217,119,6,.06);border-radius:0 8px 8px 0}
   @media (max-width:820px){#view-agentsmission .am-hud{width:220px} #view-agentsmission .am-robots{grid-template-columns:1fr 1fr} #view-agentsmission .am-rb svg{width:96px;height:108px} #view-agentsmission .am-wires{display:none} #view-agentsmission .am-bub{max-width:100%}}
   @media (max-width:520px){#view-agentsmission .am-robots{grid-template-columns:1fr 1fr;gap:6px} #view-agentsmission .am-card{padding:12px} #view-agentsmission .am-player{bottom:4px;padding:10px}}
@@ -306,12 +310,13 @@
         </div>
         ${peak?`<div class="am-note" style="margin-top:10px">Busiest hour of the week: ${esc(ksa(peak.h))} KSA — ${n(peak.calls)} calls, ${n(peak.tokens)} tokens. A GPU server should sustain about <b>3 × that hour</b> without queueing: <b>≈ ${n(needTps)} tok/s aggregate</b>. Every option below does that with one mid-range GPU.</div>`:""}</div>
 
+      ${valueSection(d)}
       <div class="am-sec"><h2>What changes for the console — almost nothing</h2><div class="sub">llm.js already speaks two dialects (Ollama and OpenAI-compatible) with fail-over, JSON mode, probe, budget and audit. vLLM is OpenAI-compatible, so the move is configuration, tested live with the Self-test on Settings › Agents.</div>
         <div class="am-code">LLM_FALLBACK_KIND=openai
 LLM_FALLBACK_URL=http://&lt;gpu-server&gt;:8000/v1
 LLM_FALLBACK_MODEL=${S.plan.model==="8b"?"meta-llama/Llama-3.1-8B-Instruct":S.plan.model==="14b"?"Qwen/Qwen2.5-14B-Instruct":"Qwen/Qwen2.5-32B-Instruct"}
 LLM_FALLBACK_KEY=            # empty on-prem, or the vLLM --api-key
-LLM_ORDER=fallback-first     # once the Self-test is green for a day · Ollama on 152 stays as the safety net</div>
+# order: Settings › Agents › Configure → "fallback first" once the Self-test is green for a day · Ollama on 152 stays the safety net</div>
         <div class="sub" style="margin-top:8px">Then: Settings › Agents › <b>Probe</b> and <b>Self-test</b> (all five probes, JSON grammar on/off) → watch Mission control for a day (speed, p95, fail %) → flip the order. Rollback = one line.</div></div>
 
       <div class="am-sec"><h2>Pick the scenario</h2>
@@ -336,8 +341,75 @@ LLM_ORDER=fallback-first     # once the Self-test is green for a day · Ollama o
         ${[["Data stays in Salam's network","yes","yes","only with private link + DPA","no"],["Answer speed (8B–14B)",curTps?curTps+" tok/s":"~15 tok/s","40–90 tok/s per stream","40–90 tok/s per stream","fast"],["Concurrent agents + Yusr","one at a time (shared CPU)","batched on GPU","batched on GPU","unlimited"],["Console change","—","2 .env lines","2 .env lines + network","2 .env lines + key"],["Time to first answer","—","1–2 weeks","2–4 weeks","days (policy: weeks)"],["Monthly run cost","0 (existing VM)","power only","~500–3 000 USD","few USD → grows with use"],["Model choice","8B (RAM-bound)","up to 32B","up to 70B+","any"],["Policy fit (on-prem only)","✓","✓","exception needed","✗"]].map(r=>`<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td>${r.slice(2).map((c,i)=>`<td class="${OPTS[i].k===S.plan.target?"hl":""}">${esc(c)}</td>`).join("")}</tr>`).join("")}
       </tbody></table><div class="am-note" style="margin-top:10px">Prices and throughput are indicative ranges (public list prices, vLLM published benchmarks, September 2026) — not a quote. Get two quotes for the on-prem server and one hour of benchmark before deciding.</div></div></div>`;
   }
+  /* ---- the value: measured today vs projected, drawn ---- */
+  const OPTC={today:"#64748b",onprem:"#0e9f5a",cloudvm:"#d97706",cloudapi:"#dc2626"};
+  const GPU_TPS={"8b":75,"14b":55,"32b":35}; const PREFILL=2500;   // per-stream generation tok/s on an L4/L40S class GPU, and prompt-processing tok/s
+  function projected(u,model,where){
+    const calls=Math.max(1,u.calls||1); const pt=(u.prompt_tokens||0)/calls, at=(u.answer_tokens||0)/calls;
+    const tps=where==="cloudapi"?60:GPU_TPS[model]; const net=where==="onprem"?0.05:where==="cloudvm"?0.15:0.4;
+    return Math.max(0.8,pt/PREFILL+at/tps+net);   // seconds
+  }
+  const secs=v=>v==null?"—":v>=60?(v/60).toFixed(1)+" min":v>=10?Math.round(v)+" s":v.toFixed(1)+" s";
+  function hbars(rows,max,unit){   // rows: [{label, sub, v, c, txt}]
+    const W=520, L=150, R=70, rowH=26, H=rows.length*rowH+8; const iw=W-L-R;
+    return `<svg viewBox="0 0 ${W} ${H}">${rows.map((r,i)=>{ const y=4+i*rowH; const w=Math.max(2,r.v/max*iw); return `<text x="${L-8}" y="${y+16}" text-anchor="end" font-size="11" font-weight="${r.bold?"800":"600"}" fill="var(--ink)">${esc(r.label)}</text><rect x="${L}" y="${y+4}" width="${w.toFixed(1)}" height="16" rx="5" fill="${r.c}" opacity="${r.bold?"1":".85"}"/><text x="${(L+w+6).toFixed(1)}" y="${y+16}" font-size="11" font-weight="800" fill="var(--ink)">${esc(r.txt)}</text>`; }).join("")}</svg>`;
+  }
+  function valueSection(d){
+    const u=(d.usage&&d.usage.total)||{}; const bc=(d.usage&&d.usage.byCaller)||{}; const model=S.plan.model; const where=S.plan.target;
+    const callers=[["salam-agent-incident","Triage note (Agent 2)"],["salam-agent-log","Signature batch (Agent 1)"],["console","Yusr answer"]].filter(([k])=>bc[k]&&bc[k].calls);
+    /* 1 · latency per answer: measured today vs the three targets */
+    const latRows=[]; let maxL=1;
+    for(const [k,label] of callers){ const x=bc[k]; const today=(x.avg_ms||0)/1000; const p95=(x.p95_ms||0)/1000; const rows=[{label,sub:"today · CPU",v:today,c:OPTC.today,txt:secs(today)+" (p95 "+secs(p95)+")",bold:false}];
+      for(const o of OPTS){ const v=projected(x,model,o.k); rows.push({label:"  "+o.name.slice(0,1)+" · "+(o.k==="onprem"?"on-prem GPU":o.k==="cloudvm"?"cloud GPU VM":"managed API"),v,c:OPTC[o.k],txt:secs(v)+"  ("+Math.max(1,Math.round(today/v))+"× faster)",bold:o.k===where}); }
+      latRows.push(...rows); maxL=Math.max(maxL,today*1.05); }
+    /* 2 · capacity: answers per hour the model server can deliver (sequential CPU vs batched GPU) */
+    const inc=bc["salam-agent-incident"]||{avg_ms:18000,prompt_tokens:0,answer_tokens:0,calls:1}; const todayPerH=inc.avg_ms?Math.round(3600e3/inc.avg_ms):0;
+    const conc=S.plan.conc||Math.max(2,(d.usage&&d.usage.maxConcurrent)||1);
+    const capRows=[{label:"today · CPU (1 stream)",v:todayPerH,c:OPTC.today,txt:n(todayPerH)+" / h"}].concat(OPTS.map(o=>{ const per=projected(inc,model,o.k); const v=Math.round(3600/per*(o.k==="cloudapi"?conc:Math.min(conc,16))); return {label:o.name.slice(0,1)+" · "+conc+" streams",v,c:OPTC[o.k],txt:n(v)+" / h",bold:o.k===where}; }));
+    const maxC=Math.max(...capRows.map(r=>r.v),1);
+    /* 3 · backlog drain: the unassessed signatures, 15 per batch, one batch = one log-agent call */
+    const logU=bc["salam-agent-log"]||{avg_ms:26000,prompt_tokens:0,answer_tokens:0,calls:1}; const backlog=((d.agents.find(a=>a.key==="log")||{}).queue||[]).reduce((m,q)=>/assess/.test(q.label)?q.n:m,0);
+    const batches=Math.ceil(backlog/15); const todayH=batches*(logU.avg_ms||26000)/3600e3; const drain=OPTS.map(o=>({k:o.k,h:batches*projected(logU,model,o.k)/3600/Math.min(conc,8)}));
+    const maxD=Math.max(todayH,1e-6); const W=520,H=150,L=44,B=24; const iw=W-L-12, ih=H-B-10;
+    const curve=(rate,c,w)=>{ const pts=[]; for(let i=0;i<=40;i++){ const t=i/40*maxD; const left=Math.max(0,backlog-backlog*(t/rate)); pts.push(`${(L+t/maxD*iw).toFixed(1)},${(10+ih-left/Math.max(1,backlog)*ih).toFixed(1)}`); if(left<=0) break; } return `<polyline points="${pts.join(" ")}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`; };
+    const drainSvg=`<svg viewBox="0 0 ${W} ${H}"><line x1="${L}" x2="${W-12}" y1="${10+ih}" y2="${10+ih}" stroke="var(--line)"/><line x1="${L}" x2="${L}" y1="10" y2="${10+ih}" stroke="var(--line)"/>
+      <text x="${L-6}" y="16" text-anchor="end" font-size="10" fill="var(--muted)">${n(backlog)}</text><text x="${L-6}" y="${10+ih}" text-anchor="end" font-size="10" fill="var(--muted)">0</text>
+      ${[0,.25,.5,.75,1].map(f=>`<text x="${(L+f*iw).toFixed(1)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--muted)">${secs(f*maxD*3600)}</text>`).join("")}
+      ${curve(todayH,OPTC.today,2)}${drain.map(x=>curve(x.h,OPTC[x.k],x.k===where?3.5:1.6)).join("")}</svg>`;
+    /* 4 · effort vs value: x = weeks to first answer, y = value score, bubble = monthly run cost */
+    const pts=[{k:"today",x:0,y:10,r:8,name:"stay on CPU",c:OPTC.today},{k:"onprem",x:2,y:88,r:10,name:"A · on-prem GPU",c:OPTC.onprem},{k:"cloudvm",x:3.5,y:72,r:16,name:"B · cloud GPU VM",c:OPTC.cloudvm},{k:"cloudapi",x:1,y:40,r:12,name:"C · managed API",c:OPTC.cloudapi}];
+    const EW=520,EH=200,EL=40,EB=28; const ex=x=>EL+x/5*(EW-EL-16), ey=y=>10+(1-y/100)*(EH-EB-10);
+    const effSvg=`<svg viewBox="0 0 ${EW} ${EH}"><line x1="${EL}" x2="${EW-16}" y1="${ey(0)}" y2="${ey(0)}" stroke="var(--line)"/><line x1="${EL}" x2="${EL}" y1="10" y2="${ey(0)}" stroke="var(--line)"/>
+      ${[0,1,2,3,4,5].map(w=>`<text x="${ex(w)}" y="${EH-8}" text-anchor="middle" font-size="10" fill="var(--muted)">${w} wk</text>`).join("")}<text x="${EL-6}" y="${ey(100)+4}" text-anchor="end" font-size="10" fill="var(--muted)">value</text><text x="${EL-6}" y="${ey(0)}" text-anchor="end" font-size="10" fill="var(--muted)">0</text>
+      ${pts.map(p=>`<circle cx="${ex(p.x)}" cy="${ey(p.y)}" r="${p.r}" fill="${p.c}" opacity="${p.k===where?"1":".55"}" stroke="${p.k===where?"var(--ink)":"none"}" stroke-width="2"/><text x="${ex(p.x)+p.r+6}" y="${ey(p.y)+4}" font-size="11" font-weight="${p.k===where?"800":"600"}" fill="var(--ink)">${esc(p.name)}</text>`).join("")}
+</svg>`;
+    /* 5 · 24-month cost: A capex once, B monthly, C per token growing 15 %/quarter */
+    const capex=S.plan.capex||12000, cloudM=S.plan.cloudM||1500, apiM0=Math.max(20,Math.round((u.perDay||{}).tokens||0)*30/1e6*2);
+    const series={onprem:[],cloudvm:[],cloudapi:[]}; let a=capex,b=0,c=0; for(let m=0;m<=24;m++){ series.onprem.push(a); series.cloudvm.push(b); series.cloudapi.push(c); a+=capex*0.01; b+=cloudM; c+=apiM0*Math.pow(1.15,Math.floor(m/3)); }
+    const maxK=Math.max(...Object.values(series).map(x=>x[24]),1); const CW=1040,CH=200,CL=54,CB=24; const cx=m=>CL+m/24*(CW-CL-12), cy=v=>10+(1-v/maxK)*(CH-CB-10);
+    const costSvg=`<svg viewBox="0 0 ${CW} ${CH}"><line x1="${CL}" x2="${CW-12}" y1="${cy(0)}" y2="${cy(0)}" stroke="var(--line)"/>${[0,.5,1].map(f=>`<text x="${CL-6}" y="${cy(f*maxK)+4}" text-anchor="end" font-size="10" fill="var(--muted)">${Math.round(f*maxK/1000)} k$</text><line x1="${CL}" x2="${CW-12}" y1="${cy(f*maxK)}" y2="${cy(f*maxK)}" stroke="var(--line-soft,var(--line))"/>`).join("")}
+      ${[0,6,12,18,24].map(m=>`<text x="${cx(m)}" y="${CH-6}" text-anchor="middle" font-size="10" fill="var(--muted)">M${m}</text>`).join("")}
+      ${Object.entries(series).map(([k,v])=>`<polyline points="${v.map((y,m)=>`${cx(m).toFixed(1)},${cy(y).toFixed(1)}`).join(" ")}" fill="none" stroke="${OPTC[k]}" stroke-width="${k===where?3.5:1.8}" opacity="${k===where?1:.7}"/><text x="${cx(24)+4}" y="${cy(v[24])+4}" font-size="10" font-weight="800" fill="${OPTC[k]}">${k==="onprem"?"A":k==="cloudvm"?"B":"C"}</text>`).join("")}</svg>`;
+    const incToday=(inc.avg_ms||0)/1000, incNew=projected(inc,model,where); const yu=bc.console||null;
+    return `<div class="am-sec"><h2>What you really gain — measured today vs projected on ${esc((OPTS.find(o=>o.k===where)||{}).name||"")}</h2><div class="sub">Today's bars are the real averages of the last 7 days per agent; the projections use the prompt / answer sizes of those same calls at the GPU class of the chosen scenario (prompt ${n(PREFILL)} tok/s · answer ${GPU_TPS[model]} tok/s per stream${where==="cloudapi"?" · API ≈ 60 tok/s + 0.4 s network":where==="cloudvm"?" · + 0.15 s private link":""}).</div>
+      <div class="am-val">
+        <div class="v"><span class="from">${secs(incToday)}</span><b>${secs(incNew)}</b><small>a triage note on a new incident — the note lands before the on-call reads the mail, not after</small></div>
+        <div class="v"><span class="from">${n(todayPerH)} / h</span><b>${n(capRows.find(r=>r.bold)?capRows.find(r=>r.bold).v:capRows[1].v)} / h</b><small>incidents the model can annotate per hour — an incident storm no longer queues behind one CPU</small></div>
+        <div class="v"><span class="from">${todayH>48?Math.round(todayH/24)+" d":secs(todayH*3600)}</span><b>${(()=>{ const x=drain.find(z=>z.k===where)||drain[0]; return x.h>48?Math.round(x.h/24)+" d":secs(x.h*3600); })()}</b><small>to clear the ${n(backlog)} signatures the log agent has not explained yet (15 per model call)</small></div>
+        ${yu?`<div class="v"><span class="from">${secs((yu.avg_ms||0)/1000)}</span><b>${secs(projected(yu,model,where))}</b><small>a Yusr answer — conversational instead of "wait for it"; the same GPU serves Yusr and the agents at once</small></div>`:""}
+        <div class="v"><span class="from">8B</span><b>${model==="8b"?"8B (faster)":model==="14b"?"14B":"32B"}</b><small>${model==="8b"?"same model, only speed — zero quality risk":"a bigger model in the same time budget — better JSON discipline, Arabic, and room for longer evidence packs in the prompts"}</small></div>
+      </div>
+      <div class="am-charts" style="margin-top:14px">
+        <div class="am-ch2"><h3>Latency per answer</h3><div class="sub">average seconds per call · today measured, targets projected · the bold bar is the chosen scenario</div>${hbars(latRows,maxL)}</div>
+        <div class="am-ch2"><h3>Capacity — answers per hour</h3><div class="sub">the CPU answers one call at a time; vLLM batches ${conc} streams on one GPU (planned concurrency above)</div>${hbars(capRows,maxC)}</div>
+        <div class="am-ch2"><h3>Backlog drain — ${n(backlog)} signatures</h3><div class="sub">grey = today at ${secs((logU.avg_ms||0)/1000)} per batch · colours = the three targets; x axis = time from now</div>${drainSvg}</div>
+        <div class="am-ch2"><h3>Effort vs value</h3><div class="sub">x = weeks to the first production answer · y = value (speed × capacity × policy fit) · bubble = monthly run cost</div>${effSvg}</div>
+        <div class="am-ch2" style="grid-column:1/-1"><h3>Cumulative cost over 24 months — indicative</h3><div class="sub">A = one-off server (<input id="amCapex" type="number" value="${capex}" style="width:80px;font:inherit;font-size:11.5px;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card2,#f1f5f9);color:var(--ink)"> USD + 1 %/month power &amp; upkeep) · B = cloud GPU VM always-on (<input id="amCloudM" type="number" value="${cloudM}" style="width:70px;font:inherit;font-size:11.5px;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card2,#f1f5f9);color:var(--ink)"> USD/month) · C = per-token API at today's ${n((u.perDay||{}).tokens)} tokens/day (≈ ${apiM0} USD/month) growing 15 % a quarter as agents get more prompts</div>${costSvg}
+          <div class="am-delta"><div>break-even A vs B<b>${cloudM?Math.ceil(capex/cloudM)+" months":"—"}</b></div><div>24-month total A<b>${Math.round(series.onprem[24]/1000)} k$</b></div><div>24-month total B<b>${Math.round(series.cloudvm[24]/1000)} k$</b></div><div>24-month total C<b>${Math.round(series.cloudapi[24]/1000)} k$ <span style="font-size:11px;color:#dc2626;font-weight:600">+ policy exception</span></b></div></div></div>
+      </div></div>`;
+  }
   function steps(t){
-    const common=[["Benchmark on the real box","one hour of the Self-test + a replay of yesterday's triage prompts: tok/s, p95, JSON validity","Infra + console · ½ day"],["Wire as FALLBACK","LLM_FALLBACK_* on /apps/unified/.env, restart the three PM2 apps, Probe green","console · 1 h"],["Shadow for a day","order primary-first: Ollama answers, vLLM takes over only on timeout — Mission control shows both","console · 1 day wait"],["Flip the order","LLM_ORDER=fallback-first · Ollama on 152 stays the safety net · raise AGENT_INCIDENT_MAX_PER_TICK and let Agent 1 drain the backlog","console · 1 h"],["Retune budgets","per-agent ceilings up (600k → 2M tokens/day), Yusr numCtx 8192, longer evidence packs in the prompts","console · ½ day"]];
+    const common=[["Benchmark on the real box","one hour of the Self-test + a replay of yesterday's triage prompts: tok/s, p95, JSON validity","Infra + console · ½ day"],["Wire as FALLBACK","LLM_FALLBACK_* on /apps/unified/.env, restart the three PM2 apps, Probe green","console · 1 h"],["Shadow for a day","order primary-first: Ollama answers, vLLM takes over only on timeout — Mission control shows both","console · 1 day wait"],["Flip the order","Settings › Agents › Configure → order \"fallback first\" · Ollama on 152 stays the safety net · raise AGENT_INCIDENT_MAX_PER_TICK and let Agent 1 drain the backlog","console · 1 h"],["Retune budgets","per-agent ceilings up (600k → 2M tokens/day), Yusr numCtx 8192, longer evidence packs in the prompts","console · ½ day"]];
     if(t==="onprem") return [["Order / allocate the GPU server","L40S 48 GB (or L4 24 GB minimum), 128 GB RAM, NVMe, same VLAN as 152 and 121","Infra · procurement 1–6 weeks"],["OS + driver + Docker","Ubuntu 22.04, NVIDIA driver 550+, CUDA 12, nvidia-container-toolkit","Infra · ½ day"],["vLLM service","docker run vllm/vllm-openai --model <model> --max-model-len 8192 --api-key <key> --gpu-memory-utilization 0.9 · weights pulled through the proxy once","Infra · ½ day"],["Firewall + allowlist","152 → gpu:8000 only · monitoring probe · nvidia-smi exporter to the console (the brain HUD shows GPU % when nvidia-smi is on 152; add the exporter for a remote box)","Infra + Sec · ½ day"],...common];
     if(t==="cloudvm") return [["Residency & security decision","PDPL / CST check on what the prompts contain (masked incident context) · DPA with the provider · KSA region","Legal + Sec · 1–3 weeks"],["Private connectivity","site-to-site VPN or private link from Salam DC to the cloud VNet · IP allowlist both ways","Network · 2–5 days"],["GPU VM + vLLM","same image as on-prem · disk for weights · auto-restart · monthly reservation to cut the hourly rate","Infra · 1 day"],["Egress budget & monitoring","prompt+answer traffic is small; watch the private-link and VM bill monthly","Infra · ½ day"],...common];
     return [["Policy exception","a written exception to the on-prem-only decision, scoped to non-sensitive purposes","Management + Sec · weeks"],["Prompt scrubbing","strip dealer names, MSISDN tails, customer ids before the call — new code in llm.js","console · 2 days"],["Key + kind=openai","LLM_FALLBACK_KIND=openai, URL of the provider, key in .env","console · 1 h"],...common.slice(0,3)];
@@ -346,7 +418,9 @@ LLM_ORDER=fallback-first     # once the Self-test is green for a day · Ollama o
     const t=h.querySelector("#amTarget"); if(t) t.onchange=e=>{ S.plan.target=e.target.value; rr(); };
     const m=h.querySelector("#amModel"); if(m) m.onchange=e=>{ S.plan.model=e.target.value; rr(); };
     const c=h.querySelector("#amConc"); if(c) c.onchange=e=>{ S.plan.conc=Math.max(1,Math.min(64,Number(e.target.value)||1)); rr(); };
-    h.querySelectorAll(".am-opt").forEach(el=>el.onclick=()=>{ S.plan.target=el.dataset.opt; rr(); }); }
+    h.querySelectorAll(".am-opt").forEach(el=>el.onclick=()=>{ S.plan.target=el.dataset.opt; rr(); });
+    const cx=h.querySelector("#amCapex"); if(cx) cx.onchange=e=>{ S.plan.capex=Math.max(0,Number(e.target.value)||0); rr(); };
+    const cm=h.querySelector("#amCloudM"); if(cm) cm.onchange=e=>{ S.plan.cloudM=Math.max(0,Number(e.target.value)||0); rr(); }; }
 
   window.openAgentsMission=function(){
     ensureView();
