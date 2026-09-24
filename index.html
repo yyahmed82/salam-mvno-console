@@ -1071,9 +1071,10 @@
   .rm-tbl{border-collapse:collapse;font-size:12px;min-width:100%}
   .rm-tbl th,.rm-tbl td{padding:6px 8px;text-align:center;border-bottom:1px solid var(--line-soft)}
   /* raise-a-ticket modal — business-first */
-  .tkm-card{border-radius:18px !important;overflow:hidden}
-  .tkm{--acc:var(--green);--soft:var(--green-bg);padding:0 0 18px}
-  .tkm-head{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 14px;background:linear-gradient(135deg,var(--soft),transparent 70%);border-bottom:1px solid var(--line);position:relative}
+  /* TKT-000067 (24 Sep 2026): the card clipped the form at 88vh with no scrollbar — the body scrolls now, header and Submit row stay in view */
+  .tkm-card{border-radius:18px !important;overflow:hidden;display:flex;flex-direction:column}
+  .tkm{--acc:var(--green);--soft:var(--green-bg);padding:0;flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch}
+  .tkm-head{display:flex;align-items:flex-start;gap:12px;padding:18px 20px 14px;background-color:var(--card);background-image:linear-gradient(135deg,var(--soft),transparent 70%);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:3}
   .tkm-head::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--acc)}
   .tkm-title{font-size:17px;font-weight:800;letter-spacing:-.2px} .tkm-sub{font-size:12px;color:var(--muted);margin-top:2px}
   .tkm-x{margin-left:auto;width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:14px;cursor:pointer;transition:transform .15s,border-color .15s,color .15s,background .15s;flex:none}
@@ -1104,7 +1105,7 @@
   .tkm-drop{margin:0 20px;border:1.5px dashed var(--line);border-radius:12px;padding:16px;text-align:center;cursor:pointer;color:var(--muted);font-size:12.5px;transition:border-color .15s,background .15s} .tkm-drop b{color:var(--acc)}
   .tkm-drop:hover,.tkm-drop.over{border-color:var(--acc);background:var(--soft)}
   #tkThumbs,#tkMsg{margin-left:20px;margin-right:20px}
-  .tkm-actions{display:flex;gap:10px;align-items:center;padding:14px 20px 0;flex-wrap:wrap}
+  .tkm-actions{display:flex;gap:10px;align-items:center;padding:12px 20px 14px;flex-wrap:wrap;position:sticky;bottom:0;background:var(--card);border-top:1px solid var(--line);z-index:3;margin-top:12px}
   .tkm-btn{padding:9px 16px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:transform .15s,box-shadow .15s,border-color .15s,filter .15s}
   .tkm-btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(2,6,23,.10);border-color:var(--acc)} .tkm-btn:active{transform:none}
   .tkm-btn.primary{background:var(--acc);border-color:var(--acc);color:#fff} .tkm-btn.primary:hover{filter:brightness(1.06)} .tkm-btn:disabled{opacity:.6;cursor:default;transform:none}

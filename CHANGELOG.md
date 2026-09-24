@@ -4,6 +4,11 @@ All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
 ## [2.0.0-alpha.74] — 2026-09-24 — Alert journey: step player, narrated samples; Sigma is Fixed-only
+### Fixed
+- **TKT-000067 · Raise-a-ticket form cut off at 100 % zoom**: the ticket card overrode the modal's `overflow:auto` with
+  `overflow:hidden` for its rounded corners, so on laptop screens the form was clipped at 88 % of the viewport with no
+  scrollbar and Submit was reachable only with Tab or 75 % zoom. The card is a flex column now: the body scrolls, the
+  header and the Submit / Cancel row stay pinned (`index.html` `.tkm-card` / `.tkm` / `.tkm-head` / `.tkm-actions`).
 ### Changed
 - **Alert journey step player** (`alert-journey.js`): a replay no longer flashes through the map — every step is shown
   one at a time with its explanation in a sticky player bar under the map (stage · node · text · progress), with
