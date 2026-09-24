@@ -172,7 +172,41 @@ function inspectHtml(e, style) {
   return i ? `<a href="${i.url}" style="${style}">${esc(i.label)} ›</a>` : '';
 }
 
-function buildDigest(simNow, evals, reportNames = [], idByKey = {}, seg) {
+/* AFFECTED · top rows (TKT-000065, 24 Sep 2026): who and where it failed, straight in the mail — masked identifiers;
+ * the incident drawer › Evidence has the full list, the unmask and the request / response. */
+async function evidenceByKey(evals, idByKey) {
+  const out = {}; const AE = require('./alertEvidence');
+  for (const e of (evals || []).filter(x => x.fired && idByKey[x.key]).slice(0, 6)) {
+    try { const a = (await db.console.query(`SELECT * FROM alerts WHERE id=$1`, [idByKey[e.key]])).rows[0]; if (!a) continue;
+      const ev = await Promise.race([AE.forAlert(a, { limit: 5 }), new Promise((_, rej) => setTimeout(() => rej(new Error('evidence timeout')), 8000))]);
+      if (ev && ev.rows && ev.rows.length) out[e.key] = ev; } catch (err) { /* best effort */ }
+  }
+  return out;
+}
+function evidenceHtml(ev) {
+  if (!ev || !ev.rows || !ev.rows.length) return '';
+  const td = 'padding:3px 6px;border-bottom:1px solid #e2e8f0;font-size:11.5px;color:#334155;vertical-align:top';
+  const th = 'padding:3px 6px;border-bottom:1px solid #cbd5e1;font-size:10.5px;color:#64748b;text-align:left;font-weight:700';
+  const ep = v => esc(String(v || '—').replace(/^https?:\/\/[^/]+/, '').slice(0, 70));
+  let head, rows;
+  if (ev.kind === 'attempts') {
+    head = ['Started', 'Order · customer', 'Journey · step', 'Last failing call', 'Outcome · error', 'Dealer / channel'];
+    rows = ev.rows.map(r => [ksa(r.started_at).slice(5), [r.order_number, r.customer_id || r.msisdn].filter(Boolean).map(esc).join(' · ') || '—', [r.plan || r.workflow, r.step_reached].filter(Boolean).map(esc).join(' · ') || '—',
+      r.call_endpoint ? `<span style="font-family:monospace;font-size:11px">${ep(r.call_endpoint)}</span> ${esc(r.call_status || '')}${r.call_error_msg ? ' · ' + esc(String(r.call_error_msg).slice(0, 50)) : ''}` : '—',
+      [r.outcome, r.nafath_outcome && r.nafath_outcome !== 'COMPLETED' ? 'Nafath ' + r.nafath_outcome : null, r.last_error_category].filter(Boolean).map(esc).join(' · ') || '—', [r.dealer, r.channel].filter(Boolean).map(esc).join(' · ') || '—']);
+  } else if (ev.kind === 'applog') {
+    head = ['When', 'Endpoint', 'Status', 'Reason', 'Message', 'Request · state'];
+    rows = ev.rows.map(r => [ksa(r.ts).slice(5), `<span style="font-family:monospace;font-size:11px">${ep(r.path)}</span>`, esc(r.status_code || '—'), esc(r.reason || r.reason_class || '—'), esc(String(r.message || '').slice(0, 60)) || '—', [r.request_id, r.state_id].filter(Boolean).map(x => `<span style="font-family:monospace;font-size:10.5px">${esc(String(x).slice(0, 18))}</span>`).join(' · ') || '—']);
+  } else {
+    head = ['When', 'Endpoint', 'Code', 'Message', 'Transaction'];
+    rows = ev.rows.map(r => [ksa(r.ts).slice(5), `<span style="font-family:monospace;font-size:11px">${ep(r.path)}</span>`, esc(r.code || '—'), esc(String(r.msg || '').slice(0, 60)), `<span style="font-family:monospace;font-size:10.5px">${esc(String(r.transaction_id || '—').slice(0, 20))}</span>`]);
+  }
+  return `<div style="margin:6px 0 4px 18px;padding:6px 10px;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px">
+      <div style="font-size:10.5px;font-weight:800;letter-spacing:.06em;color:#64748b;text-transform:uppercase;margin-bottom:3px">Affected · ${esc(ev.title || 'evidence')} · top ${ev.rows.length}${ev.source ? ' · ' + esc(ev.source) : ''}</div>
+      <table style="border-collapse:collapse;width:100%"><tr>${head.map(h => `<th style="${th}">${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td style="${td}">${c}</td>`).join('')}</tr>`).join('')}</table>
+      <div style="font-size:10.5px;color:#94a3b8;margin-top:3px">identifiers cut to last digits — the full list, the customer numbers (audited unmask) and the request / response are in the incident drawer › Evidence</div></div>`;
+}
+function buildDigest(simNow, evals, reportNames = [], idByKey = {}, seg, evidence = {}) {
   const SEG = require('./segment');
   const segLabel = seg ? SEG.LABEL[seg] : null;            // 'Mobile (MVNO)' | 'Fixed' — one mail per business
   const firing = evals.filter(e => e.fired);
@@ -204,7 +238,7 @@ function buildDigest(simNow, evals, reportNames = [], idByKey = {}, seg) {
       <div style="font-weight:800;color:#7c2d12;font-size:13px;margin-bottom:6px">In short — ${firing.length} alert(s) need attention (${sevLine}), out of ${evals.length} rules evaluated.</div>
       ${firing.map((e, i) => `<div style="font-size:12.5px;color:#334155;margin:3px 0">
         ${segChip(e)}<b>${esc(e.severity)}</b> · <a href="${openUrl(e, idByKey)}" style="color:#0f172a;font-weight:700">${esc(e.name)}</a>${e.simulated ? ' <span style="color:#7c3aed;font-weight:800">(SIMULATED — test mail)</span>' : ''} — observed <b>${fmtVal(e.value, e.unit)}</b> vs threshold ${opLabel[e.operator] || e.operator} ${fmtVal(e.threshold, e.unit)} (sample ${e.sample ?? '—'}, ${e.window_hours}h)${e.customers != null ? ` · <b style="color:${e.customers === 1 ? '#7c3aed' : '#0f172a'}">${e.customers} customer${e.customers === 1 ? '' : 's'}</b>${e.customers === 1 && e.counted > 1 ? ` (${e.counted} attempts — likely a retry storm)` : ''}` : ''}${e.downgraded ? ` · <span style="color:#7c3aed;font-weight:700">downgraded from ${esc(e.rule_severity)}</span>` : ''}${reportNames[i] ? ` · full report attached: <span style="font-family:monospace;font-size:11px">${esc(reportNames[i])}</span>` : ''}${FL.isFixed(e) && FL.inspect(e.key) ? ` · inspect: ${inspectHtml(e, 'color:#0e9f5a;font-weight:700')}` : ''}
-      </div>`).join('')}
+      </div>${evidenceHtml(evidence[e.key])}`).join('')}
       <div style="font-size:12px;color:#64748b;margin-top:8px">Each attached PDF carries the KPIs, the APIs and request/response evidence, the alert history and the step-by-step L1 action plan — read it before escalating.</div>
     </div>` : `
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-left:4px solid #16a34a;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#14532d">
@@ -252,7 +286,8 @@ async function sendAlertDigest(simNow, evals, opts = {}) {
     let reports = { attachments: [], notes: [] };
     try { reports = await require('./alertReport').buildFiredReports(simNow, mine); }
     catch (e) { reports = { attachments: [], notes: ['report generation failed: ' + e.message] }; }
-    let { html, subject, firing, total } = buildDigest(simNow, mine, reports.attachments.map(a => a.filename), idByKey, seg);
+    let evidence = {}; try { evidence = await evidenceByKey(mine, idByKey); } catch (e) { evidence = {}; }
+    let { html, subject, firing, total } = buildDigest(simNow, mine, reports.attachments.map(a => a.filename), idByKey, seg, evidence);
     if (testTo) subject = '[TEST] ' + subject;
     const r = to.length ? await sendHtml(to, subject, html, reports.attachments) : { sent: false, recipients: [] };
     parts.push({ segment: seg, label: SEG.LABEL[seg], firing, total, subject, recipients: r.recipients, sent: r.sent, dev: r.dev, error: r.error,

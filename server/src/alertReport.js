@@ -70,15 +70,28 @@ async function fixedEvidence(ev) {
   if (!ops) return { title: 'dealer-ops read model', hours: h, error: 'OPS_DATABASE_URL not configured on this console' };
   const key = String(ev.key || '');
   const FIVE_G = ['fiveGWhiteLabel', 'fiveGFWA'];
-  const attCols = [{ label: 'Started (KSA)', w: 15 }, { label: 'Plan', w: 12 }, { label: 'Dealer / channel', w: 20 },
-                   { label: 'Region', w: 11 }, { label: 'Outcome', w: 12 }, { label: 'Nafath', w: 14 }, { label: 'Last error', w: 16 }];
+  /* TKT-000065 (24 Sep 2026): order number + customer (last digits) and the last failing API call (endpoint · status ·
+   * error) per attempt, so the mail/PDF names WHO and WHERE it failed; full identifiers and bodies are in the incident
+   * drawer › Evidence (unmask audited). */
+  const attCols = [{ label: 'Started (KSA)', w: 11 }, { label: 'Order · customer', w: 15 }, { label: 'Plan · step', w: 13 }, { label: 'Dealer / channel', w: 14 },
+                   { label: 'Outcome', w: 9 }, { label: 'Nafath', w: 9 }, { label: 'Last failing call', w: 19 }, { label: 'Last error', w: 10 }];
+  const tail = (v, k) => v == null || v === '' ? null : '…' + String(v).slice(-k);
   const attempts = async (extra, params) => (await ops.query(
-    `SELECT oa.started_at, oa.plan, oa.workflow::text AS workflow, COALESCE(d.dealer_name, d.dealer_code, oa.channel) AS dealer,
-            COALESCE(oa.region, d.region) AS region, oa.outcome::text AS outcome, oa.nafath_outcome, oa.last_error_category
+    `SELECT oa.started_at, oa.plan, oa.workflow::text AS workflow, oa.order_number, oa.customer_id, oa.msisdn, oa.step_reached,
+            COALESCE(d.dealer_name, d.dealer_code, oa.channel) AS dealer, COALESCE(oa.region, d.region) AS region,
+            oa.outcome::text AS outcome, oa.nafath_outcome, oa.last_error_category,
+            c.endpoint AS call_endpoint, c.status AS call_status, c.error_class AS call_error_class, c.error_msg AS call_error_msg
        FROM order_attempts oa LEFT JOIN dealers d ON d.id = oa.dealer_id
+       LEFT JOIN LATERAL (SELECT endpoint, status, error_class, error_msg FROM api_calls
+                            WHERE attempt_id = oa.id AND (COALESCE(NULLIF(regexp_replace(status::text, '\\D', '', 'g'), '')::int, 0) >= 400 OR error_class IS NOT NULL OR error_msg IS NOT NULL)
+                            ORDER BY created_at DESC LIMIT 1) c ON true
       WHERE oa.started_at >= now() - ($1||' hours')::interval ${extra}
       ORDER BY oa.started_at DESC LIMIT 12`, [String(h), ...params])).rows
-    .map(r => [ksa(r.started_at), r.plan || r.workflow || '—', r.dealer || '—', r.region || '—', r.outcome || '—', r.nafath_outcome || '—', r.last_error_category || '—']);
+    .map(r => [ksa(r.started_at), [r.order_number || '—', tail(r.customer_id, 4) || tail(r.msisdn, 4) || ''].filter(Boolean).join(' · '),
+      [r.plan || r.workflow || '—', r.step_reached || ''].filter(Boolean).join(' · '), [r.dealer || '—', r.region || ''].filter(Boolean).join(' · '),
+      r.outcome || '—', r.nafath_outcome || '—',
+      r.call_endpoint ? `${String(r.call_endpoint).replace(/^https?:\/\/[^/]+/, '').slice(0, 60)} ${r.call_status || ''}${r.call_error_class ? ' · ' + r.call_error_class : ''}${r.call_error_msg ? ' · ' + String(r.call_error_msg).slice(0, 40) : ''}`.trim() : '—',
+      r.last_error_category || '—']);
   if (/nafath/.test(key)) return { title: '5G attempts whose Nafath outcome is not COMPLETED', hours: h, cols: attCols,
     rows: await attempts(`AND oa.workflow::text = ANY($2::text[]) AND oa.nafath_outcome IS NOT NULL AND oa.nafath_outcome <> 'COMPLETED'`, [FIVE_G]) };
   if (/semati/.test(key)) return { title: '5G attempts that failed at Semati provisioning', hours: h, cols: attCols,

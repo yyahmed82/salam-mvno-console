@@ -1044,11 +1044,57 @@
       <div><h5 style="margin:0 0 6px">RUNBOOK CHECKLIST <span class="rl" style="font-weight:400" id="incck_n_${id}"></span></h5><div id="incck_${id}"><div class="rl">Loading…</div></div>
         <h5 style="margin:14px 0 6px">DISCUSSION</h5><div id="inccomm_${id}">${comments}</div>
         ${canAck()?`<div style="display:flex;gap:6px;margin-top:8px"><input id="incin_${id}" class="jsearch" placeholder="Add a comment…" style="flex:1"><button class="pill" id="incsend_${id}" style="border-left-color:var(--green)">Post</button></div>`:''}</div>
-    </div><div id="sntix_${id}" style="padding:0 6px 12px"><div class="rl">Checking ServiceNow for related tickets…</div></div>`;
+    </div><div id="incev_${id}" style="padding:0 6px 10px"><h5 style="margin:2px 0 6px">EVIDENCE · WHO AND WHERE <span class="rl" style="font-weight:400">· loading the affected orders / calls…</span></h5></div><div id="sntix_${id}" style="padding:0 6px 12px"><div class="rl">Checking ServiceNow for related tickets…</div></div>`;
     const send=$("#incsend_"+id);
     if(send) send.onclick=async()=>{ const v=$("#incin_"+id).value.trim(); if(!v)return; try{ await api(`/api/alerts/${id}/comment`,{method:"POST",body:JSON.stringify({body:v})}); row.setAttribute("hidden",""); toggleDetail(id); }catch(e){ banner(esc(e.message)); } };
     loadTimeline(id); loadChecklist(id, A.status==='open');
-    loadSnTickets(id);
+    loadEvidence(id, A); loadSnTickets(id);
+  }
+  /* EVIDENCE (TKT-000065, 24 Sep 2026): the affected orders / app-log events / API calls behind this incident, live over its
+   * window — order number, customer (masked · audited unmask for unmaskPII), journey step, the last failing endpoint with its
+   * status and error, dealer / channel; per attempt the request / response bodies (masked at rest) on demand. */
+  const evEp=v=>esc(String(v||"—").replace(/^https?:\/\/[^/]+/,"").slice(0,80));
+  async function loadEvidence(id, A, unmask){
+    const host=$("#incev_"+id); if(!host) return;
+    let d; try{ d=await api(`/api/alerts/${id}/evidence?limit=25${unmask?"&unmask=1":""}`); }catch(e){ host.innerHTML=`<h5 style="margin:2px 0 6px">EVIDENCE · WHO AND WHERE</h5><div class="rl">${esc(e.message)}</div>`; return; }
+    const w=d.window?`${ksaShort(d.window.from)} → ${ksaShort(d.window.to)} KSA`:"";
+    const head=`<h5 style="margin:2px 0 6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">EVIDENCE · WHO AND WHERE <span class="rl" style="font-weight:400">· ${esc(d.title||d.kind||"")}${d.rows&&d.rows.length?` · ${d.rows.length} row${d.rows.length===1?"":"s"}`:""}${w?` · ${w}`:""}${d.source?` · <span class="mono">${esc(d.source)}</span>`:""}</span>
+      ${d.canUnmask&&d.kind==="attempts"?`<button class="pill" id="evUnmask_${id}" style="padding:1px 8px;font-size:10.5px;border-left-color:${d.unmasked?"#dc2626":"#d97706"};margin-left:auto">${d.unmasked?"🔒 Mask again":"🔓 Show customer numbers (audited)"}</button>`:""}</h5>`;
+    if(d.kind==="none"||d.kind==="error"||!d.rows||!d.rows.length){ host.innerHTML=head+`<div class="rl">${esc(d.note||d.error||"No affected rows found in the window — the evidence source may not cover this rule, or the rows were purged.")}</div>`; return; }
+    let tbl="";
+    if(d.kind==="attempts"){
+      tbl=`<table class="alerts"><tr><th>STARTED</th><th>ORDER · CUSTOMER</th><th>JOURNEY · STEP</th><th>LAST FAILING CALL</th><th>OUTCOME · ERROR</th><th>DEALER / CHANNEL</th><th></th></tr>`+d.rows.map((r,i)=>`<tr>
+        <td class="mono" style="color:var(--muted);white-space:nowrap">${esc(ksaShort(r.started_at))}</td>
+        <td><b>${esc(r.order_number||"—")}</b><br><span class="mono rl">${[r.customer_id?"cust "+r.customer_id:null,r.msisdn?"msisdn "+r.msisdn:null,r.cust_code?"code "+r.cust_code:null].filter(Boolean).map(esc).join(" · ")||"—"}</span></td>
+        <td>${esc(r.plan||r.workflow||"—")}${r.step_reached?`<br><span class="rl">${esc(r.step_reached)}</span>`:""}</td>
+        <td>${r.call_endpoint?`<span class="mono" style="font-size:11px">${esc(r.call_method||"")} ${evEp(r.call_endpoint)}</span><br><span class="rl" style="color:${Number(r.call_status)>=500?"#dc2626":"#d97706"}">${esc(r.call_status||"")}${r.call_error_class?" · "+esc(r.call_error_class):""}${r.call_error_msg?" · "+esc(String(r.call_error_msg).slice(0,80)):""}</span>`:`<span class="rl">no failing API call recorded</span>`}</td>
+        <td>${esc(r.outcome||"—")}${r.nafath_outcome&&r.nafath_outcome!=="COMPLETED"?`<br><span class="rl">Nafath ${esc(r.nafath_outcome)}</span>`:""}${r.last_error_category?`<br><span class="rl" style="color:#dc2626">${esc(r.last_error_category)}</span>`:""}</td>
+        <td>${esc(r.dealer||"—")}<br><span class="rl">${[r.channel,r.region].filter(Boolean).map(esc).join(" · ")}</span></td>
+        <td style="white-space:nowrap"><button class="pill" data-evcalls="${esc(r.id)}" data-evch="${esc(r.channel||"")}" style="padding:1px 7px;font-size:10.5px;border-left-color:#2563eb">req / res</button> <a class="pill" href="#fixed?tab=map&find=${encodeURIComponent(r.order_number||r.id)}" style="padding:1px 7px;font-size:10.5px;text-decoration:none">trace ›</a></td></tr>
+        <tr class="evcalls" id="evcalls_${id}_${i}" hidden><td colspan="7"></td></tr>`).join("")+`</table>`;
+    } else if(d.kind==="applog"){
+      tbl=`<table class="alerts"><tr><th>WHEN</th><th>ENDPOINT</th><th>STATUS</th><th>REASON</th><th>MESSAGE</th><th>REQUEST · STATE</th><th>PLATFORM</th></tr>`+d.rows.map(r=>`<tr>
+        <td class="mono" style="color:var(--muted);white-space:nowrap">${esc(ksaShort(r.ts))}</td><td class="mono" style="font-size:11px">${evEp(r.path)}</td><td style="color:${Number(r.status_code)>=500?"#dc2626":"#d97706"}"><b>${esc(r.status_code||"—")}</b></td>
+        <td>${esc(r.reason||r.reason_class||"—")}</td><td style="max-width:320px">${esc(String(r.message||"").slice(0,160))||"—"}</td>
+        <td class="mono" style="font-size:10.5px">${[r.request_id,r.state_id].filter(Boolean).map(esc).join("<br>")||"—"}${r.state_id?` <a href="#fixed?tab=map&find=${encodeURIComponent(r.state_id)}" style="color:var(--green)">trace ›</a>`:""}</td>
+        <td class="rl">${[r.platform,r.app_version,r.channel].filter(Boolean).map(esc).join(" · ")||"—"}</td></tr>`).join("")+`</table>`;
+    } else {
+      tbl=`<table class="alerts"><tr><th>WHEN</th><th>ENDPOINT</th><th>CODE</th><th>MESSAGE</th><th>TRANSACTION</th><th>HOST</th></tr>`+d.rows.map(r=>`<tr>
+        <td class="mono" style="color:var(--muted);white-space:nowrap">${esc(ksaShort(r.ts))}</td><td class="mono" style="font-size:11px">${evEp(r.path)}</td><td><b>${esc(r.code||"—")}</b>${r.err_class?`<br><span class="rl">${esc(r.err_class)}</span>`:""}</td>
+        <td style="max-width:320px">${esc(String(r.msg||"").slice(0,160))}</td><td class="mono" style="font-size:10.5px">${r.transaction_id?`<a href="#troubleshoot?q=${encodeURIComponent(r.transaction_id)}" style="color:var(--green)">${esc(String(r.transaction_id).slice(0,24))}</a>`:"—"}</td><td class="rl">${esc(r.host||"—")}</td></tr>`).join("")+`</table>`;
+    }
+    host.innerHTML=head+`<div style="overflow-x:auto">${tbl}</div>${d.kind==="attempts"?`<div class="rl" style="margin-top:4px">Customer identifiers are cut to their last digits${d.unmasked?" — <b>shown in full for this view, logged in the audit trail</b>":d.canUnmask?"; the unmask button shows them in full and is logged":" — ask an admin with unmask rights when the full number is needed"}. Request / response bodies are masked at ingest.</div>`:""}`;
+    const ub=$("#evUnmask_"+id); if(ub) ub.onclick=()=>loadEvidence(id, A, !d.unmasked);
+    host.querySelectorAll("[data-evcalls]").forEach((b,i)=>b.addEventListener("click",async()=>{
+      const row=$(`#evcalls_${id}_${i}`); if(!row) return; if(!row.hasAttribute("hidden")){ row.setAttribute("hidden",""); return; }
+      row.removeAttribute("hidden"); const cell=row.querySelector("td"); cell.innerHTML=`<div class="rl">Loading the calls of this attempt…</div>`;
+      try{ const c=await api(`/api/alerts/${id}/evidence/calls?attempt=${encodeURIComponent(b.dataset.evcalls)}&channel=${encodeURIComponent(b.dataset.evch||"")}`);
+        const calls=c.calls||[]; if(!calls.length){ cell.innerHTML=`<div class="rl">${esc(c.note||"no calls recorded")}</div>`; return; }
+        const pj=v=>{ if(v==null||v==="") return "—"; try{ return esc(JSON.stringify(JSON.parse(v),null,2)); }catch(e){ return esc(String(v)); } };
+        cell.innerHTML=`<div style="padding:6px 4px"><div class="rl" style="margin-bottom:4px">${calls.length} call${calls.length===1?"":"s"} · ${esc(c.note||"")}</div>`+calls.map(k=>`<details ${(Number(k.status)>=400||k.error_class)?"open":""} style="margin:3px 0;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--card2,transparent)"><summary style="cursor:pointer;font-size:12px"><span class="mono">${esc(k.method||"")} ${evEp(k.endpoint)}</span> · <b style="color:${Number(k.status)>=500?"#dc2626":Number(k.status)>=400?"#d97706":"var(--green)"}">${esc(k.status||"—")}</b>${k.duration_ms!=null?` · ${esc(k.duration_ms)} ms`:""}${k.error_class?` · ${esc(k.error_class)}`:""}${k.error_msg?` · ${esc(String(k.error_msg).slice(0,80))}`:""} <span class="rl">· ${esc(ksaShort(k.created_at))}</span></summary>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px"><div><div class="rl" style="font-weight:700">REQUEST</div><pre class="mono" style="font-size:10.5px;white-space:pre-wrap;word-break:break-all;max-height:260px;overflow:auto;margin:2px 0;padding:6px;border:1px solid var(--line);border-radius:6px">${pj(k.req_body)}</pre></div><div><div class="rl" style="font-weight:700">RESPONSE</div><pre class="mono" style="font-size:10.5px;white-space:pre-wrap;word-break:break-all;max-height:260px;overflow:auto;margin:2px 0;padding:6px;border:1px solid var(--line);border-radius:6px">${pj(k.res_body)}</pre></div></div></details>`).join("")+`</div>`;
+      }catch(e){ cell.innerHTML=`<div class="rl" style="color:#dc2626">${esc(e.message)}</div>`; }
+    }));
   }
   /* WORK: one merged timeline (fired · ack · handover · reminders · ServiceNow · comms · comments · agent · rule edits · resolved) */
   async function loadTimeline(id){

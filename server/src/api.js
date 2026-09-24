@@ -3515,6 +3515,22 @@ app.get('/api/alerts/:id', async (req, res) => {
     res.json({ alert: a, comments, runbook: rule.runbook || null, trigger_codes: rule.trigger_codes || null, team: contract.team, contract: contract.contract, rights });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* ---- EVIDENCE (TKT-000065, 24 Sep 2026): the affected orders / calls / app-log events behind THIS incident, live over its
+ * window. Identifiers are masked unless the caller holds unmaskPII and asks (?unmask=1) — audited as pii.unmask. ---- */
+app.get('/api/alerts/:id/evidence', async (req, res) => {
+  try {
+    const a = req.alertRow; if (!a) return res.status(404).json({ error: 'not found' });
+    const wants = req.query.unmask === '1' || req.query.unmask === 'true';
+    if (wants && !(req.caps && req.caps.unmaskPII)) return res.status(403).json({ error: `role ${req.roleName} lacks unmaskPII` });
+    const ev = await require('./alertEvidence').forAlert(a, { limit: req.query.limit, unmask: wants });
+    if (wants) await audit(req, 'pii.unmask', req.params.id, { scope: 'alert-evidence', rows: (ev.rows || []).length });
+    res.json({ ...ev, alert_id: a.id, rule_key: a.rule_key, canUnmask: !!(req.caps && req.caps.unmaskPII) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/alerts/:id/evidence/calls', async (req, res) => {
+  try { res.json(await require('./alertEvidence').attemptCalls(req.query.attempt, { channel: req.query.channel })); }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
 /* ---- ServiceNow ticket for THIS incident (Phase 1, docs/SERVICENOW-INTEGRATION-PLAN.md) ----
  * GET  → linked INC (if any) + the draft the console would create + comms history — one call for the panel
  * POST → create (idempotent: one INC per alert; dry run while writes are off / creds missing)

@@ -3,6 +3,20 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.76] — 2026-09-24 — Incident evidence: who and where it failed (TKT-000065)
+### Added
+- **Evidence on every incident** (`server/src/alertEvidence.js`, `GET /api/alerts/:id/evidence`, incident drawer › EVIDENCE ·
+  WHO AND WHERE): the affected rows behind the incident, computed live over its window. Fixed order rules → the order
+  attempts from the dealer-ops read model with **order number, customer (last digits), journey · step, the last failing
+  API call (method · endpoint · status · error), outcome / Nafath / last error, dealer / channel**, a **req / res** button
+  that opens the attempt's calls with request and response bodies (masked at ingest), and a trace link. Fixed app-log
+  rules (Yakeen, nexus, Salam Home) → endpoint, status code, reason, message, request id / state id, platform. Mobile
+  rules → the failed calls of the metric family or the exact API: endpoint, code, message, transaction id. Users with
+  **unmaskPII** get a "Show customer numbers" button; every unmask is written to the audit log (`pii.unmask`).
+- **Alert mail**: an "Affected · top 5" table under each firing Fixed / Mobile alert (masked identifiers); the **PDF**
+  attempt tables gained the order · customer and last-failing-call columns (`alertReport.js`).
+- `GET /api/alerts/:id/evidence/calls?attempt=` — the calls of one attempt (bodies capped at 4,000 chars each).
+
 ## [2.0.0-alpha.75] — 2026-09-24 — Fixed range control: minute presets and custom start / end (TKT-000064)
 ### Added
 - **TKT-000064 · Time range across all Fixed pages** (`fixed.js` range control, used by SDA map, QR map, Reports,
