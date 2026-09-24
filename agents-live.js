@@ -140,6 +140,21 @@
   #view-agentsmission .am-charts{display:grid;grid-template-columns:1fr 1fr;gap:14px} @media (max-width:980px){#view-agentsmission .am-charts{grid-template-columns:1fr}}
   #view-agentsmission .am-ch2{background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;padding:14px 16px} #view-agentsmission .am-ch2 h3{margin:0 0 2px;font-size:14px;font-weight:800} #view-agentsmission .am-ch2 .sub{font-size:11.5px;margin-bottom:8px} #view-agentsmission .am-ch2 svg{width:100%;height:auto;display:block;overflow:visible}
   #view-agentsmission .am-ch2 .big{font-size:26px;font-weight:800;letter-spacing:-.4px;line-height:1} #view-agentsmission .am-delta{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px} #view-agentsmission .am-delta div{font-size:11.5px;color:var(--muted)} #view-agentsmission .am-delta b{display:block;font-size:18px;color:var(--ink);letter-spacing:-.3px}
+  #view-agentsmission .am-ba{display:grid;grid-template-columns:1fr 64px 1fr;gap:12px;align-items:stretch;margin-top:12px} @media (max-width:820px){#view-agentsmission .am-ba{grid-template-columns:1fr} #view-agentsmission .am-ba .arrow{transform:rotate(90deg);height:40px}}
+  #view-agentsmission .am-ba .side{border-radius:16px;padding:14px 16px;border:1px solid var(--line);background:var(--card2,#f8fafc)} #view-agentsmission .am-ba .side h4{margin:0 0 10px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;display:flex;align-items:center;gap:8px} #view-agentsmission .am-ba .side h4 span{font-size:11px;letter-spacing:0;text-transform:none;font-weight:600;color:var(--muted)}
+  #view-agentsmission .am-ba .before{opacity:.8;filter:saturate(.6)} #view-agentsmission .am-ba .before h4{color:var(--muted)}
+  #view-agentsmission .am-ba .after{border-color:var(--green,#0e9f5a);background:linear-gradient(160deg,rgba(14,159,90,.14),rgba(14,159,90,.03));box-shadow:0 0 0 3px rgba(14,159,90,.12),0 14px 34px rgba(14,159,90,.18);animation:amGlow 3s ease-in-out infinite} #view-agentsmission .am-ba .after h4{color:var(--green,#0e9f5a)}
+  @keyframes amGlow{0%,100%{box-shadow:0 0 0 3px rgba(14,159,90,.12),0 14px 34px rgba(14,159,90,.18)}50%{box-shadow:0 0 0 6px rgba(14,159,90,.18),0 18px 40px rgba(14,159,90,.26)}}
+  #view-agentsmission .am-ba .arrow{display:grid;place-items:center;font-size:34px;color:var(--green,#0e9f5a);animation:amArrow 1.4s ease-in-out infinite} @keyframes amArrow{0%,100%{transform:translateX(0)}50%{transform:translateX(8px)}}
+  #view-agentsmission .am-bar2{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:baseline;padding:7px 0;border-bottom:1px dashed var(--line-soft,var(--line))} #view-agentsmission .am-bar2:last-child{border:0} #view-agentsmission .am-bar2 .l{font-size:12px;color:var(--muted)} #view-agentsmission .am-bar2 .v{font-size:24px;font-weight:800;letter-spacing:-.5px;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap} #view-agentsmission .after .am-bar2 .v{color:var(--green,#0e9f5a)}
+  #view-agentsmission .am-bar2 .d{display:inline-block;margin-left:8px;font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(14,159,90,.16);color:var(--green,#0e9f5a);vertical-align:middle} #view-agentsmission .am-bar2 .d.bad{background:rgba(220,38,38,.14);color:#dc2626}
+  #view-agentsmission .am-race{margin-top:14px;border:1px solid var(--line);border-radius:16px;padding:14px 16px;background:var(--card,#fff)} #view-agentsmission .am-race h3{margin:0 0 2px;font-size:14px;font-weight:800} #view-agentsmission .am-lane{display:grid;grid-template-columns:150px 1fr 90px;gap:10px;align-items:center;margin-top:10px} #view-agentsmission .am-lane .nm{font-size:12px;font-weight:700} #view-agentsmission .am-lane .nm small{display:block;color:var(--muted);font-weight:500}
+  #view-agentsmission .am-track2{position:relative;height:26px;border-radius:13px;background:var(--card2,#f8fafc);border:1px solid var(--line);overflow:hidden} #view-agentsmission .am-track2 i{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:13px;background:var(--lc);transition:width .08s linear} #view-agentsmission .am-track2 b{position:absolute;right:10px;top:4px;font-size:12px;font-variant-numeric:tabular-nums} #view-agentsmission .am-track2 .fl{position:absolute;right:8px;top:2px;font-size:16px;display:none} #view-agentsmission .am-track2.done .fl{display:block}
+  #view-agentsmission .am-lane .clk{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;text-align:right;letter-spacing:-.5px} #view-agentsmission .am-lane .clk.win{color:var(--green,#0e9f5a)}
+  #view-agentsmission .am-wins{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px} @media (max-width:960px){#view-agentsmission .am-wins{grid-template-columns:1fr}}
+  #view-agentsmission .am-win{border:1px solid var(--line);border-radius:16px;padding:14px 16px;background:var(--card,#fff);border-top:4px solid var(--oc);cursor:pointer;transition:transform .15s,box-shadow .15s;position:relative} #view-agentsmission .am-win:hover{transform:translateY(-2px)} #view-agentsmission .am-win.on{box-shadow:0 0 0 3px rgba(14,159,90,.18)} #view-agentsmission .am-win.on:after{content:"our pick";position:absolute;top:-12px;right:12px;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;background:var(--green,#0e9f5a);color:#fff;padding:2px 8px;border-radius:999px}
+  #view-agentsmission .am-win h3{margin:0 0 8px;font-size:14px;font-weight:800;color:var(--oc)} #view-agentsmission .am-win .row{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line-soft,var(--line));font-size:12px} #view-agentsmission .am-win .row:last-child{border:0} #view-agentsmission .am-win .row b{font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap} #view-agentsmission .am-win .row .ic{font-size:15px;text-align:center} #view-agentsmission .am-win .row .neg b{color:#dc2626}
+  #view-agentsmission .am-score{height:8px;border-radius:4px;background:var(--line-soft,var(--line));overflow:hidden;margin-top:10px} #view-agentsmission .am-score i{display:block;height:100%;background:var(--oc);border-radius:4px;transition:width .8s}
   #view-agentsmission .am-val{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px} #view-agentsmission .am-val .v{border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--card2,#f8fafc);border-left:4px solid var(--green,#0e9f5a)} #view-agentsmission .am-val .v b{display:block;font-size:22px;letter-spacing:-.4px;line-height:1.1} #view-agentsmission .am-val .v small{color:var(--muted);font-size:11.5px;display:block;margin-top:3px;line-height:1.35} #view-agentsmission .am-val .v .from{font-size:12px;color:var(--muted);text-decoration:line-through;margin-right:6px}
   #view-agentsmission .am-in{width:84px;font:inherit;font-size:11.5px;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card2,#f1f5f9);color:var(--ink)}
   #view-agentsmission .am-refs{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px} #view-agentsmission .am-ref{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card2,#f8fafc);font-size:12px;line-height:1.45} #view-agentsmission .am-ref a{color:var(--green,#0e9f5a);font-weight:700;text-decoration:none} #view-agentsmission .am-ref a:hover{text-decoration:underline} #view-agentsmission .am-ref .w{display:block;color:var(--muted);font-size:11px}
@@ -304,7 +319,7 @@
     const inc=bc["salam-agent-incident"]||{}; const gpuSpeed=GPU_TPS[S.plan.model]; const gain=curTps?Math.round(gpuSpeed/curTps):null;
     const backlog=(d.agents.find(a=>a.key==="log")||{}).queue||[]; const unassessed=(backlog.find(q=>/assess/.test(q.label))||{}).n||0;
     return `<div class="am-plan">
-      <div class="am-sec"><h2>Where we are — measured on this console, last 7 days</h2><div class="sub">The numbers below come from <code>llm_calls</code> and the host — they are the load a new server has to carry from day one.</div>
+      <div class="am-sec"><h2>Where we are — measured on our console, last 7 days</h2><div class="sub">These are our real numbers from <code>llm_calls</code> and the 152 host — the load any new server must carry from day one.</div>
         <div class="am-pk">
           <div class="k"><b>${n(perDay.calls)}</b><span>model calls / day (${n(u.calls)} in 7 d)</span></div>
           <div class="k"><b>${n(perDay.tokens)}</b><span>tokens / day · ${n(answerPerDay)} generated</span></div>
@@ -316,7 +331,7 @@
         ${peak?`<div class="am-note" style="margin-top:10px">Busiest hour of the week: ${esc(ksa(peak.h))} KSA — ${n(peak.calls)} calls, ${n(peak.tokens)} tokens. A GPU server should sustain about <b>3 × that hour</b> without queueing: <b>≈ ${n(needTps)} tok/s aggregate</b>. Every option below does that with one mid-range GPU.</div>`:""}</div>
 
       ${valueSection(d)}
-      <div class="am-sec"><h2>What changes for the console — almost nothing</h2><div class="sub">llm.js already speaks two dialects (Ollama and OpenAI-compatible) with fail-over, JSON mode, probe, budget and audit. vLLM is OpenAI-compatible, so the move is configuration, tested live with the Self-test on Settings › Agents.</div>
+      <div class="am-sec"><h2>What changes in our console — almost nothing</h2><div class="sub">llm.js already speaks two dialects (Ollama and OpenAI-compatible) with fail-over, JSON mode, probe, budget and audit. vLLM is OpenAI-compatible, so the move is configuration, tested live with the Self-test on Settings › Agents.</div>
         <div class="am-code">LLM_FALLBACK_KIND=openai
 LLM_FALLBACK_URL=http://&lt;gpu-server&gt;:8000/v1
 LLM_FALLBACK_MODEL=${S.plan.model==="allam"?"humain-ai/ALLaM-7B-Instruct-preview":S.plan.model==="8b"?"meta-llama/Llama-3.1-8B-Instruct":S.plan.model==="14b"?"Qwen/Qwen2.5-14B-Instruct":"Qwen/Qwen2.5-32B-Instruct"}
@@ -324,7 +339,7 @@ LLM_FALLBACK_KEY=            # empty on-prem, or the vLLM --api-key
 # order: Settings › Agents › Configure → "fallback first" once the Self-test is green for a day · Ollama on 152 stays the safety net</div>
         <div class="sub" style="margin-top:8px">Then: Settings › Agents › <b>Probe</b> and <b>Self-test</b> (all five probes, JSON grammar on/off) → watch Mission control for a day (speed, p95, fail %) → flip the order. Rollback = one line.</div></div>
 
-      <div class="am-sec"><h2>Pick the scenario</h2>
+      <div class="am-sec"><h2>Pick our scenario</h2>
         <div class="am-ctl"><label>Where <select id="amTarget">${OPTS.map(o=>`<option value="${o.k}"${S.plan.target===o.k?" selected":""}>${esc(o.name)}</option>`).join("")}</select></label>
           <label>Model <select id="amModel">${Object.entries(MODELS).map(([k,x])=>`<option value="${k}"${S.plan.model===k?" selected":""}>${esc(x.name)}</option>`).join("")}</select></label>
           <label>Concurrency to plan for <input id="amConc" type="number" min="1" max="64" value="${conc}"></label></div>
@@ -339,10 +354,10 @@ LLM_FALLBACK_KEY=            # empty on-prem, or the vLLM --api-key
       <div class="am-opts">${OPTS.map(o=>`<div class="am-opt${S.plan.target===o.k?" on":""}" data-opt="${o.k}" style="--oc:${o.c}"><h3>${esc(o.name)}</h3><div class="who">${esc(o.who)}</div><ul>${o.bul.map(b=>`<li>${esc(b)}</li>`).join("")}</ul>
           <div class="am-kv" style="margin-top:8px"><span>effort</span> ${esc(o.effort)}<br><span>cost</span> ${esc(o.cost)}</div><div class="verdict ${o.verdict.c}">${esc(o.verdict.t)}</div></div>`).join("")}</div>
 
-      <div class="am-sec"><h2>The plan for ${esc(opt.name)}</h2><div class="sub">Sequenced so that production never depends on the new server until it has answered for a full day.</div>
+      <div class="am-sec"><h2>Our plan for ${esc(opt.name)}</h2><div class="sub">Sequenced so that our production never depends on the new server until it has answered for a full day.</div>
         <ol class="am-steps">${steps(S.plan.target).map(s=>`<li><b>${esc(s[0])}</b>${esc(s[1])}<div class="d">${esc(s[2])}</div></li>`).join("")}</ol></div>
 
-      <div class="am-sec"><h2>Comparison</h2><table class="am-t"><thead><tr><th>Criterion</th><th>Today · CPU on 152</th>${OPTS.map(o=>`<th style="color:${o.c}">${esc(o.name.slice(0,1))}</th>`).join("")}</tr></thead><tbody>
+      <div class="am-sec"><h2>Side by side</h2><table class="am-t"><thead><tr><th>Criterion</th><th>Today · CPU on 152</th>${OPTS.map(o=>`<th style="color:${o.c}">${esc(o.name.slice(0,1))}</th>`).join("")}</tr></thead><tbody>
         ${[["Data stays in Salam's network","yes","yes","no — stays in KSA (private link + DPA)","no — stays in KSA only with an in-Kingdom provider"],["Answer speed (8B–14B)",curTps?curTps+" tok/s":"~15 tok/s","40–90 tok/s per stream","40–90 tok/s per stream","fast"],["Concurrent agents + Yusr","one at a time (shared CPU)","batched on GPU","batched on GPU","unlimited"],["Console change","—","2 .env lines","2 .env lines + network","2 .env lines + key"],["Time to first answer","—","1–2 weeks after hardware (procurement 2–8 wk)","1–2 weeks","days (policy: weeks)"],["Monthly run cost","0 (existing VM)","power only · 45–70 k SAR once","≈ 2 000–5 300 SAR","tens of SAR → grows with use"],["Model choice","8B (RAM-bound)","up to 32B","up to 70B+","any"],["Policy fit (on-prem only)","✓","✓","exception (in-Kingdom, not on-prem)","✗"]].map(r=>`<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td>${r.slice(2).map((c,i)=>`<td class="${OPTS[i].k===S.plan.target?"hl":""}">${esc(c)}</td>`).join("")}</tr>`).join("")}
       </tbody></table><div class="am-note" style="margin-top:10px">Prices are indicative KSA-market figures in SAR (public list prices at 1 USD = 3.75 SAR, September 2026) and throughput figures are published vLLM benchmarks — not a quote. Get two quotes for the on-prem server and one month of in-Kingdom rental as the benchmark before deciding.</div></div>
       ${recoSection()}${refsSection()}</div>`;
@@ -361,7 +376,7 @@ LLM_FALLBACK_KEY=            # empty on-prem, or the vLLM --api-key
     return `<svg viewBox="0 0 ${W} ${H}">${rows.map((r,i)=>{ const y=4+i*rowH; const w=Math.max(2,r.v/max*iw); return `<text x="${L-8}" y="${y+16}" text-anchor="end" font-size="11" font-weight="${r.bold?"800":"600"}" fill="var(--ink)">${esc(r.label)}</text><rect x="${L}" y="${y+4}" width="${w.toFixed(1)}" height="16" rx="5" fill="${r.c}" opacity="${r.bold?"1":".85"}"/><text x="${(L+w+6).toFixed(1)}" y="${y+16}" font-size="11" font-weight="800" fill="var(--ink)">${esc(r.txt)}</text>`; }).join("")}</svg>`;
   }
   function valueSection(d){
-    const u=(d.usage&&d.usage.total)||{}; const bc=(d.usage&&d.usage.byCaller)||{}; const model=S.plan.model; const where=S.plan.target;
+    const u=(d.usage&&d.usage.total)||{}; const bc=(d.usage&&d.usage.byCaller)||{}; const model=S.plan.model; const where=S.plan.target; const md=(d.perf&&d.perf.model)||{};
     const callers=[["salam-agent-incident","Triage note (Agent 2)"],["salam-agent-log","Signature batch (Agent 1)"],["console","Yusr answer"]].filter(([k])=>bc[k]&&bc[k].calls);
     /* 1 · latency per answer: measured today vs the three targets */
     const latRows=[]; let maxL=1;
@@ -397,14 +412,43 @@ LLM_FALLBACK_KEY=            # empty on-prem, or the vLLM --api-key
       ${[0,6,12,18,24].map(m=>`<text x="${cx(m)}" y="${CH-6}" text-anchor="middle" font-size="10" fill="var(--muted)">M${m}</text>`).join("")}
       ${Object.entries(series).map(([k,v])=>`<polyline points="${v.map((y,m)=>`${cx(m).toFixed(1)},${cy(y).toFixed(1)}`).join(" ")}" fill="none" stroke="${OPTC[k]}" stroke-width="${k===where?3.5:1.8}" opacity="${k===where?1:.7}"/><text x="${cx(24)+4}" y="${cy(v[24])+4}" font-size="10" font-weight="800" fill="${OPTC[k]}">${k==="onprem"?"A":k==="cloudvm"?"B":"C"}</text>`).join("")}</svg>`;
     const incToday=(inc.avg_ms||0)/1000, incNew=projected(inc,model,where); const yu=bc.console||null;
-    return `<div class="am-sec"><h2>What you really gain — measured today vs projected on ${esc((OPTS.find(o=>o.k===where)||{}).name||"")}</h2><div class="sub">Today's bars are the real averages of the last 7 days per agent; the projections use the prompt / answer sizes of those same calls at the GPU class of the chosen scenario (prompt ${n(PREFILL)} tok/s · answer ${GPU_TPS[model]} tok/s per stream${where==="cloudapi"?" · API ≈ 60 tok/s + 0.4 s network":where==="cloudvm"?" · + 0.15 s private link":""}).</div>
-      <div class="am-val">
-        <div class="v"><span class="from">${secs(incToday)}</span><b>${secs(incNew)}</b><small>a triage note on a new incident — the note lands before the on-call reads the mail, not after</small></div>
-        <div class="v"><span class="from">${n(todayPerH)} / h</span><b>${n(capRows.find(r=>r.bold)?capRows.find(r=>r.bold).v:capRows[1].v)} / h</b><small>incidents the model can annotate per hour — an incident storm no longer queues behind one CPU</small></div>
-        <div class="v"><span class="from">${todayH>48?Math.round(todayH/24)+" d":secs(todayH*3600)}</span><b>${(()=>{ const x=drain.find(z=>z.k===where)||drain[0]; return x.h>48?Math.round(x.h/24)+" d":secs(x.h*3600); })()}</b><small>to clear the ${n(backlog)} signatures the log agent has not explained yet (15 per model call)</small></div>
-        ${yu?`<div class="v"><span class="from">${secs((yu.avg_ms||0)/1000)}</span><b>${secs(projected(yu,model,where))}</b><small>a Yusr answer — conversational instead of "wait for it"; the same GPU serves Yusr and the agents at once</small></div>`:""}
-        <div class="v"><span class="from">8B</span><b>${model==="allam"?"ALLaM 7B":model==="8b"?"8B (faster)":model==="14b"?"14B":"32B"}</b><small>${model==="allam"?"the Saudi bilingual model — Arabic answers for Yusr and Arabic incident text, sovereign by design":model==="8b"?"same model, only speed — zero quality risk":"a bigger model in the same time budget — better JSON discipline, Arabic, and room for longer evidence packs in the prompts"}</small></div>
+    const optName=(OPTS.find(o=>o.k===where)||{}).name||"";
+    const logToday=(logU.avg_ms||0)/1000, logNew=projected(logU,model,where); const yuToday=yu?(yu.avg_ms||0)/1000:null, yuNew=yu?projected(yu,model,where):null;
+    const capNew=(capRows.find(r=>r.bold)||capRows[1]).v; const drainNew=(drain.find(z=>z.k===where)||drain[0]).h;
+    /* hours of waiting removed per day — every call of every agent and every Yusr question, today's average minus the projected one */
+    const savedH=[["salam-agent-incident",incToday-incNew],["salam-agent-log",logToday-logNew],["console",yu?yuToday-yuNew:0]].reduce((a,[k,dt])=>a+((bc[k]||{}).calls||0)/7*Math.max(0,dt),0)/3600;
+    const pct=(a,b)=>a>0?Math.round((1-b/a)*100):0; const times=(a,b)=>b>0?Math.max(1,Math.round(a/b)):1;
+    const baRow=(label,value,delta,bad)=>`<div class="am-bar2"><span class="l">${label}</span><span class="v">${esc(String(value))}${delta?`<span class="d${bad?" bad":""}">${esc(delta)}</span>`:""}</span></div>`;
+    const beforeRows=[["a triage note lands after",secs(incToday)],["a signature batch takes",secs(logToday)],yu?["a Yusr answer takes",secs(yuToday)]:null,["incidents annotated per hour",n(todayPerH)],["the signature backlog clears in",todayH>48?Math.round(todayH/24)+" days":secs(todayH*3600)],["model",esc((md.models&&md.models[0]&&md.models[0].params)||"8B")+" on CPU · one call at a time"]].filter(Boolean);
+    const afterRows=[["a triage note lands after",secs(incNew),"−"+pct(incToday,incNew)+" %"],["a signature batch takes",secs(logNew),"×"+times(logToday,logNew)+" faster"],yu?["a Yusr answer takes",secs(yuNew),"×"+times(yuToday,yuNew)+" faster"]:null,["incidents annotated per hour",n(capNew),"×"+times(capNew,Math.max(1,todayPerH))],["the signature backlog clears in",drainNew>48?Math.round(drainNew/24)+" days":secs(drainNew*3600),"−"+pct(todayH,drainNew)+" %"],["model",(model==="allam"?"ALLaM 7B":model==="8b"?"8B":model==="14b"?"14B":"32B")+" on GPU · "+conc+" streams at once",model==="8b"?"same quality, GPU speed":"bigger model"]].filter(Boolean);
+    /* what we win in each scenario — the same yardsticks for A, B and C */
+    const winCard=o=>{ const pI=projected(inc,model,o.k), pL=projected(logU,model,o.k), pY=yu?projected(yu,model,o.k):null; const capO=capRows.find(r=>r.label.startsWith(o.name.slice(0,1)+" ·")); const dr=drain.find(z=>z.k===o.k)||{h:0};
+      const saved=[["salam-agent-incident",incToday-pI],["salam-agent-log",logToday-pL],["console",yu?yuToday-pY:0]].reduce((a,[k,dt])=>a+((bc[k]||{}).calls||0)/7*Math.max(0,dt),0)/3600;
+      const cost=o.k==="onprem"?`≈ ${n(Math.round(capex/24))} SAR/month over 24 mo (one-off ${n(capex)})`:o.k==="cloudvm"?`≈ ${n(cloudM)} SAR/month`:`≈ ${n(apiM0)} SAR/month today, grows with use`;
+      const policy=o.k==="onprem"?["✓","data never leaves our network",false]:o.k==="cloudvm"?["◐","stays in the Kingdom · leaves our network (DPA + link)",false]:["✗","leaves our network to a third party · policy exception",true];
+      const score=o.k==="onprem"?92:o.k==="cloudvm"?74:38;
+      return `<div class="am-win${where===o.k?" on":""}" data-win="${o.k}" style="--oc:${o.c}"><h3>${esc(o.name)}</h3>
+        <div class="row"><span class="ic">⏱</span><span>triage note ${secs(incToday)} → </span><b>${secs(pI)}</b></div>
+        <div class="row"><span class="ic">🧠</span><span>annotations per hour</span><b>${n(capO?capO.v:0)} / h</b></div>
+        <div class="row"><span class="ic">📚</span><span>backlog of ${n(backlog)} clears in</span><b>${dr.h>48?Math.round(dr.h/24)+" d":secs(dr.h*3600)}</b></div>
+        <div class="row"><span class="ic">🕒</span><span>waiting removed, per day</span><b>${saved>=1?saved.toFixed(1)+" h":Math.round(saved*60)+" min"}</b></div>
+        <div class="row"><span class="ic">💰</span><span>run cost</span><b style="font-size:12px">${esc(cost)}</b></div>
+        <div class="row${policy[2]?" neg":""}"><span class="ic">${policy[0]}</span><span>${esc(policy[1])}</span><b></b></div>
+        <div class="row"><span class="ic">📅</span><span>first production answer</span><b style="font-size:12px">${o.k==="onprem"?"1–2 wk after hardware":o.k==="cloudvm"?"1–2 weeks":"days + approvals"}</b></div>
+        <div class="am-score"><i style="width:${score}%"></i></div><div class="sub" style="font-size:11px;margin-top:4px">overall fit for Salam · ${score} / 100</div></div>`; };
+    return `<div class="am-sec"><h2>What we really gain — today measured, tomorrow projected on ${esc(optName)}</h2><div class="sub">The left side is what our agents live with today (real 7-day averages from <code>llm_calls</code>); the right side is the same prompts and answers on the GPU class of the scenario we picked above (prompt ${n(PREFILL)} tok/s · answer ${GPU_TPS[model]} tok/s per stream${where==="cloudapi"?" · API ≈ 60 tok/s + 0.4 s network":where==="cloudvm"?" · + 0.15 s private link":""}).</div>
+      <div class="am-ba">
+        <div class="side before"><h4>Today <span>· CPU on 152 · ${esc((md.models&&md.models[0]&&md.models[0].name)||"llama3.1")}</span></h4>${beforeRows.map(r=>baRow(r[0],r[1])).join("")}</div>
+        <div class="arrow">➜</div>
+        <div class="side after"><h4>With ${esc(optName.replace(/^[ABC] · /,""))} <span>· ${esc(MODELS[model].name)}</span></h4>${afterRows.map(r=>baRow(r[0],r[1],r[2])).join("")}</div>
       </div>
+      <div class="am-race"><h3>See it — one triage note, side by side <button type="button" class="am-btn p" id="amRaceBtn" style="margin-left:10px">▶ Race it</button></h3><div class="sub">real time, scaled so that today's ${secs(incToday)} takes 5 seconds on screen · the on-call's P1 acknowledgement clock is 5 minutes — the note must be there before it</div>
+        <div class="am-lane"><span class="nm">Today · CPU<small>${esc((md.models&&md.models[0]&&md.models[0].params)||"8B")} · Ollama on 152</small></span><div class="am-track2" data-lane="today" style="--lc:#64748b"><i></i><span class="fl">🏁</span></div><span class="clk" data-clk="today">0.0 s</span></div>
+        <div class="am-lane"><span class="nm" style="color:var(--green,#0e9f5a)">After · ${esc(optName.slice(0,1))}<small>${esc(MODELS[model].name)} · vLLM</small></span><div class="am-track2" data-lane="after" style="--lc:var(--green,#0e9f5a)"><i></i><span class="fl">🏁</span></div><span class="clk" data-clk="after">0.0 s</span></div>
+        <div class="sub" id="amRaceMsg" style="margin-top:8px;font-size:12px"></div></div>
+      <div class="am-val" style="margin-top:14px"><div class="v"><b>${savedH>=1?savedH.toFixed(1)+" h":Math.round(savedH*60)+" min"}</b><small>of waiting removed <strong>every day</strong> for our agents and the people asking Yusr (${n(Math.round(u.calls/7))} calls/day × the seconds saved on each)</small></div><div class="v"><b>${n(capNew)} / h</b><small>incidents we can annotate per hour instead of ${n(todayPerH)} — an incident storm no longer queues behind one CPU</small></div><div class="v"><b>${drainNew>48?Math.round(drainNew/24)+" days":secs(drainNew*3600)}</b><small>to explain the ${n(backlog)} signatures waiting today (instead of ${todayH>48?Math.round(todayH/24)+" days":secs(todayH*3600)}) — the log agent finally catches up</small></div></div>
+      <h3 style="margin:18px 0 0;font-size:14px;font-weight:800">What we win in each scenario <span class="sub" style="font-weight:500">— same yardsticks, click a card to make it our pick</span></h3>
+      <div class="am-wins">${OPTS.map(winCard).join("")}</div>
       <div class="am-charts" style="margin-top:14px">
         <div class="am-ch2"><h3>Latency per answer</h3><div class="sub">average seconds per call · today measured, targets projected · the bold bar is the chosen scenario</div>${hbars(latRows,maxL)}</div>
         <div class="am-ch2"><h3>Capacity — answers per hour</h3><div class="sub">the CPU answers one call at a time; vLLM batches ${conc} streams on one GPU (planned concurrency above)</div>${hbars(capRows,maxC)}</div>
@@ -415,7 +459,7 @@ LLM_FALLBACK_KEY=            # empty on-prem, or the vLLM --api-key
       </div></div>`;
   }
   function recoSection(){
-    return `<div class="am-reco"><h2>Best approach for Salam — the sequence</h2><div class="sub" style="margin-bottom:4px">Given the on-prem-only decision, the PDPL scope of the prompts (masked incident context, dealer names, customer counts), the CPU backlog measured above and what the KSA market offers today.</div>
+    return `<div class="am-reco"><h2>Our best approach — the sequence for Salam</h2><div class="sub" style="margin-bottom:4px">Given our on-prem-only decision, the PDPL scope of our prompts (masked incident context, dealer names, customer counts), the CPU backlog we measured above and what the KSA market offers us today.</div>
       <ol>
         <li><b>Week 1–2 · rent in the Kingdom, benchmark.</b> One L40S at DCP (≈ 3 800 SAR/month, per-second billing, in-Kingdom, PDPL) or a G2/L4 on Google Cloud Dammam via CNTXT, wired as <code>LLM_FALLBACK_*</code>. Run the Self-test and a replay of last week's triage prompts; the HUD gives tok/s, p95 and fail % on Qwen2.5-14B, Llama 3.1-8B and ALLaM-7B side by side.</li>
         <li><b>Week 2 · flip the order</b> in Settings › Agents (fallback first). Agent 1 drains the ${"signature"} backlog in hours, triage notes land in seconds, Yusr becomes conversational. Ollama on 152 stays the safety net.</li>
@@ -456,7 +500,23 @@ LLM_FALLBACK_KEY=            # empty on-prem, or the vLLM --api-key
     h.querySelectorAll(".am-opt").forEach(el=>el.onclick=()=>{ S.plan.target=el.dataset.opt; rr(); });
     const cx=h.querySelector("#amCapex"); if(cx) cx.onchange=e=>{ S.plan.capex=Math.max(0,Number(e.target.value)||0); rr(); };
     const cm=h.querySelector("#amCloudM"); if(cm) cm.onchange=e=>{ S.plan.cloudM=Math.max(0,Number(e.target.value)||0); rr(); };
-    const ca=h.querySelector("#amApi"); if(ca) ca.onchange=e=>{ S.plan.apiPer1M=Math.max(0,Number(e.target.value)||0); rr(); }; }
+    const ca=h.querySelector("#amApi"); if(ca) ca.onchange=e=>{ S.plan.apiPer1M=Math.max(0,Number(e.target.value)||0); rr(); };
+    h.querySelectorAll(".am-win").forEach(el=>el.onclick=()=>{ S.plan.target=el.dataset.win; rr(); });
+    /* count-up on the AFTER side */
+    h.querySelectorAll(".after .am-bar2 .v").forEach(el=>{ const txt=el.firstChild; if(!txt||txt.nodeType!==3) return; const m=/^([\d.,]+)(.*)$/.exec(txt.nodeValue||""); if(!m) return; const target=Number(m[1].replace(/,/g,"")); if(!isFinite(target)) return; const dec=(m[1].split(".")[1]||"").length; const t0=performance.now(); const step=t=>{ const k=Math.min(1,(t-t0)/900); const v=target*(1-Math.pow(1-k,3)); txt.nodeValue=(dec?v.toFixed(dec):Math.round(v).toLocaleString("en-US"))+m[2]; if(k<1) requestAnimationFrame(step); }; requestAnimationFrame(step); });
+    const rb=h.querySelector("#amRaceBtn"); if(rb) rb.onclick=()=>race(h); }
+  function race(h){
+    const d=S.data; const bc=(d.usage&&d.usage.byCaller)||{}; const inc=bc["salam-agent-incident"]||{avg_ms:18000,prompt_tokens:0,answer_tokens:0,calls:1};
+    const today=(inc.avg_ms||0)/1000, after=projected(inc,S.plan.model,S.plan.target); const scale=5000/Math.max(today,0.1);   // today = 5 s on screen
+    const lanes={today:{el:h.querySelector('[data-lane="today"]'),clk:h.querySelector('[data-clk="today"]'),dur:today},after:{el:h.querySelector('[data-lane="after"]'),clk:h.querySelector('[data-clk="after"]'),dur:after}};
+    const msg=h.querySelector("#amRaceMsg"); const btn=h.querySelector("#amRaceBtn"); if(!lanes.today.el||!lanes.after.el) return; btn.disabled=true; msg.textContent="";
+    for(const l of Object.values(lanes)){ l.el.classList.remove("done"); l.el.querySelector("i").style.width="0"; l.clk.classList.remove("win"); l.clk.textContent="0.0 s"; }
+    const t0=performance.now(); let announced=false;
+    const tick=t=>{ const el=(t-t0)/scale; let all=true;
+      for(const [k,l] of Object.entries(lanes)){ const v=Math.min(el,l.dur); l.clk.textContent=v.toFixed(1)+" s"; l.el.querySelector("i").style.width=(v/l.dur*100).toFixed(1)+"%"; if(v>=l.dur){ l.el.classList.add("done"); if(k==="after"){ l.clk.classList.add("win"); if(!announced){ announced=true; msg.innerHTML=`<b style="color:var(--green,#0e9f5a)">The note is on the incident after ${after.toFixed(1)} s</b> — the CPU is still at ${Math.round(after/today*100)} % of its answer; it finishes ${Math.round(today-after)} s later. Over a day that is ${Math.round((today-after)*((inc.calls||0)/7))} s of waiting removed on triage alone.`; } } } else all=false; }
+      if(!all) requestAnimationFrame(tick); else btn.disabled=false; };
+    requestAnimationFrame(tick);
+  }
 
   /* the pulse: every 4 s, what the model is answering right now → robots switch to "working" instantly, bubbles narrate */
   async function pulseTick(){

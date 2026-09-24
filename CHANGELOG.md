@@ -1,3 +1,10 @@
+## 2.0.0-alpha.86 — 24 Sep 2026 — vLLM tab: "What WE really gain" — before / after, the race, what we win per scenario
+
+- The page now speaks as our advice to Salam (we / our) throughout: where we are, what changes in our console, pick our scenario, our plan, our best approach.
+- **Before → After panel**: left, today on the CPU (dimmed) — triage note, signature batch, Yusr answer, annotations per hour, backlog time, model; right, the chosen scenario in a glowing green card with the same rows, count-up numbers and a delta pill on each (−80 %, ×5 faster, ×15 …).
+- **▶ Race it**: one triage note on both sides in real time (today's average scaled to 5 s on screen) — the green lane finishes, the grey one is still running; the caption says how many seconds of waiting that removes per day on triage alone.
+- Three headline tiles (hours of waiting removed per day across agents and Yusr, annotations per hour, time to clear the backlog) and **What we win in each scenario**: A / B / C side by side with the same yardsticks (triage latency, capacity, backlog, waiting removed, run cost in SAR, data residency, time to first answer) and a fit score; clicking a card makes it our pick and recomputes the whole page.
+
 ## 2.0.0-alpha.85 — 24 Sep 2026 — Mission control: orphan runs after a restart
 
 - A deploy restarts the agents mid-tick and leaves the `agent_runs` row without `finished_at`; the pulse showed that agent as *working* for 30 minutes. Now only the newest run per agent counts (20-minute cap) and orphans older than 20 minutes are closed as "interrupted (process restarted before the tick finished)" — they appear as a red dot in *what it did* instead of a phantom "running…".
