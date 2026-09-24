@@ -86,8 +86,8 @@ const penaltyRule = (id, vendorId, contractId, obligationId, opts = {}) => ({
 });
 
 const DEFAULT_CONFIG = {
-  version: 3,
-  sourceNote: 'Reference data extracted from Sigma signed contract and TCS MVNO managed-services proposal. Confirm final legal/contract dates and contacts before using for formal penalty calculation.',
+  version: 4,
+  sourceNote: 'Reference data extracted from the SIGNED documents (24 Sep 2026 review): Sigma CONT-SALAM-167-2024 + addenda; TCS SALAM-CONT-206-2022 WP1 + Amendments 1-4 (Amendment 1 replaced the proposal SLA); Oracle, Subex, Comviva, Infosys and Evamp & Saanga from vendorContractsSeedExt.js. Financials are quoted from the contracts; eligible fees are proposals to validate with Finance before any formal penalty calculation.',
   phases: [
     {
       id: 'phase-1',
@@ -134,13 +134,14 @@ const DEFAULT_CONFIG = {
       businessScope: ['fixed', 'mobile'],
       domains: ['OSS', 'ITSM', 'DMS', 'Big data', 'Infrastructure', 'GIS', 'Remedy'],
       supportWindow: 'L1 24x7; L2 business hours with on-call for urgent/critical incidents.',
-      contractStatus: 'reference',
+      contractStatus: 'signed — effective 27 Jun 2024; renewed in 6-month steps (latest to 30 Jun 2026 per RTP 37264, instrument not in file set); Fixed digital ops extended to 31 Aug 2026 (Fourth Addendum)',
       contacts: [],
       escalation: [
         'P1/P2: acknowledge immediately per response SLA and escalate to L2/L3/vendor where needed.',
+        'Contract governance: Operational committee weekly, Management committee monthly, Executive committee quarterly (§6.2). No named escalation matrix in the contract — to be developed in transition (§5.1.2).',
         'Use approved clock-stop only for third-party, planned downtime, or customer/client dependency delays.'
       ],
-      notes: 'Scope includes Zsmart OSS, GIS, Remedy, DMS, Big Data, infrastructure support and service-level reporting.'
+      notes: 'Scope: ZSmart OSS, GIS (Esri), Remedy, DMS (NewGen), Big Data (Cloudera/Informatica/SingleStore/Tableau), applications infrastructure; added Vanrise Wholesale + HPE L2 (Dec 2024), Fixed Digital channels ops (Aug 2025, Fourth Addendum Mar 2026), SharePoint SE (Nov 2025). Serves Salam and TLS. L1 24x7 offshore, L2 Sun-Thu 8-17 + on-call, L3 = product vendors. Vendor-reported SLA attainment Jan-Jun 2025: 99.15-99.79% (aggregate only, no per-KPI split, no credit claimed).'
     },
     {
       id: 'tcs',
@@ -150,13 +151,14 @@ const DEFAULT_CONFIG = {
       businessScope: ['mobile'],
       domains: ['Digital', 'BSS', 'OSS', 'ITSM', 'API Gateway', 'Payments', 'MNP'],
       supportWindow: 'L1 24x7; L2 application 16x7 office plus on-call; L2 infrastructure/ITSM 16x5 plus on-call for P1/P2.',
-      contractStatus: 'proposal/reference',
+      contractStatus: 'signed — WP1 11 Jun 2023, extended by Amendments 1-4; EXPIRED 20 Jun 2026 (no instrument after that date in the file set — renewal / RFP required)',
       contacts: [],
       escalation: [
         'P1/P2 incidents have on-call support outside office hours.',
+        'Governance: operations daily + weekly, strategic monthly, Steering Committee monthly, Executive Connect quarterly (proposal §9.2). Dispute ladder: representatives 14 days -> CEOs 7 days -> SCCA arbitration Riyadh.',
         'Third-party, OEM, hardware, application bugs outside TCS control, planned downtime, and force majeure are excluded per proposal assumptions.'
       ],
-      notes: 'Scope covers DMS, Digital Apps, Web Portal, payment gateways, Kong API Gateway and NetAxis MNP integration. Optiva BSS/OSS support after 31 Jan 2026 is excluded in the proposal.'
+      notes: 'Supply of Services Agreement SALAM-CONT-206-2022 (effective 10 Oct 2023) + WP1 MVNO IT Operations MS. Scope: L1 monitoring 24x7 (offshore), L2 application 16x7 + on-call, L2 infrastructure 16x5 + on-call, ITSM governance; Optiva stack, DMS, Digital Apps & Web Portal (StartAppz), Sadad/HyperPay gateways, Ameyo, Kong API GW, NetAxis MNP; 39 FTE (15 onsite / 24 offshore) to Dec 2025, 34 from Jan 2026 with Optiva application L2 removed (email evidence only — Amendment 4 carries no scope text). No clock-stop rule in any document.'
     }
   ],
   contracts: [
@@ -166,31 +168,71 @@ const DEFAULT_CONFIG = {
       title: 'CONT-SALAM-167-2024 Sigma signed contract',
       businessScope: ['fixed', 'mobile'],
       domains: ['OSS', 'ITSM', 'DMS', 'Big data', 'Infrastructure', 'GIS', 'Remedy'],
-      sourceDoc: 'CONT-SALAM-167-2024_Signed_Stmpd_SIGMA.pdf',
-      sourcePages: 'Service scope p21-p23; SLA p93-p98; responsibility matrix p101-p102',
-      effectiveFrom: '2024',
-      effectiveTo: null,
-      status: 'active/reference',
-      eligibleMonthlyFeeSar: null,
-      monthlyPenaltyCapPercent: null,
+      sourceDoc: 'CONT-SALAM-167-2024_Signed_Stmpd_SIGMA.pdf + First Addendum (Dec 2024) + Amendment 1 with Schedule 1 (Jun 2025) + First Addendum Digital (Aug 2025) + Third Addendum SharePoint (Nov 2025) + Fourth Addendum (Apr 2026)',
+      sourcePages: 'Term cl.2; price App.A 1.1; invoicing cl.11; penalties §8.2.3 p.95-96 + cl.12; clock-stop §8.3; exemptions §8.4; governance §6.2; RACI §10; renewal SLA Schedule 1 §8.2.2',
+      effectiveFrom: '2024-06-27',
+      effectiveTo: '2026-06-30 (L1/L2 per RTP 37264) / 2026-08-31 (Fixed digital ops, Fourth Addendum) — renewal due',
+      status: 'active — 6-month renewals',
+      eligibleMonthlyFeeSar: 464100,
+      monthlyPenaltyCapPercent: 40,
       penaltyMode: 'estimate_only',
-      penaltyCap: 'Contractual penalties apply by SLA item/impact weighting; validate with commercial/legal owner before formal use.'
+      penaltyCap: 'No monthly cap in the contract: penalty % = SLA weight (response 1% / restoration 5% / resolution non-bug 1% / product-bug 1%) x impact index (1st miss 1, 2nd 2, 3rd 3, >3rd 5), deducted from the invoice of the reporting period — theoretical maximum 40% per period. Aggregate penalties capped at 10% of total Contract Price (cl.12: SAR 759,598 on 7,595,981). Availability 99.99% carries no penalty. Renewal Schedule 1 / Fourth Addendum restate targets WITHOUT the weight table — applicability after 27 Jun 2025 is ambiguous; validate.',
+      financials: {
+        currency: 'SAR', contractValueSar: 7595981, term: '12 months from 27 Jun 2024 + 1-month auto-renewals; prices protected 1 + 4 optional years; renewed in 6-month amendments',
+        monthlyFeeSar: 464100, monthlyFeeBasis: 'Jan-Jun 2026 run-rate: RTP 37264 SAR 2,784,601.86 / 6 (L1/L2 ZSmart, Remedy, GIS, DMS, Big Data, Infra at Amendment-1 unit prices + Fixed digital ops 66,667/month). Year-1 OPEX was 4,769,205 (397,434/month); invoiced every 2 months in arrears on JCR, 30 days',
+        yearly: { Y1_OPEX: 4769205, Y1_CAPEX_ADM: 2826776, H2_2025: 2384602, H1_2026: 2784602 },
+        oneOffSar: 2826776, oneOffNote: 'CAPEX ADM points: ZSmart 10 CRs x 12,500; GIS 528 pts x 1,530; Remedy 264 x 2,040; DMS 264 x 1,700; Big Data 528 x 1,717 (1 point = 1 service day); minimum consumption billed every 2 months',
+        paymentTerms: 'Undisputed invoices 30 days from receipt (cl.11); Third Addendum net 60; disputes 30 days then SCCA arbitration (Arabic); termination for convenience 30 days (cl.14.3)',
+        manDayPool: 'ADM point rates: ZSmart CR 12,500; GIS 1,530 (list 1,800); Remedy 2,040 (2,400); DMS 1,700 (2,000); Big Data 1,717 (2,020); resource rates: Vanrise L2 64,976/month, HPE L2 57,526/month, SharePoint MS 35,714/month, Digital ops 66,667/month',
+        amendments: [
+          { ref: 'LoA SALAM-CONT-167-2024L', date: '2024-04-25', period: 'award', amountSar: 7595981, change: 'OPEX 4,769,205 + CAPEX 2,826,776; PO 22399 (27 Jun 2024, total incl. VAT 8,735,378.15)' },
+          { ref: 'First Addendum REV.1', date: '2024-12-25', period: '12 months', amountSar: 1470041, change: 'Resources service: Vanrise Wholesale L2 SME 779,720 + HPE L2 SME 690,321; entity rename' },
+          { ref: 'Amendment 1 + Schedule 1 (SALAM-CONT-167-2024-AMD.1-2025)', date: '2025-06-27', period: '2025-06-27 -> 2025-12-26', amountSar: 2384602, change: 'L1/L2 MS extended 6 months at 50% of year-1 OPEX; revised SLA: resolution non-bug 4h/6h/1BD/2BD, product-bug per L3 vendor SLA, onsite staffing 4 (bi-monthly), no weight table' },
+          { ref: 'First Addendum — IT Digital Operations', date: '2025-08-01', period: '6 months', amountSar: 400000, change: 'Fixed digital channels (apps, infra, ITSM) 66,667/month' },
+          { ref: 'Third Addendum — SharePoint', date: '2025-11-03', period: '3 months project + 12 months MS', amountSar: 768568, change: 'SharePoint 2010 -> SE upgrade 340,000 (25/30/45%) + MS onsite resource 428,568; net 60' },
+          { ref: 'RTP 37264 (instrument not in file set)', date: '2026-03-12', period: '2026-01-01 -> 2026-06-30', amountSar: 2784602, change: 'L1/L2 + Digital extension' },
+          { ref: 'Fourth Addendum (SALAM-CONT-097-2026)', date: '2026-04-29', period: '2026-03-01 -> 2026-08-31', amountSar: 400000, change: 'IT Digital Operations MS extended 6 months' }
+        ],
+        renewalDue: '2026-06-30 (L1/L2) — expired if not renewed; 2026-08-31 (Fixed digital ops)',
+        liabilityCap: 'Sigma: fees paid (cl.16.1); Salam: SAR 1,000,000 (LoA 4.6)',
+        sources: ['CONT-SALAM-167-2024 signed', 'LoA 25 Apr 2024', 'PO 22399', 'First Addendum Dec 2024', 'Amendment 1 + Schedule 1', 'Third Addendum', 'Fourth Addendum', 'RTPs 25558/25566/31531/34549/37264', 'Sigma performance report Jan-Jun 2025']
+      }
     },
     {
       id: 'tcs-2026-mvno-itops',
       vendorId: 'tcs',
-      title: 'TCS Technical Proposal for MVNO IT Operations Managed Services 2026',
+      title: 'SALAM-CONT-206-2022 Supply of Services Agreement — WP1 MVNO IT Operations Managed Services + Amendments 1-4',
       businessScope: ['mobile'],
       domains: ['Digital', 'BSS', 'OSS', 'ITSM', 'API Gateway', 'Payments', 'MNP'],
-      sourceDoc: 'TCS Technical Proposal To Salam for MVNO IT Opearations Managed Services_2026.pdf',
-      sourcePages: 'Scope p13-p15; response/restoration/RCA/availability/performance p44-p50',
-      effectiveFrom: '2026',
-      effectiveTo: null,
-      status: 'proposal/reference',
-      eligibleMonthlyFeeSar: null,
-      monthlyPenaltyCapPercent: 5,
+      sourceDoc: 'Service Agreement_Signed by TCS.pdf + MVNO Work Package_Signed by TCS.pdf + AMENDMENT 1-TCSWP-10JUL24 (binding SLA, §2.7 replaces proposal clause 11) + Amendments 2, 3, 4',
+      sourcePages: 'Agreement cl.3 term, cl.12 payment, cl.14 termination, cl.30 disputes; WP1 §3 price, §6.2 penalties; Amendment 1 §2.2 penalty caps, §2.7 SLA tables, staffing sheet; Amendment 4 §2.6 (15-day termination)',
+      effectiveFrom: '2023-06-11 (WP1; agreement effective 2023-10-10)',
+      effectiveTo: '2026-06-20 (Amendment 4) — EXPIRED, renewal / RFP required',
+      status: 'expired — awaiting renewal',
+      eligibleMonthlyFeeSar: 697064,
+      monthlyPenaltyCapPercent: 10,
       penaltyMode: 'estimate_only',
-      penaltyCap: 'Response SLA table notes a 5% monthly invoice penalty cap; confirm final contract before enforcement.'
+      penaltyCap: 'Amendment 1: aggregate service credits <= 10% of monthly charges; delay penalty 1%/week up to 10% of monthly charges; cumulative penalties <= 10% of Work Package price (WP1 original 5%/5% superseded). Base = monthly invoice value (SAR 896,232 to Dec 2025; SAR 697,064.22 from Jan 2026). First month of each extension is an SLA baseline month.',
+      financials: {
+        currency: 'SAR', contractValueSar: 31464361, term: 'WP1 12 months from 11 Jun 2023, then Amendments 1-4 in ~6-month steps to 20 Jun 2026; prices protected 2 years, year-3 uplift capped +5% offshore / +3% onsite',
+        monthlyFeeSar: 697064, monthlyFeeBasis: 'Amendment 4 monthly instalment SAR 697,064.22 (L1 374,939 / L2 App 2,016,263 / L2 Infra 1,210,545 / ITSM 348,284 over 5 months 20 days); was SAR 896,232 per month Jun 2023 - Dec 2025',
+        yearly: { WP1_2023_24: 10754787, AMD1_H2_2024: 6004756, AMD2_H1_2025: 4750031, AMD3_H2_2025: 6004756, AMD4_H1_2026: 3950031 },
+        oneOffSar: 2364525, oneOffNote: 'WP2 Data Migration SOW (Optiva -> Oracle RODOD mapping), 26 Jan - 25 Jul 2025, 7 milestones, penalties 1%/week cap 10%; Amendment 1 to WP2 (ID 4316) body not in file set',
+        paymentTerms: 'Monthly in arrears, undisputed invoices 30 days from receipt, JCR required; disputes 15 days; set-off right (cl.12.8); termination for convenience 90 days -> 15 days (Amendment 4 §2.6)',
+        manDayPool: 'Lump-sum contract — no man-day rates found',
+        amendments: [
+          { ref: 'LoA SALAM-CONT-206-2022-L', date: '2022-11-24', period: '6-week transition + 12 months', amountSar: 10754787, change: 'Award (CEO approved 24 Nov 2022, budget SAR 10.0M)' },
+          { ref: 'WP1 SALAM-CONT-206-2022-WP1', date: '2023-10-10', period: '2023-06-11 -> 2024-06-10', amountSar: 10754787, change: '12 x 896,232.25; L1 1,308,355 / L2 App 5,515,526 / L2 Infra 2,848,146 / ITSM 1,082,760; transition free' },
+          { ref: 'Amendment 1', date: '2024-09-26', period: '2024-06-11 -> 2024-12-31', amountSar: 6004756, change: 'Replaces proposal SLA (clause 11) with new tables incl. per-system availability weights, charging KPIs, KT/resource SLAs; penalty caps 5% -> 10%; 39 FTE; change & release rollout support' },
+          { ref: 'Amendment 2', date: '2024-11-25', period: '2025-01-01 -> 2025-06-10', amountSar: 4750031, change: 'Term extension' },
+          { ref: 'Amendment 3', date: '2025-05-27', period: '2025-06-11 -> 2025-12-31', amountSar: 6004756, change: 'Term extension' },
+          { ref: 'Amendment 4', date: '2025-12-31', period: '2026-01-01 -> 2026-06-20', amountSar: 3950031, change: 'Optiva application L2 removed (email evidence; 34 FTE, L2 App 16 -> 12); 15-day termination for convenience; monthly 697,064.22' },
+          { ref: 'WP2 Data Migration SOW', date: '2024-11-11', period: '2025-01-26 -> 2025-07-25', amountSar: 2364525, change: 'Optiva -> Oracle data mapping, RTP 30863' }
+        ],
+        renewalDue: '2026-06-20 — EXPIRED in the file set; Salam intended early termination once UMS goes live; procurement required go-to-market for the post-Optiva scope',
+        liabilityCap: 'Total liability capped at Work Package charges (cl.20.2); Salam may recover up to 15% of WP value for third-party completion (cl.14.6.2)',
+        sources: ['Service Agreement signed', 'WP1 signed', 'LoA 24 Nov 2022', 'Amendment 1 (10 Jul 2024 draft, signed 26 Sep 2024)', 'Amendment 2', 'Amendment 3', 'Amendment 4 + CIO email chain Dec 2025', 'WP2 + RFQ 30863']
+      }
     }
   ],
   obligations: [
@@ -237,7 +279,7 @@ const DEFAULT_CONFIG = {
       category: 'resolution',
       title: 'Resolution for non-bug / managed service issues',
       appliesTo: { business: ['fixed', 'mobile'], domains: ['OSS', 'ITSM', 'DMS', 'Infrastructure'] },
-      target: { P1: '2 hours', P2: '4 hours', P3: '1 day', P4: '2 days' },
+      target: { P1: '4 hours (original contract: 2 h)', P2: '6 hours (original: 4 h)', P3: '1 business day', P4: '2 business days', note: 'Renewal SLA — Amendment 1 Schedule 1 §8.2.2 (27 Jun 2025) and Fourth Addendum App. A' },
       attainmentTarget: '99%',
       weight: '1%',
       operatorMessages: {
@@ -255,7 +297,7 @@ const DEFAULT_CONFIG = {
       category: 'product_bug_resolution',
       title: 'Product bug / vendor resolution',
       appliesTo: { business: ['fixed', 'mobile'], domains: ['OSS', 'ITSM', 'DMS', 'Infrastructure'] },
-      target: { P1: '1 day', P2: '3 days', P3: '7 days', P4: '12 days' },
+      target: { P1: '1 day', P2: '3 days', P3: '7 days', P4: '12 days', note: 'Original contract p.95. Since the Jun 2025 renewal: "subject to existing L3 SLA contracts" (no fixed target); parallel L3 escalation required at 50% of the restoration clock' },
       attainmentTarget: '99%',
       weight: '1%',
       operatorMessages: {
@@ -273,9 +315,9 @@ const DEFAULT_CONFIG = {
       category: 'availability',
       title: 'Mission-critical availability',
       appliesTo: { business: ['fixed', 'mobile'], domains: ['OSS', 'DMS', 'Infrastructure'] },
-      target: { availability: '99.99%', ORPO: '<10 min', ORTO: '<30 min' },
+      target: { availability: '99.99% excl. planned outages, measured on P1 incidents excl. third-party outages', ORPO: '<10 min', ORTO: '<30 min', 'DR plan / drill': 'plan annually, runbook quarterly, full drill annually' },
       attainmentTarget: '99.99%',
-      weight: 'availability SLA',
+      weight: 'no penalty weight in the contract (§8.2.4)',
       operatorMessages: {
         met: 'Availability is within Sigma target.',
         warning: 'Availability is close to monthly error budget.',
@@ -283,6 +325,24 @@ const DEFAULT_CONFIG = {
       },
       evidencePlan: ['probe uptime', 'alerts outage duration', 'maintenance windows', 'approved exclusions'],
       phase: 4
+    },
+    {
+      id: 'sigma-staffing-reporting',
+      vendorId: 'sigma',
+      contractId: 'sigma-2024',
+      category: 'governance',
+      title: 'Onsite staffing, reporting and governance cadence',
+      appliesTo: { business: ['fixed', 'mobile'], domains: ['OSS', 'ITSM', 'DMS', 'Infrastructure', 'Digital'] },
+      target: { 'Onsite resources': '4 (bi-monthly measurement, renewal Schedule 1 §8.2.4)', 'SLA reports': 'daily / weekly / monthly', 'Infra reports': 'weekly issues, patches, incidents & changes; monthly assets, consumption, capacity, HW health', 'RCA': 'detailed root-cause report per incident — no deadline stated', 'Meetings': 'Operational weekly, Management monthly, Executive quarterly', 'Resource replacement': 'CV approval 14 days; replace on Salam request; sick cover at Sigma cost', 'Late delivery': 'penalty max 10% of total Contract Price (cl.12)' },
+      attainmentTarget: 'per period',
+      weight: 'none stated',
+      operatorMessages: {
+        met: 'Sigma staffing and reporting per contract.',
+        warning: 'Onsite headcount below 4 or a periodic report missing.',
+        breached: 'Staffing/reporting obligation missed; record in the monthly Management committee.'
+      },
+      evidencePlan: ['resource roster', 'report delivery log', 'committee minutes'],
+      phase: 5
     },
     {
       id: 'tcs-response',
@@ -327,9 +387,9 @@ const DEFAULT_CONFIG = {
       category: 'rca',
       title: 'RCA for P1/P2 incidents',
       appliesTo: { business: ['mobile'], domains: ['Digital', 'BSS', 'OSS', 'ITSM', 'API Gateway'] },
-      target: { P1: '<48 hours', P2: '<48 hours' },
+      target: { P1: '<48 hours from restoration (draft delivered and finalised)', P2: '<48 hours' },
       attainmentTarget: '95%',
-      weight: '1% measure/report only',
+      weight: { P1: '1%', P2: '1%' },
       operatorMessages: {
         met: 'RCA is within target.',
         warning: 'RCA is due soon; confirm owner and report ETA.',
@@ -346,15 +406,19 @@ const DEFAULT_CONFIG = {
       title: 'Application / integration availability',
       appliesTo: { business: ['mobile'], domains: ['Digital', 'BSS', 'API Gateway', 'Payments', 'MNP'] },
       target: {
-        DMS: '99.9%',
-        'Digital Apps': '99.9%',
-        'Web Portal': '99.9%',
-        'Kong API Gateway': '99.9%',
-        'NetAxis MNP': '99.9%',
-        'Backups/restore': '99.9%'
+        DMS: '99.9% (weight 3%)',
+        'Digital Apps (StartAppz)': '99.9% (3%)',
+        'Web Portal (StartAppz)': '99.9% (1%)',
+        'Payment gateway (Sadad / PG)': '99.9% (1%)',
+        'Kong API Gateway (E&S)': '99.9% (3%)',
+        'NetAxis MNP': '99.9% (1%)',
+        'BSS DB / Reporting DB': '99.9% (3% / 1%)',
+        'Backups & restore': '99.9% (1%, Major)',
+        'Optiva stack (Lite CRM, URCS, ESB, SCL, SGW, NPG 3% each; Mediation, USSD, IHUB, Catalog, Voucher 1%; CPS 3%)': '99.9% — nominally still in Amendment 1; descoped from Jan 2026 per email only',
+        formula: '(available minutes / expected minutes excl. planned downtime); excludes external systems, code bugs, deployments, platform bugs, non-TCS infrastructure'
       },
-      attainmentTarget: '99.9%',
-      weight: '1%-3% by system',
+      attainmentTarget: '99.9% monthly',
+      weight: 'per system 1-3% of monthly invoice (Amendment 1 availability table)',
       operatorMessages: {
         met: 'Availability is within TCS target.',
         warning: 'Availability is close to the monthly budget; watch incident duration.',
@@ -371,14 +435,20 @@ const DEFAULT_CONFIG = {
       title: 'Order processing and integration performance',
       appliesTo: { business: ['mobile'], domains: ['Digital', 'BSS', 'Payments', 'MNP'] },
       target: {
-        'Orders within 4 hours': '99%',
-        'ZATCA reconciliation': 'within 3 working days',
-        'Semati cancel notification': '97%',
-        'New SIM Digital/DMS to BSS': '97% within 20s; 99% within 60s',
-        'SIM swap DMS to BSS': '98% within 20s'
+        'Orders processed within 4 h (excl. MNP system outage)': '99% (Critical, 1%)',
+        'ZATCA reconciliation': 'within 3 working days after bill cycle (Major, 1%)',
+        'Daily Semati cancel notification': '97% (Major, 1%)',
+        'New SIM activation within 30 s, all channels': '97% (Critical, 1%) — contract says 30 s, not 20 s',
+        'New SIM activation within 60 s': '99% (Critical, 1%)',
+        'Daily payments reconciliation (Sadad, Digital)': '98% (Critical, 3%)',
+        'Postpaid subscribers invoiced': '99% (Critical, 1%)',
+        'MNP T1 timer (respond within 30 min) / T2 (submit within 15 min)': '98% / 98% (Critical, 1% each)',
+        'Prepaid MRC daily run / postpaid MRC monthly / bill run': '<= 8 h / <= 13 h / <= 7 h (1% each)',
+        'Discarded mediation files': '<= 1% (Major, 1%)',
+        'SIM swap': 'no SIM-swap KPI exists in any TCS document (removed)'
       },
-      attainmentTarget: 'varies by metric',
-      weight: 'performance SLA',
+      attainmentTarget: 'monthly, per KPI',
+      weight: '1-3% of monthly invoice per KPI (Amendment 1 performance table)',
       operatorMessages: {
         met: 'Operational performance is within target.',
         warning: 'Performance is near target; inspect queue/backlog and integration latency.',
@@ -395,15 +465,18 @@ const DEFAULT_CONFIG = {
       title: 'Resource, KT, backup, security and change governance',
       appliesTo: { business: ['mobile'], domains: ['ITSM', 'Digital', 'BSS', 'OSS'] },
       target: {
-        'Resource availability': '100%',
-        'Required skills': '100%',
-        'Resource numbers': '100%',
-        'Backup success': '99%',
-        'Security patching': 'per agreed plan',
-        'Change failed deployments': 'tracked in governance'
+        'Onsite resource availability': '100% monthly, 1% per missing resource (leave/demise excepted)',
+        'Required skills / resource numbers per tower': '100% (Major, 1% each)',
+        'Knowledge transfer: SOP/RFC list': 'every 6 months (Critical, 1%); handed-over functions without vendor dependency 100% (1%)',
+        'Backup success': '99% all systems — 98% warning; 97% SteerCo; <96% 0.5% of monthly payment; below target 3 periods in 12 months 2% (cap 5%)',
+        'Security patching': 'critical/urgent immediately, others per plan — 1 non-core missed warning; 2 SteerCo; >2 non-core 0.5%; 1 core missed 2%',
+        'Change management': '<= 2 failed deployments/month, else 1%',
+        'User access review': 'quarterly, no system missed, else 1%',
+        'MVNO link disconnection (FW policy / cert expiry)': '0, else 1%',
+        'Monthly overview report': 'by 3rd business day; daily and weekly KPI reports'
       },
-      attainmentTarget: 'varies by KPI',
-      weight: 'governance KPI',
+      attainmentTarget: 'monthly (access review quarterly, KT half-yearly)',
+      weight: '0.5-2% of monthly payment per KPI (Amendment 1 governance table; legacy year-1 rows keep a 5% sub-cap)',
       operatorMessages: {
         met: 'Governance KPI is within target.',
         warning: 'Governance KPI needs attention before service review.',
@@ -519,17 +592,17 @@ const DEFAULT_CONFIG = {
     defaultApprovalStatus: 'commercial_validation_required'
   },
   penaltyRules: [
-    penaltyRule('pen-sigma-response', 'sigma', 'sigma-2024', 'sigma-response', { weightPercent: 1, notes: 'Sigma response weight is seeded from the SLA item; confirm penalty conversion and cap from signed clause 12 / penalty schedule before enforcement.' }),
-    penaltyRule('pen-sigma-restoration', 'sigma', 'sigma-2024', 'sigma-restoration', { weightPercent: 5, notes: 'Sigma restoration weight is seeded from the SLA item; confirm invoice base, cap and approved outage exclusions before enforcement.' }),
+    penaltyRule('pen-sigma-response', 'sigma', 'sigma-2024', 'sigma-response', { weightPercent: 1, monthlyCapPercent: 40, breachFactor: 'impact index by occurrence of missing the 99% target: 1st = 1, 2nd = 2, 3rd = 3, >3rd = 5 (§8.2.3); occurrence reset period not stated', notes: 'Sigma response weight is seeded from the SLA item; confirm penalty conversion and cap from signed clause 12 / penalty schedule before enforcement.' }),
+    penaltyRule('pen-sigma-restoration', 'sigma', 'sigma-2024', 'sigma-restoration', { weightPercent: 5, monthlyCapPercent: 40, breachFactor: 'impact index 1 / 2 / 3 / 5 by occurrence (example in contract: 2nd restoration miss = 5% x 2 = 10% of the invoice)', notes: 'Sigma restoration weight is seeded from the SLA item; confirm invoice base, cap and approved outage exclusions before enforcement.' }),
     penaltyRule('pen-sigma-resolution-non-bug', 'sigma', 'sigma-2024', 'sigma-resolution-non-bug', { weightPercent: 1, notes: 'Estimate only until Remedy/ITSM closure and approved clock-stop windows are imported.' }),
     penaltyRule('pen-sigma-resolution-product-bug', 'sigma', 'sigma-2024', 'sigma-resolution-product-bug', { weightPercent: 1, notes: 'Estimate only until vendor ticket lifecycle and release/change evidence are consistently linked.' }),
     penaltyRule('pen-sigma-availability', 'sigma', 'sigma-2024', 'sigma-availability', { calculationMethod: 'eligible_fee_x_availability_weight_x_chargeable_downtime_factor', weightPercent: null, notes: 'Availability penalty needs the signed availability weighting/tiering table and approved maintenance calendar.' }),
-    penaltyRule('pen-tcs-response', 'tcs', 'tcs-2026-mvno-itops', 'tcs-response', { monthlyCapPercent: 5, severityWeights: { P1: 3, P2: 2, P3: 1, P4: 1 }, capBasis: 'Proposal/reference cap: 5% monthly invoice cap; confirm final contract before enforcement.', notes: 'Response penalty is severity-weighted in the proposal reference; keep candidate-only until final commercial sign-off.' }),
-    penaltyRule('pen-tcs-restoration', 'tcs', 'tcs-2026-mvno-itops', 'tcs-restoration', { monthlyCapPercent: 5, severityWeights: { P1: 7, P2: 5, P3: 2, P4: 1 }, capBasis: 'Proposal/reference cap: 5% monthly invoice cap; confirm final contract before enforcement.', notes: 'Restoration penalty needs verified incident restoration timestamps and exclusion review.' }),
-    penaltyRule('pen-tcs-rca', 'tcs', 'tcs-2026-mvno-itops', 'tcs-rca', { monthlyCapPercent: 5, weightPercent: 1, calculationMethod: 'measure_report_candidate_only', notes: 'RCA is measure/report only in the current reference; do not convert to penalty until governance confirms.' }),
-    penaltyRule('pen-tcs-availability', 'tcs', 'tcs-2026-mvno-itops', 'tcs-availability', { monthlyCapPercent: 5, weightPercent: null, calculationMethod: 'eligible_fee_x_system_availability_weight_x_chargeable_downtime_factor', notes: 'Availability weight varies by system in the reference; requires system ownership, outage windows and planned exclusions.' }),
-    penaltyRule('pen-tcs-performance-orders', 'tcs', 'tcs-2026-mvno-itops', 'tcs-performance-orders', { monthlyCapPercent: 5, weightPercent: null, calculationMethod: 'performance_sla_tiering_required', notes: 'Performance penalties need metric-specific tiering and exact Digital/APIGW/OSB/BSS evidence confidence before scoring.' }),
-    penaltyRule('pen-tcs-governance', 'tcs', 'tcs-2026-mvno-itops', 'tcs-governance', { monthlyCapPercent: 5, weightPercent: null, calculationMethod: 'governance_report_candidate_only', notes: 'Governance KPIs are tracked for service review until monthly vendor-report import and penalty eligibility are approved.' })
+    penaltyRule('pen-tcs-response', 'tcs', 'tcs-2026-mvno-itops', 'tcs-response', { monthlyCapPercent: 10, severityWeights: { P1: 3, P2: 2, P3: 1, P4: 1 }, capBasis: 'Amendment 1: aggregate service credits <= 10% of monthly charges (WP1 5% superseded); cumulative <= 10% of WP price. Was: Proposal/reference cap: 5% monthly invoice cap; confirm final contract before enforcement.', notes: 'Response penalty is severity-weighted in the proposal reference; keep candidate-only until final commercial sign-off.' }),
+    penaltyRule('pen-tcs-restoration', 'tcs', 'tcs-2026-mvno-itops', 'tcs-restoration', { monthlyCapPercent: 10, severityWeights: { P1: 7, P2: 5, P3: 2, P4: 1 }, capBasis: 'Amendment 1: aggregate service credits <= 10% of monthly charges (WP1 5% superseded); cumulative <= 10% of WP price. Was: Proposal/reference cap: 5% monthly invoice cap; confirm final contract before enforcement.', notes: 'Restoration penalty needs verified incident restoration timestamps and exclusion review.' }),
+    penaltyRule('pen-tcs-rca', 'tcs', 'tcs-2026-mvno-itops', 'tcs-rca', { monthlyCapPercent: 10, weightPercent: 1, calculationMethod: 'measure_report_candidate_only', notes: 'RCA is measure/report only in the current reference; do not convert to penalty until governance confirms.' }),
+    penaltyRule('pen-tcs-availability', 'tcs', 'tcs-2026-mvno-itops', 'tcs-availability', { monthlyCapPercent: 10, weightPercent: null, calculationMethod: 'eligible_fee_x_system_availability_weight_x_chargeable_downtime_factor', notes: 'Availability weight varies by system in the reference; requires system ownership, outage windows and planned exclusions.' }),
+    penaltyRule('pen-tcs-performance-orders', 'tcs', 'tcs-2026-mvno-itops', 'tcs-performance-orders', { monthlyCapPercent: 10, weightPercent: null, calculationMethod: 'performance_sla_tiering_required', notes: 'Performance penalties need metric-specific tiering and exact Digital/APIGW/OSB/BSS evidence confidence before scoring.' }),
+    penaltyRule('pen-tcs-governance', 'tcs', 'tcs-2026-mvno-itops', 'tcs-governance', { monthlyCapPercent: 10, weightPercent: null, calculationMethod: 'governance_report_candidate_only', notes: 'Governance KPIs are tracked for service review until monthly vendor-report import and penalty eligibility are approved.' })
   ],
   penaltyCandidateExamples: [
     {
@@ -611,6 +684,8 @@ const DEFAULT_CONFIG = {
   ]
 };
 
+require('./vendorContractsSeedExt').applyExt(DEFAULT_CONFIG);
+
 function normalizeVendor(v, base = {}) {
   return {
     ...base,
@@ -652,7 +727,8 @@ function normalizeContract(c, base = {}) {
     eligibleMonthlyFeeSar: c.eligibleMonthlyFeeSar == null || c.eligibleMonthlyFeeSar === '' ? (base.eligibleMonthlyFeeSar == null ? null : num(base.eligibleMonthlyFeeSar, 0)) : num(c.eligibleMonthlyFeeSar, 0),
     monthlyPenaltyCapPercent: c.monthlyPenaltyCapPercent == null || c.monthlyPenaltyCapPercent === '' ? (base.monthlyPenaltyCapPercent == null ? null : Number(base.monthlyPenaltyCapPercent)) : Number(c.monthlyPenaltyCapPercent),
     penaltyMode: text(c.penaltyMode || base.penaltyMode || 'estimate_only', 80),
-    penaltyCap: text(c.penaltyCap || base.penaltyCap, 800)
+    penaltyCap: text(c.penaltyCap || base.penaltyCap, 1200),
+    financials: (c.financials && typeof c.financials === 'object') ? c.financials : (base.financials || null)
   };
 }
 
@@ -867,13 +943,15 @@ function normalizeConfig(input) {
   const out = {
     ...defaults,
     ...raw,
-    version: 3,
+    version: 4,
     sourceNote: text(raw.sourceNote || defaults.sourceNote, 1200),
     phases,
     vendors,
     contracts: mergeDefaults(defaults.contracts, raw.contracts, normalizeContract),
-    obligations: arr(raw.obligations && raw.obligations.length ? raw.obligations : defaults.obligations),
-    assignments: arr(raw.assignments && raw.assignments.length ? raw.assignments : defaults.assignments),
+    /* merged by id (24 Sep 2026): a saved config keeps its edits, and vendors/obligations added to the
+     * defaults later (Oracle, Subex, Comviva, Infosys, Evamp) appear without a "Reset defaults" */
+    obligations: mergeDefaults(defaults.obligations, raw.obligations, (o, base) => ({ ...base, ...o })),
+    assignments: mergeDefaults(defaults.assignments, raw.assignments, (a, base) => ({ ...base, ...a })),
     escalationFlows,
     evidenceSources: mergeDefaults(defaults.evidenceSources, raw.evidenceSources, normalizeEvidenceSource),
     evidenceMappings: mergeDefaults(defaults.evidenceMappings, raw.evidenceMappings, normalizeEvidenceMapping),

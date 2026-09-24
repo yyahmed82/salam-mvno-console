@@ -116,6 +116,9 @@
       #view-vendor-contracts .vc-priority.p3{background:#64748b}
       #view-vendor-contracts .vc-priority.p4{background:#94a3b8;color:#0f172a}
       #view-vendor-contracts .vc-info-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+      #view-vendor-contracts .vc-contract{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:14px;margin-bottom:14px}
+      #view-vendor-contracts .vc-badge.bad{background:rgba(220,38,38,.12);color:var(--red,#dc2626);border-color:rgba(220,38,38,.35)}
+      #view-vendor-contracts .vc-badge.warn{background:rgba(245,158,11,.12);color:var(--orange,#d97706);border-color:rgba(245,158,11,.4)}
       #view-vendor-contracts .vc-info-card{border:1px solid var(--line);border-radius:8px;background:var(--card2);padding:12px}
       #view-vendor-contracts .vc-info-card b{display:block;font-size:18px;color:var(--ink);margin-bottom:2px}
       #view-vendor-contracts .vc-info-card span{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
@@ -230,6 +233,7 @@
         <div><b>${esc((sum.rolloutSurfaces || 0) + "/" + (sum.penaltyRules || 0))}</b><span>rollout / penalty</span></div>
         <div><b>${esc((sum.readyPhases || 0) + "/" + list(CFG.phases).length)}</b><span>phases ready</span></div>
       </div>
+      ${(() => { const hot = list(CFG.contracts).map(c => ({ c, r: renewalState(c) })).filter(x => x.r.cls === "bad" || x.r.cls === "warn"); return hot.length ? `<div class="albanner" style="margin:10px 0"><b>Renewal radar:</b> ${hot.map(x => `${esc((list(CFG.vendors).find(v => v.id === x.c.vendorId) || {}).name || x.c.vendorId)} — ${esc(x.r.label)}`).join(" · ")}</div>` : ""; })()}
       <div class="vc-phases">${list(CFG.phases).map((p,i)=>`
         <article class="vc-phase ${phaseClass(p.status)}">
           <span class="vc-badge ${phaseClass(p.status)}">${esc(p.status)}</span>
@@ -250,7 +254,7 @@
     return `<button type="button" class="vc-vendor ${v.id === ACTIVE_VENDOR ? "on" : ""}" data-vendor="${esc(v.id)}">
       <h3>${esc(v.name)}</h3>
       <div class="vc-meta">${esc(v.type)} · ${esc(v.contractStatus || "reference")}</div>
-      <div class="vc-tags"><span class="vc-tag">${join(v.businessScope, " / ")}</span><span class="vc-tag">${obs} obligations</span></div>
+      <div class="vc-tags"><span class="vc-tag">${join(v.businessScope, " / ")}</span><span class="vc-tag">${obs} obligations</span>${list(CFG.contracts).filter(c => c.vendorId === v.id).map(c => { const r = renewalState(c); return r.cls === "bad" || r.cls === "warn" ? `<span class="vc-badge ${r.cls}">${esc(r.label)}</span>` : ""; }).join("")}</div>
       <div class="vc-meta" style="margin-top:8px">${esc(v.supportWindow)}</div>
     </button>`;
   }
@@ -309,15 +313,60 @@
       </article>`).join("")}</div>`;
   }
 
+  /* renewal state from the contract's effectiveTo / financials.renewalDue text: EXPIRED, due within 90 days, or ok */
+  function renewalState(c){
+    const txt = String((c.financials && c.financials.renewalDue) || c.effectiveTo || "");
+    if(/expired/i.test(txt) || /expired/i.test(String(c.status||""))) return { cls:"bad", label:"EXPIRED — renewal required" };
+    const m = /(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(txt); if(!m) return { cls:"next", label: txt ? "see renewal note" : "open" };
+    const d = new Date(Date.UTC(+m[1], +m[2]-1, +(m[3]||28))), days = Math.round((d - Date.now()) / 864e5);
+    if(days < 0) return { cls:"bad", label:`expired ${-days} d ago (${m[0]})` };
+    if(days <= 90) return { cls:"warn", label:`renewal in ${days} d (${m[0]})` };
+    return { cls:"ready", label:`to ${m[0]}` };
+  }
+  const moneyAny = (v, cur) => v == null || v === "" ? "—" : (Number(v).toLocaleString("en-US") + " " + (cur || "SAR"));
   function contractsTab(rows){
     if(!rows.length) return `<div class="okbox">No contracts configured for this vendor.</div>`;
-    return `<table class="vc-table"><thead><tr><th>Contract</th><th>Scope</th><th>Source</th><th>Penalty / note</th></tr></thead><tbody>
-      ${rows.map(c => `<tr>
-        <td><b>${esc(c.title)}</b><div class="vc-meta">${esc(c.status)} · ${esc(c.effectiveFrom || "-")} -> ${esc(c.effectiveTo || "open")}</div></td>
-        <td>${join(c.businessScope, " / ")}<div class="vc-meta">${join(c.domains, " · ")}</div></td>
-        <td>${esc(c.sourceDoc)}<div class="vc-meta">${esc(c.sourcePages)}</div></td>
-        <td>${esc(c.penaltyCap || "-")}</td>
-      </tr>`).join("")}</tbody></table>`;
+    return rows.map(c => {
+      const f = c.financials || {}; const r = renewalState(c);
+      const amend = list(f.amendments);
+      const yearly = f.yearly && typeof f.yearly === "object" ? Object.entries(f.yearly) : [];
+      return `<article class="vc-contract">
+        <div class="vc-detail-head">
+          <div><h3 style="margin:0">${esc(c.title)}</h3><div class="vc-meta">${esc(c.status)} · ${esc(c.effectiveFrom || "-")} → ${esc(c.effectiveTo || "open")}</div></div>
+          <span class="vc-badge ${r.cls}">${esc(r.label)}</span>
+        </div>
+        <div class="vc-money-grid">
+          <div class="vc-info-card"><b class="vc-money">${moneyAny(f.contractValueSar, f.currency)}</b><span>contract value${f.contractValueOther ? " · " + esc(f.contractValueOther) : ""}</span></div>
+          <div class="vc-info-card"><b class="vc-money">${moneyAny(f.monthlyFeeSar, f.currency)}</b><span>monthly recurring fee</span></div>
+          <div class="vc-info-card"><b class="vc-money">${moneyAny(f.oneOffSar, f.currency)}</b><span>one-off / milestones</span></div>
+          <div class="vc-info-card"><b class="vc-money">${money(c.eligibleMonthlyFeeSar)}</b><span>eligible fee for penalty (cap ${c.monthlyPenaltyCapPercent == null ? "not set" : esc(c.monthlyPenaltyCapPercent) + "%"})</span></div>
+        </div>
+        <div class="vc-two">
+          <div class="vc-plan"><h4>Financial terms</h4>
+            <div class="vc-meta"><b>Term:</b> ${esc(f.term || "-")}</div>
+            <div class="vc-meta"><b>Fee basis:</b> ${esc(f.monthlyFeeBasis || "-")}</div>
+            ${f.oneOffNote ? `<div class="vc-meta"><b>One-off:</b> ${esc(f.oneOffNote)}</div>` : ""}
+            ${yearly.length ? `<div class="vc-meta"><b>By period:</b> ${yearly.map(([k,v]) => esc(k) + " " + moneyAny(v, f.currency)).join(" · ")}</div>` : ""}
+            <div class="vc-meta"><b>Payment:</b> ${esc(f.paymentTerms || "-")}</div>
+            ${f.manDayPool ? `<div class="vc-meta"><b>Man-days / rates:</b> ${esc(f.manDayPool)}</div>` : ""}
+            ${f.rateCard ? `<div class="vc-meta"><b>Rate card:</b> ${esc(f.rateCard)}</div>` : ""}
+            <div class="vc-meta"><b>Liability cap:</b> ${esc(f.liabilityCap || "-")}</div>
+            <div class="vc-meta"><b>Renewal:</b> ${esc(f.renewalDue || c.effectiveTo || "-")}</div>
+          </div>
+          <div class="vc-plan"><h4>Penalty / service-credit clause</h4>
+            <div class="vc-meta">${esc(c.penaltyCap || "-")}</div>
+            <h4 style="margin-top:12px">Source</h4>
+            <div class="vc-meta">${esc(c.sourceDoc)}</div><div class="vc-meta">${esc(c.sourcePages)}</div>
+            ${list(f.sources).length ? `<div class="vc-meta"><b>Documents:</b> ${join(f.sources, " · ")}</div>` : ""}
+            <div class="vc-meta" style="margin-top:6px"><b>Scope:</b> ${join(c.businessScope, " / ")} · ${join(c.domains, " · ")}</div>
+          </div>
+        </div>
+        ${amend.length ? `<h4 style="margin:12px 0 6px">Contract chain</h4>
+        <div class="tscroll"><table class="vc-table"><thead><tr><th>Instrument</th><th>Date</th><th>Period</th><th>Amount</th><th>What changed</th></tr></thead><tbody>
+          ${amend.map(a => `<tr><td><b>${esc(a.ref)}</b></td><td>${esc(a.date || "-")}</td><td>${esc(a.period || "-")}</td><td>${a.amountSar == null ? "—" : moneyAny(a.amountSar, f.currency)}</td><td>${esc(a.change || "")}</td></tr>`).join("")}
+        </tbody></table></div>` : ""}
+      </article>`;
+    }).join("");
   }
 
   function assignmentsTab(rows){

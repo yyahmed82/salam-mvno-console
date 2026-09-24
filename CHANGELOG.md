@@ -3,6 +3,70 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.71] — 2026-09-24 — Vendors & contracts: signed-document review, five vendors added, financials
+### Changed
+- **Sigma and TCS re-baselined on the signed documents** (`server/src/vendorContracts.js`). Sigma: contract effective
+  27 Jun 2024, renewal SLA from Amendment 1 / Fourth Addendum (resolution non-bug 4 h / 6 h / 1 BD / 2 BD, product bug
+  per L3 vendor SLA), penalty = weight × impact index (1/2/3/5) with an aggregate cap of 10 % of contract price (no monthly
+  cap), availability 99.99 % without penalty, onsite staffing 4, governance cadence. TCS: the binding SLA is **Amendment 1
+  §2.7** (not the proposal); penalty cap **10 %** of monthly charges (was 5 %); per-system availability weights (DMS 3,
+  Digital Apps 3, Web Portal 1, Kong 3, NetAxis 1, Backups 1); new-SIM fast KPI **30 s** (was 20 s); P2 RCA 1 %; payments
+  reconciliation 98 % / 3 %, postpaid invoiced 99 %, MNP T1/T2 timers, MRC/bill-run durations, KT and resource SLAs;
+  SIM-swap KPI removed (no contractual basis); WP1 **expired 20 Jun 2026** after Amendment 4.
+### Added
+- **Vendors: Oracle (MS OD SAL-14253496, Edge Catalyst OD, Enterprise ULA), Subex (RAFM 138-2022 + Amendment 1),
+  Comviva (DMS LoA 197-2024), Infosys (TCoE 187-2025, Rimal DC 214-2025), Evamp & Saanga (TeC DMP L3 proposal)** —
+  `server/src/vendorContractsSeedExt.js`: 8 contracts, 21 obligations, 14 penalty rules, 5 escalation ladders, 10
+  evidence maps, assignments; merged into the defaults by id.
+- **Financials per contract** (`contract.financials`): value, term, monthly recurring fee and basis, one-off/milestones,
+  by-period amounts, payment terms, man-day pools and rate cards, liability caps, the **contract chain** (LoA →
+  amendments with date, period, amount, change) and renewal due. Eligible monthly fees seeded from the contracts
+  (Sigma 464,100; TCS 697,064; Oracle 916,000; Subex 152,114; Comviva 91,975; Infosys 228,848) — validate with Finance.
+- **Contracts tab redesigned** (`vendor-contracts.js`): money tiles, financial terms, penalty clause, sources, contract
+  chain table; **renewal radar** banner and vendor-card badges (expired / due within 90 days) computed from
+  `effectiveTo` / `financials.renewalDue`.
+- Saved configs now **merge obligations and assignments by id** with the defaults, so new vendors appear without
+  "Reset defaults"; config version 4.
+
+## [2.0.0-alpha.70] — 2026-09-22 — The executive brief makes the case for a Salam product: what it took, what it can become
+### Added
+- **Slide 13 of `exec-brief.html` — "What it took · one initiative, end to end".** Seven cards at executive level, one
+  per discipline the platform demanded: programme (two consoles into one, in a quarter, eight phases part-time),
+  experience (26 roles across ten teams, L1 → L2 → L3, bilingual, phone and iPad), interface (24 pages, one design
+  language, exports, hand-built), depth (177 alert rules, 33 DMS flow rules, objectives, baselines, 423 API endpoints,
+  42 tables, 15 collectors and probes, ≈77,000 lines), AI (Yusr and the two agents, the model measured on our own
+  server, budgets and audit), journeys (21 Mobile, four Fixed channels, dealer journeys read from the DMS source) and
+  integrations (32, with the evidence). A band states what this proves — one person, ten months, alongside the day job,
+  no licence — and names the author.
+- **Slide 14 — "What it can become · the Salam B2B opportunity".** The need (every operator in the Kingdom runs on the
+  national integrations we already watch and has the same blind spot), Salam's edge (born inside a Saudi operator,
+  proven on ~1.5M customers on two businesses, data in the Kingdom, AI on-premise, zero licences), the offer (Salam
+  OpsConsole, white-labelled, shared cloud / dedicated cloud / on-premise, Salam as reference customer and distributor),
+  what is already in hand (a white-label build with a synthetic demo tenant, a product page in English and Arabic, a
+  ten-minute demo) and the proposal: a joint taskforce, Digital Operations with Salam B2B, to package, brand and price
+  it this quarter — no capex, no headcount. No market sizes and no revenue figures on purpose.
+### Changed
+- **The close reads "Sponsor. Launch. Commercialize."** — pillar three is the joint taskforce with Salam B2B; the next
+  phase is folded into pillar two; the KPI strip shows customers (~1.5M), rules (177) and licences (0).
+- Convergence slide k-lines carry journeys, channels and "0 licences"; the AI slide is framed as sovereign, on our own
+  infrastructure, with the measured model figure and "AI proposes, people decide"; the value slide closes on
+  "Observability there is revenue protection"; the title lede adds "— and protecting revenue".
+- **`exec-script.html`** follows: run of play (15 slides, ~44 min), sections 13–15 rewritten (opening line, cues, the
+  numbers worth saying, bridges), two new Q&A entries ("Can this be sold outside Salam — and who would own it?" and
+  "What would commercialising cost Salam?").
+### Notes
+- Merged from a second draft of the brief reviewed on 22 Sep: its structure (opportunity slide before the ask, the
+  commercialize pillar, the sovereignty framing, "from cost centre to product line", the joint-taskforce ask) was kept;
+  its invented figures (market size, incident timings, "3 seconds", "3x traffic", "zero downtime", "Tier-IV",
+  "zero-trust", "Arabic answers") and its placeholder screenshots were not.
+- Every figure on the new slides is counted from this repository, not estimated: 84 + 163 JS modules, 29,049 + 45,071
+  lines of JS plus the page and the schema, 423 `/api` routes, 42 tables, 15 collector/probe modules, 33 DMS flow rules.
+- Web-only: no server change; `/api/version` keeps reporting the last full deploy.
+### Verified
+Rendered headless at 1920×1080, 1600×900, 1366×768 and 1280×720: slides 2, 7, 12, 13, 14 and the close fit above the
+navigation with no clipping, no horizontal scroll and no console errors; dots, counter (15 / 15) and keyboard
+navigation include the new slides.
+
 ## [2.0.0-alpha.69] — 2026-09-21 — Service levels: one tab per business
 ### Changed
 - **The SLA page (Service levels) has two tabs, MVNO | Fixed.** It was one grid mixing both
