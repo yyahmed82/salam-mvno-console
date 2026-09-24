@@ -3,6 +3,20 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.74] — 2026-09-24 — Alert journey: step player, narrated samples; Sigma is Fixed-only
+### Changed
+- **Alert journey step player** (`alert-journey.js`): a replay no longer flashes through the map — every step is shown
+  one at a time with its explanation in a sticky player bar under the map (stage · node · text · progress), with
+  **◀ Prev · ▶ Auto-play / Pause · Next ▶**, a speed selector (1.5 / 2.6 / 4.5 s per step) and ← → keys, the same way
+  the journey explorers work. The map scrolls to the current node, the stage detail follows, and every node visited so
+  far stays lit. The six reference samples are now narrated step by step (25 / 20 / 10 steps Mobile, 26 / 15 / 7 Fixed)
+  with KSA times, who acted, which clock ran and what it cost; a plain scenario is narrated with the generic rule text.
+- **No Sigma for Mobile**: the Mobile journey lists TCS · Mobile Digital & BSS L2 as the BSS L2 (no `bss-l2`), and the
+  L3 node reads "TCS → Oracle L3 · ADM Mobile · Evamp" on Mobile vs "Sigma → Oracle L3 · ADM Fixed" on Fixed.
+  `server/src/teams.js` seed: `bss-l2`, `oss-l2`, `infra-l2` are Fixed-only teams (Sigma), TCS carries the Mobile BSS
+  keywords for Agent 2; seeded rows nobody edited in Settings › Teams now follow the seed on boot (an admin-saved row
+  is never touched).
+
 ## [2.0.0-alpha.73] — 2026-09-24 — Alert journey map (Mobile + Fixed › Explore)
 ### Added
 - **Alert journey** (`alert-journey.js`): one big-picture map of everything an incident can go through — Detect →

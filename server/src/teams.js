@@ -34,22 +34,22 @@ const SEED = [
     keywords: ['login', 'otp', 'onboarding', 'app', 'web', 'journey', 'nafath', 'absher', 'kyc', 'session'] },
   { key: 'mobile-digital-l2', name: 'TCS · Mobile Digital & BSS L2', business: 'mobile', domain: 'digital', level: 'L2', vendor_id: 'tcs', contract_id: 'tcs-2026-mvno-itops', sort: 20,
     description: 'WP1 MVNO IT operations — digital apps, web portal, Kong API gateway, DMS, payment gateway, MNP, BSS DB.', aliases: ['TCS Mobile L2'],
-    keywords: ['apigw', 'kong', 'dms', 'mnp', 'sim', 'activation', 'recharge', 'plan', 'esim', 'startappz', 'portal'] },
+    keywords: ['apigw', 'kong', 'dms', 'mnp', 'sim', 'activation', 'recharge', 'plan', 'esim', 'startappz', 'portal', 'billing', 'invoice', 'bill', 'brm', 'siebel', 'crm', 'order', 'charging', 'mrc', 'mediation', 'balance', 'provision'] },
   { key: 'fixed-apps-l2', name: 'Sigma · Fixed Applications L2', business: 'fixed', domain: 'digital', level: 'L2', vendor_id: 'sigma', contract_id: 'sigma-2024', sort: 21,
     description: 'Fixed digital services — Salam Home app, SDA, ePurchase, nexus/146 back end, Remedy hand-offs.', aliases: ['Sigma Fixed L2', 'Fixed Ops'],
     keywords: ['ftth', 'home', 'sda', 'epurchase', 'nexus', 'yakeen', 'remedy', 'fixed'] },
-  { key: 'bss-l2', name: 'BSS Operations · L2', business: 'both', domain: 'bss', level: 'L2', vendor_id: 'sigma', contract_id: 'sigma-2024', sort: 30,
-    description: 'Billing, charging, CRM and order management operations (Siebel · BRM · OSM) — first line before Oracle.', aliases: ['BSS Ops', 'BSS', 'Data Ops'],
+  { key: 'bss-l2', name: 'BSS Operations · L2 (Fixed)', business: 'fixed', domain: 'bss', level: 'L2', vendor_id: 'sigma', contract_id: 'sigma-2024', sort: 30,
+    description: 'Fixed billing, charging, CRM and order management operations (Siebel · BRM · OSM) under the Sigma contract — first line before Oracle. Mobile BSS L2 is TCS (mobile-digital-l2).', aliases: ['BSS Ops', 'BSS', 'Data Ops'],
     keywords: ['billing', 'invoice', 'bill', 'brm', 'siebel', 'osm', 'crm', 'order', 'charging', 'mrc', 'mediation', 'balance'] },
   { key: 'bss-l3', name: 'Oracle · BSS L3', business: 'both', domain: 'bss', level: 'L3', vendor_id: 'oracle', contract_id: 'oracle-ms-od-14253496', sort: 31,
     description: 'Oracle managed services — product bugs and L3 fixes on Siebel, BRM, OSM, UIM, OSB (SAL-OD-14253496).', aliases: [],
     keywords: ['oracle', 'osb', 'uim', 'asap', 'ipsa'] },
-  { key: 'oss-l2', name: 'OSS Operations · L2', business: 'both', domain: 'oss', level: 'L2', vendor_id: 'sigma', contract_id: 'sigma-2024', sort: 40,
+  { key: 'oss-l2', name: 'OSS Operations · L2 (Fixed)', business: 'fixed', domain: 'oss', level: 'L2', vendor_id: 'sigma', contract_id: 'sigma-2024', sort: 40,
     description: 'Provisioning, activation and inventory operations — OSS/ITSM per the Sigma contract.', aliases: ['OSS Ops', 'OSS'],
     keywords: ['provision', 'provisioning', 'inventory', 'workorder', 'work order', 'fulfil', 'install', 'appointment', 'field'] },
   { key: 'oss-l3', name: 'Oracle · OSS L3', business: 'both', domain: 'oss', level: 'L3', vendor_id: 'oracle', contract_id: 'oracle-ms-od-14253496', sort: 41,
     description: 'Oracle L3 for OSM / UIM / ASAP product defects.', aliases: [], keywords: [] },
-  { key: 'infra-l2', name: 'Infrastructure & DC · L2', business: 'both', domain: 'infra', level: 'L2', vendor_id: 'sigma', contract_id: 'sigma-2024', sort: 50,
+  { key: 'infra-l2', name: 'Infrastructure & DC · L2 (Fixed)', business: 'fixed', domain: 'infra', level: 'L2', vendor_id: 'sigma', contract_id: 'sigma-2024', sort: 50,
     description: 'Servers, storage, backups, DR, patching, capacity (Rimal DC) — Sigma infra reporting obligations.', aliases: ['Infra Ops', 'PLATFORM', 'Enterprise IT'],
     keywords: ['disk', 'cpu', 'memory', 'backup', 'host', 'server', 'vm', 'pod', 'node', 'database', 'db ', 'replica', 'lag', 'sync', 'capacity', 'certificate', 'cert'] },
   { key: 'adm-mobile-l3', name: 'ADM Mobile · L3 fixes & enhancements', business: 'mobile', domain: 'adm', level: 'L3', vendor_id: 'tcs', contract_id: 'tcs-2026-mvno-itops', sort: 60,
@@ -99,10 +99,15 @@ async function ensureSchema() {
     `ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reassigned_at timestamptz`,
     `ALTER TABLE alerts ADD COLUMN IF NOT EXISTS first_ack_at timestamptz`,
     `ALTER TABLE alerts ADD COLUMN IF NOT EXISTS priority_note text`]) await q.query(s).catch(() => {});
-  /* merge the seed by key: adds what is missing, never touches a row an admin edited */
+  /* merge the seed by key: adds what is missing; a seeded row nobody edited (updated_by IS NULL) follows the seed —
+   * e.g. 24 Sep 2026: Sigma does not cover Mobile, so bss-l2 / oss-l2 / infra-l2 became Fixed-only and TCS took the
+   * Mobile BSS keywords. A row an admin saved in Settings › Teams is never touched. */
   for (const t of SEED) {
     await q.query(`INSERT INTO console_teams (key, name, business, domain, level, vendor_id, contract_id, description, aliases, keywords, seeded, sort)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11) ON CONFLICT (key) DO NOTHING`,
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11)
+        ON CONFLICT (key) DO UPDATE SET name=EXCLUDED.name, business=EXCLUDED.business, domain=EXCLUDED.domain, level=EXCLUDED.level, vendor_id=EXCLUDED.vendor_id, contract_id=EXCLUDED.contract_id,
+          description=EXCLUDED.description, aliases=EXCLUDED.aliases, keywords=EXCLUDED.keywords, sort=EXCLUDED.sort, updated_at=now()
+        WHERE console_teams.seeded AND console_teams.updated_by IS NULL`,
       [t.key, t.name, t.business, t.domain, t.level, t.vendor_id || null, t.contract_id || null, t.description || null, JSON.stringify(t.aliases || []), JSON.stringify(t.keywords || []), t.sort || 100]);
   }
 }

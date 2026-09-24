@@ -17,7 +17,7 @@
   const BIZ={
     mvno:{ label:"Mobile · MVNO", short:"Mobile", hash:"alerts", icon:"📱",
       sources:[["src_rule","Rule engine","metric · op · threshold · window","alertRunner · Rails/17-18 replica"],["src_anom","Anomaly engine","seasonal baseline signals","anomaly.js"],["src_dms","DMS flow rules · journeys","activation · lifecycle · money · audit","dmsFlowRules · dmsJourneys"],["src_samp","OSB · UIL samplers · Workbench","integration faults · L2 tests","osbArchive · uilSampler"],["src_manual","Manual ticket","a person opens it · picks the team","POST /alerts/manual"]],
-      teams:[["mobile-digital-l2","TCS · Mobile Digital & BSS L2","tcs"],["bss-l2","BSS Operations · L2","sigma"],["bss-l3","Oracle · BSS L3","oracle"],["adm-mobile-l3","ADM Mobile · L3","tcs"],["dms-l3","Evamp & Saanga · DMS / UIL L3","evamp"],["payments","Payments & Gateways","none"],["rafm","Subex · RAFM","subex"],["network-noc","Network NOC","none"],["digital-l1","Salam Digital Ops · L1","none"]],
+      teams:[["mobile-digital-l2","TCS · Mobile Digital & BSS L2","tcs"],["bss-l3","Oracle · BSS L3","oracle"],["adm-mobile-l3","ADM Mobile · L3","tcs"],["dms-l3","Evamp & Saanga · DMS / UIL L3","evamp"],["payments","Payments & Gateways","none"],["rafm","Subex · RAFM","subex"],["network-noc","Network NOC","none"],["digital-l1","Salam Digital Ops · L1","none"]],
       notes:{ notify:"Mobile digest to Mail-alert users (business mobile / both) with the PDF report; ChatOps Mobile channel; exec radar Mobile half; NOC wall.", holders:"ACK · 📱 Mobile holders (console_users.ack_mobile) are the on-call fallback.", data:"Rules read the prod-replica of the Rails MVNO stack: orders, payments (Tap / UPG / HyperPay), OTP, KYC, APIGW traffic, DMS activations." },
     },
     fixed:{ label:"Fixed · FTTH / 5G home", short:"Fixed", hash:"fixed-alerts", icon:"🏠",
@@ -38,22 +38,120 @@
   const ACK_SLA={P1:15,P2:60,P3:240,P4:1440}, LADDER={P1:[5,15,30,30],P2:[15,30,60,60],P3:[30,60,120,0],P4:[0,0,0,0]};
 
   /* reference samples per business — replay the exact path */
+  /* reference samples per business — narrated step by step on the map (node id, what happens) */
   const SAMPLES={
     mvno:[
-      { id:"M-1", title:"P1 · Tap payment failures > 40 % (payment_gateway_fail)", sev:"P1", team:"payments", src:"rule", ack:8, rest:1.9, rca:0, reason:"fixed", twist:"reassign",
-        story:["09:12 KSA · rule payment_gateway_fail breaches: 312 failed / 520 attempts on Tap, 187 distinct customers → P1 (above the 50-customer floor)","09:12 · incident #4821 opens on TCS · Mobile Digital & BSS L2 (rule team) · digest + PDF mailed · ChatOps · radar","09:14 · Agent 2: cause 'Tap acquirer 5xx on authorize', impact 'checkout blocked for card payments', suggested team payments (92 %)","09:17 · R1 reminder → TCS L2 members + DL, Mobile ACK holders","09:20 · acked by a TCS L2 member (MTTA 8 min · TCS response P1 < 15 min met)","09:26 · re-assigned to Payments & Gateways — reason 'Tap side, not the app' · ack released · Payments mailed · first_ack_at kept","09:31 · Payments member acks · ServiceNow INC0154 raised · comms mail to L1","11:06 · resolved fixed / mitigated — Tap re-routed to UPG · hold 4 h on the rule (1 h window would re-fire)","11:06 · restoration 1 h 54 min · TCS restoration P1 < 4 h met · no credit","next day · RCA from Tap attached · rule note: add UPG fallback runbook step"] },
-      { id:"M-2", title:"P2 · Postpaid bill run overdue (bss_bill_run_late)", sev:"P2", team:"bss-l3", src:"rule", ack:41, rest:11, rca:30, reason:"fixed", twist:"none",
-        story:["02:05 · bill run for cycle 24 not finished 8 h after start → P2 on BSS Operations · L2","02:20 · R1 → BSS L2 members; 02:35 · R2 → wider Mobile mail-alert audience","02:46 · acked by BSS L2 (MTTA 41 min · console ack SLA 60 min met)","03:10 · re-assigned to Oracle · BSS L3 — 'BRM rating job stuck on ECE' · Remedy ticket to Oracle","13:05 · resolved after Oracle fix — restoration 11 h vs Oracle P2 < 8 h → BREACH on restoration","RCA delivered 30 h later (target 5 BD · met)","month: 1 of 6 P2 restorations missed → attainment 83 % → 2 % service credit band on the Oracle monthly fee (cap 10 %)"] },
-      { id:"M-3", title:"P4 · OTP verify-rate dip — 1 customer (otp_verify_drop, floor)", sev:"P4", team:"digital-l1", src:"rule", ack:0, rest:0.5, rca:0, reason:"single_customer", twist:"none",
-        story:["14:40 · otp_verify_drop breaches on 1 distinct customer → fires at the floor severity P4 (rule severity P2)","14:40 · digest only · no reminders for P4","15:10 · runner auto-clears after clearHoldMin (condition gone) · resolve_reason=cleared","L1 marks it single customer on review → Noise scorecard; rule review: raise min_customers to 5","no vendor clock: Salam L1 team, no contract bound"] },
+      { id:"M-1", title:"P1 · Tap payment failures > 40 % (payment_gateway_fail)", sev:"P1", team:"payments", src:"rule", ack:8, rest:1.9, rca:0, reason:"fixed", twist:"reassign", steps:[
+        ["src_rule","09:12 KSA · sync tick: payment_gateway_fail is recomputed over its 1 h window on the Rails replica — 312 failed / 520 attempts on Tap."],
+        ["g_gate","Rule enabled, inside its active hours, Tap gateway ON in Settings › Payment gateways → the rule may fire."],
+        ["g_thr","60 % failures > 40 % threshold, sample 520 ≥ min_sample 50 → condition true."],
+        ["g_count","count_by customers: 187 distinct customers, above the 50-customer floor → stays P1 (no downgrade)."],
+        ["g_corr","No open root incident covers it, no twin rule → it will page on its own."],
+        ["g_hold","Rule not held, nothing resolved in the last reopenMin → a NEW incident row is inserted."],
+        ["g_team","Owner from the rule: mobile-digital-l2 (TCS · Mobile Digital & BSS L2)."],
+        ["o_open","#4821 OPEN · unacked · fired_at 09:12 · customers 187 · segment mvno."],
+        ["o_notify","Digest + PDF to Mail-alert Mobile users · ChatOps Mobile · exec radar · NOC wall."],
+        ["o_clock","TCS response clock starts at 09:12 (target P1 < 15 min); console ack SLA 15 min."],
+        ["o_agent","09:14 · Agent 2: cause 'Tap acquirer 5xx on authorize', impact 'card checkout blocked', suggested team payments (92 %)."],
+        ["o_ladder","09:17 · R1 reminder → TCS L2 members + DL, then Mobile ACK holders."],
+        ["w_ack","09:20 · acked by a TCS L2 member — MTTA 8 min, TCS response P1 met."],
+        ["w_resp","Response 8 min vs 15 min target → met, no KPI miss."],
+        ["w_actions","09:24 · runbook step 1 ticked (gateway status), comment: 'Tap side, not the app'."],
+        ["w_reassign","09:26 · re-assigned to Payments & Gateways with reason · ack released · Payments mailed · first_ack_at kept."],
+        ["o_ladder","Ladder restarts for Payments (R1 at 09:31 if nobody acks)."],
+        ["w_ack","09:31 · Payments member acks the incident."],
+        ["w_sn","09:33 · ServiceNow INC0154 raised (one INC per incident) · comms mail to L1."],
+        ["k_work","09:35 → 11:00 · Tap escalated, traffic re-routed to UPG, checklist ticked step by step."],
+        ["k_rest","Restoration clock: fired 09:12 → resolved 11:06 = 1 h 54 min vs TCS P1 < 4 h."],
+        ["r_resolve","11:06 · resolved fixed / mitigated — hold 4 h on the rule (the 1 h window would re-fire)."],
+        ["r_hold","Rule payment_gateway_fail held until 15:06 · shown in the held bar with Release."],
+        ["h_hist","Incident lands in History with the full timeline: fired, R1, ack, re-assign, INC, resolve."],
+        ["h_stats","MTTA 8 min / MTTR 1 h 54 min feed the 30-day figures and the owner cards."],
+        ["h_vendor","TCS month: response met, restoration met → no breach on this incident, no credit."]] },
+      { id:"M-2", title:"P2 · Postpaid bill run overdue (bss_bill_run_late)", sev:"P2", team:"bss-l3", src:"rule", ack:41, rest:11, rca:30, reason:"fixed", twist:"none", steps:[
+        ["src_rule","02:05 KSA · bill run for cycle 24 still running 8 h after start → bss_bill_run_late breaches."],
+        ["g_thr","runtime 8 h > 6 h threshold → condition true (min_sample n/a for a duration metric)."],
+        ["g_hold","No hold, nothing recent → new incident."],
+        ["g_team","Owner from the rule: mobile-digital-l2 (TCS · Mobile Digital & BSS L2 — BSS operations for Mobile)."],
+        ["o_open","#4830 OPEN · P2 · unacked · fired_at 02:05."],
+        ["o_notify","Digest to Mobile Mail-alert users; ChatOps."],
+        ["o_ladder","02:20 · R1 → TCS L2 members + DL, Mobile ACK holders; 02:35 · R2 → wider Mobile audience."],
+        ["w_ack","02:46 · acked by TCS L2 — MTTA 41 min, console ack SLA 60 min met, TCS response P2 < 30 min MISSED."],
+        ["w_resp","Response 41 min vs 30 min → breach on the TCS response KPI (weight 1 %)."],
+        ["k_l3","03:10 · BRM rating job stuck on ECE → product bug → escalated to Oracle · BSS L3 (Remedy ticket)."],
+        ["w_reassign","03:10 · re-assigned to Oracle · BSS L3 with reason · ack released · Oracle team mailed."],
+        ["w_ack","03:25 · Oracle L3 acks."],
+        ["k_esc","Oracle contract ladder runs in parallel: P2 restoration 100 % within 8 h (24×7)."],
+        ["k_rest","Restoration: fired 02:05 → resolved 13:05 = 11 h vs Oracle P2 8 h → BREACH; RCA due 5 BD."],
+        ["k_breach","Breach flagged on restoration — evidence is the timeline (ack 03:25, fix 13:05)."],
+        ["r_resolve","13:05 · resolved fixed after the Oracle patch, no hold (monthly rule)."],
+        ["r_rca","RCA delivered 30 h later — within the 5 BD target."],
+        ["r_credit","Month: 1 of 6 P2 restorations missed → 83 % attainment → 2 % service-credit band × 916,000 = 18,320 SAR (cap 10 %)."],
+        ["h_vendor","Vendor measurement: TCS response KPI −1 miss, Oracle restoration KPI −1 miss for the month."],
+        ["h_money","Credit line raised for Finance validation and the Oracle SteerCo."]] },
+      { id:"M-3", title:"P4 · OTP verify-rate dip — 1 customer (otp_verify_drop, customer floor)", sev:"P4", team:"digital-l1", src:"rule", ack:0, rest:0.5, rca:0, reason:"cleared", twist:"none", steps:[
+        ["src_rule","14:40 KSA · otp_verify_drop breaches: verify rate 62 % < 80 % over 30 min."],
+        ["g_count","Only 1 distinct customer behind the rows → below min_customers 5 → fires at the floor severity P4 (rule severity P2), customers=1."],
+        ["g_team","Owner: digital-l1 (Salam Digital Ops · L1) — no contract bound."],
+        ["o_open","#4844 OPEN · P4 · unacked · customers 1 → the row carries the 👤 1 customer chip."],
+        ["o_notify","Digest only — P4 sends no reminders."],
+        ["o_agent","14:42 · Agent 2: 'single subscriber retrying OTP with a wrong number · likely noise' (is_noise=true)."],
+        ["k_work","Nobody acts — informational."],
+        ["r_auto","15:10 · runner auto-clears after clearHoldMin: condition gone, resolve_reason=cleared, resolved_by=system."],
+        ["h_noise","Counted on the Noise scorecard (resolved without ack, single customer)."],
+        ["h_learn","Rule review: keep the floor at 5, or raise min_sample — no vendor clock, no credit."]] },
     ],
     fixed:[
-      { id:"F-1", title:"P1 · Salam Home app login failures (fixed_app_login_fail)", sev:"P1", team:"fixed-apps-l2", src:"rule", ack:6, rest:3.2, rca:0, reason:"fixed", twist:"hold",
-        story:["07:48 KSA · fixed_app_login_fail: 640 failures / 25 min, 410 customers → P1 on Sigma · Fixed Applications L2","07:48 · Fixed digest + ChatOps Fixed · radar Fixed half · NOC wall","07:50 · Agent 2: cause 'nexus/146 auth pod OOM after 07:40 deploy', first action 'roll back auth-service', team fixed-apps-l2 (95 %)","07:53 · R1 → Sigma Fixed L2 members + DL, Fixed ACK holders","07:54 · acked by Sigma L2 (MTTA 6 min · Sigma response P1 10 min met)","08:30 · L3 parallel escalation to ADM Fixed at 50 % of the 2 h restoration clock (contract)","11:00 · resolved fixed — rollback + hotfix · restoration 3 h 12 min vs Sigma P1 2 h → BREACH · hold 8 h on the rule","credit: weight 2 % × impact index 5 (P1) = 10 % of eligible monthly fee 464,100 = 46,410 SAR (monthly cap 40 %)","Sigma RCA report attached to the incident (no contractual deadline)"] },
-      { id:"F-2", title:"P2 · FTTH provisioning work orders stuck (fixed_prov_stuck)", sev:"P2", team:"oss-l2", src:"src_samp", ack:12, rest:7.5, rca:0, reason:"fixed", twist:"none",
-        story:["10:15 · 38 FTTH work orders in 'provisioning' > 4 h → P2 on OSS Operations · L2","10:27 · acked by OSS L2 (MTTA 12 min · Sigma response P2 15 min met)","12:00 · escalation to Oracle · OSS L3 — OSM cartridge error · Remedy ticket","17:45 · resolved — orders re-driven · restoration 7 h 30 min vs Sigma P2 4 h → BREACH; Oracle P2 8 h met","credit: weight 2 % × impact index 3 (P2) = 6 % of 464,100 = 27,846 SAR (Sigma); Oracle none"] },
-      { id:"F-3", title:"P3 · QR e-purchase decline spike — duplicate (fixed_qr_declines)", sev:"P3", team:"payments", src:"rule", ack:0, rest:0.2, rca:0, reason:"duplicate", twist:"dup",
-        story:["16:02 · fixed_qr_declines breaches while #5108 (same rule) is already open from 15:31","16:04 · Agent 2: exact duplicate of #5108 (same rule, open, within 60 min) → comment; policy assist + rule allow-listed → auto-resolved duplicate","no reminders, no page · counted on the Noise scorecard · excluded from vendor measurement","#5108 keeps the clocks and the team"] },
+      { id:"F-1", title:"P1 · Salam Home app login failures (fixed_app_login_fail)", sev:"P1", team:"fixed-apps-l2", src:"rule", ack:6, rest:3.2, rca:0, reason:"fixed", twist:"hold", steps:[
+        ["src_rule","07:48 KSA · fixed_app_login_fail recomputed on the B2C read model: 640 failures / 25 min."],
+        ["g_gate","Rule enabled, no gateway scope → may fire."],
+        ["g_thr","640 > 150 threshold, sample ok → condition true."],
+        ["g_count","410 distinct customers, far above the floor → P1."],
+        ["g_corr","Not a child of an open root (nexus API root rule is quiet) → pages on its own."],
+        ["g_team","Owner from the rule: fixed-apps-l2 (Sigma · Fixed Applications L2)."],
+        ["g_obl","Sigma obligations attached for P1: response 10 min · restoration 2 h · resolution non-bug 4 h."],
+        ["o_open","#5120 OPEN · P1 · unacked · fired_at 07:48 · segment fixed."],
+        ["o_notify","Fixed digest + PDF · ChatOps Fixed · exec radar Fixed half · NOC wall."],
+        ["o_clock","Sigma response clock starts 07:48 (target 10 min); console ack SLA 15 min."],
+        ["o_agent","07:50 · Agent 2: cause 'nexus/146 auth pod OOM after the 07:40 deploy', first action 'roll back auth-service', team fixed-apps-l2 (95 %)."],
+        ["o_ladder","07:53 · R1 → Sigma Fixed L2 members + DL, then Fixed ACK holders."],
+        ["w_ack","07:54 · acked by Sigma L2 — MTTA 6 min · Sigma response P1 10 min met."],
+        ["w_resp","Response 6 min vs 10 min → met."],
+        ["k_work","08:00 → 10:50 · rollback attempted, memory limit raised, hotfix built."],
+        ["k_l3","08:48 · at 50 % of the 2 h restoration clock the contract requires a parallel L3 escalation → ADM Fixed L3 engaged."],
+        ["k_esc","Sigma escalation ladder: P1 reminders 10 / 30 / 60 min, management informed."],
+        ["k_rest","Restoration: 07:48 → 11:00 = 3 h 12 min vs Sigma P1 2 h → BREACH."],
+        ["k_breach","Breach flagged on restoration; resolution 4 h target still met by the hotfix."],
+        ["r_resolve","11:00 · resolved fixed — rollback + hotfix · hold 8 h on the rule."],
+        ["r_hold","Rule held until 19:00 so the still-populated window does not re-open it."],
+        ["r_credit","Credit: weight 2 % × impact index 5 (P1) = 10 % of the eligible monthly fee 464,100 = 46,410 SAR (monthly cap 40 %)."],
+        ["r_rca","Sigma RCA report attached to the incident (no contractual deadline)."],
+        ["h_vendor","Fixed month: Sigma restoration KPI −1 miss."],
+        ["h_money","46,410 SAR credit line for Finance validation and the Sigma monthly governance meeting."]] },
+      { id:"F-2", title:"P2 · FTTH provisioning work orders stuck (fixed_prov_stuck)", sev:"P2", team:"oss-l2", src:"src_samp", ack:12, rest:7.5, rca:0, reason:"fixed", twist:"none", steps:[
+        ["src_samp","10:15 KSA · order-journey check: 38 FTTH work orders in 'provisioning' for more than 4 h."],
+        ["g_count","38 orders = 38 customers → P2."],
+        ["g_team","Owner: oss-l2 (OSS Operations · L2, Sigma)."],
+        ["o_open","#5133 OPEN · P2 · unacked · fired_at 10:15."],
+        ["o_ladder","10:30 · R1 → OSS L2 members + DL, Fixed ACK holders."],
+        ["w_ack","10:27 · acked by OSS L2 — MTTA 12 min · Sigma response P2 15 min met."],
+        ["k_work","10:30 → 12:00 · OSM order states inspected, cartridge error found."],
+        ["k_l3","12:00 · product defect in the OSM cartridge → escalated to Oracle · OSS L3 (Remedy)."],
+        ["k_esc","Oracle P2 restoration clock: 8 h (24×7)."],
+        ["k_rest","Restoration: 10:15 → 17:45 = 7 h 30 min vs Sigma P2 4 h → BREACH; Oracle P2 8 h met."],
+        ["k_breach","Breach flagged on the Sigma restoration KPI."],
+        ["r_resolve","17:45 · resolved fixed — orders re-driven."],
+        ["r_credit","Credit: weight 2 % × impact index 3 (P2) = 6 % of 464,100 = 27,846 SAR (Sigma); Oracle none."],
+        ["h_vendor","Sigma restoration −1 miss; Oracle restoration met."],
+        ["h_money","27,846 SAR credit line — Finance validates."]] },
+      { id:"F-3", title:"P3 · QR e-purchase decline spike — duplicate (fixed_qr_declines)", sev:"P3", team:"payments", src:"rule", ack:0, rest:0.2, rca:0, reason:"duplicate", twist:"dup", steps:[
+        ["src_rule","16:02 KSA · fixed_qr_declines breaches again while #5108 (same rule) has been open since 15:31."],
+        ["g_hold","#5108 resolved? No — still open, so flap control does not apply; a new row #5140 is inserted (different signature window)."],
+        ["o_open","#5140 OPEN · P3 · unacked."],
+        ["o_agent","16:04 · Agent 2: exact duplicate of #5108 (same rule, open, within 60 min) → agent comment on both."],
+        ["r_dup","Policy assist + rule allow-listed → #5140 auto-resolved as duplicate; no reminder, no page."],
+        ["h_noise","Counted on the Noise scorecard; excluded from vendor measurement."],
+        ["h_hist","#5108 keeps the clocks and the team; #5140 sits in History as a duplicate."]] },
     ],
   };
 
@@ -89,7 +187,7 @@
     node("w_resp",3,626,60,"Response met?","ack_at − fired_at vs target","breach → monthly KPI","pink");
     node("k_work",4,180,76,"WORKING","runbook checklist · timeline · discussion","team + vendor on it","amber");
     node("k_esc",4,272,66,"Vendor escalation ladder","per-contract reminders · management","escalationFlows","amber");
-    node("k_l3",4,440,66,"L3 / product bug","parallel L3 at 50 % of restoration clock","Sigma → Oracle / Evamp · TCS → ADM","purple");
+    node("k_l3",4,440,66,"L3 / product bug","parallel L3 at 50 % of restoration clock",seg==="fixed"?"Sigma → Oracle L3 · ADM Fixed":"TCS → Oracle L3 · ADM Mobile · Evamp","purple");
     node("k_rest",4,626,66,"Restoration · resolution · RCA","fired_at → resolved_at · RCA after restore","targets per vendor & severity","pink");
     node("k_breach",4,740,60,"Breach flagged","clock passed · evidence on the timeline","weight × impact → credit","red");
     node("r_resolve",5,180,76,"RESOLVED","reason · note · resolved_by · resolved_at","fixed · single · false-positive · dup · maint","teal");
@@ -147,7 +245,7 @@
     w_resp:["Response met?","ack_at − fired_at","Compared with the contract response target for this severity. A miss is a breach on the response KPI for the month; the drawer shows the target next to the measured value."],
     k_work:["Working","runbook · timeline · discussion","The checklist keeps who ticked what; the timeline merges fired, ack, hand-overs, reminders, ServiceNow, comms, comments, agent notes, rule edits and the resolve into one list."],
     k_esc:["Vendor escalation ladder","escalationFlows","Per contract: reminder minutes per priority and management inform, mirroring the console ladder but evaluated per obligation once evidence connectors are on."],
-    k_l3:["L3 / product bug","parallel escalation","Sigma must open a parallel L3 escalation at 50 % of the restoration clock; product-bug resolution follows the L3 vendor SLA (Oracle 30/60/90/120 BD, Evamp P1 continuous effort). Mobile code fixes go to ADM Mobile L3 (TCS)."],
+    k_l3:["L3 / product bug","parallel escalation","Fixed: Sigma must open a parallel L3 escalation at 50 % of the restoration clock; product-bug resolution follows the L3 vendor SLA (Oracle 30/60/90/120 BD). Mobile: TCS escalates product defects to Oracle BSS L3 or Evamp (DMS/UIL); code fixes go to ADM Mobile L3 (TCS)."],
     k_rest:["Restoration · resolution · RCA","the clocks","Restoration: fired_at → resolved_at. Resolution (non-bug): the permanent fix window. RCA: from restoration to the delivered report. Targets per vendor and severity in the table below."],
     k_breach:["Breach flagged","target passed","When a measured clock passes its target the incident is marked as a breach on that KPI; the evidence is the timeline. Breaches feed the monthly attainment per KPI, which is what the penalty rule reads."],
     r_resolve:["Resolved","reason · note · hold","Rights as for ack. Reasons: fixed, single_customer, false_positive, duplicate, maintenance. A system comment and the audit entry record the reason; an optional hold keeps the rule quiet while its window drains."],
@@ -209,6 +307,11 @@
       .aj .samples{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
       .aj .sample{border:1px solid var(--line);border-left:4px solid var(--c);border-radius:10px;padding:10px 12px;background:var(--card)} .aj .sample b{display:block;font-size:12.5px} .aj .sample ol{margin:6px 0 0 16px;padding:0;font-size:11.5px;color:var(--muted);line-height:1.5} .aj .sample ol li{margin:2px 0}
       .aj .foot{color:var(--muted);font-size:12px;margin-top:12px}
+      .aj .node.now rect.bg{stroke-width:3.5;filter:drop-shadow(0 0 18px var(--c))} .aj .node.now .bar{width:8px}
+      .aj .aj-player{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 16px;margin-top:12px;position:sticky;bottom:8px;z-index:5;box-shadow:0 8px 24px rgba(15,23,42,.18)}
+      .aj .pl-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap} .aj .pl-top b{font-size:15px} .aj .pl-stage{font-size:10.5px;font-weight:900;letter-spacing:.1em;color:#fff;background:var(--c);border-radius:6px;padding:2px 8px} .aj .pl-count{margin-left:auto;color:var(--muted)}
+      .aj .pl-text{font-size:13.5px;line-height:1.55;margin:6px 0 8px;max-width:110ch} .aj .pl-bar{height:4px;border-radius:2px;background:var(--line);overflow:hidden;margin-bottom:8px} .aj .pl-bar i{display:block;height:100%;background:var(--aj-green);transition:width .3s}
+      .aj .pl-nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap} .aj .pl-nav .pill{padding:5px 12px;font-weight:700} .aj .pl-nav .pill:disabled{opacity:.4;cursor:default} .aj .pl-speed{font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card2,var(--card));color:var(--ink)} .aj .pl-hint{color:var(--muted);font-size:11px}
       @media (prefers-reduced-motion:reduce){.aj .edge.flow,.aj .edge.loop{animation:none}}`;
     document.head.appendChild(st);
   }
@@ -245,7 +348,7 @@
         </section>
       </div>
       <section class="aj-panel" style="margin-top:14px"><h3>${B.short} reference samples · click to replay</h3>
-        <div class="samples">${SAMPLES[seg].map((s,i)=>`<div class="sample" data-i="${i}" style="--c:${HUE[s.sev==="P1"?"red":s.sev==="P2"?"amber":"slate"]}"><b>${esc(s.id)} · ${esc(s.title)}</b><span class="rl" style="color:var(--muted)">${esc(teamName(s.team))} · ${s.twist!=="none"?esc(s.twist)+" · ":""}${esc(s.reason)}</span><ol>${s.story.map(x=>`<li>${esc(x)}</li>`).join("")}</ol><div class="actions"><button type="button" class="pill sLoad" data-i="${i}" style="border-left-color:var(--aj-green);padding:4px 10px">▶ Replay on the map</button></div></div>`).join("")}</div>
+        <div class="samples">${SAMPLES[seg].map((s,i)=>`<div class="sample" data-i="${i}" style="--c:${HUE[s.sev==="P1"?"red":s.sev==="P2"?"amber":"slate"]}"><b>${esc(s.id)} · ${esc(s.title)}</b><span class="rl" style="color:var(--muted)">${esc(teamName(s.team))} · ${s.twist!=="none"?esc(s.twist)+" · ":""}${esc(s.reason)}</span><ol>${s.steps.slice(0,4).map(x=>`<li>${esc(x[1])}</li>`).join("")}<li style="list-style:none;color:var(--aj-green)">… ${s.steps.length} steps — replay to walk through all of them</li></ol><div class="actions"><button type="button" class="pill sLoad" data-i="${i}" style="border-left-color:var(--aj-green);padding:4px 10px">▶ Replay on the map</button></div></div>`).join("")}</div>
         <div class="foot">Samples are illustrative journeys built on the ${B.short} rules and teams as configured; times are KSA. They are not real incidents.</div></section>
       <div class="aj-grid">
         <section class="aj-panel"><h3>Contract clocks · ${B.short} teams · per severity</h3><div class="tw"><table class="tgt"></table></div>
@@ -294,7 +397,7 @@
       const d=D[id], n=N[id]; if(!d) return;
       const src=B.sources.find(s=>s[0]===id); const title=src?src[1]:d[0];
       const outs=EDGES.filter(e=>e[0]===id).map(e=>`<span class="chip green">→ ${esc(N[e[1]].title)}${e[2]?" · "+esc(e[2]):""}</span>`).join(""); const ins=EDGES.filter(e=>e[1]===id).map(e=>`<span class="chip">${esc(N[e[0]].title)} →</span>`).join("");
-      q(".ajd").innerHTML=`<h4>${esc(title)}</h4><div class="path">${esc(d[1])}${n.tag&&n.tag!==d[1]?" · "+esc(n.tag):""}</div><div>${esc(d[2])}</div>${d[3]?`<ul>${d[3].map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}<div class="chips">${ins}${outs}</div>`;
+      q(".ajd").innerHTML=`<h4>${esc(title)}</h4><div class="path">${n.tag&&n.tag.startsWith(d[1])?esc(n.tag):esc(d[1])+(n.tag&&n.tag!==d[1]?" · "+esc(n.tag):"")}</div><div>${esc(d[2])}</div>${d[3]?`<ul>${d[3].map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}<div class="chips">${ins}${outs}</div>`;
     }
     root.querySelectorAll(".aj-stage").forEach(s=>s.addEventListener("click",()=>{ const i=Number(s.dataset.col); root.querySelectorAll(".aj-stage").forEach(x=>x.classList.toggle("on",x===s)); const first=Object.values(N).filter(n=>n.x===CX[i]).sort((a,b)=>(b.h-a.h)||(a.y-b.y))[0]; if(first) select(first.id); root.querySelectorAll(".node").forEach(g=>g.classList.toggle("lit",N[g.dataset.id].x===CX[i])); }));
 
@@ -303,9 +406,38 @@
     q(".tgt").innerHTML=`<tr><th>Team · contract</th><th>P1 resp / restore</th><th>P2</th><th>P3</th><th>P4</th><th>Monthly cap</th></tr>`+B.teams.map(([k,n,v])=>{ const t=T[v]; return `<tr><td><b>${esc(teamName(k))}</b><br><span class="rl" style="color:var(--muted)">${esc(t.name)}</span></td>${["P1","P2","P3","P4"].map(p=>`<td class="m">${fm(t.resp[p])} / ${fm(t.rest[p])}${t.resol?` / ${fm(t.resol[p])}`:""}${t.rca[p]?`<br>RCA ${fm(t.rca[p])}`:""}</td>`).join("")}<td class="m">${t.cap?t.cap+" %":"—"}</td></tr>`; }).join("");
 
     /* scenario */
-    let timer=null;
-    function light(ids,step){ root.querySelectorAll(".node").forEach(g=>g.classList.remove("lit")); clearInterval(timer); let i=0;
-      timer=setInterval(()=>{ if(i>=ids.length){ clearInterval(timer); return; } const n=N[ids[i]]; const g=root.querySelector(`.node[data-id="${ids[i]}"]`); if(g) g.classList.add("lit"); if(n){ tok.setAttribute("cx",n.x-n.w/2-10); tok.setAttribute("cy",n.y+n.h/2); } i++; },step||380); }
+    /* STEP PLAYER — one step at a time, with the explanation; Prev / Next / Auto-play like the journey explorers */
+    const PL={ steps:[], i:-1, auto:null, speed:2600 };
+    const bar=document.createElement("div"); bar.className="aj-player"; root.querySelector(".aj-map").insertAdjacentElement("afterend",bar);
+    function showStep(i){
+      if(!PL.steps.length) return; PL.i=Math.max(0,Math.min(PL.steps.length-1,i)); const [id,text]=PL.steps[PL.i]; const n=N[id]; if(!n) return;
+      root.querySelectorAll(".node").forEach(g=>{ const k=PL.steps.slice(0,PL.i+1).some(st=>st[0]===g.dataset.id); g.classList.toggle("lit",k); g.classList.toggle("now",g.dataset.id===id); });
+      tok.setAttribute("cx",n.x-n.w/2-10); tok.setAttribute("cy",n.y+n.h/2);
+      select(id);
+      const col=COLS.findIndex((c,ci)=>CX[ci]===n.x); const hue=HUE[n.color]||n.color;
+      bar.innerHTML=`<div class="pl-top"><span class="pl-stage" style="--c:${hue}">${col>=0?(col+1)+" · "+COLS[col][0]:""}</span><b>${esc(n.title)}</b><span class="rl pl-count">step ${PL.i+1} / ${PL.steps.length}</span></div>
+        <div class="pl-text">${esc(text)}</div>
+        <div class="pl-bar"><i style="width:${Math.round((PL.i+1)/PL.steps.length*100)}%"></i></div>
+        <div class="pl-nav"><button type="button" class="pill pl-prev" ${PL.i===0?"disabled":""}>◀ Prev</button><button type="button" class="pill pl-auto" style="border-left-color:var(--aj-green)">${PL.auto?"⏸ Pause":"▶ Auto-play"}</button><button type="button" class="pill pl-next" ${PL.i>=PL.steps.length-1?"disabled":""}>Next ▶</button>
+          <select class="pl-speed" title="seconds per step">${[["1500","fast · 1.5 s"],["2600","normal · 2.6 s"],["4500","slow · 4.5 s"]].map(([v,l])=>`<option value="${v}"${Number(v)===PL.speed?" selected":""}>${l}</option>`).join("")}</select><span class="rl pl-hint">← → keys work too</span></div>`;
+      bar.querySelector(".pl-prev").onclick=()=>{ stopAuto(); showStep(PL.i-1); };
+      bar.querySelector(".pl-next").onclick=()=>{ stopAuto(); showStep(PL.i+1); };
+      bar.querySelector(".pl-auto").onclick=()=>{ PL.auto?stopAuto():startAuto(); showStep(PL.i); };
+      bar.querySelector(".pl-speed").onchange=e=>{ PL.speed=Number(e.target.value); if(PL.auto){ stopAuto(); startAuto(); } };
+      const map=root.querySelector(".aj-map"); const scale=map.clientWidth/VBW; const target=(n.x*Math.max(scale,2000/VBW))-map.clientWidth/2; if(map.scrollWidth>map.clientWidth) map.scrollTo({left:Math.max(0,target),behavior:"smooth"});
+    }
+    function startAuto(){ stopAuto(); PL.auto=setInterval(()=>{ if(PL.i>=PL.steps.length-1){ stopAuto(); showStep(PL.i); return; } showStep(PL.i+1); },PL.speed); }
+    function stopAuto(){ if(PL.auto){ clearInterval(PL.auto); PL.auto=null; } }
+    function light(steps,auto){ stopAuto(); root.querySelectorAll(".node").forEach(g=>g.classList.remove("lit","now")); PL.steps=steps; PL.i=-1; showStep(0); if(auto) startAuto(); bar.scrollIntoView({behavior:"smooth",block:"nearest"}); }
+    root.addEventListener("keydown",e=>{ if(!PL.steps.length) return; if(e.key==="ArrowRight"){ stopAuto(); showStep(PL.i+1); } if(e.key==="ArrowLeft"){ stopAuto(); showStep(PL.i-1); } });
+    root.tabIndex=-1;
+    const NARR={ src_rule:"The sync tick recomputes the rule over its rolling window.", src_anom:"The signal / errors board raises its own rule.", src_dms:"A flow watcher raises the incident with its own key.", src_samp:"A sampler or journey check opens the incident.", src_manual:"A person opens the ticket and picks the team — the gates are skipped.",
+      g_gate:"Enabled, inside active hours, gateway not paused → the rule may fire.", g_thr:"Observed value crosses the threshold with enough sample.", g_count:"Distinct customers / services are counted; below the floor the severity drops.", g_corr:"Root / child / twin check — a child is grouped, a twin collapses.", g_hold:"Not held and nothing recent to re-open → a new incident row.",
+      g_team:"The incident inherits the rule's team key.", g_obl:"Team → vendor → contract: the clocks for this severity are attached.", o_open:"The alerts row is written: status open, fired_at, team, customers.", o_notify:"Digest + PDF, ChatOps, radar and NOC wall.", o_clock:"The vendor response clock and the console ack SLA start from fired_at.",
+      o_agent:"Agent 2 triages within 3 minutes: duplicate? flapping? cause, impact, team, first action.", o_ladder:"Reminder ladder: team members + DL, ACK holders, then wider, then management.", w_ack:"Someone with the right acknowledges — MTTA is fixed, the ladder stops.", w_resp:"Ack time is compared with the contract response target.", w_actions:"Take over, hand over, assign, snooze, comment, tick the checklist.",
+      w_reassign:"Re-assigned to another team with a reason; the ack is released and the ladder restarts for them.", w_sn:"ServiceNow INC raised and comms sent (after ack only).", k_work:"The team works the runbook; everything lands on the timeline.", k_esc:"The vendor's contractual escalation ladder runs alongside.", k_l3:"Product defect → parallel L3 escalation per the contract.",
+      k_rest:"Restoration / resolution / RCA clocks are measured against the targets.", k_breach:"A clock passed its target → breach recorded on that KPI.", r_resolve:"Resolved with a reason (and an optional hold on the rule).", r_auto:"The runner clears it once the condition stays clear.", r_hold:"The rule stays quiet until the hold expires or is released.",
+      r_reopen:"Fires again inside the re-open window → same incident re-opens.", r_dup:"Closed as a duplicate — no page.", r_rca:"RCA delivered, the RCA clock stops.", r_credit:"The signed penalty formula turns the breach into a credit.", h_hist:"History tab, XLSX, timeline and audit keep the record.", h_stats:"MTTA / MTTR and owner figures update.", h_noise:"Noise scorecard learns from the reason.", h_learn:"Rule retuned; Agent 2 re-proposes the team when it changes.", h_vendor:"Monthly attainment per KPI per contract.", h_money:"Credit ledger → invoice / SteerCo, Finance validates." };
     const pct=(v,d)=>d?Math.round(v/d*100):0;
     function play(){
       const sev=q(".sSev").value, teamKey=q(".sTeam").value, vk=(q(".sTeam").selectedOptions[0]||{}).dataset.v||"none", t=T[vk], src=q(".sSrc").value, twist=q(".sTwist").value, reason=q(".sReason").value;
@@ -329,7 +461,7 @@
         ids.push("h_hist","h_stats"); if(["single_customer","false_positive","duplicate"].includes(reason)) ids.push("h_noise","h_learn");
         if(t.mode!=="none") ids.push("h_vendor"); if(breach&&t.mode!=="none") ids.push("h_money");
       }
-      light(ids,360);
+      light(ids.map(id=>[id,NARR[id]||(D[id]?D[id][2]:"")]),false);
       const C=[]; const clock=(lbl,val,tgt,note,force)=>C.push({lbl,val,tgt,note,state:force||(tgt==null?"na":(val<=tgt?"ok":"bad"))});
       clock("Console ack SLA",twist==="noack"?null:ack,ACK_SLA[sev],twist==="noack"?"never acked":"MTTA",twist==="noack"?"bad":null);
       clock("Response (vendor)",twist==="noack"?null:ack,t.resp[sev]||null,t.resp[sev]?fm(t.resp[sev])+" target":"no target in contract",twist==="noack"&&t.resp[sev]?"bad":null);
@@ -366,10 +498,10 @@
       if(window.audit) window.audit("VIEW_ALERT_JOURNEY", `${seg} ${sev} ${teamKey} ${twist}`);
     }
     q(".sPlay").addEventListener("click",play);
-    q(".sReset").addEventListener("click",()=>{ clearInterval(timer); root.querySelectorAll(".node").forEach(g=>g.classList.remove("lit","on")); root.querySelectorAll(".edge").forEach(p=>p.classList.remove("dim","flow")); tok.setAttribute("cx",-30); q(".clocks").innerHTML=""; q(".tl").innerHTML=""; q(".calc").textContent="Play a scenario or load a sample below."; q(".sMsg").textContent=""; });
+    q(".sReset").addEventListener("click",()=>{ stopAuto(); PL.steps=[]; bar.innerHTML=""; root.querySelectorAll(".node").forEach(g=>g.classList.remove("lit","on")); root.querySelectorAll(".edge").forEach(p=>p.classList.remove("dim","flow")); tok.setAttribute("cx",-30); q(".clocks").innerHTML=""; q(".tl").innerHTML=""; q(".calc").textContent="Play a scenario or load a sample below."; q(".sMsg").textContent=""; });
     q(".sTeam").addEventListener("change",()=>{ const v=(q(".sTeam").selectedOptions[0]||{}).dataset.v||"none"; q(".sFee").value=T[v].fee||0; });
     q(".sFee").value=T[(q(".sTeam").selectedOptions[0]||{}).dataset.v||"none"].fee||0;
-    root.querySelectorAll(".sLoad").forEach(b=>b.addEventListener("click",()=>{ const s=SAMPLES[seg][Number(b.dataset.i)]; q(".sSev").value=s.sev; q(".sTeam").value=s.team; q(".sSrc").value=s.src==="src_samp"?"samp":s.src; q(".sAck").value=s.ack; q(".sRes").value=s.rest; q(".sRca").value=s.rca; q(".sReason").value=s.reason; q(".sTwist").value=s.twist; const v=(q(".sTeam").selectedOptions[0]||{}).dataset.v||"none"; q(".sFee").value=T[v].fee||0; play(); root.querySelector(".aj-map").scrollIntoView({behavior:"smooth",block:"start"}); }));
+    root.querySelectorAll(".sLoad").forEach(b=>b.addEventListener("click",()=>{ const s=SAMPLES[seg][Number(b.dataset.i)]; q(".sSev").value=s.sev; q(".sTeam").value=s.team; q(".sSrc").value=s.src==="src_samp"?"samp":s.src; q(".sAck").value=s.ack; q(".sRes").value=s.rest; q(".sRca").value=s.rca; q(".sReason").value=s.reason; q(".sTwist").value=s.twist; const v=(q(".sTeam").selectedOptions[0]||{}).dataset.v||"none"; q(".sFee").value=T[v].fee||0; play(); light(s.steps,true); root.querySelector(".aj-map").scrollIntoView({behavior:"smooth",block:"start"}); }));
     ["o_open","w_ack","k_work","r_resolve","h_hist","g_hold","w_resp","k_rest"].forEach(id=>root.querySelectorAll(`.edge[data-a="${id}"]`).forEach(p=>{ if(!p.classList.contains("loop")&&!p.classList.contains("bad")) p.classList.add("flow"); }));
     select("o_open");
   }
