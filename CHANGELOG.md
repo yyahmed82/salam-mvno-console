@@ -3,6 +3,15 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.77] — 2026-09-24 — Alert cases PDF: where the problem is, real samples
+### Changed
+- **Alert cases PDF rebuilt around "where the problem is"** (`alertCases.js`): page 1 now ranks the offenders over the
+  whole population (step / endpoint family / category: counted, share of the counted, population, breach rate, p50 /
+  p95 / max latency, most frequent reason) with a one-line verdict in red, then **one real sample per top offender** —
+  method + full endpoint, status, duration, error, workflow / request id and the request and response bodies (masked
+  at capture), taken from the workflow's api_calls — and only then the case rows (capped at 120 in the PDF, duration
+  and code moved next to the step; the XLSX keeps the full list).
+
 ## [2.0.0-alpha.76] — 2026-09-24 — Incident evidence: who and where it failed (TKT-000065)
 ### Added
 - **Evidence on every incident** (`server/src/alertEvidence.js`, `GET /api/alerts/:id/evidence`, incident drawer › EVIDENCE ·

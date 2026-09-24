@@ -149,7 +149,7 @@ const EE2_COLS = () => `e.id, e.occurred_at, ${fe().CHANNEL_EXPR} AS channel, ${
 const EE2_HEAD = [['occurred_at', 'Time (KSA)'], ['channel', 'Channel'], ['cls', 'Class'], ['category', 'Category'], ['response', 'Response'], ['provider', 'Provider'], ['code', 'Code'], ['dealer_code', 'Dealer'], ['region', 'Region'], ['order_number', 'Order'], ['attempt_id', 'Workflow id'], ['resolved', 'Resolved'], ['id', 'Event id']];
 const EE_WIN = `e.occurred_at >= $1::timestamptz - ($2||' hours')::interval AND e.occurred_at < $1::timestamptz`;
 const AE_COLS = `id::text AS id, ts, coalesce(channel,'other') AS channel, path, kind, ok, reason_class AS cls, status_code, left(reason, 300) AS reason, duration_ms, request_id, state_id, platform, app_version, host`;
-const AE_HEAD = [['ts', 'Time (KSA)'], ['channel', 'Channel'], ['path', 'Step'], ['kind', 'Kind'], ['ok', 'OK'], ['cls', 'Class'], ['reason', 'Reason'], ['duration_ms', 'Duration (ms)'], ['status_code', 'Code'], ['request_id', 'Request id'], ['state_id', 'Workflow id'], ['platform', 'Platform'], ['app_version', 'App version'], ['id', 'Row id']];
+const AE_HEAD = [['ts', 'Time (KSA)'], ['channel', 'Channel'], ['path', 'Step / endpoint'], ['duration_ms', 'Duration (ms)'], ['status_code', 'Code'], ['ok', 'OK'], ['cls', 'Class'], ['reason', 'Reason'], ['kind', 'Kind'], ['request_id', 'Request id'], ['state_id', 'Workflow id'], ['platform', 'Platform'], ['app_version', 'App version'], ['id', 'Row id']];
 const AE_WIN = `ts >= $1::timestamptz - ($2||' hours')::interval AND ts < $1::timestamptz`;
 const AC_HOST = `coalesce(substring(ac.endpoint from '^https?://([^/:]+)'), 'unknown')`;
 const AC_COLS = `ac.id::text AS id, ac.created_at, ${AC_HOST} AS host, regexp_replace(regexp_replace(split_part(ac.endpoint, '?', 1), '^https?://[^/]+', ''), '/[0-9A-Za-z_-]*[0-9][0-9A-Za-z_-]*', '/{id}', 'g') AS family, ac.status, ac.error_class, ac.duration_ms, ac.attempt_id, left(ac.endpoint, 200) AS endpoint`;
@@ -168,7 +168,7 @@ function boardSpec(a, T, W, d, { onlyMoney = false, counted } = {}) {
   const p = [T, W]; let f = ''; const c = chan(d); if (c) { p.push(c); f += ` AND ${fe().CHANNEL_EXPR} = $${p.length}`; }
   if (onlyMoney) { p.push(MONEY); f += ` AND e.category = ANY($${p.length}::text[])`; }
   const k = clsOf(d); let num = 'TRUE'; if (counted === 'cls' && k) { p.push(k); num = `${fe().CLASS_SQL()} = $${p.length}`; } else if (counted === 'open') num = 'NOT e.resolved';
-  return { from: 'error_events e', cols: EE2_COLS(), head: EE2_HEAD, pop: `${EE_WIN}${f}`, num, params: p, order: 'e.occurred_at DESC', group: 'category' };
+  return { from: 'error_events e', cols: EE2_COLS(), head: EE2_HEAD, pop: `${EE_WIN}${f}`, num, params: p, order: 'e.occurred_at DESC', group: 'category', groupExpr: 'e.category', reasonExpr: `left(${fe().RESP_EXPR}, 120)`, sample: 'events' };
 }
 function appSpec(a, T, W, d, { pred = '', counted = 'cls', mutationOnly = true, group = 'path' } = {}) {
   const p = [T, W]; let f = mutationOnly ? ` AND kind = 'mutation'` : ''; const c = chan(d); if (c) { p.push(c); f += ` AND coalesce(channel,'other') = $${p.length}`; }
@@ -177,12 +177,12 @@ function appSpec(a, T, W, d, { pred = '', counted = 'cls', mutationOnly = true, 
   else if (counted === 'technical') num = `ok IS NOT TRUE AND reason_class = 'technical'`;
   else if (counted === 'slow') { p.push(Number(a.threshold) || 0); num = `duration_ms >= $${p.length}::numeric`; f += ' AND duration_ms IS NOT NULL'; }
   else if (counted === 'failed') num = 'ok IS NOT TRUE';
-  return { pool: db.console, from: 'fixed_app_events', cols: AE_COLS, head: AE_HEAD, pop: `${AE_WIN}${f}${pred}`, num, params: p, order: counted === 'slow' ? 'duration_ms DESC NULLS LAST' : 'ts DESC', group };
+  return { pool: db.console, from: 'fixed_app_events', cols: AE_COLS, head: AE_HEAD, pop: `${AE_WIN}${f}${pred}`, num, params: p, order: counted === 'slow' ? 'duration_ms DESC NULLS LAST' : 'ts DESC', group, groupExpr: group === 'path' ? 'path' : `coalesce(channel,'other')`, durExpr: 'duration_ms', reasonExpr: 'left(reason, 120)', sample: 'applog', slow: counted === 'slow' };
 }
 function apiSpec(a, T, W, d, counted) {
   const p = [T, W]; let f = ''; if (d && d.host && d.host !== '(worst)' && d.host !== 'unknown') { p.push(String(d.host)); f += ` AND ${AC_HOST} = $${p.length}`; }
   let num; if (counted === 'slow') { p.push(Number(a.threshold) || 0); num = `ac.duration_ms >= $${p.length}::numeric`; f += ' AND ac.duration_ms IS NOT NULL'; } else num = `(ac.status >= 500 OR ac.error_class IS NOT NULL)`;
-  return { pool: db.ops, from: 'api_calls ac', cols: AC_COLS, head: AC_HEAD, pop: `${AC_WIN}${f}`, num, params: p, order: counted === 'slow' ? 'ac.duration_ms DESC NULLS LAST' : 'ac.created_at DESC', group: 'host' };
+  return { pool: db.ops, from: 'api_calls ac', cols: AC_COLS, head: AC_HEAD, pop: `${AC_WIN}${f}`, num, params: p, order: counted === 'slow' ? 'ac.duration_ms DESC NULLS LAST' : 'ac.created_at DESC', group: 'host', groupExpr: `regexp_replace(regexp_replace(split_part(ac.endpoint, '?', 1), '^https?://[^/]+', ''), '/[0-9A-Za-z_-]*[0-9][0-9A-Za-z_-]*', '/{id}', 'g')`, durExpr: 'ac.duration_ms', reasonExpr: `coalesce(ac.error_class, ac.status::text)`, sample: 'calls', slow: counted === 'slow' };
 }
 Object.assign(CASES, {
   fixed_board_fail_rate: async (a, T, W, d) => ({ pool: await boardPool(chan(d)), ...boardSpec(a, T, W, d, { counted: 'cls' }), note: `population = every error-board event of ${chan(d) ? 'channel ' + chan(d) : 'every channel'} in the window (the rate divides the ${clsOf(d) || ''} ones by the order attempts of the same window) · counted = ${clsOf(d) || 'all'} class` }),
@@ -282,7 +282,61 @@ async function casesFor(alert, opts = {}) {
   const cnt = await spec.pool.query(`SELECT count(*)::int AS pop, count(*) FILTER (WHERE ${spec.num})::int AS num FROM ${spec.from} WHERE ${spec.pop}`, spec.params);
   const r = await spec.pool.query(sql, spec.params);
   const rows = r.rows.slice(0, cap);
-  return { ...base, supported: true, head: spec.head, rows, total: rows.length, capped: r.rows.length > cap, population: cnt.rows[0].pop, counted: cnt.rows[0].num, note: spec.note, group: spec.group || null, kind: spec.num === 'TRUE' ? 'count' : 'rate' };
+  /* WHERE THE PROBLEM IS (TKT-000065, 24 Sep 2026): per path / endpoint family / category over the WHOLE population
+   * (not the capped rows) — counted, share of the counted, population, breach rate inside the group, p50 / p95 / max
+   * latency when the source is timed, and the most frequent reason. The PDF and the drawer rank the offenders on it. */
+  let groups = [];
+  if (spec.groupExpr) {
+    try {
+      const reason = spec.reasonExpr ? `, (SELECT rr FROM (SELECT ${spec.reasonExpr} AS rr, count(*) c FROM ${spec.from} WHERE ${spec.pop} AND ${spec.groupExpr} = g.grp AND (${spec.num}) AND ${spec.reasonExpr} IS NOT NULL GROUP BY 1 ORDER BY c DESC LIMIT 1) t) AS top_reason` : ', NULL::text AS top_reason';
+      /* every query must reference every bound parameter (pg refuses an unused $n), so the latency percentiles ride
+       * inside the same grouped query as the counted filter instead of a second statement */
+      const dur = spec.durExpr ? `, percentile_cont(0.5) WITHIN GROUP (ORDER BY ${spec.durExpr})::int AS p50, percentile_cont(0.95) WITHIN GROUP (ORDER BY ${spec.durExpr})::int AS p95, max(${spec.durExpr})::int AS max_ms` : ', NULL::int AS p50, NULL::int AS p95, NULL::int AS max_ms';
+      const inner = `SELECT ${spec.groupExpr} AS grp, count(*)::int AS pop, count(*) FILTER (WHERE ${spec.num})::int AS num${dur} FROM ${spec.from} WHERE ${spec.pop} GROUP BY 1`;
+      const gq = await spec.pool.query(`SELECT g.grp, g.pop, g.num, g.p50, g.p95, g.max_ms${reason} FROM (${inner}) g ORDER BY g.num DESC, g.pop DESC LIMIT 15`, spec.params)
+        .catch(() => spec.pool.query(`SELECT g.grp, g.pop, g.num, g.p50, g.p95, g.max_ms, NULL::text AS top_reason FROM (${inner}) g ORDER BY g.num DESC, g.pop DESC LIMIT 15`, spec.params));
+      const latency = {}; gq.rows.forEach(x => { latency[x.grp] = x; });
+      const totalNum = cnt.rows[0].num || 0;
+      groups = gq.rows.map(x => ({ group: x.grp == null ? '—' : String(x.grp), population: x.pop, counted: x.num, share: totalNum ? Math.round(x.num / totalNum * 1000) / 10 : 0, rate: x.pop ? Math.round(x.num / x.pop * 1000) / 10 : 0,
+        p50: (latency[x.grp] || {}).p50 ?? null, p95: (latency[x.grp] || {}).p95 ?? null, max_ms: (latency[x.grp] || {}).max_ms ?? null, top_reason: x.top_reason || null }));
+    } catch (e) { groups = []; }
+  }
+  let samples = [];
+  try { samples = await samplesFor(spec, rows, groups, opts); } catch (e) { samples = []; }
+  return { ...base, supported: true, head: spec.head, rows, total: rows.length, capped: r.rows.length > cap, population: cnt.rows[0].pop, counted: cnt.rows[0].num, note: spec.note, group: spec.group || null, kind: spec.num === 'TRUE' ? 'count' : 'rate', groups, samples, slow: !!spec.slow, threshold: Number(alert.threshold) || null };
+}
+
+/* WHAT THE FAILING CALL LOOKED LIKE: for the top offenders, one real call with its request and response (masked at rest).
+ *   applog rows → the workflow (state_id) → its api_calls in the dealer-ops read model: the failing call, else the slowest
+ *   api_calls rows → the row itself · error-board rows → the event's own req/res bodies */
+const trimBody = v => v == null ? null : String(typeof v === 'object' ? JSON.stringify(v, null, 2) : v).slice(0, 2500);
+async function samplesFor(spec, rows, groups, opts = {}) {
+  if (!spec.sample || !rows.length) return [];
+  const tops = (groups.length ? groups.filter(g => g.counted > 0).slice(0, 3).map(g => g.group) : [null]);
+  const out = [];
+  for (const g of tops) {
+    const cand = rows.filter(r => r.counted && (g == null || String(r[spec.group === 'host' ? 'family' : spec.group] ?? '—') === g));
+    const row = cand[0]; if (!row) continue;
+    try {
+      if (spec.sample === 'applog') {
+        const wfs = cand.filter(r => r.state_id).slice(0, 6); let wf = wfs[0] || null;
+        if (!wf) { out.push({ group: g, when: row.ts, step: row.path, status: row.status_code, reason: row.reason, duration_ms: row.duration_ms, note: 'no workflow id on the row — request / response not captured for this step' }); continue; }
+        const pools = [db.opsBeta, db.ops].filter((x, i, arr) => x && arr.indexOf(x) === i); let call = null;
+        for (const w of wfs) { for (const pl of pools) { const r = await pl.query(`SELECT id, method, endpoint, status, duration_ms, error_class, error_msg, req_body, res_body, created_at FROM api_calls WHERE attempt_id = $1 ORDER BY (COALESCE(NULLIF(regexp_replace(status::text, '\\D', '', 'g'), '')::int, 0) >= 400 OR error_class IS NOT NULL OR error_msg IS NOT NULL) DESC, duration_ms DESC NULLS LAST LIMIT 1`, [w.state_id]).catch(() => ({ rows: [] })); if (r.rows.length) { call = r.rows[0]; wf = w; break; } } if (call) break; }
+        out.push({ group: g, when: wf.ts, step: wf.path, workflow: wf.state_id, request_id: wf.request_id, status: call ? call.status : wf.status_code, reason: wf.reason, duration_ms: call ? call.duration_ms : wf.duration_ms,
+          method: call && call.method, endpoint: call && call.endpoint, error: call && (call.error_msg || call.error_class), request: call && trimBody(call.req_body), response: call && trimBody(call.res_body), note: call ? null : 'workflow found but no api_calls row (purged or not captured)' });
+      } else if (spec.sample === 'calls') {
+        const r = await spec.pool.query(`SELECT id, method, endpoint, status, duration_ms, error_class, error_msg, req_body, res_body, created_at, attempt_id FROM api_calls WHERE id = $1`, [row.id]);
+        const c = r.rows[0]; if (!c) continue;
+        out.push({ group: g, when: c.created_at, workflow: c.attempt_id, method: c.method, endpoint: c.endpoint, status: c.status, duration_ms: c.duration_ms, error: c.error_msg || c.error_class, request: trimBody(c.req_body), response: trimBody(c.res_body) });
+      } else if (spec.sample === 'events') {
+        const r = await spec.pool.query(`SELECT e.id, e.occurred_at, e.category, e.code, e.message, e.req_body, e.res_body, e.attempt_id, e.order_number, e.dealer_code FROM error_events e WHERE e.id = $1`, [row.id]);
+        const c = r.rows[0]; if (!c) continue;
+        out.push({ group: g, when: c.occurred_at, workflow: c.attempt_id, order: c.order_number, endpoint: null, status: c.code, error: c.message, request: trimBody(c.req_body), response: trimBody(c.res_body) });
+      }
+    } catch (e) { out.push({ group: g, note: 'sample lookup failed: ' + e.message }); }
+  }
+  return out;
 }
 
 const isTs = k => /(^|_)at$|^ts$/.test(k);
@@ -307,7 +361,35 @@ function pdf(d, meta) {
   doc.at(46, top + 24, `${d.segment === 'fixed' ? 'FIXED' : 'MOBILE'} - ALERT CASES - ${String(d.alert.severity || '')}`, { size: 9, bold: true, color: [0.5, 0.83, 0.65] });
   doc.at(46, top + 44, clip(d.alert.name, 70), { size: 15, bold: true, color: CC.white });
   doc.space(10); doc.h2('Alert'); doc.kv(meta, { boldVal: true });
-  if (d.group) { const g = {}; d.rows.forEach(r => { const k = r[d.group] || '—'; g[k] = g[k] || { p: 0, n: 0 }; g[k].p++; if (r.counted) g[k].n++; }); doc.h2(`By ${d.group}`); doc.table([{ label: d.group, w: 30 }, { label: 'Counted', w: 10, align: 'right' }, { label: 'Population', w: 10, align: 'right' }], Object.entries(g).sort((a, b) => b[1].n - a[1].n).map(([k, v]) => [String(k), String(v.n), String(v.p)])); }
+  /* WHERE THE PROBLEM IS — the offenders ranked over the whole population, verdict sentence first */
+  const G = d.groups || [];
+  if (G.length) {
+    const top = G[0]; const ms = v => v == null ? '—' : v >= 1000 ? (v / 1000).toFixed(1) + ' s' : v + ' ms';
+    const label = d.group === 'host' ? 'endpoint' : d.group === 'category' ? 'category' : 'step / path';
+    doc.h2('Where the problem is');
+    if (top.counted > 0) doc.p(`${top.share} % of the counted rows come from ${top.group}: ${top.counted} of its ${top.population} ${d.slow ? 'calls were at or over the threshold' : 'rows are in the numerator'} (${top.rate} %)${top.p95 != null ? ` - p50 ${ms(top.p50)} - p95 ${ms(top.p95)} - max ${ms(top.max_ms)}` : ''}${top.top_reason ? ` - most frequent reason: "${clip(top.top_reason, 90)}"` : ''}.${G.length > 1 && G[1].counted > 0 ? ` Next: ${G[1].group} (${G[1].share} %, ${G[1].counted}/${G[1].population}).` : ''}`, { bold: true, color: CC.red || [0.86, 0.15, 0.15] });
+    const hasDur = G.some(x => x.p95 != null), hasReason = G.some(x => x.top_reason);
+    const cols = [{ label: label, w: hasDur ? 27 : 36 }, { label: 'Counted', w: 9, align: 'right' }, { label: 'Share', w: 8, align: 'right' }, { label: 'Population', w: 10, align: 'right' }, { label: 'Rate', w: 8, align: 'right' }];
+    if (hasDur) cols.push({ label: 'p50', w: 7, align: 'right' }, { label: 'p95', w: 7, align: 'right' }, { label: 'max', w: 7, align: 'right' });
+    if (hasReason) cols.push({ label: 'Top reason', w: hasDur ? 17 : 29 });
+    doc.table(cols, G.map(x => { const r = [clip(x.group, 60), String(x.counted), x.share + ' %', String(x.population), x.rate + ' %']; if (hasDur) r.push(ms(x.p50), ms(x.p95), ms(x.max_ms)); if (hasReason) r.push(clip(x.top_reason || '—', 60)); return r; }), { size: 7.4, rowColor: ri => ri === 0 && G[0].counted > 0 ? [1, 0.93, 0.93] : null });
+    doc.p(`Share = this ${label}'s part of everything the rule counted; breach rate = counted / population inside the ${label}${d.threshold != null && d.slow ? `; threshold ${ms(d.threshold)}` : ''}.`, { color: CC.muted, size: 8 });
+  }
+  /* WHAT THE FAILING CALL LOOKED LIKE — one real call per top offender, request and response */
+  const S = d.samples || [];
+  if (S.length) {
+    doc.h2('What the failing call looked like - one real sample per top offender');
+    S.forEach((x, i) => {
+      const ep = x.endpoint ? String(x.endpoint).replace(/^https?:\/\/[^/]+/, '') : (x.step || '-');
+      doc.p(`${i + 1}. ${x.group ? clip(x.group, 70) : ''}${x.when ? ` - ${ksa(x.when)} KSA` : ''}`, { bold: true, size: 9.5 });
+      doc.kv([['Endpoint', `${x.method ? x.method + ' ' : ''}${clip(ep, 110)}`], ['Status - duration', `${x.status ?? '-'}${x.duration_ms != null ? ` - ${x.duration_ms} ms` : ''}`], ...(x.error || x.reason ? [['Error', clip(x.error || x.reason, 160)]] : []),
+        ...(x.workflow ? [['Workflow / order', `${x.workflow}${x.order ? ' - order ' + x.order : ''}`]] : []), ...(x.request_id ? [['Request id', x.request_id]] : []), ...(x.note ? [['Note', x.note]] : [])], { kw: 110 });
+      if (x.request) { doc.p('Request', { size: 8, bold: true, color: CC.muted, gap: 0 }); doc.code(x.request, { maxLines: 14, note: 'full body in the console trace' }); }
+      if (x.response) { doc.p('Response', { size: 8, bold: true, color: CC.muted, gap: 0 }); doc.code(x.response, { maxLines: 14, note: 'full body in the console trace' }); }
+    });
+    doc.p('Bodies are masked at capture (identifiers cut to last digits). The console trace (Fixed > SDA map > find the workflow id) shows every call of the workflow; the audited unmask shows the raw context.', { color: CC.muted, size: 8 });
+  }
+  if (d.group) { const g = {}; d.rows.forEach(r => { const k = r[d.group] || '—'; g[k] = g[k] || { p: 0, n: 0 }; g[k].p++; if (r.counted) g[k].n++; }); if (!G.length) { doc.h2(`By ${d.group}`); doc.table([{ label: d.group, w: 30 }, { label: 'Counted', w: 10, align: 'right' }, { label: 'Population', w: 10, align: 'right' }], Object.entries(g).sort((a, b) => b[1].n - a[1].n).map(([k, v]) => [String(k), String(v.n), String(v.p)])); } }
   doc.h2(`Cases - ${d.total} row(s) shown${d.capped ? ' (PDF capped - the xlsx export holds the full list)' : ''} - counted rows first, marked ●`);
   const H = d.head.slice(0, 7);
   const cols = [{ label: '●', w: 3 }, ...H.map(([, l]) => ({ label: l, w: /message|response|title|description/i.test(l) ? 26 : /time|started|submitted|sent|created/i.test(l) ? 13 : 11 }))];
@@ -322,7 +404,7 @@ function mount(app, { audit }) {
     try {
       const a = req.alertRow; const q = req.query || {}; const format = q.format === 'xlsx' ? 'xlsx' : q.format === 'pdf' ? 'pdf' : 'json';
       if (format !== 'json' && !(req.caps && req.caps.export)) return res.status(403).json({ error: `role ${req.roleName} lacks export` });
-      const d = await casesFor(a, { at: q.at, cap: format === 'json' ? 300 : format === 'pdf' ? 400 : CAP });
+      const d = await casesFor(a, { at: q.at, cap: format === 'json' ? 300 : format === 'pdf' ? 120 : CAP });
       const from = new Date(new Date(d.at).getTime() - d.window_hours * 3600e3).toISOString();
       const meta = [['Alert', `${a.severity} · ${a.name}`], ['Rule', a.rule_key], ['Metric', `${a.metric_key} ${a.operator} ${a.threshold}`], ['Observed', `${a.observed_value} (sample ${a.sample})`],
         ['Evaluated at', `${ksa(d.at)} KSA (${q.at === 'first' ? 'first firing' : 'last evaluation'})`], ['Window', `${d.window_hours}h — ${ksa(from)} → ${ksa(d.at)} KSA`],
@@ -339,4 +421,4 @@ function mount(app, { audit }) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 }
-module.exports = { mount, casesFor, CASES, NO_ROWS };
+module.exports = { mount, casesFor, CASES, NO_ROWS, pdf };
