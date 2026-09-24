@@ -1741,6 +1741,7 @@
         <button class="navtab hm-nav" data-view="otodocs"><span class="num">⌘</span><span>OTO Courier API<small>Full imported reference · linked from journeys</small></span></button>
         <button class="navtab hm-nav" data-view="tapdocs"><span class="num">₮</span><span>Tap / UPG API<small>Payment-gateway reference · response codes · webhooks</small></span></button>
         <button class="navtab hm-nav" data-view="salamdocs"><span class="num">◫</span><span>Salam API docs<small>Selfcare/Apollo API reference (from the app repo)</small></span></button>
+        <button class="navtab hm-nav" data-view="alertjourney"><span class="num">⟿</span><span>Alert journey<small>Trigger → ack → resolve → history · contract clocks · credits</small></span></button>
         <button class="navtab hm-nav" data-view="explorer"><span class="num">↦</span><span data-i18n-html="nav.journeys">Journeys<small>Every journey, step by step</small></span></button>
         <button class="navtab hm-nav" data-view="integrations"><span class="num">⋈</span><span data-i18n-html="nav.integrations">Integrations<small>Catalogue &amp; workers</small></span></button>
       </div>
@@ -1761,6 +1762,7 @@
         <div class="navgroup">EXPLORE</div>
       <button class="navtab" data-view="fixed" data-fxtab="playbook"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4z"/><path d="M8 8h8M8 12h8"/></svg></span><span>Playbook<small>SLA / OLA / action plans</small></span></button>
       <button class="navtab" data-view="fixed" data-fxtab="diagrams"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 14h6v6h-6z"/><path d="M10 7h4v10"/></svg></span><span>Diagrams<small>payments · journeys</small></span></button>
+      <button class="navtab" data-view="fixed" data-fxtab="alertjourney"><span class="num">⟿</span><span>Alert journey<small>Trigger → ack → resolve → history · Sigma / Oracle clocks · credits</small></span></button>
       <button class="navtab" data-view="fixed" data-fxtab="bsstopo"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/></svg></span><span>Topology<small>Digital/BSS HLD — channels → 3Scale/OSB → Oracle BSS</small></span></button>
       <button class="navtab" data-view="fixed" data-fxtab="journeys"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h6l3-7 3 14 2-7h3"/></svg></span><span>Journeys<small>every dealer &amp; QR journey, step by step</small></span></button>
       <button class="navtab" data-view="fixed" data-fxtab="report"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></span><span>KPI digest<small>branded e-mail report</small></span></button>
@@ -1929,6 +1931,7 @@
   <section id="view-otodocs" class="view"></section>
   <section id="view-tapdocs" class="view"></section>
   <section id="view-salamdocs" class="view"></section>
+  <section id="view-alertjourney" class="view"></section>
 
   <section id="view-topology" class="view">
     <div class="topo-stats">
@@ -2242,6 +2245,7 @@
 <script src="fixed-report.js?v=20260910c"></script>
 <script src="otodocs.js?v=20260910c"></script>
 <script src="salamdocs.js?v=20260910c"></script>
+<script src="alert-journey.js?v=20260924a"></script>
 <script src="acksla.js?v=20260921a"></script>
 <script src="usersmgmt.js?v=20260924a"></script>
 <script src="slo.js?v=20260921b"></script>

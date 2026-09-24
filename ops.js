@@ -252,7 +252,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   /* 2 Sep 2026 view split: home→'dashboard', dms→'dms' (own view), every Explore-menu entry
    * (topology/apigw/docs/journeys/integrations/sub360) → the single 'explore' view. */
   const NAV_VIEW = { landing:"dashboard", execops:"exec", nocwall:"noc", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
-    explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", tapdocs:"explore", alerts:"alerts", errors:"errors", analytics:"analytics", sub360:"explore", settings:"settings" };
+    explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", tapdocs:"explore", alertjourney:"explore", alerts:"alerts", errors:"errors", analytics:"analytics", sub360:"explore", settings:"settings" };
 
   /* VIEW AS USER — the persistent "you are not yourself" bar. Fixed to the bottom so it can never
    * collide with the header on a phone, and present on every page because it lives on <body>, not

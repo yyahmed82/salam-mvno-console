@@ -13,7 +13,7 @@
     /* the two pages the Fixed Operations agent used to generate as static HTML — live since 12 Sep 2026 */
     ["exec","Executive","north-star KPIs · SLOs · top issues"],["ops","Operations","health · trends · pipeline · alerts"],["epurchase","Epurchase","web / QR channel · journeys · payments · findings"],["salamhome","Salam Home","app channel · buy + manage-line · payments · findings"],["map","SDA map","dealers · pins · trace"],["qr","QR codes","referral orders · consent"],
     ["dash","Reports","KPIs · trends · dealers & QR"],["errors","Troubleshoot","error control board · live failures"],["alerts","Alerts","rules · history"],
-    ["playbook","Playbook","SLA / OLA / action plans"],["diagrams","Diagrams","payments · journeys"],
+    ["playbook","Playbook","SLA / OLA / action plans"],["diagrams","Diagrams","payments · journeys"],["alertjourney","Alert journey","trigger → history · clocks · credits"],
     /* own pages since 11 Sep 2026 — they used to be cards inside Diagrams */
     ["bsstopo","Topology","digital / BSS HLD — channels → 3Scale/OSB → Oracle BSS"],["journeys","Journeys","every dealer & QR journey, step by step"],
     ["report","KPI digest","branded e-mail report"]];

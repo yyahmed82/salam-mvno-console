@@ -15,7 +15,7 @@ const FIXED_VIEWS = FIXED_ENABLED ? ['fixed','fixed_epurchase','fixed_salamhome'
 const FIXED_LEGACY = { maps: 'fixed_maps', b2c: 'fixed_salamhome' };
 // which view each Fixed hub tab needs (shared with the frontend via /api/me → fixedTabViews)
 const FIXED_TAB_VIEW = { overview:'fixed', epurchase:'fixed_epurchase', salamhome:'fixed_salamhome', map:'fixed_maps', qr:'fixed_maps',
-  dash:'fixed_reports', report:'fixed_reports', errors:'fixed_errors', alerts:'fixed_alerts', playbook:'fixed_explore', diagrams:'fixed_explore' };
+  dash:'fixed_reports', report:'fixed_reports', errors:'fixed_errors', alerts:'fixed_alerts', playbook:'fixed_explore', diagrams:'fixed_explore', alertjourney:'fixed_explore' };
 /* CROSS-BUSINESS PAGES (19 Sep 2026) — until now these were gated ad hoc in ops.js with style.display or a
  * realRole === 'super_admin' test, so they appeared in no matrix column and nobody could review who reached them:
  *   exec        Executive Dashboard (#exec)              — rode on 'dashboard', i.e. everyone

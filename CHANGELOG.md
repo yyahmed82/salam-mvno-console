@@ -3,6 +3,20 @@
 All notable changes to the Salam MVNO Digital Console are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0-alpha.73] — 2026-09-24 — Alert journey map (Mobile + Fixed › Explore)
+### Added
+- **Alert journey** (`alert-journey.js`): one big-picture map of everything an incident can go through — Detect →
+  Evaluate → Open → Own → Work → Resolve → History — with the gates (enabled / hours / gateway, threshold & sample,
+  impact count & customer floor, correlation & twins, hold / re-open), the people (ack, hand-over, re-assign, ServiceNow),
+  Agent 2 (triage, rule → team mapping, duplicates), the contract clocks (response · restoration · resolution · RCA per
+  vendor and severity) and the credit arithmetic (TCS weight × fee, Sigma weight × impact index, Oracle bands, Evamp
+  hourly, with caps). Colour-coded stage columns, animated flows, a scenario player (severity, team/contract, source,
+  ack / restore / RCA times, resolve reason, twist) that lights the exact path and draws the timeline against the
+  targets, three reference samples per business line that replay on the map, and the tables of contract clocks,
+  console ack SLA / reminder ladder and every way an incident closes. Follows the console theme (light / dark).
+  Homes: Mobile › Explore › Alert journey (`#alert-journey`) and Fixed › Explore › Alert journey (`#fixed?t=alertjourney`,
+  permission `fixed_explore`). Team names come from Settings › Teams.
+
 ## [2.0.0-alpha.72] — 2026-09-24 — Responder teams: incident ownership, re-assignment, manual tickets, Agent 2 rule → team mapping
 ### Added
 - **Responder-team registry** (`server/src/teams.js`, tables `console_teams`, `console_user_teams`): business × domain ×
