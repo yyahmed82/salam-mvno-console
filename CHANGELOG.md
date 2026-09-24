@@ -35,6 +35,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/); this project uses [SemV
   `POST /api/agents/run/map`. Incident triage now offers the model the live team list and stores the team **key**.
 - Users: responder-team memberships in the user panel (Settings › Users › Edit) and as chips in the list / CSV.
 ### Changed
+- Alerts › Alert rules: the Agent 2 **Team mapping** review is the last section of the page (after rule changes); a small
+  "N team proposals · review ↓" pill in the toolbar jumps to it while proposals are waiting.
 - Rule editor › TEAM is a grouped dropdown of the registry (legacy label kept selectable); rules list shows the team tag
   and Agent 2's pending proposal per rule.
 

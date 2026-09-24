@@ -1197,6 +1197,7 @@
     let h = `<div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">`;
     if(canEdit) h += `<button class="pill" id="newRuleBtn" style="border-left-color:var(--green)">+ New rule</button>`;
     if(canMail) h += `<button class="pill" id="mailDigestBtn" style="border-left-color:#2563eb">✉ Send email digest</button>`;
+    if((_teamSug||[]).length) h += `<a class="pill" href="#" id="tmJump" style="border-left-color:#d97706;text-decoration:none">🤖 ${_teamSug.length} team proposal${_teamSug.length===1?"":"s"} · review ↓</a>`;
     h += `<span class="rl" style="align-self:center">Recipients = users with <b>Mail alert</b> on (Settings → User management). Digest also auto-emails when a new alert fires.</span></div>`;
     // PAYMENT GATEWAYS first — which gateways are live decides which per-gateway rules below can fire at all
     if(SEG!=="fixed") h += `<div id="gwSection" style="margin:4px 0 16px">${window.salamLoader?window.salamLoader("Loading payment gateways…"):"Loading payment gateways…"}</div>`;
@@ -1212,7 +1213,6 @@
       <button class="pill rfc${RF.noisy?" active":""}" id="rfNoisy" style="padding:3px 10px;border-left-color:#d97706" title="Rules with single-customer firings or firings closed as noise in the last 7 days">⚠ Noisy · ${noisyN}</button>
     </div>`;
     h += clsBar("rules", rules);
-    h += `<div id="ruleTeamMap"></div>`;
     const q=RF.q.trim().toLowerCase();
     const list = rules.filter(r=>(CLSFILTER.rules==="all"||r.alert_class===CLSFILTER.rules)
       && (RF.sev==="all"||r.severity===RF.sev) && (RF.team==="all"||r.team===RF.team)
@@ -1253,6 +1253,7 @@
     // Mobile only — latency alerting configuration (global p95, per-API overrides, per-API lines from history), last section
     if(SEG!=="fixed") h += `<div id="latSection" style="margin-top:24px"><h5 style="margin:0 0 6px;font-size:12px;letter-spacing:.06em;color:var(--muted)">LATENCY THRESHOLDS · api_latency_p95 / api_latency_per_api / api_latency_storm</h5><div id="latencyCfg"></div></div>`;
     h += `<div id="ruleChanges" style="margin-top:24px"></div>`;
+    h += `<div id="ruleTeamMap" style="margin-top:24px"></div>`;   // Agent 2 team-mapping review — last section of the page (24 Sep 2026)
     $("#alBody").innerHTML = h;
     renderRuleChanges();
     if(SEG!=="fixed") renderGateways();
@@ -1278,6 +1279,7 @@
     const nb=$("#newRuleBtn"); if(nb) nb.addEventListener("click", ()=>openRuleModal(null));
     const mb=$("#mailDigestBtn"); if(mb) mb.addEventListener("click", ()=>sendDigest(mb));
     renderTeamMap();
+    const tj=$("#tmJump"); if(tj) tj.addEventListener("click",e=>{ e.preventDefault(); const t=$("#ruleTeamMap"); if(t) t.scrollIntoView({behavior:"smooth",block:"start"}); });
     if(canEdit) renderAnomalySignals();
   }
 
