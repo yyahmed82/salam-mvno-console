@@ -1,3 +1,8 @@
+## 2.0.0-alpha.79 — 24 Sep 2026 — error-trend rollup fixes
+
+- `fixed_error_msg_hourly`: `cls_auto` joins the primary key — one message can be technical under a 5xx and business under a 200 in the same hour, and the alpha.78 key made the day's insert fail (`ON CONFLICT DO UPDATE command cannot affect row a second time`), leaving the oldest days unfilled and the loop retrying the same day. The table is rebuilt automatically at boot and refilled a day at a time.
+- `/api/fixed/errors/trend` no longer goes through respCache (2-min TTL + stale-while-revalidate served the empty pre-backfill answer for three minutes after deploy); a 20 s per-URL memo that is dropped after every rollup pass replaces it.
+
 ## 2.0.0-alpha.78 — 24 Sep 2026 — Fixed › Troubleshoot: evolution of each error by hour
 
 - **Evolution by hour** card on the error control board: one line per error message over the selected period (Top 5 / 8 / 12 / 20, the rest summed into a dashed *Other* line, optional *All errors* area), hourly points up to 8 days and daily beyond (or forced), hover crosshair with every message's count at that hour, legend chips that hide / show lines, ⌕ on a chip filters the board on that message, the message selected in the *Error message* dropdown drawn bold. Follows the board's window, channel, type, provider, class, category, team, message and *Open only*; hidden while an identifier / free-text search is active (the rollup cannot answer those).

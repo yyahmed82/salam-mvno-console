@@ -38,10 +38,21 @@ async function ensure() {
   if (!ready) ready = C().query(`CREATE TABLE IF NOT EXISTS ${TABLE} (
       hour timestamptz NOT NULL, src text NOT NULL, channel text NOT NULL, type text NOT NULL, provider text NOT NULL,
       category text NOT NULL, msg text NOT NULL, cls_auto text NOT NULL, n int NOT NULL, open int NOT NULL,
-      PRIMARY KEY (hour, src, channel, type, provider, category, msg));
+      PRIMARY KEY (hour, src, channel, type, provider, category, msg, cls_auto));
     CREATE INDEX IF NOT EXISTS idx_${TABLE}_hour ON ${TABLE} (hour);
     CREATE TABLE IF NOT EXISTS fixed_error_trend_state (k text PRIMARY KEY, v jsonb NOT NULL, at timestamptz NOT NULL DEFAULT now());`)
-    .then(() => true).catch(e => { ready = null; throw e; });
+    .then(async () => {
+      /* alpha.78 created the key without cls_auto (one message can be technical under a 5xx and business under a 200 —
+       * two rows, one key → "ON CONFLICT DO UPDATE command cannot affect row a second time"). Rebuild: the loop refills. */
+      const k = await C().query(`SELECT array_length(i.indkey, 1) AS n FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid WHERE c.relname = $1 AND i.indisprimary`, [TABLE]).catch(() => ({ rows: [] }));
+      if (k.rows[0] && Number(k.rows[0].n) < 8) {
+        console.log(`[fixed-trend] ${TABLE}: primary key lacks cls_auto — rebuilding the rollup (history refills a day at a time)`);
+        await C().query(`DROP TABLE ${TABLE}; CREATE TABLE ${TABLE} (hour timestamptz NOT NULL, src text NOT NULL, channel text NOT NULL, type text NOT NULL, provider text NOT NULL,
+          category text NOT NULL, msg text NOT NULL, cls_auto text NOT NULL, n int NOT NULL, open int NOT NULL, PRIMARY KEY (hour, src, channel, type, provider, category, msg, cls_auto));
+          CREATE INDEX IF NOT EXISTS idx_${TABLE}_hour ON ${TABLE} (hour); DELETE FROM fixed_error_trend_state`);
+      }
+      return true;
+    }).catch(e => { ready = null; throw e; });
   return ready;
 }
 const stateGet = async () => { try { const r = await C().query(`SELECT v FROM fixed_error_trend_state WHERE k='rollup'`); return r.rows[0] ? r.rows[0].v : {}; } catch (_) { return {}; } };
@@ -72,7 +83,7 @@ async function roll(fromIso, toIso) {
         chunk.forEach((x, j) => { const b = j * 10; V.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10})`);
           P.push(x.hour, s.src, x.channel, x.type || 'unknown', x.provider || '-', x.category || '-', x.msg || '(no message)', x.cls_auto || 'technical', x.n, x.open); });
         await c.query(`INSERT INTO ${TABLE} (hour, src, channel, type, provider, category, msg, cls_auto, n, open) VALUES ${V.join(',')}
-                       ON CONFLICT (hour, src, channel, type, provider, category, msg) DO UPDATE SET n = EXCLUDED.n, open = EXCLUDED.open, cls_auto = EXCLUDED.cls_auto`, P);
+                       ON CONFLICT (hour, src, channel, type, provider, category, msg, cls_auto) DO UPDATE SET n = EXCLUDED.n, open = EXCLUDED.open`, P);
       }
       await c.query('COMMIT'); rows += r.rows.length;
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
@@ -111,7 +122,7 @@ async function tick() {
     /* retention: the rollup is small, but keep it to KEEP_DAYS + 7 */
     await C().query(`DELETE FROM ${TABLE} WHERE hour < now() - ($1::int || ' days')::interval`, [KEEP_DAYS + 7]).catch(() => {});
     st.last_run = new Date().toISOString(); st.history_from = new Date(lo).toISOString(); st.keep_days = KEEP_DAYS;
-    await stateSet(st); lastRun = st.last_run; lastErr = null;
+    await stateSet(st); lastRun = st.last_run; lastErr = null; memoGen++; memo.clear();
   } catch (e) { lastErr = e.message; console.error(`[fixed-trend] rollup: ${e.message}`); }
   finally { busy = false; }
 }
@@ -185,12 +196,19 @@ async function trend(q = {}) {
     coverage: { from: cov.history_from || null, fresh_at: cov.last_run || lastRun || null, keep_days: KEEP_DAYS, error: lastErr }, note: note.join(' · ') || null };
 }
 
+/* memo per URL for 20 s — enough to absorb a room of dashboards, short enough that a fresh roll shows within a refresh.
+ * NOT respCache: its 2-min TTL + stale-while-revalidate served the empty pre-backfill answer for 3 min after deploy. */
+const memo = new Map(); let memoGen = 0;
 function mount(app, deps) {
   const { gate, wrap } = deps;
-  let respCache = null; try { respCache = require('./respCache'); } catch (_) {}
   app.get('/api/fixed/errors/trend', gate, async (req, res) => {
-    try { res.json(respCache ? await respCache.wrap(req, () => trend(req.query || {})) : await trend(req.query || {})); }
-    catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+    try {
+      const key = memoGen + '|' + req.originalUrl; const h = memo.get(key);
+      if (h && Date.now() - h.at < 20e3) return res.json(h.body);
+      const body = await trend(req.query || {}); memo.set(key, { at: Date.now(), body });
+      if (memo.size > 200) memo.delete(memo.keys().next().value);
+      res.json(body);
+    } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
   });
   app.get('/api/fixed/errors/trend/status', gate, async (req, res) => {
     try { const st = await stateGet(); const c = (await C().query(`SELECT count(*)::int AS rows, min(hour) AS lo, max(hour) AS hi FROM ${TABLE}`)).rows[0];
