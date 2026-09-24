@@ -101,6 +101,7 @@
   const auditItem=menu.querySelector("[data-audit]"); if(auditItem) auditItem.addEventListener("click", ()=>{ if(window.openAudit) window.openAudit(); closeMenu(); });
   const wb=menu.querySelector("[data-workbench]"); if(wb) wb.addEventListener("click", ()=>{ if(window.openWorkbench) window.openWorkbench(); closeMenu(); });
   const tm=menu.querySelector("[data-teams]"); if(tm) tm.addEventListener("click", ()=>{ if(window.openTeams){ window.openTeams(); if(location.hash!=="#teams") location.hash="#teams"; } closeMenu(); });
+  const mi=menu.querySelector("[data-mission]"); if(mi) mi.addEventListener("click", ()=>{ if(window.openAgentsMission){ window.openAgentsMission(); if(location.hash!=="#agents-live") location.hash="#agents-live"; } closeMenu(); });
   const ag=menu.querySelector("[data-agents]"); if(ag) ag.addEventListener("click", ()=>{ if(window.openAgents){ window.openAgents(); if(location.hash!=="#agents") location.hash="#agents"; } closeMenu(); });
   const sla=menu.querySelector("[data-sla]"); if(sla) sla.addEventListener("click", ()=>{ if(window.openSla) window.openSla(); closeMenu(); });
   const vendorContracts=menu.querySelector("[data-vendor-contracts]"); if(vendorContracts) vendorContracts.addEventListener("click", ()=>{ if(window.openVendorContracts){ window.openVendorContracts(); if(location.hash!=="#vendor-contracts") location.hash="#vendor-contracts"; } closeMenu(); });

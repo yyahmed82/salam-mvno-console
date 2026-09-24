@@ -345,6 +345,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     document.querySelectorAll('#settingsMenu .navtab[data-view="nocwall"]').forEach(b=>b.classList.toggle("hidden", !has("noc")));
     // Agents & LLM stays a root-tier surface: it configures the models, not a business page.
     show("agentsMenuItem", !!(SES.me && SES.me.root!==false && isSuper));
+    show("missionMenuItem", isSuper || has("alerts") || has("fixed_alerts") || has("monitoring"));   // AI agents mission control (24 Sep 2026)
     show("teamsMenuItem", !!isSuper);   // responder teams (24 Sep 2026)
     // if current active tab is hidden, jump to first visible
     const active = document.querySelector(".navtab.active");

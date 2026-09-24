@@ -16,7 +16,7 @@
     "settings-notify":{notifyClone:true}, "settings-notify-clone":{notifyClone:true},
     "settings-assist":{assistClone:true}, "settings-assist-clone":{assistClone:true},
     "settings-demo":{demoCfg:true},
-    agents:{agents:true}, "settings-agents":{agents:true}, teams:{teams:true}, "settings-teams":{teams:true},
+    agents:{agents:true}, "settings-agents":{agents:true}, "agents-live":{mission:true}, mission:{mission:true}, robots:{mission:true}, teams:{teams:true}, "settings-teams":{teams:true},
     /* Executive / Operations (12 Sep 2026): Home = both businesses, Mobile = MVNO only; Fixed lives in the hub (#fixed?tab=exec|ops) */
     exec:{view:"execops"}, "executive":{view:"execops"},
     noc:{view:"nocwall"},                       // NOC walls (16 Sep 2026): #noc = alert radar, #noc?w=kpi = key indicators
@@ -145,6 +145,7 @@
     else if(r.notifyClone){ window.openNotifyClone && window.openNotifyClone(); }
     else if(r.assistClone){ window.openAssistClone && window.openAssistClone(); }
     else if(r.agents){ window.openAgents && window.openAgents(); }
+    else if(r.mission){ window.openAgentsMission && window.openAgentsMission(); }
     else if(r.teams){ window.openTeams && window.openTeams(); }
     else if(r.demoCfg){ window.openDemoSettings && window.openDemoSettings(); }
     else if(r.oncall){ window.openOncall && window.openOncall(r.seg==="fixed"?"fixed":"mvno"); if(r.seg==="fixed"){ const fb=document.querySelector('.navtab[data-fxtab="alerts"]'); if(fb) fb.classList.add("active"); } }
