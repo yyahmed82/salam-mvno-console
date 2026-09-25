@@ -131,7 +131,7 @@
       <div class="sb-id-h"><b>Identity &amp; order details</b></div>
       <div class="sb-grid">
         ${kv('CONTACT MOBILE (order)',i.mobile_number)}
-        ${kv(i.visitor?(i.visitor.kind==='border'?'Passport / ID on the order':'Passport'):(i.id_kind==='iqama'?'Iqama':i.id_kind==='passport'?'Passport':'National ID'),i.nationality_id_number)}${i.nationality?kv('Nationality',i.nationality):''}${i.visitor?kv('Visitor lookup',(i.visitor.kind==='border'?'KSA border number ':'passport ')+(i.visitor.key||'')+' · '+(i.visitor.matched_by||'')):''}
+        ${kv(i.visitor?(i.visitor.kind==='border'?'Passport / ID on the order':'Passport'):(i.id_kind==='iqama'?'Iqama':i.id_kind==='passport'?'Passport':'National ID'),i.nationality_id_number)}${i.nationality?kv('Nationality',i.nationality):''}${i.selected_number?kv('Selected number (not yet activated)',i.selected_number.number+' · '+(i.selected_number.matched_by||'')):''}${i.visitor?kv('Visitor lookup',(i.visitor.kind==='border'?'KSA border number ':'passport ')+(i.visitor.key||'')+' · '+(i.visitor.matched_by||'')):''}
         ${kv('Current plan',i.current_plan)}
         ${kv('Status',i.status)}
         ${kv('Order state',i.state)}

@@ -463,6 +463,10 @@ async function timeline({ identifier, anchorAt, rowId }) {
    * the identity logs know the border number — visitorKey.resolve is bounded (indexed equality, then one short scan) */
   if (!order) { try { const vk = require('./visitorKey'); if (vk.isVisitorKey(id)) { const v = await vk.resolve(id); if (v && v.order) { const o2 = await db.source.query(`SELECT * FROM onboarding_orders WHERE id::text = $1 LIMIT 1`, [v.order.id]); if (o2.rowCount) order = o2.rows[0]; } else if (v && v.mobile) { const o3 = await db.source.query(`SELECT * FROM onboarding_orders WHERE mobile_number = ANY($1::text[]) ORDER BY created_at DESC LIMIT 1`, [msisdnForms(v.mobile)]); if (o3.rowCount) order = o3.rows[0]; } } } catch (_) {} }
 
+  /* the SELECTED number (chosen before activation — the admin panel's "Number"): lives on the checkout / guest record,
+   * not on the order — staged, bounded fallback (visitorKey.orderIdByNumber), only when the direct lookup missed */
+  if (!order && /^(?:\+?966|0)?5\d{8}$/.test(String(id).replace(/[\s\-]/g, ''))) { try { const hit = await require('./visitorKey').orderIdByNumber(msisdnForms(id));
+    if (hit) { const o4 = await db.source.query(`SELECT * FROM onboarding_orders WHERE id::text = $1 LIMIT 1`, [hit.id]); if (o4.rowCount) { order = o4.rows[0]; order.selected_number_match = hit.matched_by; order.selected_number = String(id); } } } catch (_) {} }
   // Still nothing, but the identifier is a mobile? The number may only appear in ACTIVATION
   // (e.g. the MSISDN was assigned during activation and the order carries a contact number).
   // Walk activation_logs → onboarding_order_id → order, so the journey still resolves.

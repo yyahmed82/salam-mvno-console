@@ -1,3 +1,8 @@
+## 2.0.0-alpha.92 — 25 Sep 2026 — the selected number resolves (checkout / guest record), lookup kept fast
+
+- Discovery (alpha.91 verify) showed where the pre-activation "Number" lives: `checkouts.mobile_number` / `contact_number` (order 2la3eioq → 966510392090) and `guests.mobile_number` (order u6pv42xi → 966510426040) — never on `onboarding_orders`. Troubleshoot / Subscriber 360 / Yusr now fall back to a STAGED lookup (`visitorKey.orderIdByNumber`: checkouts, then guests; one small equality per stage, 5 s cap, own connection) only when the direct order lookup misses. The identity card shows *Selected number (not yet activated)* with how it matched.
+- Performance: the order lookup is the plain indexed `mobile_number` equality again — OR-ing `mnp_number` beside it (alpha.91) turned it into an 8.7 s sequential scan.
+
 ## 2.0.0-alpha.91 — 25 Sep 2026 — HOTFIX: alpha.90 order lookup timed out
 
 - alpha.90 OR-ed every catalogue candidate for the selected number (activation_logs, eligibility_logs, users, checkouts, the `extra` json scan …) into the order lookup — that query hit the 60 s statement timeout on the replica, so MSISDN searches on Customer 360 / Troubleshoot were slow or empty. The lookup is back to contact number + `mnp_number` + a short CONFIRMED list (empty until the discovery run says where the number lives); the wide discovery is diagnostics-only (`visitorKey.findValue`, 4 s per probe on its own connection).

@@ -144,6 +144,7 @@ async function buildProfile({ key }) {
      * (A35659593, CU1745123) or digits only (146018237, UK) — so anything that is not a 10-digit 1|2 id is a passport */
     id_kind: nid ? (/^1\d{9}$/.test(String(nid)) ? 'nid' : /^2\d{9}$/.test(String(nid)) ? 'iqama' : 'passport') : null,
     nationality: nationality,
+    selected_number: order && order.selected_number ? { number: order.selected_number, matched_by: order.selected_number_match } : null,
     visitor: visitor ? { kind: visitor.kind, key: visitor.key, matched_by: visitor.matched_by, note: visitor.note } : (nid && !/^[12]\d{9}$/.test(String(nid)) ? { kind: 'passport', key: nid, matched_by: order ? 'passport on the order' : 'passport on the account', note: null } : null),
     first_seen: lines.length ? lines[lines.length - 1].created_at : (order ? order.created_at : null),
     last_seen: lines.length ? lines[0].created_at : (order ? order.created_at : null)
