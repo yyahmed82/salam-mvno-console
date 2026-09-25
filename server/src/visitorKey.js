@@ -135,33 +135,20 @@ async function orderNumberColumns() { return (await numberHomes()).own; }
  * a 5 s timeout, used only after the direct lookup found nothing. */
 async function orderNumberWhere(param) { return `mobile_number::text = ANY(${param}::text[])`; }
 
-/* alpha.92 verify: the checkouts probe (mobile_number OR contact_number, unbounded) hit the 5 s cap → null; guests has
- * NO link to the order (id, mobile_number, optiva_*, sign-in fields only). So: every stage is TIME-BOUNDED (a selected
- * number only matters before activation — 90 days is generous), one column per query (an OR across two unindexed
- * columns forces one full scan; two bounded single-column queries can each use an index when one exists), and the
- * order is reached through checkouts.id = onboarding_orders.checkout_id. */
-const RECENT = "created_at >= now() - interval '90 days'";
+/* ONE direct query (alpha.94). Facts from the verify runs: checkouts.checkout_id (the code, e.g. 2la3eioq) is what
+ * onboarding_orders.checkout_id stores — checkouts.id is a different key; the only useful index on checkouts is
+ * created_at DESC, so the scan is bounded to the last 60 days and there is no ORDER BY on checkouts (an ORDER BY
+ * created_at DESC on a non-matching number walks the whole index). guests holds the number too but has no link. */
 async function orderIdByNumber(forms) {
   if (!Array.isArray(forms) || !forms.length) return null;
   let client; try { client = await db.source.connect(); } catch (_) { return null; }
-  const q = (sql, p) => client.query(sql, p).then(r => r.rows, () => []);
   try {
-    await client.query('SET statement_timeout = 4000').catch(() => {});
-    /* stage 1 — the checkout (checkouts.mobile_number = the number chosen at checkout; contact_number as a second try) */
-    for (const col of ['mobile_number', 'contact_number']) {
-      const cks = await q(`SELECT id::text FROM checkouts WHERE ${RECENT} AND ${col}::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 5`, [forms]);
-      if (!cks.length) continue;
-      const o = await q(`SELECT id::text FROM onboarding_orders WHERE checkout_id::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 1`, [cks.map(x => x.id)]);
-      if (o[0]) return { id: o[0].id, matched_by: `selected number on the checkout (${col})` };
-    }
-    /* stage 2 — the anonymous user the order belongs to (orderable_type 'AnonymousUser': mobile_number / fut_mobile_number) */
-    for (const col of ['mobile_number', 'fut_mobile_number']) {
-      const au = await q(`SELECT id::text FROM anonymous_users WHERE ${RECENT} AND ${col}::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 5`, [forms]);
-      if (!au.length) continue;
-      const o = await q(`SELECT id::text FROM onboarding_orders WHERE orderable_type = 'AnonymousUser' AND orderable_id::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 1`, [au.map(x => x.id)]);
-      if (o[0]) return { id: o[0].id, matched_by: `selected number on the anonymous user (${col})` };
-    }
-    return null;
+    await client.query('SET statement_timeout = 8000').catch(() => {});
+    const r = await client.query(`SELECT o.id::text, CASE WHEN c.mobile_number::text = ANY($1::text[]) THEN 'mobile_number' ELSE 'contact_number' END AS col
+        FROM checkouts c JOIN onboarding_orders o ON o.checkout_id::text = c.checkout_id::text
+       WHERE c.created_at >= now() - interval '60 days' AND (c.mobile_number::text = ANY($1::text[]) OR c.contact_number::text = ANY($1::text[]))
+       ORDER BY o.created_at DESC LIMIT 1`, [forms]).catch(() => ({ rows: [] }));
+    return r.rows[0] ? { id: r.rows[0].id, matched_by: `selected number on the checkout (${r.rows[0].col})` } : null;
   } finally { try { client.release(); } catch (_) {} }
 }
 /* DISCOVERY (diagnostic, bounded): where does THIS value live? Every candidate (table, column) from numberHomes()

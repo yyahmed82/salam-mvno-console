@@ -1,3 +1,7 @@
+## 2.0.0-alpha.94 — 25 Sep 2026 — selected number: one direct checkout join
+
+- `onboarding_orders.checkout_id` is the checkout CODE (`checkouts.checkout_id`), not `checkouts.id`. The selected-number fallback is now a single bounded join (checkouts of the last 60 days on `mobile_number` / `contact_number` → order), 8 s cap, no staged guessing.
+
 ## 2.0.0-alpha.93 — 25 Sep 2026 — selected-number stages bounded (90 days, one column per query) + anonymous-user stage
 
 - alpha.92's checkout stage (two unindexed columns OR-ed, unbounded) hit its 4–5 s cap and returned nothing; `guests` turned out to have no link to the order. Stages are now bounded to the last 90 days (a selected number only matters before activation), one column per query, checkouts first (`mobile_number`, then `contact_number`) then the order's `AnonymousUser` (`mobile_number`, `fut_mobile_number`) through `orderable_id`. 4 s cap per query, own connection.
