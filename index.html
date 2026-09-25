@@ -191,6 +191,10 @@
   .noc-btns{margin-left:auto;display:flex;gap:8px}
   .noc-btn{font:inherit;font-size:12px;font-weight:800;letter-spacing:.04em;cursor:pointer;padding:7px 13px;border-radius:10px;border:1px solid rgba(55,211,154,.35);background:rgba(55,211,154,.08);color:#8affd0;transition:background .15s,transform .15s}
   .noc-btn:hover{background:rgba(55,211,154,.18);transform:translateY(-1px)}
+  .noc-scope{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 10px;border:1px solid rgba(55,211,154,.28);border-radius:12px;background:rgba(55,211,154,.05)} .noc-scope-l{font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#79ab95;margin-right:4px}
+  .noc-sc{font:inherit;font-size:12px;font-weight:800;letter-spacing:.03em;cursor:pointer;padding:5px 11px;border-radius:9px;border:1px solid transparent;background:transparent;color:#79ab95;transition:background .15s,color .15s} .noc-sc:hover{color:#8affd0;background:rgba(55,211,154,.10)} .noc-sc.on{background:rgba(55,211,154,.22);color:#c8ffe6;border-color:rgba(55,211,154,.45);box-shadow:0 0 14px rgba(55,211,154,.25)}
+  .noc-sc[data-cls="technical"].on{background:rgba(220,38,38,.22);color:#ffd1d1;border-color:rgba(220,38,38,.5);box-shadow:0 0 14px rgba(220,38,38,.25)} .noc-sc[data-cls="business"].on{background:rgba(59,130,246,.22);color:#d6e6ff;border-color:rgba(59,130,246,.5);box-shadow:0 0 14px rgba(59,130,246,.25)}
+  body.noc-wall:fullscreen .noc-foot .noc-scope{opacity:.55;transition:opacity .3s} body.noc-wall:fullscreen .noc-foot:hover .noc-scope{opacity:1}
   body.noc-wall:fullscreen .noc-foot .noc-btns{opacity:.35;transition:opacity .3s} body.noc-wall:fullscreen .noc-foot:hover .noc-btns{opacity:1}
   @media (max-width:900px){.noc-top{flex-direction:column;align-items:stretch}.noc-kpis{justify-content:flex-start}.noc-body{padding:10px 14px}.noc-foot{padding:10px 14px}}
   /* ---- gear menu sections (16 Sep 2026): SETTINGS / AI / IT GOVERNANCE / REGULATORY AFFAIRS fold like Mobile / Fixed (settingsmenu.js builds them) ---- */
@@ -2238,13 +2242,13 @@
 <script src="fixed-alerts.js?v=20260911s"></script>
 <script src="fixed-playbook.js?v=20260910c"></script>
 <script src="fixed-diagrams.js?v=20260911x"></script>
-<script src="execops.js?v=20260919b"></script>
+<script src="execops.js?v=20260925a"></script>
 <script src="execbrief.js?v=20260921a"></script>
 <script src="cst-remedy.js?v=20260918f"></script>
 <script src="cst-api.js?v=20260918f"></script>
 <script src="arqami-api.js?v=20260918f"></script>
 <script src="cstpage.js?v=20260918m"></script>
-<script src="nocwall.js?v=20260918i"></script>
+<script src="nocwall.js?v=20260925a"></script>
 <script src="fixed-report.js?v=20260910c"></script>
 <script src="otodocs.js?v=20260910c"></script>
 <script src="salamdocs.js?v=20260910c"></script>

@@ -15,6 +15,12 @@
   const KSA = 3 * 3600e3, REFRESH_MS = 60e3;
   const api = p => fetch((window.API_BASE || window.CONSOLE_BASE || '') + p, { headers: { 'Content-Type': 'application/json' } }).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)));
   let tick = null, clock = null, seq = 0, cur = null;
+  /* SCOPE (25 Sep 2026): a NOC screen usually wants the platform failures only — business refusals (no coverage, wrong OTP,
+   * outstanding due…) are real alerts but not NOC work. Three scopes, remembered per browser and carried in the hash
+   * (#noc?cls=technical) so a TV bookmark opens on the right one; T cycles them. */
+  const SCOPES = [['all', 'All alerts', 'technical + business'], ['technical', 'Technical', 'the platform failed to answer'], ['business', 'Business', 'the API answered no']];
+  let cls = (() => { try { return localStorage.getItem('noc_cls') || 'all'; } catch (_) { return 'all'; } })();
+  const clsLabel = () => (SCOPES.find(s => s[0] === cls) || SCOPES[0])[1];
   const WALLS = {
     radar: { key: 'radar', sections: ['radar'], title: 'NOC · ALERT RADAR', sub: 'Mobile + Fixed · last 12 h · KSA',
              foot: 'ring = severity · sector = clock hour · ● still breaching' },
@@ -45,7 +51,7 @@
     });
     return g.outerHTML;
   }
-  const wallOf = () => { const m = /^#noc(?:\?(.*))?$/.exec(location.hash || ''); const q = m && m[1] ? /(?:^|&)w=([a-z]+)/.exec(m[1]) : null; return WALLS[q ? q[1] : 'radar'] || WALLS.radar; };
+  const wallOf = () => { const m = /^#noc(?:\?(.*))?$/.exec(location.hash || ''); const q = m && m[1] ? /(?:^|&)w=([a-z]+)/.exec(m[1]) : null; const c = m && m[1] ? /(?:^|&)cls=(all|technical|business)/.exec(m[1]) : null; if (c) { cls = c[1]; try { localStorage.setItem('noc_cls', cls); } catch (_) {} } return WALLS[q ? q[1] : 'radar'] || WALLS.radar; };
 
   const pad = n => String(n).padStart(2, '0');
   function ksaNow() { const d = new Date(Date.now() + KSA);
@@ -56,18 +62,27 @@
     host.dataset.wall = w.key;
     host.innerHTML = `
       <div class="noc-top">
-        <div class="noc-brand">${brandMark()}<span class="noc-mark">salam</span><span class="noc-ttl">${esc(w.title)}<small>${esc(w.sub)}</small></span></div>
+        <div class="noc-brand">${brandMark()}<span class="noc-mark">salam</span><span class="noc-ttl">${esc(w.title)}<small id="nocSub">${esc(w.sub)}</small></span></div>
         <div class="noc-clock"><b id="nocHms">--:--:--</b><small id="nocDate"></small></div>
         <div class="noc-kpis" id="nocKpis"></div>
       </div>
       <div class="noc-body" id="nocRadar"><div class="xo-loading">Loading…</div></div>
       <div class="noc-foot">
-        <span id="nocUpd">updated —</span><span>refreshes every 60 s · ${esc(w.foot)}</span>
+        <span id="nocUpd">updated —</span><span>refreshes every 60 s · ${esc(w.foot)}</span>${w.key === 'radar' ? `<span class="noc-scope" id="nocScope" title="Which alerts the radar shows · T cycles"><span class="noc-scope-l">Scope</span>${SCOPES.map(s => `<button type="button" class="noc-sc${cls === s[0] ? ' on' : ''}" data-cls="${s[0]}" title="${esc(s[2])}">${esc(s[1])}</button>`).join('')}</span>` : ''}
         <span class="noc-btns"><button type="button" class="noc-btn" data-noc="other">${w.key === 'radar' ? '◎ Key indicators' : '◉ Alert radar'}</button><button type="button" class="noc-btn" data-noc="fs">⛶ Fullscreen</button><button type="button" class="noc-btn" data-noc="exit">✕ Exit wall</button></span>
       </div>`;
     host.querySelector('[data-noc="fs"]').onclick = toggleFs;
     host.querySelector('[data-noc="other"]').onclick = () => { const h = w.key === 'radar' ? 'noc?w=kpi' : 'noc'; if (window.setConsoleHash) window.setConsoleHash(h); else location.hash = '#' + h; };
     host.querySelector('[data-noc="exit"]').onclick = leave;
+    host.querySelectorAll('.noc-sc').forEach(b => b.onclick = () => setScope(b.dataset.cls));
+  }
+  function setScope(v) {
+    if (!SCOPES.some(s => s[0] === v)) v = 'all';
+    cls = v; try { localStorage.setItem('noc_cls', cls); } catch (_) {}
+    document.querySelectorAll('.noc-sc').forEach(b => b.classList.toggle('on', b.dataset.cls === cls));
+    const h = 'noc' + (cls === 'all' ? '' : '?cls=' + cls);
+    if (location.hash !== '#' + h) { const st = { ...(history.state || {}) }; history.replaceState(st, '', '#' + h); }   // no hashchange → no re-open, just a new bookmarkable URL
+    sig = ''; refresh(true);
   }
   function toggleFs() {
     if (document.fullscreenElement) { document.exitFullscreen && document.exitFullscreen(); return; }
@@ -94,18 +109,22 @@
    * rebuilding its SVG on every tick restarted every animation and read as "the effect does not work".
    * live.js's opsdatarefresh (as often as every 8 s) is deliberately ignored here — the 60 s tick is the cadence. */
   let sig = '';
-  const signature = (d, w) => JSON.stringify([d.mobile, d.fixed].map(h => !h ? null : w.key === 'kpi' ? h.kpis : h.radar));
+  const signature = (d, w) => cls + '|' + JSON.stringify([d.mobile, d.fixed].map(h => !h ? null : w.key === 'kpi' ? h.kpis : h.radar));
   async function refresh(force) {
     const host = $('#nocRadar'); if (!host || !window.EXECOPS) return;
     const me = ++seq, w = cur || WALLS.radar;
-    let d = null;
+    let d = null, faces = null;
     try { d = await api('/api/exec?range=7d'); } catch (_) { /* strip keeps its last numbers */ }
+    /* the radar faces come scoped by class from their own cheap endpoint; the dashboard payload stays as it is */
+    if (w.key === 'radar') { try { faces = await api('/api/exec/radar?cls=' + cls); } catch (_) { faces = null; } }
     if (me !== seq) return;
+    if (d && faces) { for (const b of ['mobile', 'fixed']) if (d[b] && faces[b] && faces[b].radar) d[b].radar = faces[b].radar; }
     const sg = d ? signature(d, w) : '';
     if (force || !sg || sg !== sig || !host.dataset.xoLoaded) {
       sig = sg;
-      EXECOPS.render(host, { biz: 'all', sections: w.sections, head: false, range: false, kicker: 'noc', noAutoRefresh: true }, true);
+      EXECOPS.render(host, { biz: 'all', sections: w.sections, head: false, range: false, kicker: 'noc', noAutoRefresh: true, radar: faces || undefined, cls }, true);
     }
+    const sub = $('#nocSub'); if (sub && w.key === 'radar') sub.textContent = w.sub + (cls === 'all' ? '' : ' · ' + clsLabel().toLowerCase() + ' alerts only');
     if (d) kpis(d);
     const u = $('#nocUpd'); if (u) u.textContent = 'updated ' + ksaNow().hms;
   }
@@ -126,6 +145,7 @@
   document.addEventListener('keydown', e => {
     if (!document.body.classList.contains('noc-wall')) return;
     if (e.key === 'f' || e.key === 'F') { if (!e.target.closest('input,textarea')) { e.preventDefault(); toggleFs(); } }
+    else if ((e.key === 't' || e.key === 'T') && (cur || WALLS.radar).key === 'radar' && !e.target.closest('input,textarea')) { e.preventDefault(); const i = SCOPES.findIndex(s => s[0] === cls); setScope(SCOPES[(i + 1) % SCOPES.length][0]); }
     else if (e.key === 'Escape' && !document.fullscreenElement) leave();
   });
 })();

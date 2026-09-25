@@ -31,7 +31,7 @@
   const api = p => fetch((window.API_BASE || window.CONSOLE_BASE || '') + p, { headers: { 'Content-Type': 'application/json' } }).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; });
 
   /* ---------- state ---------- */
-  const state = { range: localStorage.getItem('exec_range') === '30d' ? '30d' : '7d' };
+  const state = { range: localStorage.getItem('exec_range') === '30d' ? '30d' : '7d', cls: 'all' };   // cls: the NOC wall's class scope (all | technical | business)
   const cache = {};                                  // url → {at, data, promise}
   async function load(url, force) {
     const c = cache[url] || (cache[url] = {});
@@ -384,7 +384,7 @@
     if (ttl) ttl.textContent = all ? 'open contacts' : `${scope.label} · ${scope.sev} · ${slotLabel(scope.slot)}`;
     const back = host.querySelector('[data-tty="back"]'); if (back) back.hidden = all;
     typeInto(out, [{ t: '> ' + (all ? 'scanning all sectors…' : `tuning to ${scope.label} ${scope.sev} ${slotLabel(scope.slot)}…`), c: 'dim' }]);
-    const ask = h => api(`/api/exec/radar/cell?biz=${encodeURIComponent(h.biz)}`
+    const ask = h => api(`/api/exec/radar/cell?biz=${encodeURIComponent(h.biz)}${state.cls !== 'all' ? `&cls=${state.cls}` : ''}`
       + (all ? `&open=1` : `&sev=${encodeURIComponent(scope.sev)}&slot=${encodeURIComponent(scope.slot)}${scope.older ? '&older=1' : ''}`))
       .then(d => ({ h, d })).catch(e => ({ h, d: { rules: [], error: e.message } }));
     const targets = all ? halves : halves.filter(h => h.biz === scope.biz);
@@ -547,6 +547,9 @@
     let d; try { d = await load(`${SRC[o.biz]}?range=${state.range}`, force); }
     catch (e) { host.innerHTML = `<div class="topo-card xo-err"><b>Could not load</b><div class="xo-dim">${esc(e.message)}</div></div>`; return; }
     const halves = o.biz === 'all' ? [d.mobile, d.fixed].filter(h => h && h.configured) : (d.configured ? [d] : []);
+    /* the NOC wall hands in radar faces scoped by class (opts.radar = {mobile:{radar}, fixed:{radar}}, opts.cls) — swap them in
+     * without touching the cached dashboard payload, and remember the scope for the case file beside the scope */
+    if (o.radar) { state.cls = o.cls || 'all'; halves.forEach(h => { const r = o.radar[h.biz]; if (r && r.radar) h.radar = r.radar; }); } else state.cls = 'all';
     const missing = o.biz === 'all' ? (d.missing || []) : (d.configured ? [] : [{ label: d.label || 'This business', reason: d.reason }]);
     if (!halves.length) { host.innerHTML = `<div class="topo-card xo-err"><b>Nothing to show</b><div class="xo-dim">${esc(missing.map(m => m.label + ': ' + (m.reason || 'not configured')).join(' · ') || 'no business configured for your role')}</div></div>`; return; }
     const u = halves.length > 1;

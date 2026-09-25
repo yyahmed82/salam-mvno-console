@@ -53,8 +53,13 @@ const slotAxis = hours => { const h0 = hourFloor(Date.now()), out = []; for (let
  *         older = still-open rules that fired BEFORE the window and were pinned into the oldest sector
  * totals: one per severity for the whole face, queried apart (a rule firing in five hours is ONE rule)
  * Open incidents are always counted, whenever they fired: the face is an instrument of NOW. */
-async function radarRows(seg, hours = RADAR_HOURS) {
-  const from = windowFrom(hours), W = SEG.sqlWhere('a', 'rule_key', seg);
+/* SCOPE by class (25 Sep 2026, NOC walls): 'technical' = platform failures only (rules without a class count as
+ * technical — the safer default for a NOC screen), 'business' = the API said no, anything else = every alert. The class
+ * lives on alert_rules (errclass split), never on the incident row, hence the join. */
+const CLS = cls => cls === 'technical' ? `AND coalesce(r.alert_class, 'technical') <> 'business'` : cls === 'business' ? `AND r.alert_class = 'business'` : '';
+const clsOf = v => v === 'technical' || v === 'business' ? v : 'all';
+async function radarRows(seg, hours = RADAR_HOURS, cls = 'all') {
+  const from = windowFrom(hours), W = SEG.sqlWhere('a', 'rule_key', seg) + ' ' + CLS(clsOf(cls));
   const q = (sql, p) => db.console.query(sql, p).then(r => r.rows, e => { console.error('[execRadar] radar query failed:', e.message); return []; });
   const [rows, totals] = await Promise.all([
     q(`SELECT ${SLOT('GREATEST(a.fired_at, $1::timestamptz)')} AS slot, a.severity,
@@ -63,13 +68,13 @@ async function radarRows(seg, hours = RADAR_HOURS) {
               count(DISTINCT a.rule_key) FILTER (WHERE a.status = 'open' AND a.fired_at < $1::timestamptz)::int AS older,
               count(*)::int AS firings,
               (array_agg(DISTINCT coalesce(a.name, a.rule_key)))[1:4] AS rules
-         FROM alerts a WHERE ${W} AND (a.fired_at >= $1::timestamptz OR a.status = 'open') GROUP BY 1, 2`, [from]),
+         FROM alerts a LEFT JOIN alert_rules r ON r.key = a.rule_key WHERE ${W} AND (a.fired_at >= $1::timestamptz OR a.status = 'open') GROUP BY 1, 2`, [from]),
     q(`SELECT a.severity, count(DISTINCT a.rule_key)::int AS rules,
               count(DISTINCT a.rule_key) FILTER (WHERE a.status = 'open')::int AS open,
               count(*)::int AS firings
-         FROM alerts a WHERE ${W} AND (a.fired_at >= $1::timestamptz OR a.status = 'open') GROUP BY 1`, [from]),
+         FROM alerts a LEFT JOIN alert_rules r ON r.key = a.rule_key WHERE ${W} AND (a.fired_at >= $1::timestamptz OR a.status = 'open') GROUP BY 1`, [from]),
   ]);
-  return { slots: slotAxis(hours), rows, totals, from, hours };
+  return { slots: slotAxis(hours), rows, totals, from, hours, cls: clsOf(cls) };
 }
 
 /* ---------------------------------------------------------------- console DB `alerts`, one segment */
@@ -78,9 +83,9 @@ const M_COLS = `a.id, a.rule_key, a.name, a.severity, a.team, a.status, a.messag
                 a.fired_at, a.last_seen_at, a.resolved_at, a.opened_wall, a.snoozed_until,
                 a.assignee, a.ack_by, a.ack_at, a.ack_reminder_level, a.ack_reminder_at, a.sn_number, a.note`;
 
-async function consoleCell(seg, { day, sev, days, slot, older, openOnly }) {
+async function consoleCell(seg, { day, sev, days, slot, older, openOnly, cls }) {
   const C = db.console;
-  const segWhere = SEG.sqlWhere('a', 'rule_key', seg);
+  const segWhere = SEG.sqlWhere('a', 'rule_key', seg) + ' ' + CLS(clsOf(cls));
   const biz = seg === 'fixed' ? 'fixed' : 'mobile';
   const w = [segWhere], pp = [];
   if (sev) { pp.push(sev); w.push(`a.severity = $${pp.length}`); }
@@ -93,7 +98,7 @@ async function consoleCell(seg, { day, sev, days, slot, older, openOnly }) {
   else if (!openOnly) { pp.push(days); w.push(`a.fired_at >= now() - ($${pp.length}::int || ' days')::interval`); }
   if (openOnly) w.push(`a.status = 'open' AND a.resolved_at IS NULL`);
   const rows = (await C.query(
-    `SELECT ${M_COLS} FROM alerts a WHERE ${w.join(' AND ')}
+    `SELECT ${M_COLS}, r.alert_class FROM alerts a LEFT JOIN alert_rules r ON r.key = a.rule_key WHERE ${w.join(' AND ')}
       ORDER BY (a.status = 'open') DESC, a.severity, a.fired_at DESC LIMIT 60`, pp)).rows;
   if (!rows.length) return { rules: [], ladder: null };
 
@@ -174,10 +179,10 @@ function mount(app, { requireView }) {
       if (sev && !SEVS.has(sev)) return res.status(400).json({ error: 'sev must be P1, P2, P3 or P4' });
       if (day && !isDay(day)) return res.status(400).json({ error: 'day must be YYYY-MM-DD (KSA)' });
       if (slot && !isSlot(slot)) return res.status(400).json({ error: 'slot must be YYYY-MM-DDTHH (KSA clock hour)' });
-      const q = { day, sev, days, slot, older, openOnly };
+      const q = { day, sev, days, slot, older, openOnly, cls: clsOf(req.query.cls) };
       const out = biz === 'fixed' ? await fixedCell(q) : await mobileCell(q);
       res.json({
-        biz, label: biz === 'fixed' ? 'Fixed' : 'Mobile', sev, day, slot, older, days: (day || slot || openOnly) ? null : days, openOnly,
+        biz, label: biz === 'fixed' ? 'Fixed' : 'Mobile', sev, day, slot, older, days: (day || slot || openOnly) ? null : days, openOnly, cls: q.cls,
         generatedAt: new Date().toISOString(),
         source: 'unified_console.alerts',
         open: out.rules.filter(r => r.status === 'open').length,
@@ -187,5 +192,14 @@ function mount(app, { requireView }) {
       });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
+  /* the radar faces alone, scoped by class — what the NOC wall reads (cheap: two grouped queries, no dashboard) */
+  app.get('/api/exec/radar', async (req, res) => {
+    try {
+      const K = require('./execContract'); const views = req.views || [], biz = req.business || 'both'; const cls = clsOf(req.query.cls);
+      const wantM = views.includes('dashboard') && biz !== 'fixed', wantF = views.includes('fixed') && biz !== 'mobile';
+      const [m, f] = await Promise.all([wantM ? radarRows('mvno', RADAR_HOURS, cls) : null, wantF ? radarRows('fixed', RADAR_HOURS, cls) : null]);
+      res.json({ generatedAt: new Date().toISOString(), cls, mobile: m ? { biz: 'mobile', radar: K.radarOf(m) } : null, fixed: f ? { biz: 'fixed', radar: K.radarOf(f) } : null });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
 }
-module.exports = { mount, mobileCell, fixedCell, radarRows, RADAR_HOURS };
+module.exports = { mount, mobileCell, fixedCell, radarRows, RADAR_HOURS, clsOf };

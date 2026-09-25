@@ -1,3 +1,8 @@
+## 2.0.0-alpha.87 — 25 Sep 2026 — NOC wall: include / exclude business alerts
+
+- **Scope control on the Alert radar wall** (footer, next to the buttons): *All alerts · Technical · Business*. Technical = the platform failed to answer (rules without a class count as technical), Business = the API answered no. The radar face, its legend, the severity strip (open now · P1 · P2 · P3 · per business) and the case file beside the scope all follow the scope; the subtitle says "technical alerts only" so a TV viewer knows what is hidden. Remembered per browser, carried in the URL (`#noc?cls=technical`) so a NOC bookmark opens on it, and **T** cycles the three scopes from the keyboard.
+- Server: `GET /api/exec/radar?cls=` (the two radar faces alone, cheap) and `cls` on `/api/exec/radar/cell`; `execRadar.radarRows` and the case-file query join `alert_rules.alert_class`. The Executive Dashboard payload and its cache are untouched.
+
 ## 2.0.0-alpha.86 — 24 Sep 2026 — vLLM tab: "What WE really gain" — before / after, the race, what we win per scenario
 
 - The page now speaks as our advice to Salam (we / our) throughout: where we are, what changes in our console, pick our scenario, our plan, our best approach.
