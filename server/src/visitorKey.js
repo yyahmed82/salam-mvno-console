@@ -125,18 +125,49 @@ async function numberHomes() {
 }
 /* kept for callers of the old name: the order's OWN number-like columns besides mobile_number */
 async function orderNumberColumns() { return (await numberHomes()).own; }
-/* SQL fragment on onboarding_orders for a msisdn-variants parameter (text[]): contact number OR the selected number
- * wherever it lives. Every sub-select is an equality on the related table, so it stays cheap; the extra-json scan is
- * bounded to 180 days. */
+/* CONFIRMED homes of the selected number — filled from the discovery run (see verify block alpha.91). The generic
+ * numberHomes() list is for DIAGNOSTICS ONLY: OR-ing every candidate (activation_logs, eligibility_logs, users, the
+ * extra json …) into the lookup blew the 60 s statement timeout on 25 Sep (alpha.90) — never again. Each entry:
+ *   { table, link: 'onboarding_order_id'|'checkout_id', via: 'id'|'checkout_id', cols: [...] }   (child row → order)
+ *   { table, fk: 'checkout_id', cols: [...] }                                                    (order → parent row)
+ *   { jsonKey: 'msisdn' }                                                                       (extra->>'msisdn') */
+const CONFIRMED = [];
+/* SQL fragment on onboarding_orders for a msisdn-variants parameter (text[]): contact number, the order's own
+ * number-like columns (mnp_number) and the CONFIRMED homes only. */
 async function orderNumberWhere(param) {
   const h = await numberHomes();
   const eq = c => `${c}::text = ANY(${param}::text[])`;
   const any = cols => '(' + cols.map(eq).join(' OR ') + ')';
   const parts = [eq('mobile_number'), ...h.own.map(eq)];
-  for (const c of h.children) parts.push(`${c.via}::text IN (SELECT ${c.link}::text FROM ${c.table} WHERE ${any(c.cols)})`);
-  for (const p of h.parents) parts.push(`${p.fk}::text IN (SELECT id::text FROM ${p.table} WHERE ${any(p.cols)})`);
-  for (const o of h.orderables) parts.push(`(orderable_type = '${o.type.replace(/'/g, "''")}' AND orderable_id::text IN (SELECT id::text FROM ${o.table} WHERE ${any(o.cols)}))`);
-  if (h.extra) parts.push(`(created_at >= now() - interval '180 days' AND EXISTS (SELECT 1 FROM unnest(${param}::text[]) v WHERE length(v) >= 9 AND extra::text LIKE '%' || v || '%'))`);
+  for (const c of CONFIRMED) {
+    if (c.jsonKey) parts.push(`(extra->>'${c.jsonKey}')::text = ANY(${param}::text[])`);
+    else if (c.fk) parts.push(`${c.fk}::text IN (SELECT id::text FROM ${c.table} WHERE ${any(c.cols)})`);
+    else parts.push(`${c.via}::text IN (SELECT ${c.link}::text FROM ${c.table} WHERE ${any(c.cols)})`);
+  }
   return '(' + parts.join(' OR ') + ')';
 }
-module.exports = { classify, isVisitorKey, resolve, numberHomes, orderNumberColumns, orderNumberWhere };
+/* DISCOVERY (diagnostic, bounded): where does THIS value live? Every candidate (table, column) from numberHomes()
+ * plus every number-like column in the schema is probed with an equality and a 4 s timeout on a dedicated
+ * connection; returns the hits. Run from the verify block, never from a request. */
+async function findValue(forms) {
+  const hits = []; const probed = [];
+  const cols = (await db.source.query(`SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = 'public'`)).rows;
+  const cands = cols.filter(c => NUM_COL.test(c.column_name) && !NOT_NUM.test(c.column_name) && /char|text|int|numeric/.test(c.data_type));
+  const client = await db.source.connect();
+  try {
+    await client.query('SET statement_timeout = 4000');
+    for (const c of cands) {
+      const t0 = Date.now();
+      try {
+        const r = await client.query(`SELECT count(*)::int AS n FROM ${c.table_name} WHERE ${c.column_name}::text = ANY($1::text[])`, [forms]);
+        probed.push(`${c.table_name}.${c.column_name} ${Date.now() - t0} ms`);
+        if (r.rows[0].n > 0) hits.push({ table: c.table_name, column: c.column_name, n: r.rows[0].n });
+      } catch (e) { probed.push(`${c.table_name}.${c.column_name} SKIPPED (${String(e.message).slice(0, 40)})`); }
+    }
+    /* the order's extra json */
+    try { const r = await client.query(`SELECT count(*)::int AS n FROM onboarding_orders WHERE created_at >= now() - interval '30 days' AND EXISTS (SELECT 1 FROM unnest($1::text[]) v WHERE extra::text LIKE '%' || v || '%')`, [forms]);
+      if (r.rows[0].n > 0) hits.push({ table: 'onboarding_orders', column: 'extra (json text)', n: r.rows[0].n }); } catch (e) { probed.push('onboarding_orders.extra SKIPPED'); }
+  } finally { client.release(); }
+  return { hits, probed };
+}
+module.exports = { classify, isVisitorKey, resolve, numberHomes, orderNumberColumns, orderNumberWhere, findValue, CONFIRMED };

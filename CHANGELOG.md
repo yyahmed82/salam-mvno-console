@@ -1,3 +1,7 @@
+## 2.0.0-alpha.91 — 25 Sep 2026 — HOTFIX: alpha.90 order lookup timed out
+
+- alpha.90 OR-ed every catalogue candidate for the selected number (activation_logs, eligibility_logs, users, checkouts, the `extra` json scan …) into the order lookup — that query hit the 60 s statement timeout on the replica, so MSISDN searches on Customer 360 / Troubleshoot were slow or empty. The lookup is back to contact number + `mnp_number` + a short CONFIRMED list (empty until the discovery run says where the number lives); the wide discovery is diagnostics-only (`visitorKey.findValue`, 4 s per probe on its own connection).
+
 ## 2.0.0-alpha.90 — 25 Sep 2026 — selected number: found in its real home (related rows), passport resolve fixed
 
 - alpha.89 assumed the selected number sits in an `onboarding_orders` column; on the replica none exists (verified: the table has no msisdn/number/selected_number column at all). The lookup now discovers where the number really lives — child rows linked by `onboarding_order_id` / `checkout_id`, parent rows the order points at (`checkouts` …), the polymorphic `orderable` (e.g. a number-selection record), and the order's `extra` json (bounded to 180 days) — and ORs those into the order lookup of Troubleshoot and Subscriber 360 (`visitorKey.numberHomes()`, cached 1 h; falls back to the contact number if the catalogue read fails).
