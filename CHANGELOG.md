@@ -2,7 +2,7 @@
 
 - **Mobile**: `identity.customer_name` = `onboarding_orders.customer_name`, else the checkout's `contact_name`, else the app account — shown first in the Subscriber 360 header and as *Full name* in Identity & order details.
 - **Fixed**: the BSS `salamchecknid` answer's `custName` is now kept (`inventory.customer.name`, `customer.name`, `inventory_summary.customer_name`) and shown in the Fixed header. Masked as "First …" unless the viewer may unmask (super admins are unmasked on the page).
-- **Yusr**: the context carries the name (`customer.identity.customer_name`, `fixed_customer.customer_name`) and the rule is explicit — every customer answer starts with the full name, or says "name not on file"; the LLM-offline fallbacks print it too.
+- **Yusr**: the name is the FIRST line of every customer answer, written deterministically by the console (not left to the model); the context also carries it (`customer.identity.customer_name`, `fixed_customer.customer_name`) and the rule is explicit — every customer answer starts with the full name, or says "name not on file"; the LLM-offline fallbacks print it too.
 
 ## 2.0.0-alpha.95 — 25 Sep 2026 — selected number found: public.numbers, now synced
 

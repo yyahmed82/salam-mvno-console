@@ -695,6 +695,10 @@ function fixedLinesJourneys(f) {
 function identityFacts(ctx) {
   const L = [];
   const c = ctx.customer, sl = c && c.service_lines;
+  /* THE NAME FIRST (25 Sep 2026): deterministic, never left to the model — Mobile from the order / checkout / app
+   * account, Fixed from the BSS custName. Masked form ("Mohamed …") when the asker may not unmask. */
+  const nm = (c && c.found && c.identity && c.identity.customer_name) || (ctx.fixed_customer && ctx.fixed_customer.found && ctx.fixed_customer.customer_name) || null;
+  if ((c && c.found) || (ctx.fixed_customer && ctx.fixed_customer.found)) L.push(nm ? `👤 **${nm}**` : '👤 Name not on file');
   if (c && c.found) {
     if (sl && (sl.lines || []).length) L.push(`📱 Mobile — ${sl.lines.length} active line(s): ` + sl.lines.map(l => `${l.msisdn} (${l.source}${l.since ? ', since ' + l.since : ''})`).join(', ')
       + (sl.primary_line_bss && sl.primary_line_bss.plan ? ` · BSS plan ${sl.primary_line_bss.plan}${sl.primary_line_bss.status ? ' · ' + sl.primary_line_bss.status : ''}` : ''));
