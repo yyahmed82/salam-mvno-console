@@ -1,3 +1,10 @@
+## 2.0.0-alpha.90 — 25 Sep 2026 — selected number: found in its real home (related rows), passport resolve fixed
+
+- alpha.89 assumed the selected number sits in an `onboarding_orders` column; on the replica none exists (verified: the table has no msisdn/number/selected_number column at all). The lookup now discovers where the number really lives — child rows linked by `onboarding_order_id` / `checkout_id`, parent rows the order points at (`checkouts` …), the polymorphic `orderable` (e.g. a number-selection record), and the order's `extra` json (bounded to 180 days) — and ORs those into the order lookup of Troubleshoot and Subscriber 360 (`visitorKey.numberHomes()`, cached 1 h; falls back to the contact number if the catalogue read fails).
+- Fix: `visitorKey.resolve` selected a non-existent `platform` column, so a passport typed on the order (CU1745123) came back with *no match* (`matched_by: null`) — it is `activated_platform`.
+- **Subscriber 360 identity**: the identifier on the order is labelled by what it is — *NID* (1…), *Iqama* (2…) or *Passport* (anything else: A35659593, CU1745123, 146018237) — instead of "NID —" for a visitor; the visitor's nationality is shown next to it when the replica carries it (`identity.id_kind`, `identity.nationality`).
+- **Subscriber 360 · super admins are unmasked by default**: no more "Unmask PII" click per search — the page opens unmasked for super admins (the button remains to mask again); other roles unchanged, and every unmasked read is still audited server-side.
+
 ## 2.0.0-alpha.89 — 25 Sep 2026 — search by the SELECTED number (order not yet activated)
 
 - **The selected number** (the order's "Number" column — the MSISDN chosen before activation, while `mobile_number` is the contact number) is now a search key too: the column is discovered from the catalogue and OR-ed into the order lookup of the timeline and of Subscriber 360's lines. Before, a visitor order at the *payment* step (e.g. 966510426040 · CU1745123 · Visitor 52) was "No customer found" on both Customer 360 and Yusr.

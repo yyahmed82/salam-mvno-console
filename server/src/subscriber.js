@@ -123,6 +123,13 @@ async function buildProfile({ key }) {
   const lastCp = [...events].reverse().find(e => e.source === 'change_plan_logs' && e.ok === true);
   if (lastCp && lastCp.request && lastCp.request.to_plan != null) currentPlan = plans.label(pmap, lastCp.request.to_plan);
 
+  /* nationality of a visitor (the admin panel shows it next to the passport): onboarding_orders.nationality_id → a
+   * nationalities row, read defensively (column names differ per deployment; any failure → null) */
+  let nationality = null;
+  if (order && order.nationality_id != null) {
+    try { const nr = await db.source.query(`SELECT to_jsonb(n) AS j FROM nationalities n WHERE id = $1 LIMIT 1`, [order.nationality_id]);
+      const j = nr.rows[0] && nr.rows[0].j; if (j) nationality = j.name_en || j.name || j.title || j.english_name || j.name_ar || null; } catch (_) {}
+  }
   const identity = {
     mobile_number: mobile,
     nationality_id_number: nid,
@@ -133,7 +140,11 @@ async function buildProfile({ key }) {
     activated: order ? order.activated : (lines[0] ? lines[0].activated : null),
     flow: order ? (FLOW[order.flow_type] != null ? FLOW[order.flow_type] : order.flow_type) : null,
     lines_count: lines.length,
-    visitor: visitor ? { kind: visitor.kind, key: visitor.key, matched_by: visitor.matched_by, note: visitor.note } : (order && /^[A-Za-z]/.test(String(order.nationality_id_number || '')) ? { kind: 'passport', key: order.nationality_id_number, matched_by: 'passport on the order', note: null } : null),
+    /* the identifier on the order is a NID (1…) or iqama (2…) for residents and a PASSPORT for visitors — letters
+     * (A35659593, CU1745123) or digits only (146018237, UK) — so anything that is not a 10-digit 1|2 id is a passport */
+    id_kind: nid ? (/^1\d{9}$/.test(String(nid)) ? 'nid' : /^2\d{9}$/.test(String(nid)) ? 'iqama' : 'passport') : null,
+    nationality: nationality,
+    visitor: visitor ? { kind: visitor.kind, key: visitor.key, matched_by: visitor.matched_by, note: visitor.note } : (nid && !/^[12]\d{9}$/.test(String(nid)) ? { kind: 'passport', key: nid, matched_by: order ? 'passport on the order' : 'passport on the account', note: null } : null),
     first_seen: lines.length ? lines[lines.length - 1].created_at : (order ? order.created_at : null),
     last_seen: lines.length ? lines[0].created_at : (order ? order.created_at : null)
   };

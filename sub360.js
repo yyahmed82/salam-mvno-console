@@ -7,9 +7,14 @@
   const API = window.API_BASE;
   const api=(p)=>window.fetch(API+p).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
   const api2=(p,opt)=>window.fetch(API+p,Object.assign({headers:{'Content-Type':'application/json'}},opt||{})).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
-  let curKey=null, unmasked=false, curLines=[];
+  let curKey=null, unmasked=null, curLines=[];
   const SES=()=>(window.opsSession?window.opsSession():{});
   const canUnmask=()=>{ const s=SES(); return !!(s.me&&s.me.caps&&s.me.caps.unmaskPII); };
+  /* Super admins see this page UNMASKED by default (25 Sep) — no per-search "Unmask PII" click; the button stays to
+     mask again. Everyone else starts masked and only unmasks with the capability. Server still audits every unmasked read. */
+  const isSuper=()=>{ const m=(SES().me)||{}; return m.realRole==='super_admin'||(m.realRoles||[]).includes('super_admin')||m.role==='super_admin'; };
+  const defaultUnmask=()=>isSuper()&&canUnmask();
+  const idLabel=n=>{ const v=String(n||''); return !v?'ID':/^1\d{9}$/.test(v)?'NID':/^2\d{9}$/.test(v)?'Iqama':'Passport'; };
 
   const KSA=iso=>{ if(!iso) return "—"; try{ return new Date(iso).toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).replace(","," ·"); }catch(e){ return String(iso); } };
   const day=iso=>{ if(!iso) return "—"; try{ return new Date(iso).toLocaleDateString("en-GB",{timeZone:"Asia/Riyadh",day:"2-digit",month:"short",year:"numeric"}); }catch(e){ return String(iso); } };
@@ -26,13 +31,14 @@
       </div>
       <div id="sbBody" style="margin-top:14px"></div>
     </div>`;
-    const go=()=>{ const k=$("#sbKey").value.trim(); if(k){ curKey=k; unmasked=false; curTab='overview'; load(); if(window.setConsoleHash) window.setConsoleHash("subscriber?key="+encodeURIComponent(k)); } };
+    const go=()=>{ const k=$("#sbKey").value.trim(); if(k){ curKey=k; unmasked=defaultUnmask(); curTab='overview'; load(); if(window.setConsoleHash) window.setConsoleHash("subscriber?key="+encodeURIComponent(k)); } };
     $("#sbGo").addEventListener("click",go);
     $("#sbKey").addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
     if(curKey) load();
   }
 
   async function load(){
+    if(unmasked===null) unmasked=defaultUnmask();
     const box=$("#sbBody"); if(!box) return; box.innerHTML=`<div class="sub">Loading profile…</div>`;
     // both businesses in parallel — the Fixed lookup is optional (feature-gated on the server)
     // business scope: only the side(s) the user works on are looked up (the server 403s the other side anyway)
@@ -96,7 +102,7 @@
       <div class="sbt-head-row">
         <div class="sbt-avatar">👤</div>
         <div class="sbt-who">
-          <div id="sbSalamNums" class="sbt-nums">Customer · ${i.visitor?`<span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#d97706;color:#b45309" title="${esc(i.visitor.matched_by||'')}">VISITOR · ${esc(i.visitor.kind==='border'?'border no':'passport')}</span> `:'NID '}<b>${esc(i.nationality_id_number||'—')}</b></div>
+          <div id="sbSalamNums" class="sbt-nums">Customer · ${i.visitor?`<span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#d97706;color:#b45309" title="${esc(i.visitor.matched_by||'')}">VISITOR · ${esc(i.visitor.kind==='border'?'border no':'passport')}</span> `:(i.id_kind==='iqama'?'Iqama ':i.id_kind==='passport'?'Passport ':'NID ')}<b>${esc(i.nationality_id_number||'—')}</b>${i.nationality?` <span class="rl" style="color:var(--muted);font-weight:400">· ${esc(i.nationality)}</span>`:''}</div>
           <div class="rl sbt-sub">Plan: ${esc(i.current_plan||'—')} ${act}<span style="color:var(--muted)"> · ${esc(i.flow||'—')} · ${nJourney||0} onboarding order${nJourney===1?'':'s'}</span><span id="sbLineCount" hidden></span></div>
         </div>
         <span id="lvHealth" class="rl sbt-health"></span>
@@ -125,7 +131,7 @@
       <div class="sb-id-h"><b>Identity &amp; order details</b></div>
       <div class="sb-grid">
         ${kv('CONTACT MOBILE (order)',i.mobile_number)}
-        ${kv(i.visitor?(i.visitor.kind==='border'?'Passport / ID on the order':'Passport'):'National ID',i.nationality_id_number)}${i.visitor?kv('Visitor lookup',(i.visitor.kind==='border'?'KSA border number ':'passport ')+(i.visitor.key||'')+' · '+(i.visitor.matched_by||'')):''}
+        ${kv(i.visitor?(i.visitor.kind==='border'?'Passport / ID on the order':'Passport'):(i.id_kind==='iqama'?'Iqama':i.id_kind==='passport'?'Passport':'National ID'),i.nationality_id_number)}${i.nationality?kv('Nationality',i.nationality):''}${i.visitor?kv('Visitor lookup',(i.visitor.kind==='border'?'KSA border number ':'passport ')+(i.visitor.key||'')+' · '+(i.visitor.matched_by||'')):''}
         ${kv('Current plan',i.current_plan)}
         ${kv('Status',i.status)}
         ${kv('Order state',i.state)}
@@ -1100,9 +1106,9 @@
   }
   function wireFixed(box){
     box.querySelectorAll(".sb-fxtrace").forEach(a=>a.addEventListener("click",e=>{ e.preventDefault(); if(window.fixedMapOpenTrace) window.fixedMapOpenTrace(a.dataset.id); else location.hash="fixed?tab=map"; }));
-    box.querySelectorAll(".sb-xmob").forEach(b=>b.addEventListener("click",()=>{ curKey=b.dataset.m; unmasked=false; curTab='overview'; $("#sbKey").value=curKey; load(); }));
+    box.querySelectorAll(".sb-xmob").forEach(b=>b.addEventListener("click",()=>{ curKey=b.dataset.m; unmasked=defaultUnmask(); curTab='overview'; $("#sbKey").value=curKey; load(); }));
   }
-  window.openSub360=function(key,tab){ if(key){ curKey=String(key); unmasked=false; curTab=tab||'overview'; } shell(); };
+  window.openSub360=function(key,tab){ if(key){ curKey=String(key); unmasked=defaultUnmask(); curTab=tab||'overview'; } shell(); };
   document.querySelectorAll('.navtab[data-view="sub360"]').forEach(b=>b.addEventListener("click",()=>shell()));
   document.addEventListener("themechange",()=>{ if($("#view-sub360")&&$("#view-sub360").classList.contains("active")) shell(); });
   // ⇄ UPG buttons inside event drawers (delegated: works for main + nested per-line timelines)
