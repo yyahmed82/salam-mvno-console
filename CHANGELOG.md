@@ -1,3 +1,7 @@
+## 2.0.0-alpha.89 — 25 Sep 2026 — search by the SELECTED number (order not yet activated)
+
+- **The selected number** (the order's "Number" column — the MSISDN chosen before activation, while `mobile_number` is the contact number) is now a search key too: the column is discovered from the catalogue and OR-ed into the order lookup of the timeline and of Subscriber 360's lines. Before, a visitor order at the *payment* step (e.g. 966510426040 · CU1745123 · Visitor 52) was "No customer found" on both Customer 360 and Yusr.
+
 ## 2.0.0-alpha.88 — 25 Sep 2026 — visitors: search by passport or KSA border number (Subscriber 360 · Yusr · Troubleshoot)
 
 - New `visitorKey.js`: classifies a pasted key (MSISDN · NID · iqama · KSA border number 3|4xxxxxxxxx · passport N01715453 / HE3486840I / 146018237) and resolves a passport or border number to the customer's onboarding order and MSISDN — equality on `onboarding_orders.nationality_id_number` (case-insensitive) first, then any border / passport column the identity tables carry on this replica, then one bounded text scan of the last 180 days of nafath / eligibility / activation answers.

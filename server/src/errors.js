@@ -452,9 +452,11 @@ async function timeline({ identifier, anchorAt, rowId }) {
 
   // resolve an onboarding order (by id, mobile in any stored format, or nid)
   let order = null;
+  /* the SELECTED number (the order's "Number" column, before activation) counts as much as the contact number */
+  const numWhere = await require('./visitorKey').orderNumberWhere('$2').catch(() => 'mobile_number = ANY($2::text[])');
   const oq = await db.source.query(
     `SELECT * FROM onboarding_orders
-     WHERE ${isUuid?'id = $1::uuid OR ':''} mobile_number = ANY($2::text[]) OR nationality_id_number = $1::text
+     WHERE ${isUuid?'id = $1::uuid OR ':''} ${numWhere} OR nationality_id_number = $1::text
      ORDER BY created_at DESC LIMIT 1`, [id, msisdnForms(id)]);
   if (oq.rowCount) order = oq.rows[0];
   /* visitor keys (passport / KSA border number, 25 Sep 2026): the order may hold the passport in another case, or only

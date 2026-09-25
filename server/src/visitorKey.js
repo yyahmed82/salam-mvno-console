@@ -70,4 +70,23 @@ async function resolve(raw) {
   return { ...c, identifier: null, mobile: null, nid: null, order: null, matched_by: null, note: `no order, identity log or border-number column matches ${c.kind} ${key}` };
 }
 
-module.exports = { classify, isVisitorKey, resolve };
+/* THE SELECTED NUMBER (25 Sep 2026): before activation the customer's new MSISDN exists only on the order — the admin
+ * panel's "Number" column — while `mobile_number` is the CONTACT number. Which column holds it differs by deployment,
+ * so it is discovered once from the catalogue among the usual names; every console lookup ORs it in. */
+let numCols = null;
+async function orderNumberColumns() {
+  if (numCols) return numCols;
+  const CANDIDATES = ['msisdn', 'number', 'selected_number', 'selected_msisdn', 'phone_number', 'new_msisdn', 'chosen_number', 'sim_msisdn', 'mobile_no', 'assigned_number', 'reserved_number'];
+  try {
+    const r = await db.source.query(`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'onboarding_orders' AND column_name = ANY($1::text[])`, [CANDIDATES]);
+    numCols = r.rows.map(x => x.column_name);
+  } catch (_) { numCols = []; }
+  const t = setTimeout(() => { numCols = null; }, 3600e3); if (t.unref) t.unref();
+  return numCols;
+}
+/* SQL fragment: "(mobile_number = ANY($n) OR <numcol> = ANY($n) …)" for a msisdn-variants parameter */
+async function orderNumberWhere(param) {
+  const cols = await orderNumberColumns();
+  return '(' + ['mobile_number', ...cols].map(c => `${c}::text = ANY(${param}::text[])`).join(' OR ') + ')';
+}
+module.exports = { classify, isVisitorKey, resolve, orderNumberColumns, orderNumberWhere };

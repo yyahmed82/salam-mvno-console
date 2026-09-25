@@ -87,7 +87,7 @@ async function buildProfile({ key }) {
                    WHEN nationality_id_number IS NULL OR nationality_id_number = '' THEN 'contact_no_nid'
                    ELSE 'contact_other_nid' END AS match_basis
          FROM onboarding_orders
-        WHERE mobile_number = ANY($1::text[]) OR nationality_id_number = $2
+        WHERE ${await require('./visitorKey').orderNumberWhere('$1').catch(() => 'mobile_number = ANY($1::text[])')} OR nationality_id_number = $2
         ORDER BY created_at DESC LIMIT 50`, [(v => { const d = String(v == null ? '' : v).replace(/\D/g, '');
           if (!/^(?:966|0)?5\d{8}$/.test(d)) return [String(v)];
           const l9 = d.slice(-9); return ['0' + l9, '966' + l9, l9, '+966' + l9]; })(mobile), nid])).rows.map(o => ({
