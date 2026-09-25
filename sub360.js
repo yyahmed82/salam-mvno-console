@@ -19,9 +19,9 @@
     const host=$("#view-sub360"); if(!host) return;
     host.innerHTML=`<div class="panel">
       <h2>Customer 360</h2>
-      <div class="sub">One customer, both businesses — <b>Mobile</b> (identity, lines/SIMs, plan, payments, journey) and <b>Fixed</b> (FTTH / 5G home services, orders, dealer, errors, payments). Search by MSISDN or National ID for mobile; by service/account number (FTTH…), customer code, customer ID, BSS order number, 5G number or ICCID for fixed. PII is masked unless you can unmask.</div>
+      <div class="sub">One customer, both businesses — <b>Mobile</b> (identity, lines/SIMs, plan, payments, journey) and <b>Fixed</b> (FTTH / 5G home services, orders, dealer, errors, payments). Search by MSISDN, National ID / Iqama, or — for visitors — passport number or KSA border number for mobile; by service/account number (FTTH…), customer code, customer ID, BSS order number, 5G number or ICCID for fixed. PII is masked unless you can unmask.</div>
       <div class="sb-search">
-        <input id="sbKey" placeholder="MSISDN · National ID · FTTH account · customer code / ID · order no · ICCID" value="${esc(curKey||'')}">
+        <input id="sbKey" placeholder="MSISDN · National ID / Iqama · Passport · KSA border number · FTTH account · customer code · order no · ICCID" value="${esc(curKey||'')}">
         <button class="pill" id="sbGo" style="border-left-color:var(--green)">Look up</button>
       </div>
       <div id="sbBody" style="margin-top:14px"></div>
@@ -47,7 +47,7 @@
     if(!d.found){
       if(hasFixed){ box.innerHTML=fixedHead(curFixed)+`<div class="sbt-pane" data-tab="fixed">${fixedPane(curFixed)}</div>`; wireFixed(box);
         const ub=$("#sbUnmask"); if(ub) ub.addEventListener("click",()=>{ unmasked=!unmasked; load(); }); return; }
-      box.innerHTML=`<div class="okbox">No customer found for “${esc(curKey)}”${biz==="both"?" on either side":biz==="fixed"?" on the Fixed side":" on the Mobile side"}. Mobile: MSISDN in intl format (9665…) or National ID. Fixed: service/account number, customer code or ID, order number, 5G number or ICCID.${curFixed&&curFixed.error?`<div class="rl" style="color:var(--muted);margin-top:6px">Fixed lookup: ${esc(curFixed.error)}</div>`:""}</div>`; return; }
+      box.innerHTML=`<div class="okbox">No customer found for “${esc(curKey)}”${biz==="both"?" on either side":biz==="fixed"?" on the Fixed side":" on the Mobile side"}. Mobile: MSISDN in intl format (9665…), National ID / Iqama, or a visitor's passport / KSA border number. Fixed: service/account number, customer code or ID, order number, 5G number or ICCID.${curFixed&&curFixed.error?`<div class="rl" style="color:var(--muted);margin-top:6px">Fixed lookup: ${esc(curFixed.error)}</div>`:""}</div>`; return; }
     curLines = d.lines || [];
     /* CALL-CENTER LAYOUT (4 Sep 2026 redesign): one STICKY header (who is this + line selector +
      * gateway health + tabs — always visible while scrolling) over five task-focused tabs.
@@ -96,7 +96,7 @@
       <div class="sbt-head-row">
         <div class="sbt-avatar">👤</div>
         <div class="sbt-who">
-          <div id="sbSalamNums" class="sbt-nums">Customer · NID <b>${esc(i.nationality_id_number||'—')}</b></div>
+          <div id="sbSalamNums" class="sbt-nums">Customer · ${i.visitor?`<span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#d97706;color:#b45309" title="${esc(i.visitor.matched_by||'')}">VISITOR · ${esc(i.visitor.kind==='border'?'border no':'passport')}</span> `:'NID '}<b>${esc(i.nationality_id_number||'—')}</b></div>
           <div class="rl sbt-sub">Plan: ${esc(i.current_plan||'—')} ${act}<span style="color:var(--muted)"> · ${esc(i.flow||'—')} · ${nJourney||0} onboarding order${nJourney===1?'':'s'}</span><span id="sbLineCount" hidden></span></div>
         </div>
         <span id="lvHealth" class="rl sbt-health"></span>
@@ -125,7 +125,7 @@
       <div class="sb-id-h"><b>Identity &amp; order details</b></div>
       <div class="sb-grid">
         ${kv('CONTACT MOBILE (order)',i.mobile_number)}
-        ${kv('National ID',i.nationality_id_number)}
+        ${kv(i.visitor?(i.visitor.kind==='border'?'Passport / ID on the order':'Passport'):'National ID',i.nationality_id_number)}${i.visitor?kv('Visitor lookup',(i.visitor.kind==='border'?'KSA border number ':'passport ')+(i.visitor.key||'')+' · '+(i.visitor.matched_by||'')):''}
         ${kv('Current plan',i.current_plan)}
         ${kv('Status',i.status)}
         ${kv('Order state',i.state)}

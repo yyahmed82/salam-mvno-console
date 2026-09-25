@@ -457,6 +457,9 @@ async function timeline({ identifier, anchorAt, rowId }) {
      WHERE ${isUuid?'id = $1::uuid OR ':''} mobile_number = ANY($2::text[]) OR nationality_id_number = $1::text
      ORDER BY created_at DESC LIMIT 1`, [id, msisdnForms(id)]);
   if (oq.rowCount) order = oq.rows[0];
+  /* visitor keys (passport / KSA border number, 25 Sep 2026): the order may hold the passport in another case, or only
+   * the identity logs know the border number — visitorKey.resolve is bounded (indexed equality, then one short scan) */
+  if (!order) { try { const vk = require('./visitorKey'); if (vk.isVisitorKey(id)) { const v = await vk.resolve(id); if (v && v.order) { const o2 = await db.source.query(`SELECT * FROM onboarding_orders WHERE id::text = $1 LIMIT 1`, [v.order.id]); if (o2.rowCount) order = o2.rows[0]; } else if (v && v.mobile) { const o3 = await db.source.query(`SELECT * FROM onboarding_orders WHERE mobile_number = ANY($1::text[]) ORDER BY created_at DESC LIMIT 1`, [msisdnForms(v.mobile)]); if (o3.rowCount) order = o3.rows[0]; } } } catch (_) {} }
 
   // Still nothing, but the identifier is a mobile? The number may only appear in ACTIVATION
   // (e.g. the MSISDN was assigned during activation and the order carries a contact number).

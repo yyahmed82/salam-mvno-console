@@ -16,6 +16,12 @@ async function buildProfile({ key }) {
   if (!id) return { key: id, found: false, identity: null, lines: [], summary: {}, events: [] };
 
   let { order, events } = await errors.timeline({ identifier: id });
+  /* VISITORS (25 Sep 2026): a passport or a KSA border number is a legitimate search key — the order stores the passport
+   * in nationality_id_number, the border number sits in the identity answers. Resolve through visitorKey and re-run the
+   * timeline under what it found (mobile / passport), so Subscriber 360 shows the visitor like any subscriber. */
+  let visitor = null;
+  try { const vk = require('./visitorKey'); if (vk.isVisitorKey(id)) { visitor = await vk.resolve(id);
+    if (visitor && visitor.identifier && !order) { const t = await errors.timeline({ identifier: visitor.mobile || visitor.identifier }); order = t.order || order; if (t.events && t.events.length) events = t.events; } } } catch (_) {}
   /* REGRESSION FIX (3 Sep): searching a SALAM SERVICE MSISDN found no order (orders store the
    * CONTACT number) and the identity card then echoed the msisdn as "National ID". Map through
    * the app account instead: users.mobile_number IS the service number → take the customer's
@@ -48,7 +54,7 @@ async function buildProfile({ key }) {
       } catch (e) { /* best-effort */ }
     }
   } catch (e) { /* users mapping is best-effort — identity falls back below */ }
-  const mobile = order ? order.mobile_number : (userRow ? userRow.mobile_number : id);
+  const mobile = order ? order.mobile_number : (userRow ? userRow.mobile_number : (visitor && visitor.mobile) ? visitor.mobile : id);
   // NEVER echo a non-NID search key as the National ID — show the mapped one or nothing
   const nid = (order && order.nationality_id_number) ? order.nationality_id_number
     : (userRow && userRow.nationality_id_number) ? userRow.nationality_id_number
@@ -127,6 +133,7 @@ async function buildProfile({ key }) {
     activated: order ? order.activated : (lines[0] ? lines[0].activated : null),
     flow: order ? (FLOW[order.flow_type] != null ? FLOW[order.flow_type] : order.flow_type) : null,
     lines_count: lines.length,
+    visitor: visitor ? { kind: visitor.kind, key: visitor.key, matched_by: visitor.matched_by, note: visitor.note } : (order && /^[A-Za-z]/.test(String(order.nationality_id_number || '')) ? { kind: 'passport', key: order.nationality_id_number, matched_by: 'passport on the order', note: null } : null),
     first_seen: lines.length ? lines[lines.length - 1].created_at : (order ? order.created_at : null),
     last_seen: lines.length ? lines[0].created_at : (order ? order.created_at : null)
   };
@@ -138,7 +145,7 @@ async function buildProfile({ key }) {
     ? { count: foreignContactOrders,
         note: `${foreignContactOrders} further onboarding order(s) share this contact number under a different national ID. They are not this customer's and are not counted — search by that customer's own national ID to see them.` }
     : null;
-  return { key: id, found, identity, lines, summary, events, contactCollision, builtAt: new Date().toISOString() };
+  return { key: id, found, identity, lines, summary, events, contactCollision, visitor: identity.visitor || null, builtAt: new Date().toISOString() };
 }
 
 /* The cached face of buildProfile. In memory only — see lookupCache.js for why this is not

@@ -1,3 +1,9 @@
+## 2.0.0-alpha.88 — 25 Sep 2026 — visitors: search by passport or KSA border number (Subscriber 360 · Yusr · Troubleshoot)
+
+- New `visitorKey.js`: classifies a pasted key (MSISDN · NID · iqama · KSA border number 3|4xxxxxxxxx · passport N01715453 / HE3486840I / 146018237) and resolves a passport or border number to the customer's onboarding order and MSISDN — equality on `onboarding_orders.nationality_id_number` (case-insensitive) first, then any border / passport column the identity tables carry on this replica, then one bounded text scan of the last 180 days of nafath / eligibility / activation answers.
+- **Subscriber 360**: a passport or border number opens the visitor's profile like any subscriber; the identity card is labelled *VISITOR · passport / border no* with how the match was made. **Troubleshoot** timeline: the same resolution when the order is not found under the typed key. **Yusr**: understands "passport N01715453", "جواز سفر 146018237", "border number 3xxxxxxxxx" and bare passport tokens (ticket numbers INC/TKT are never taken as passports).
+- Context: the Visitor 112 Nafath thread (INC0027164 / INC0029489) — two visitor customers not searchable by the only identifiers the front line had (passport, checkout code).
+
 ## 2.0.0-alpha.87 — 25 Sep 2026 — NOC wall: include / exclude business alerts
 
 - **Scope control on the Alert radar wall** (footer, next to the buttons): *All alerts · Technical · Business*. Technical = the platform failed to answer (rules without a class count as technical), Business = the API answered no. The radar face, its legend, the severity strip (open now · P1 · P2 · P3 · per business) and the case file beside the scope all follow the scope; the subtitle says "technical alerts only" so a TV viewer knows what is hidden. Remembered per browser, carried in the URL (`#noc?cls=technical`) so a NOC bookmark opens on it, and **T** cycles the three scopes from the keyboard.

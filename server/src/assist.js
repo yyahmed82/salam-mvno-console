@@ -193,7 +193,13 @@ function extractIdentifier(q) {
   // National/Iqama ID: 10 digits starting 1|2, not embedded in a longer number.
   // Match on the ORIGINAL string (digit-boundaries), so "…fail for 2398761234" works.
   const n = orig.match(/(?<![0-9])[12]\d{9}(?![0-9])/);
-  return n ? n[0] : null;
+  if (n) return n[0];
+  /* VISITORS (25 Sep 2026): a KSA border number (10 digits, 3|4 prefix) or a passport — "passport N01715453",
+   * "جواز 146018237", or a bare letter+digits token like HE3486840 / N01715453 */
+  const b = orig.match(/(?<![0-9])[34]\d{9}(?![0-9])/); if (b) return b[0];
+  const pp = orig.match(/(?:passport|pass\.?|جواز(?:\s*(?:سفر|السفر))?)\s*(?:no\.?|number|num|#|:|رقم)?\s*:?\s*([A-Za-z0-9]{6,12})(?![A-Za-z0-9])/i); if (pp) return pp[1].toUpperCase();
+  const bare = orig.match(/(?<![A-Za-z0-9])(?!INC|TKT|REQ|CHG|RITM|SN\d|PRB)[A-Z]{1,3}\d{5,10}[A-Za-z]?(?![A-Za-z0-9])/); if (bare) return bare[0].toUpperCase();   // INC… / TKT… are tickets, not passports
+  return null;
 }
 
 const ALERT_WORDS = /\b(alerts?|incidents?|outages?|down|broken|p1|p2|p3|slo|breach(es|ed)?|firing|what'?s (wrong|broken)|health)\b/i;
