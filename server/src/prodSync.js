@@ -21,6 +21,10 @@ const DEFAULT_TABLES = [
   // 'channels' MUST precede 'nafath_logs' (nafath_logs.channel_id → channels.id, fk_rails_d768a88037).
   'plans', 'sellers', 'settings', 'versions', 'channels', 'plan_channels',
   'onboarding_orders', 'checkouts', 'payments',
+  /* THE SELECTED NUMBER (25 Sep 2026): the MSISDN chosen before activation — the admin panel's "Number" column — is a
+   * row of public.numbers (identifier, onboarding_order_id, reservation_id, expires_at). Without it a visitor at the
+   * payment step was "No customer found" under the number the front line has. Kept right after onboarding_orders. */
+  'numbers',
   'activation_logs', 'eligibility_logs', 'nafath_logs', 'change_plan_logs', 'delivery_requests',
   'seller_deductions',
   /* VAS / SERVICE LOGS (4 Sep 2026) — behind the CMS "Service Logs" page and the Sub360 VAS
@@ -173,11 +177,24 @@ async function setState(table, patch) {
  * original replica seed provided them) — a table newly added to DEFAULT_TABLES silently
  * skipped 'not present locally' (the VAS service-log tables). Now the local shell is created
  * from the PROD schema: analytics-loose types (varchars→text), pk carried over. */
+const pgType = t => {
+  const d = String(t).toLowerCase();
+  if (/bigint|bigserial/.test(d)) return 'bigint';
+  if (/int|serial/.test(d)) return 'integer';
+  if (/uuid/.test(d)) return 'uuid';
+  if (/bool/.test(d)) return 'boolean';
+  if (/timestamp/.test(d)) return 'timestamptz';
+  if (/^date$/.test(d)) return 'date';
+  if (/numeric|decimal|double|real|money/.test(d)) return 'numeric';
+  if (/jsonb?/.test(d)) return 'jsonb';
+  return 'text';
+};
 async function createLocalFromProd(prod, prodSchema, table) {
   const pc = await columns(prod, prodSchema, table);
   if (!pc.length) throw new Error('prod columns unreadable for ' + table);
   const pkArr = await primaryKey(prod, prodSchema, table);
-  const T = t => {
+  const T = pgType;
+  const _unused = t => {
     const d = String(t).toLowerCase();
     if (/bigint|bigserial/.test(d)) return 'bigint';
     if (/int|serial/.test(d)) return 'integer';
@@ -206,7 +223,19 @@ async function planTable(prod, table) {
   const localSchema = ls.table_schema, prodSchema = ps.table_schema;
   /* Serialised on purpose: db.source is a max-1 pool, so firing these together makes node-pg
    * queue them on the one client and emit the "client.query() while already executing" warning. */
-  const lc = await columns(db.source, localSchema, table);
+  let lc = await columns(db.source, localSchema, table);
+  const pc0 = await columns(prod, prodSchema, table);
+  /* COLUMN DRIFT (25 Sep 2026): the local seed of `numbers` predates onboarding_order_id / expires_at, and the copy is
+   * the INTERSECTION of columns — so a column prod added after the seed never arrives. Add what is missing (nullable,
+   * analytics-loose type) before planning; credential columns stay excluded through SKIP_COLUMNS. */
+  const have = new Set(lc.map(c => c.column_name)); const skip0 = new Set(SKIP_COLUMNS[table] || []);
+  for (const c of pc0.filter(c => !have.has(c.column_name) && !skip0.has(c.column_name))) {
+    try { await db.source.query(`ALTER TABLE "${localSchema}"."${table}" ADD COLUMN IF NOT EXISTS "${c.column_name}" ${pgType(c.data_type)}`);
+      console.log(`[PROD-SYNC] ${table}: added missing column ${c.column_name} ${pgType(c.data_type)}`); }
+    catch (e) { console.warn(`[PROD-SYNC] ${table}: cannot add column ${c.column_name}: ${e.message.slice(0, 80)}`); }
+  }
+  if (table === 'numbers') await db.source.query(`CREATE INDEX IF NOT EXISTS idx_src_numbers_identifier ON "${localSchema}"."numbers" (identifier)`).catch(() => {});
+  lc = await columns(db.source, localSchema, table);
   const pkArr = await primaryKey(db.source, localSchema, table);
   const uniques = await uniqueKeys(db.source, localSchema, table);
   const pc = await columns(prod, prodSchema, table);

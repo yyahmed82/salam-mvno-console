@@ -135,21 +135,15 @@ async function orderNumberColumns() { return (await numberHomes()).own; }
  * a 5 s timeout, used only after the direct lookup found nothing. */
 async function orderNumberWhere(param) { return `mobile_number::text = ANY(${param}::text[])`; }
 
-/* ONE direct query (alpha.94). Facts from the verify runs: checkouts.checkout_id (the code, e.g. 2la3eioq) is what
- * onboarding_orders.checkout_id stores — checkouts.id is a different key; the only useful index on checkouts is
- * created_at DESC, so the scan is bounded to the last 60 days and there is no ORDER BY on checkouts (an ORDER BY
- * created_at DESC on a non-matching number walks the whole index). guests holds the number too but has no link. */
+/* THE SELECTED NUMBER lives in public.numbers (prod probe 25 Sep: identifier 966510392090 → onboarding_order_id
+ * e0e20159…, expires_at, reservation_id). The table is synced by prodSync since alpha.95; one indexed-shape equality. */
 async function orderIdByNumber(forms) {
   if (!Array.isArray(forms) || !forms.length) return null;
-  let client; try { client = await db.source.connect(); } catch (_) { return null; }
   try {
-    await client.query('SET statement_timeout = 8000').catch(() => {});
-    const r = await client.query(`SELECT o.id::text, CASE WHEN c.mobile_number::text = ANY($1::text[]) THEN 'mobile_number' ELSE 'contact_number' END AS col
-        FROM checkouts c JOIN onboarding_orders o ON o.checkout_id::text = c.checkout_id::text
-       WHERE c.created_at >= now() - interval '60 days' AND (c.mobile_number::text = ANY($1::text[]) OR c.contact_number::text = ANY($1::text[]))
-       ORDER BY o.created_at DESC LIMIT 1`, [forms]).catch(() => ({ rows: [] }));
-    return r.rows[0] ? { id: r.rows[0].id, matched_by: `selected number on the checkout (${r.rows[0].col})` } : null;
-  } finally { try { client.release(); } catch (_) {} }
+    const r = await db.source.query(`SELECT onboarding_order_id::text AS id, expires_at FROM numbers
+        WHERE identifier::text = ANY($1::text[]) AND onboarding_order_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`, [forms]);
+    return r.rows[0] ? { id: r.rows[0].id, matched_by: 'selected number (numbers.identifier' + (r.rows[0].expires_at ? ', reserved until ' + new Date(r.rows[0].expires_at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '') + ')' } : null;
+  } catch (_) { return null; }
 }
 /* DISCOVERY (diagnostic, bounded): where does THIS value live? Every candidate (table, column) from numberHomes()
  * plus every number-like column in the schema is probed with an equality and a 4 s timeout on a dedicated

@@ -1,3 +1,8 @@
+## 2.0.0-alpha.95 — 25 Sep 2026 — selected number found: public.numbers, now synced
+
+- Root cause of the whole thread: the selected number is a row of prod `public.numbers` (`identifier`, `onboarding_order_id`, `reservation_id`, `expires_at`) and the replica is a partial copy — `numbers` was frozen at the seed, so a September order's number could not be there. `numbers` is now in `prodSync.DEFAULT_TABLES`; the lookup is one equality on `numbers.identifier → onboarding_order_id`.
+- prod-sync: columns prod added after the seed are now created locally before the copy (the copy is the intersection of columns, so `numbers.onboarding_order_id` / `expires_at` would otherwise never arrive).
+
 ## 2.0.0-alpha.94 — 25 Sep 2026 — selected number: one direct checkout join
 
 - `onboarding_orders.checkout_id` is the checkout CODE (`checkouts.checkout_id`), not `checkouts.id`. The selected-number fallback is now a single bounded join (checkouts of the last 60 days on `mobile_number` / `contact_number` → order), 8 s cap, no staged guessing.
