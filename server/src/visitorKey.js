@@ -135,37 +135,31 @@ async function orderNumberColumns() { return (await numberHomes()).own; }
  * a 5 s timeout, used only after the direct lookup found nothing. */
 async function orderNumberWhere(param) { return `mobile_number::text = ANY(${param}::text[])`; }
 
-/* guests → order link column, discovered once (onboarding_order_id / order_id / checkout_id); null = not linkable */
-let guestLink; async function guestLinkColumn() {
-  if (guestLink !== undefined) return guestLink;
-  try { const r = await db.source.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='guests' AND column_name IN ('onboarding_order_id','order_id','checkout_id')`);
-    guestLink = r.rows[0] ? r.rows[0].column_name : null; } catch (_) { guestLink = null; }
-  return guestLink;
-}
-/* forms: the msisdn variants (966…, 0…, 9-digit, +966…) → { id, matched_by } of the newest order that selected this
- * number, or null. Bounded: 5 s per stage on a dedicated connection; any failure → null (the caller keeps "not found"). */
+/* alpha.92 verify: the checkouts probe (mobile_number OR contact_number, unbounded) hit the 5 s cap → null; guests has
+ * NO link to the order (id, mobile_number, optiva_*, sign-in fields only). So: every stage is TIME-BOUNDED (a selected
+ * number only matters before activation — 90 days is generous), one column per query (an OR across two unindexed
+ * columns forces one full scan; two bounded single-column queries can each use an index when one exists), and the
+ * order is reached through checkouts.id = onboarding_orders.checkout_id. */
+const RECENT = "created_at >= now() - interval '90 days'";
 async function orderIdByNumber(forms) {
   if (!Array.isArray(forms) || !forms.length) return null;
   let client; try { client = await db.source.connect(); } catch (_) { return null; }
   const q = (sql, p) => client.query(sql, p).then(r => r.rows, () => []);
   try {
-    await client.query('SET statement_timeout = 5000').catch(() => {});
-    /* stage 1 — the checkout the order belongs to (checkouts.mobile_number = the number chosen at checkout) */
-    const cks = await q(`SELECT id::text FROM checkouts WHERE mobile_number::text = ANY($1::text[]) OR contact_number::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 5`, [forms]);
-    if (cks.length) {
+    await client.query('SET statement_timeout = 4000').catch(() => {});
+    /* stage 1 — the checkout (checkouts.mobile_number = the number chosen at checkout; contact_number as a second try) */
+    for (const col of ['mobile_number', 'contact_number']) {
+      const cks = await q(`SELECT id::text FROM checkouts WHERE ${RECENT} AND ${col}::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 5`, [forms]);
+      if (!cks.length) continue;
       const o = await q(`SELECT id::text FROM onboarding_orders WHERE checkout_id::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 1`, [cks.map(x => x.id)]);
-      if (o[0]) return { id: o[0].id, matched_by: 'selected number on the checkout' };
+      if (o[0]) return { id: o[0].id, matched_by: `selected number on the checkout (${col})` };
     }
-    /* stage 2 — the guest record of an in-progress order */
-    const link = await guestLinkColumn();
-    if (link) {
-      const gs = await q(`SELECT ${link}::text AS k FROM guests WHERE mobile_number::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 5`, [forms]);
-      const keys = gs.map(x => x.k).filter(Boolean);
-      if (keys.length) {
-        const col = link === 'checkout_id' ? 'checkout_id' : 'id';
-        const o = await q(`SELECT id::text FROM onboarding_orders WHERE ${col}::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 1`, [keys]);
-        if (o[0]) return { id: o[0].id, matched_by: 'selected number on the guest record' };
-      }
+    /* stage 2 — the anonymous user the order belongs to (orderable_type 'AnonymousUser': mobile_number / fut_mobile_number) */
+    for (const col of ['mobile_number', 'fut_mobile_number']) {
+      const au = await q(`SELECT id::text FROM anonymous_users WHERE ${RECENT} AND ${col}::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 5`, [forms]);
+      if (!au.length) continue;
+      const o = await q(`SELECT id::text FROM onboarding_orders WHERE orderable_type = 'AnonymousUser' AND orderable_id::text = ANY($1::text[]) ORDER BY created_at DESC LIMIT 1`, [au.map(x => x.id)]);
+      if (o[0]) return { id: o[0].id, matched_by: `selected number on the anonymous user (${col})` };
     }
     return null;
   } finally { try { client.release(); } catch (_) {} }

@@ -1,3 +1,7 @@
+## 2.0.0-alpha.93 — 25 Sep 2026 — selected-number stages bounded (90 days, one column per query) + anonymous-user stage
+
+- alpha.92's checkout stage (two unindexed columns OR-ed, unbounded) hit its 4–5 s cap and returned nothing; `guests` turned out to have no link to the order. Stages are now bounded to the last 90 days (a selected number only matters before activation), one column per query, checkouts first (`mobile_number`, then `contact_number`) then the order's `AnonymousUser` (`mobile_number`, `fut_mobile_number`) through `orderable_id`. 4 s cap per query, own connection.
+
 ## 2.0.0-alpha.92 — 25 Sep 2026 — the selected number resolves (checkout / guest record), lookup kept fast
 
 - Discovery (alpha.91 verify) showed where the pre-activation "Number" lives: `checkouts.mobile_number` / `contact_number` (order 2la3eioq → 966510392090) and `guests.mobile_number` (order u6pv42xi → 966510426040) — never on `onboarding_orders`. Troubleshoot / Subscriber 360 / Yusr now fall back to a STAGED lookup (`visitorKey.orderIdByNumber`: checkouts, then guests; one small equality per stage, 5 s cap, own connection) only when the direct order lookup misses. The identity card shows *Selected number (not yet activated)* with how it matched.
