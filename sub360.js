@@ -102,7 +102,7 @@
       <div class="sbt-head-row">
         <div class="sbt-avatar">👤</div>
         <div class="sbt-who">
-          <div id="sbSalamNums" class="sbt-nums">Customer · ${i.visitor?`<span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#d97706;color:#b45309" title="${esc(i.visitor.matched_by||'')}">VISITOR · ${esc(i.visitor.kind==='border'?'border no':'passport')}</span> `:(i.id_kind==='iqama'?'Iqama ':i.id_kind==='passport'?'Passport ':'NID ')}<b>${esc(i.nationality_id_number||'—')}</b>${i.nationality?` <span class="rl" style="color:var(--muted);font-weight:400">· ${esc(i.nationality)}</span>`:''}</div>
+          <div id="sbSalamNums" class="sbt-nums">${i.customer_name?`<span class="sbt-name">${esc(i.customer_name)}</span> · `:'Customer · '}${i.visitor?`<span class="pill" style="padding:0 7px;font-size:10px;border-left-color:#d97706;color:#b45309" title="${esc(i.visitor.matched_by||'')}">VISITOR · ${esc(i.visitor.kind==='border'?'border no':'passport')}</span> `:(i.id_kind==='iqama'?'Iqama ':i.id_kind==='passport'?'Passport ':'NID ')}<b>${esc(i.nationality_id_number||'—')}</b>${i.nationality?` <span class="rl" style="color:var(--muted);font-weight:400">· ${esc(i.nationality)}</span>`:''}</div>
           <div class="rl sbt-sub">Plan: ${esc(i.current_plan||'—')} ${act}<span style="color:var(--muted)"> · ${esc(i.flow||'—')} · ${nJourney||0} onboarding order${nJourney===1?'':'s'}</span><span id="sbLineCount" hidden></span></div>
         </div>
         <span id="lvHealth" class="rl sbt-health"></span>
@@ -131,7 +131,7 @@
       <div class="sb-id-h"><b>Identity &amp; order details</b></div>
       <div class="sb-grid">
         ${kv('CONTACT MOBILE (order)',i.mobile_number)}
-        ${kv(i.visitor?(i.visitor.kind==='border'?'Passport / ID on the order':'Passport'):(i.id_kind==='iqama'?'Iqama':i.id_kind==='passport'?'Passport':'National ID'),i.nationality_id_number)}${i.nationality?kv('Nationality',i.nationality):''}${i.selected_number?kv('Selected number (not yet activated)',i.selected_number.number+' · '+(i.selected_number.matched_by||'')):''}${i.visitor?kv('Visitor lookup',(i.visitor.kind==='border'?'KSA border number ':'passport ')+(i.visitor.key||'')+' · '+(i.visitor.matched_by||'')):''}
+        ${kv('Full name',i.customer_name||'— not on file')}${kv(i.visitor?(i.visitor.kind==='border'?'Passport / ID on the order':'Passport'):(i.id_kind==='iqama'?'Iqama':i.id_kind==='passport'?'Passport':'National ID'),i.nationality_id_number)}${i.nationality?kv('Nationality',i.nationality):''}${i.selected_number?kv('Selected number (not yet activated)',i.selected_number.number+' · '+(i.selected_number.matched_by||'')):''}${i.visitor?kv('Visitor lookup',(i.visitor.kind==='border'?'KSA border number ':'passport ')+(i.visitor.key||'')+' · '+(i.visitor.matched_by||'')):''}
         ${kv('Current plan',i.current_plan)}
         ${kv('Status',i.status)}
         ${kv('Order state',i.state)}
@@ -1057,7 +1057,7 @@
   function fixedHead(f){
     const c=f.customer||{}; const unmaskBtn=canUnmask()?`<button class="pill" id="sbUnmask" style="border-left-color:var(--purple)">${unmasked?'Mask PII':'Unmask PII'}</button>`:'';
     return `<div class="sbt-head"><div class="sbt-head-row"><div class="sbt-avatar">🏠</div><div class="sbt-who">
-        <div class="sbt-nums">Fixed customer · ${esc(c.cust_code||c.customer_id||curKey)}</div>
+        <div class="sbt-nums">${c.name?`<span class="sbt-name">${esc(c.name)}</span> · `:''}Fixed customer · ${esc(c.cust_code||c.customer_id||curKey)}</div>
         <div class="rl sbt-sub">${f.inventory_summary?`<b>${f.inventory_summary.active} active fixed service(s)</b> in BSS · `:""}${f.complaints&&f.complaints.rows&&f.complaints.rows.length?`<b style="color:${f.complaints.open?"#dc2626":"inherit"}">${f.complaints.rows.length} complaint ticket(s)${f.complaints.open?" · "+f.complaints.open+" open":""}</b> · `:""}${c.attempts||0} journey attempt(s) · ${c.orders||0} order(s)${(c.channels||[]).length?" · "+(c.channels||[]).map(esc).join(" / "):""}${c.first_seen?` · first seen ${fts(c.first_seen)} · last ${fts(c.last_seen)}`:""}
           <span style="color:var(--muted)">· no mobile-side record for this key</span></div></div>${unmaskBtn}</div>
       <div class="sbt-linebar">${servicesStrip([])}</div>

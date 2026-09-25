@@ -130,7 +130,17 @@ async function buildProfile({ key }) {
     try { const nr = await db.source.query(`SELECT to_jsonb(n) AS j FROM nationalities n WHERE id = $1 LIMIT 1`, [order.nationality_id]);
       const j = nr.rows[0] && nr.rows[0].j; if (j) nationality = j.name_en || j.name || j.title || j.english_name || j.name_ar || null; } catch (_) {}
   }
+  /* FULL NAME (25 Sep 2026 — "always give the customer full name"): onboarding_orders.customer_name, else the
+   * checkout's contact_name, else the app account. Masked by roles.maskDeep like every PII field unless unmasked. */
+  let customerName = (order && order.customer_name) || null;
+  if (!customerName && order && order.checkout_id) {
+    try { const ck = await db.source.query(`SELECT contact_name FROM checkouts WHERE checkout_id::text = $1 AND created_at >= now() - interval '2 years' ORDER BY created_at DESC LIMIT 1`, [String(order.checkout_id)]);
+      customerName = (ck.rows[0] && ck.rows[0].contact_name) || null; } catch (_) {}
+  }
+  if (!customerName && userRow && (userRow.name || userRow.full_name)) customerName = userRow.name || userRow.full_name;
+  customerName = customerName ? String(customerName).replace(/\s+/g, ' ').trim() || null : null;
   const identity = {
+    customer_name: customerName,
     mobile_number: mobile,
     nationality_id_number: nid,
     current_plan: currentPlan,

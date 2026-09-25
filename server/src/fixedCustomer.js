@@ -275,7 +275,7 @@ async function buildLookup(q, req) {
 
   if (!attempts.length) {
     if ((inventory && inventory.available) || complaints.rows.length) {
-      return { found: true, key, keyKind: keyKind(key), unmasked: unmask, customer: { cust_code: invOut.customer && invOut.customer.cust_code, customer_id: null, services: 0, orders: 0, attempts: 0, channels: [] },
+      return { found: true, key, keyKind: keyKind(key), unmasked: unmask, customer: { name: invOut.customer && invOut.customer.name || null, cust_code: invOut.customer && invOut.customer.cust_code, customer_id: null, services: 0, orders: 0, attempts: 0, channels: [] },
         services: [], attempts: [], errors: [], payments: await findPayments([key]), links: {}, sources: pools.map(([, s]) => s), link, inventory: invOut, inventory_summary: inventoryMod.summary(inventory), complaints, timings: { ...T, total: Date.now() - T0 }, builtAt: new Date().toISOString() };
     }
     return { found: false, key, keyKind: keyKind(key), link, inventory: invOut, payments: await findPayments([key]), complaints, timings: { ...T, total: Date.now() - T0 }, builtAt: new Date().toISOString() };
@@ -302,7 +302,7 @@ async function buildLookup(q, req) {
   const first = attempts[0];
   return {
     found: true, key, keyKind: keyKind(key), unmasked: unmask,
-    customer: { cust_code: unmask ? first.cust_code : tail(first.cust_code, 4), customer_id: unmask ? first.customer_id : tail(first.customer_id, 4),
+    customer: { name: invOut && invOut.customer && invOut.customer.name || null, cust_code: unmask ? first.cust_code : tail(first.cust_code, 4), customer_id: unmask ? first.customer_id : tail(first.customer_id, 4),
       services: ids.service.size, orders: ids.order.size, attempts: attempts.length, channels: [...new Set(attempts.map(a => a.channel))],
       first_seen: attempts[attempts.length - 1].started_at, last_seen: first.started_at },
     services: Array.from(svc.values()).map(s => unmask ? s : { ...s, service_no: tail(s.service_no, 6), key: s.service_no ? tail(s.service_no, 6) : s.key }),

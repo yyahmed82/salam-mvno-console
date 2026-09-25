@@ -290,7 +290,7 @@ async function fixedCustomerContext(key, allowUnmask) {
     const r = await fc.lookup({ key, unmask: allowUnmask ? '1' : '0' }, { caps: { unmaskPII: !!allowUnmask } });
     if (!r.found) return { found: false, key, hint: r.link && r.link.reason ? 'nexus link: ' + r.link.reason : (r.inventory && r.inventory.reason) || undefined,
       inventory: r.inventory && r.inventory.available === false ? { available: false, reason: r.inventory.reason } : undefined };
-    return { found: true, key, customer: r.customer,
+    return { found: true, key, customer_name: (r.customer && r.customer.name) || (r.inventory && r.inventory.customer && r.inventory.customer.name) || null, customer: r.customer,
       /* what the customer HAS (fixed BSS) — authoritative for "does he have FTTH / is it active / what plan" */
       inventory: r.inventory && r.inventory.available ? { tier: r.inventory.tier, as_of: r.inventory.as_of, customer_state: r.inventory.customer && r.inventory.customer.state,
         accounts: (r.inventory.accounts || []).length,
@@ -656,6 +656,7 @@ Rules:
 - Answer ONLY from the CONTEXT provided. If the context doesn't contain the answer, say so and suggest where to look in the console.
 - "Open incidents" means the open_alerts data — NEVER lists found in runbook text. If open_alerts is present and empty, say there are no open incidents.
 - Each incident carries trigger_codes (which error codes/conditions define that alert) and alert_class (business = the API answered "no" · technical = the platform failed to answer). When asked why an alert fired or what it means, QUOTE the trigger_codes verbatim and state the class. If trigger_codes is empty, say it is not documented yet rather than guessing codes.
+- CUSTOMER NAME: every answer about a customer STARTS with the customer's full name when the context has it (customer.identity.customer_name for Mobile, fixed_customer.customer_name for Fixed) — e.g. "Abdullah Ilyas — Mobile, Visitor 52, order at payment step". If the name is masked ("Abdullah …") show it as given; if absent say "name not on file".
 - Masked values like 05*****290 are intentional PII masking — never try to guess them.
 - When a subscriber has failed steps, explain the most likely cause in plain words, quote the relevant response/error from the trace, and give the next troubleshooting step.
 - ACTIVE vs ATTEMPTED: customer.service_lines lists the lines the customer actually HOLDS (app account / activation / MNP / BSS). customer.lines are onboarding ATTEMPTS (many are abandoned checkouts in state "payment"). NEVER say a customer has "no active line" or "none activated" when service_lines.count > 0 — say which line(s) are active and, separately, that N attempts exist. If service_lines is empty AND live_bss is "not configured", say the live inventory is unavailable rather than concluding the customer has nothing. For Fixed: fixed_customer.inventory.services is what the customer HAS in the fixed BSS (account e.g. FTTH09071297, plan, state active/suspended, since, owed amount) — answer "does he have FTTH / is it active / which plan / what does he owe" from it, quoting tier (live vs recorded as_of date). fixed_customer.services are journey records (orders attempted through the app/dealers) — a different thing; a customer can have an active FTTH with zero journeys, or 20 journeys and no service. When inventory.available is false, say the BSS inventory is unavailable and why — never conclude "no Fixed service" from the journeys alone.
@@ -762,7 +763,8 @@ function fallbackAnswer(intent, ctx, hint) {
       (os.first_seen ? ` · ${String(os.first_seen).slice(0, 10)} → ${String(os.last_seen || os.first_seen).slice(0, 10)}` : '') + `.${osStories} Digital/APIGW trace is not exact in the current OSB archive.` : '';
     const note = c.existing_no_onboarding ? ' (existing subscriber — no onboarding order in the console)' : '';
     const fxTxt = fx ? `\n🏠 Fixed services for the same person:\n${fx}` : (db.opsConfigured ? '\n🏠 No Fixed services found for this person.' : '');
-    return cstLine + `Mobile subscriber found${note}.\n${active}\n${lines}${failTxt}${tixTxt}${osbTxt}${fxTxt}\n(LLM offline — showing raw profile. Open Customer 360 for the full timeline.)`;
+    const nm = c.identity && c.identity.customer_name ? `👤 ${c.identity.customer_name}\n` : '';
+    return cstLine + nm + `Mobile subscriber found${note}.\n${active}\n${lines}${failTxt}${tixTxt}${osbTxt}${fxTxt}\n(LLM offline — showing raw profile. Open Customer 360 for the full timeline.)`;
   }
   /* SMS answers must survive the LLM being offline — this is a support question asked under
    * time pressure, and the facts are already assembled. */
@@ -796,7 +798,7 @@ function fallbackAnswer(intent, ctx, hint) {
       const mob = ctx.customer && ctx.customer.found ? ' The Mobile side is there (see Customer 360), but no Fixed journey is linked to this identity in the last 24 months.' : '';
       return `No Fixed services found for ${ctx.fixedKey || 'that key'}${f.hint ? ' (' + f.hint + ')' : ''}.${mob}\nWhat I can search: FTTH account (FTTH…), BSS order number, customer code, National ID or mobile (linked through the Salam Home journeys). Live BSS inventory is not wired yet — Customer 360 → Fixed services shows the journeys.`;
     }
-    return `🏠 Fixed customer ${f.customer && (f.customer.cust_code || f.customer.customer_id) || ctx.fixedKey}: ${fixedLines(f)}\n(LLM offline — open Customer 360 → Fixed services for the full picture.)`;
+    return `${f.customer_name ? '👤 ' + f.customer_name + '\n' : ''}🏠 Fixed customer ${f.customer && (f.customer.cust_code || f.customer.customer_id) || ctx.fixedKey}: ${fixedLines(f)}\n(LLM offline — open Customer 360 → Fixed services for the full picture.)`;
   }
   if (intent === 'fixed_issues') {
     const f = ctx.fixed_issues || {};

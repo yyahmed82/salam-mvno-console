@@ -20,8 +20,8 @@
  *              above and nothing else — there is no code path to create/modify. FIXED_BSS_HEADERS = JSON of extra
  *              headers if the gateway wants an API key. Snapshots stored like liveBss (fixed_inventory_snapshots).
  *
- * PII: custName / birthday / email / phone from salamchecknid are NEVER returned — only ids (masked to last digits
- * unless unmask) plus the service inventory, which is what an operator needs. */
+ * PII: birthday / email / phone from salamchecknid are never returned. custName IS returned since 25 Sep 2026 ("always
+ * give the customer full name") — first name + … when masked, full when the caller may unmask; ids masked to last digits. */
 'use strict';
 const http = require('http'), https = require('https');
 const db = require('./db');
@@ -37,6 +37,7 @@ const configured = () => liveConfigured() || recordedConfigured();
 function normCustomer(c) {
   if (!c || typeof c !== 'object') return null;
   return { cust_id: c.custId != null ? String(c.custId) : null, cust_code: c.custCode != null ? String(c.custCode) : null,
+    name: c.custName ? String(c.custName).replace(/\s+/g, ' ').trim() : null,
     state: c.state || null, cust_type: c.custType || null, since: c.createdDate || null, cert_type: c.cert && c.cert.certTypeId || c.certTypeId || null };
 }
 function normSubs(list) {
@@ -173,7 +174,7 @@ async function inventory({ nid, workflowIds, refresh }) {
 function mask(inv, unmask) {
   if (!inv || unmask) return inv;
   const m = { ...inv };
-  if (m.customer) m.customer = { ...m.customer, cust_id: tail(m.customer.cust_id, 4), cust_code: tail(m.customer.cust_code, 4) };
+  if (m.customer) m.customer = { ...m.customer, cust_id: tail(m.customer.cust_id, 4), cust_code: tail(m.customer.cust_code, 4), name: m.customer.name ? m.customer.name.split(' ')[0] + ' …' : null };
   m.accounts = (m.accounts || []).map(a => ({ ...a, acct_id: tail(a.acct_id, 4), acct_nbr: tail(a.acct_nbr, 4) }));
   m.subscriptions = (m.subscriptions || []).map(s => ({ ...s, acct_id: tail(s.acct_id, 4), acct_nbr: tail(s.acct_nbr, 4), subs_id: tail(s.subs_id, 4) }));
   m.open_orders = (m.open_orders || []).map(o => ({ ...o, order: tail(o.order, 6) }));
@@ -184,7 +185,7 @@ function summary(inv) {
   if (!inv || !inv.available) return null;
   const subs = inv.subscriptions || [];
   const active = subs.filter(s => s.state === 'A');
-  return { tier: inv.tier, as_of: inv.as_of, customer_state: inv.customer && inv.customer.state, accounts: (inv.accounts || []).length,
+  return { tier: inv.tier, as_of: inv.as_of, customer_state: inv.customer && inv.customer.state, customer_name: inv.customer && inv.customer.name || null, accounts: (inv.accounts || []).length,
     services: subs.length, active: active.length,
     lines: subs.map(s => `${s.account || '?'} · ${s.plan || s.offer || ''}${s.speed_mbps ? ' · ' + s.speed_mbps + ' Mbps' : ''} · ${s.state_label || s.state}${s.eff_date ? ' since ' + s.eff_date : ''}${s.provider ? ' · ' + s.provider : ''}${inv.owed && inv.owed[s.account] ? ' · owed ' + inv.owed[s.account].amount_sar + ' SAR' : ''}`),
     open_orders: (inv.open_orders || []).length };
