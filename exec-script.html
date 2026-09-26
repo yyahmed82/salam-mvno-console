@@ -37,6 +37,8 @@ h1{font-size:27px;line-height:1.2;margin:22px 0 6px;letter-spacing:-.02em;font-w
 .plan li b{color:var(--ink);font-weight:700}
 .plan li .t{position:absolute;right:0;top:3px;color:var(--faint);font-variant-numeric:tabular-nums;font-size:13.5px}
 .plan li.cut b::after{content:" · cut if short";color:var(--amber);font-weight:600;font-size:12.5px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em;color:var(--ink);background:var(--green-bg);
+  border:1px solid var(--line);border-radius:5px;padding:0 5px;white-space:nowrap}
 
 section.s{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:18px 19px;margin:0 0 16px;
   break-inside:avoid;page-break-inside:avoid}
@@ -78,34 +80,59 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
 </head>
 <body>
 <header class="top">
-  <b>Executive brief — speaker notes</b>
-  <small id="clock">15 slides · ~44 min + Q&amp;A</small>
+  <b>Executive brief — speaker notes · the CIO demo</b>
+  <small id="clock">15 slides · ~40 min + Q&amp;A · 25-min cut marked</small>
   <button class="tbtn" id="th" type="button">Dark</button>
   <button class="tbtn" id="pr" type="button" style="margin-left:0">Print</button>
 </header>
 <div class="wrap">
 
-<h1>Salam Observability Portal — the September review</h1>
-<div class="sub">One line to open each slide, the cues underneath it, and the bridge into the next. Times are cumulative; the room decides the rest.</div>
+<h1>Salam Observability Portal — the demo for the CIO, 27 September 2026</h1>
+<div class="sub">One line to open each slide, the cues underneath it, the live screen to open, and the bridge into the next. Times are cumulative; the room decides the rest. Updated 26 Sep for alpha.103: 182 rules, responder teams with contract clocks, refund exposure and the Agent 2 refund desk, Teams management, Salam-team-vs-contract on every user.</div>
 
 <div class="plan">
-  <h2>The run of play</h2>
+  <h2>Before the room · ten minutes</h2>
+  <ol>
+    <li><b>Refresh the three live numbers</b> — open <span class="mono">#exec</span> and <span class="mono">#alerts</span>, read MTTA · MTTR (30-day averages, one pair per business) and the open incidents, and say those, not the 22 Sep figures (16 min · 3.9 h · 14 → 1) if they moved.<span class="t">1 min</span></li>
+    <li><b>Teams management › Refund desks</b> — approvers set on the Mobile desk, the TCS team with members or its DL; on the Refund desk tab withdraw request #1 if it is still open, so the page shows a clean state.<span class="t">3 min</span></li>
+    <li><b>Open the live tabs in this order</b> and leave them open: Executive dashboard · Mobile › Alerts · Mobile › Refund exposure · Customer 360 · AI Ops › Mission control · Teams management › Responder teams.<span class="t">2 min</span></li>
+    <li><b>Sign in as yourself</b> (super admin — every screen opens) and have the <b>CIO / Executive</b> role ready in a second window if he asks what <em>he</em> would see.<span class="t">1 min</span></li>
+    <li><b>Hard-refresh</b> the console and the deck (both shipped today) and open the deck as <span class="mono">exec-brief.html?present=1</span> — presenter mode: it opens paused, a click or → is the next slide, ← goes back, F is full screen, and the slide number stays in the address bar so a tab switch or a reload lands on the same slide. Without <span class="mono">?present</span> the deck auto-advances every 7–15 s. Dark theme on the projector.<span class="t">1 min</span></li>
+    <li><b>Do not open</b> User management while sharing the screen unless asked — it lists real names and addresses.<span class="t"></span></li>
+  </ol>
+</div>
+
+<div class="plan">
+  <h2>The run of play · 40 min</h2>
   <ol>
     <li><b>Title</b> — why we are here <span class="t">0:00</span></li>
     <li><b>One console, two businesses</b> <span class="t">2:00</span></li>
-    <li><b>Four questions, four screens</b> <span class="t">5:00</span></li>
-    <li><b>Where customers actually stop</b> <span class="t">9:00</span></li>
-    <li><b>Alerting that earns attention</b> <span class="t">12:00</span></li>
-    <li class="cut"><b>Service objectives</b> <span class="t">15:30</span></li>
-    <li><b>AI inside operations</b> <span class="t">18:00</span></li>
-    <li><b>The worked example</b> — the one that lands <span class="t">21:00</span></li>
+    <li><b>Four questions, four screens</b> — live <span class="t">4:30</span></li>
+    <li><b>Where the money actually leaks</b> — funnel + refunds, live <span class="t">9:00</span></li>
+    <li><b>Alerting that earns attention</b> — owners and contract clocks <span class="t">13:00</span></li>
+    <li class="cut"><b>Service objectives</b> <span class="t">16:00</span></li>
+    <li><b>AI inside operations</b> — Yusr, two agents, Mission control <span class="t">18:00</span></li>
+    <li><b>The worked example</b> — the one that lands <span class="t">21:30</span></li>
     <li class="cut"><b>The regulator</b> <span class="t">25:00</span></li>
-    <li><b>Access, PII and audit</b> <span class="t">27:00</span></li>
-    <li><b>Ten months</b> <span class="t">29:30</span></li>
-    <li><b>Value beyond IT</b> <span class="t">32:00</span></li>
-    <li><b>What it took</b> — one initiative, end to end <span class="t">35:00</span></li>
-    <li><b>What it can become</b> — the Salam B2B opportunity <span class="t">38:00</span></li>
-    <li><b>Sponsor. Launch. Commercialize.</b> — the ask <span class="t">41:00</span></li>
+    <li><b>Access, PII, ownership</b> <span class="t">26:30</span></li>
+    <li class="cut"><b>Ten months</b> <span class="t">29:00</span></li>
+    <li class="cut"><b>Value beyond IT</b> <span class="t">31:00</span></li>
+    <li><b>What it took</b> — one initiative, end to end <span class="t">33:00</span></li>
+    <li><b>What it can become</b> — the Salam B2B opportunity <span class="t">35:30</span></li>
+    <li><b>Sponsor. Launch. Commercialize.</b> — the ask <span class="t">38:00</span></li>
+  </ol>
+</div>
+
+<div class="plan">
+  <h2>The live path · which screen, when</h2>
+  <ol>
+    <li><b>Slide 1</b> → the console home for two seconds, then back to the deck.<span class="t">#home</span></li>
+    <li><b>Slide 3</b> → Executive dashboard: status now · outages and impact this month · vendor delivery · follow-up · north-star tiles.<span class="t">#exec</span></li>
+    <li><b>Slide 4</b> → Mobile › Refund exposure: the six kinds, the open cases with their evidence, the register, then the Refund desk tab (verdicts, the request, the two clocks).<span class="t">#refunds</span></li>
+    <li><b>Slide 5</b> → Mobile › Alerts: an open incident, its owning team, the contract clocks in the drawer, the runbook.<span class="t">#alerts</span></li>
+    <li><b>Slide 7</b> → AI Ops › Mission control (the agents live), then Yusr with one number.<span class="t">#agents-live</span></li>
+    <li><b>Slide 10</b> → Teams management › Responder teams (one team, its members, the clocks) and the Refund desks section.<span class="t">#teams</span></li>
+    <li><b>Q&amp;A</b> → Customer 360 with a masked customer; Vendors &amp; contracts if he asks about penalties.<span class="t">#subscriber</span></li>
   </ol>
 </div>
 
@@ -113,138 +140,141 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
 
 <section class="s">
   <div class="sh"><span class="sn">01</span><span class="st">Title — Salam Observability Portal</span><span class="sm">0:00 · 2 min</span></div>
-  <div class="say">“Last time I stood here, this platform watched one business. Today it runs <em>both</em> — and everything you are about to see is live in production, not a prototype.”</div>
+  <div class="say">“Everything you are about to see is live in production this morning — both businesses, one console, built in-house. I will show the screens, not describe them.”</div>
   <ul class="cue">
-    <li>Built <b>in-house</b>. No licence, no vendor, no external dependency to renew.</li>
-    <li>Open the live console on screen for two seconds. Let the room see it is real before any slide.</li>
-    <li>Set the frame: <b>“from closing tickets to controlling service.”</b> That is the whole talk in six words.</li>
+    <li>Assume he still wants the map, and give it in one breath — <b>Mobile (MVNO) and Fixed (FTTH · 5G home)</b>, the digital channels, the vendors behind them (TCS on Mobile, Sigma on Fixed, Oracle at L3).</li>
+    <li>Built <b>in-house</b>. No licence, no vendor contract, no external dependency to renew.</li>
+    <li>Open the live console for two seconds. Let him see it is real before any slide.</li>
+    <li>Set the frame: <b>“from closing tickets to controlling service — and protecting revenue.”</b> That is the whole talk in nine words; “revenue” is new this month and it is real money.</li>
   </ul>
-  <div class="nums"><span>Businesses <b>2</b></span><span>Alert rules <b>177</b></span><span>AI models <b>3</b></span></div>
+  <div class="nums"><span>Businesses <b>2</b></span><span>Alert rules <b>182</b></span><span>Yusr + agents <b>1 + 2</b></span><span>Licences <b>0</b></span></div>
   <div class="next"><b>Bridge:</b> “Let me start with what changed, because it is not a feature — it is a structure.”</div>
 </section>
 
 <h2 class="grp">What we built</h2>
 
 <section class="s">
-  <div class="sh"><span class="sn">02</span><span class="st">Two operations, one way of working</span><span class="sm">2:00 · 3 min</span></div>
+  <div class="sh"><span class="sn">02</span><span class="st">Two operations, one way of working</span><span class="sm">2:00 · 2.5 min</span></div>
   <div class="say">“A customer with a mobile line and a fibre line is <em>one customer</em>. Until this month, the teams looking after them used two tools, two alert queues, and two different definitions of the word ‘working’.”</div>
   <ul class="cue">
-    <li>Mobile side: 21 journeys — activation, port-in, identity, payments, delivery. <b>62 rules.</b></li>
+    <li>Mobile side: 21 journeys — activation, port-in, identity, payments, delivery. <b>67 rules.</b></li>
     <li>Fixed side: four digital channels — web, the Salam Home app, the dealer map, QR referrals. <b>115 rules.</b></li>
-    <li>The part that matters commercially is the <b>shared spine</b>: Customer 360, the AI, alerting, objectives, exports, audit, roles — built once.</li>
+    <li>The part that matters commercially is the <b>shared spine</b>: Customer 360, the AI, alerting, objectives, exports, audit, roles, the responder teams — built once.</li>
     <li>Say it plainly: <b>“the second business cost a fraction of the first, and the third will cost less again.”</b></li>
   </ul>
-  <div class="warn">If someone asks “why not buy a tool?” — answer here, briefly: no product on the market knows a Salam journey. We would have paid for a licence and still built the mapping ourselves.</div>
-  <div class="next"><b>Bridge:</b> “So what does leadership actually get out of it? Four questions.”</div>
+  <div class="warn">He spent years on the vendor side. If “why not buy a tool?” comes here, answer briefly and move on: the market products watch infrastructure; none of them ships a Salam journey — a port-in, a Nafath check, a Semati clearance, a dealer order. We would have paid the licence and still built the mapping. The full answer is in the Q&amp;A.</div>
+  <div class="next"><b>Bridge:</b> “So what does leadership actually get out of it? Four questions — and I will answer them on the live screen.”</div>
 </section>
 
 <section class="s">
-  <div class="sh"><span class="sn">03</span><span class="st">Four questions, four screens</span><span class="sm">5:00 · 4 min</span></div>
+  <div class="sh"><span class="sn">03</span><span class="st">Four questions, four screens — live</span><span class="sm">4:30 · 4.5 min</span></div>
   <div class="say">“Every one of these four screens is a question I used to answer with a report, a week later, from a spreadsheet somebody built by hand.”</div>
   <ul class="cue">
-    <li><b>Is the business healthy?</b> — orders, activations, payments, delivery in one view.</li>
-    <li><b>What is broken and who is on it?</b> — severity, age, owner, and the runbook attached.</li>
+    <li>Open <b>#exec</b> and stay there for the whole slide. Top to bottom: <b>status now</b> per business · <b>outages and impact this month</b> (count, minutes, customers, money at risk, versus last month) · <b>vendor delivery</b> (TCS and Sigma against their contract clocks) · <b>follow-up</b> (open P1/P2 with owner and age, RCAs owed) · the north-star tiles.</li>
+    <li><b>Is the business healthy?</b> — one status per business and “customers affected right now”. No lists.</li>
+    <li><b>What is broken and who is on it?</b> — severity, age, the owning team, and the runbook attached.</li>
     <li><b>Where do customers give up?</b> — the step, with its drop-off and its error.</li>
-    <li><b>Is it us or a partner?</b> — the actual request and response. Evidence, not opinion.</li>
-    <li>Slow down on the last one. <b>“Evidence, not opinion”</b> is what changes a vendor conversation.</li>
+    <li><b>Is it us or a partner?</b> — the actual request and response. <b>“Evidence, not opinion”</b> is what changes a vendor conversation. Slow down here; this is his world.</li>
   </ul>
-  <div class="next"><b>Bridge:</b> “Let me take the third question and show you what it looks like with real numbers.”</div>
+  <div class="warn">Vendor delivery on #exec is measured from our own timers (acknowledgement, restoration, RCA due) and the contract clauses; the penalty column is a <b>candidate</b> figure until the monthly vendor review. Say “candidate” before he asks.</div>
+  <div class="next"><b>Bridge:</b> “Let me take the money question and show you two things with real numbers — where customers stop, and what we already owe them.”</div>
 </section>
 
 <section class="s">
-  <div class="sh"><span class="sn">04</span><span class="st">Where customers actually stop</span><span class="sm">9:00 · 3 min</span></div>
-  <div class="say">“A journey is not up or down. It is a place where customers <em>stop</em> — and until you can name the step, you are guessing.”</div>
+  <div class="sh"><span class="sn">04</span><span class="st">Where the money actually leaks — and what we owe back</span><span class="sm">9:00 · 4 min</span></div>
+  <div class="say">“A journey is not up or down. It is a place where customers <em>stop</em> — and, since this week, a place where the platform owes them money and we know it before they call.”</div>
   <ul class="cue">
-    <li>Walk down the funnel slowly. Let the shape do the work.</li>
-    <li>The headline: <b>roughly half of everyone who leaves, leaves at the very first form.</b> That is a product decision, not an incident.</li>
-    <li>Under 1% are lost at payment — so the instinct to blame the payment rail is usually wrong.</li>
-    <li>Land it: <b>“‘sales are down’ becomes ‘one step in one channel lost eleven points this week, and here are the sessions’.”</b></li>
-    <li>The argument stops being whether there is a problem, and starts being <b>which team owns the step</b>.</li>
+    <li>The funnel first. Walk down it slowly: <b>half of everyone who leaves, leaves at the very first form</b> — a product decision, not an incident. Under 1% are lost at payment, so the instinct to blame the payment rail is usually wrong.</li>
+    <li>Then the new part. Open <b>#refunds</b>. “Every approved refund of the last five months was a platform event that was already in our data hours or days before the ticket.” We reviewed <b>2,338 refund mails</b>: 126 cases, 10,740 SAR, three defects behind roughly three-quarters of the money — port-in twice, activation failing after payment, change-plan IAM token. Median 12.6 hours from request to approval, the slowest 37 days; five cases waited 110 days with no answer.</li>
+    <li>Now the console lists them itself: <b>six detectors</b> on the replica every 15 minutes — paid but never activated, the same number ported in twice, change plan charged then failed, SIM/eSIM replacement paid and not done, delivery failed on a paid order, charged twice. Each case carries its evidence, and the proxycms refund register is reconciled every tick, so a case closes when the refund is really posted.</li>
+    <li>Refund desk tab: the agent's verdict and proposed reason on every case; the approval request generated with the evidence and the payment ids — <b>To the approvers, Cc the L2 team</b>, an internal ticket, two clocks: a decision within 24 h, the refund posted within 48 h.</li>
+    <li>Say the guardrail before he asks: <b>“the agent never approves and never refunds. People do; L2 posts it in proxycms. The console removed the typing, not the judgement.”</b></li>
+    <li>Land it: “‘sales are down’ becomes ‘one step in one channel lost eleven points’, and ‘a refund request’ becomes ‘a case we listed before the customer called’.”</li>
   </ul>
-  <div class="next"><b>Bridge:</b> “That only works if the alerts are trusted. Which is where we spent this month.”</div>
+  <div class="warn">Do not quote the open-candidate count on the page — most of it is 20 SAR recharge duplicates still being reviewed, and he will remember the number. Quote the reviewed mails and the three defects. If he asks about Fixed: the Fixed desk (Moyasar) is defined, its detectors are next — and the Fixed side is where the big money is: 492 duplicate Moyasar payments, 131 k SAR, in Q1 alone.</div>
+  <div class="nums"><span>Refund mails reviewed <b>2,338</b></span><span>Cases · SAR <b>126 · 10,740</b></span><span>Detectors <b>6</b></span><span>Decision · refund clocks <b>24 h · 48 h</b></span></div>
+  <div class="next"><b>Bridge:</b> “None of this works if the alerts are not trusted — and if nobody owns them. Which is where we spent September.”</div>
 </section>
 
 <h2 class="grp">Why it is trusted</h2>
 
 <section class="s">
-  <div class="sh"><span class="sn">05</span><span class="st">Alerting that earns attention</span><span class="sm">12:00 · 3.5 min</span></div>
+  <div class="sh"><span class="sn">05</span><span class="st">Alerting that earns attention — with an owner and a clock</span><span class="sm">13:00 · 3 min</span></div>
   <div class="say">“An alert that fires on ordinary traffic is worse than no alert at all. It teaches the team to ignore the screen.”</div>
   <ul class="cue">
-    <li>177 rules across both businesses. <b>Not one of them fires without a written next step.</b> Say that twice — it is the discipline, not the count, that matters.</li>
-    <li>We measured, for every rule, how often its own condition was <b>already true</b>. A rule that is true 30% of the time is not detecting an incident — it is describing a normal Tuesday.</li>
-    <li>Result of the tuning: open Fixed incidents went from <b>14 to 1</b>. The rules did not get weaker.</li>
-    <li>One signal now raises one incident, at the worst severity seen. Before, a single outage could page three people from three queues.</li>
-    <li>16 minutes to acknowledge, 3.9 hours to resolve — <b>measured from detection, not from when someone noticed.</b></li>
+    <li>182 rules across both businesses. <b>Not one of them fires without a written next step.</b> Say that twice — the discipline, not the count.</li>
+    <li>We measured, for every rule, how often its own condition was <b>already true</b>. A rule true 30% of the time describes a normal Tuesday, not an incident. Open Fixed incidents went from <b>14 to 1</b> without making a single rule weaker.</li>
+    <li>One signal, one incident, at the worst severity seen. Before, one outage could page three people from three queues.</li>
+    <li>New this month — open <b>#alerts</b>, one incident, the drawer: <b>every incident has an owning team</b> from one registry (17 teams: business × domain × level), and next to our acknowledgement SLA sit the <b>contract clocks of the vendor</b> — TCS: respond in 15 minutes, restore in 4 hours, RCA in 48 hours for a P1; Sigma: 10 minutes, 2 hours. Reminders escalate P1 to P4; management is copied at the third reminder.</li>
+    <li>Read the live MTTA and MTTR from the Alerts page rather than the slide — they are <b>30-day averages, per business</b> (say “average”, not “median”; the two cards on the slide now say so), then: <b>“measured from detection, not from when someone noticed.”</b></li>
   </ul>
-  <div class="nums"><span>Rules <b>177</b></span><span>MTTA <b>16 min</b></span><span>MTTR <b>3.9 h</b></span><span>Open <b>14 → 1</b></span></div>
-  <div class="next"><b>Bridge:</b> “And once you trust the alarm, you can agree in advance what ‘good’ means.”</div>
+  <div class="nums"><span>Rules <b>182</b></span><span>Responder teams <b>17</b></span><span>MTTA · MTTR <b>live</b></span><span>Open Fixed <b>14 → 1</b></span></div>
+  <div class="next"><b>Bridge:</b> “And once you trust the alarm and know who owns it, you can agree in advance what ‘good’ means.”</div>
 </section>
 
 <section class="s">
-  <div class="sh"><span class="sn">06</span><span class="st">Service objectives</span><span class="sm">15:30 · 2.5 min</span></div>
+  <div class="sh"><span class="sn">06</span><span class="st">Service objectives</span><span class="sm">16:00 · 2 min</span></div>
   <div class="say">“Before this, whether a journey was healthy got settled in the meeting after the complaint — by whoever had the better anecdote.”</div>
   <ul class="cue">
-    <li>Each journey now carries its target, its warning band, and the window it is measured over.</li>
-    <li>The target and the alarm read the <b>same measurement</b>, so they can never drift apart.</li>
-    <li>The real shift: <b>“not ‘is this bad?’ but ‘we are inside the objective, and here is how much budget is left before we are not’.”</b></li>
-    <li>Vendors are held to the same numbers we hold ourselves to.</li>
+    <li>Each journey carries its target, its warning band, and the window it is measured over. The target and the alarm read the <b>same measurement</b>, so they can never drift apart.</li>
+    <li>The shift: <b>“not ‘is this bad?’ but ‘we are inside the objective, and here is how much budget is left before we are not’.”</b></li>
+    <li>Vendors are held to the same numbers we hold ourselves to — and since this month the contract obligations (response, restoration, RCA, availability) are measured per vendor, per month, on #exec and on Vendors &amp; contracts.</li>
   </ul>
-  <div class="warn">This is the first slide to cut if you are running long. The point survives inside slide 05.</div>
-  <div class="next"><b>Bridge:</b> “Detection is automated. Understanding is where the AI sits.”</div>
+  <div class="warn">First slide to cut if running long — the point survives inside slides 03 and 05.</div>
+  <div class="next"><b>Bridge:</b> “Detection is automated. Understanding is where the AI sits — and it sits on our own servers.”</div>
 </section>
 
 <section class="s">
-  <div class="sh"><span class="sn">07</span><span class="st">AI inside operations</span><span class="sm">18:00 · 3 min</span></div>
-  <div class="say">“Three models, running on our own infrastructure, and customer data is masked <em>before</em> anything reaches them. No operational data leaves Salam to be answered.”</div>
+  <div class="sh"><span class="sn">07</span><span class="st">AI inside operations — Yusr, two agents, Mission control</span><span class="sm">18:00 · 3.5 min</span></div>
+  <div class="say">“One assistant and two agents, running on our own infrastructure. Customer data is masked <em>before</em> anything reaches a model, and no operational data leaves Salam to be answered.”</div>
   <ul class="cue">
-    <li>Yusr: type a number, an OTP, a reference — and just ask. No query to write, no second person to call.</li>
-    <li>Assisted triage: it reads the failure evidence and proposes a classification and a likely cause, so L1 start from a hypothesis rather than a blank page.</li>
-    <li>Say the governance line unprompted, before anyone asks: <b>“it decides nothing.”</b> It proposes and attaches its reasoning; an engineer accepts or rejects, and that acceptance is the record.</li>
-    <li>Close: <b>“automation finds it, AI explains it, the accountability stays with the engineer.”</b></li>
+    <li>Open <b>#agents-live</b> — Mission control — before the slide's cards: the agents as they run, what each did, does now, should do next, with its CPU, memory and tokens. This is the picture a CIO keeps: agents are visible and budgeted, not magic.</li>
+    <li><b>Yusr</b>: type a number, an OTP, a reference — and just ask. No query to write, no second person to call. Do one query live, on a masked customer.</li>
+    <li><b>Agent 1</b> reads the application and API logs every 15 minutes, folds failures into signatures, asks the model only about the new ones, mails the daily log report.</li>
+    <li><b>Agent 2</b> triages every incident with a probable cause, proposes the owning team for every rule, and works the refund queue — verdict, reason, the approval request drafted.</li>
+    <li>Say the governance line unprompted: <b>“it decides nothing.”</b> Proposals with the reasoning attached; a person accepts or rejects, and that acceptance is the record. It never approves a refund, never writes to proxycms, the gateway or any system of record. Every call is recorded with its cost; token ceilings per person and per agent.</li>
+    <li>Sizing: an 8B model measured at 17.6 tokens/s on our own CPU server. The GPU host is the one hardware ask of the next phase — it turns minutes into seconds and lets the agents cover Fixed at the same depth.</li>
   </ul>
-  <div class="next"><b>Bridge:</b> “Let me show you what that is worth on a real week — last week.”</div>
+  <div class="next"><b>Bridge:</b> “Let me show you what that discipline is worth on a real week.”</div>
 </section>
 
 <h2 class="grp">The proof</h2>
 
 <section class="s">
-  <div class="sh"><span class="sn">08</span><span class="st">The worked example</span><span class="sm">21:00 · 4 min</span></div>
-  <div class="say">“Last week a report landed showing one sales channel at roughly half the previous month. It arrived as a suspected technical fault, with a request to investigate.”</div>
+  <div class="sh"><span class="sn">08</span><span class="st">The worked example</span><span class="sm">21:30 · 3.5 min</span></div>
+  <div class="say">“A report landed showing one sales channel at roughly half the previous month. It arrived as a suspected technical fault, with a request to investigate.”</div>
   <ul class="cue">
     <li>Tell it as a story, in order. Pause after the escalation before giving the answer.</li>
-    <li>Per day the two periods were <b>33.1 against 33.0</b> — identical. The 45% gap was <b>seventeen days measured against thirty-one</b>.</li>
-    <li>The channel was in fact at its <b>highest rolling average of the year</b>.</li>
-    <li>We did not stop there. One genuine dip remained — but traffic was <b>up 31%</b> while orders were <b>up 8%</b>, every provider and every partner moved together, and no step in the funnel changed. Demand and mix, not a failure.</li>
-    <li>Before: a week of cross-team investigation, three teams off delivery work, and probably a conclusion nobody could evidence.</li>
-    <li>Instead: one read, one query, <b>answered the same day with the funnel, the providers and the partners all shown</b>.</li>
+    <li>Per day the two periods were <b>33.1 against 33.0</b> — identical. The 45% gap was <b>seventeen days measured against thirty-one</b>. The channel was at its <b>highest rolling average of the year</b>.</li>
+    <li>We did not stop there. One genuine dip remained — traffic <b>up 31%</b>, orders <b>up 8%</b>, every provider and partner moved together, no step in the funnel changed. Demand and mix, not a failure.</li>
+    <li>Before: a week of cross-team investigation, three teams off delivery work, a conclusion nobody could evidence. Instead: one read, one query, <b>answered the same day with the funnel, the providers and the partners all shown</b>.</li>
   </ul>
   <div class="say" style="background:transparent;border-left-color:var(--faint)">“The value is not that we were right. <em>It is that being right took hours, and came with the evidence attached.</em>”</div>
-  <div class="warn">Do not name anyone. If asked who raised it: “a business report — and the right instinct, it just turned out to be arithmetic.” Protect the person who escalated.</div>
+  <div class="warn">Do not name anyone. If asked who raised it: “a business report — and the right instinct; it turned out to be arithmetic.” If he wants a second example, use this week's refund request: three SIM-replacement cases in one approval mail, all three already listed on Refund exposure with the Semati answer attached before the mail arrived.</div>
   <div class="next"><b>Bridge:</b> “The same discipline now covers the regulator.”</div>
 </section>
 
 <section class="s">
-  <div class="sh"><span class="sn">09</span><span class="st">The regulator is a stakeholder too</span><span class="sm">25:00 · 2 min</span></div>
+  <div class="sh"><span class="sn">09</span><span class="st">The regulator is a stakeholder too</span><span class="sm">25:00 · 1.5 min</span></div>
   <div class="say">“What CST sees of Salam is now watched the same way we watch a customer journey.”</div>
   <ul class="cue">
-    <li>Arqami — the number-ownership service we run on the regulator's behalf — is measured per minute, with its own objectives and alerts.</li>
-    <li><b>“If it slows, we know before the regulator does.”</b></li>
-    <li>Escalations sit on one board shared by IT and Regulatory Affairs, with the ticket record attached — so an answer to CST is assembled from evidence, not memory.</li>
+    <li>Arqami — the number-ownership service we run on the regulator's behalf — is measured per minute, with its own objectives and alerts. <b>“If it slows, we know before the regulator does.”</b></li>
+    <li>Escalations sit on one board shared by IT and Regulatory Affairs, with the ticket record attached — an answer to CST is assembled from evidence, not memory.</li>
     <li>Frame it as risk: <b>regulatory exposure is an operational risk and belongs on the same screen as the others.</b></li>
   </ul>
-  <div class="warn">Second candidate to cut if short — but only if no regulatory or compliance person is in the room.</div>
-  <div class="next"><b>Bridge:</b> “Which brings me to the question a CIO always asks: who can see all this?”</div>
+  <div class="warn">Second candidate to cut — unless a regulatory or compliance person is in the room.</div>
+  <div class="next"><b>Bridge:</b> “Which brings me to the question a CIO always asks first: who can see all this, and who owns what?”</div>
 </section>
 
 <section class="s">
-  <div class="sh"><span class="sn">10</span><span class="st">Access, PII and audit</span><span class="sm">27:00 · 2.5 min</span></div>
+  <div class="sh"><span class="sn">10</span><span class="st">Access, PII — and ownership made explicit</span><span class="sm">26:30 · 2.5 min</span></div>
   <div class="say">“Everyone sees exactly their job. Nothing more — and it is on the record.”</div>
   <ul class="cue">
-    <li>24 pages, 14 roles, one model. <b>No page has a private rule of its own any more.</b></li>
+    <li>24 pages, one permission model — no page has a private rule of its own. 26 roles across ten teams, from Call Centre to CIO.</li>
     <li>Customer data is <b>masked by default</b>. Revealing a value is a deliberate act, never a mode a session sits in — and every reveal is written with the person, the record and the time.</li>
-    <li>A Mobile account never renders a Fixed page, and the reverse.</li>
-    <li>User administration answers to the account tier <b>in code</b> — no permission setting can open it.</li>
-    <li>If the CIO is in the room, look at them for this one: <b>“the executive role added this month opens the dashboard, the NOC wall and the assistant — and no customer record at all.”</b></li>
+    <li>A Mobile account never renders a Fixed page, and the reverse. User administration answers to the account tier in code — no permission setting can open it.</li>
+    <li>New this week — open <b>#teams</b>: <b>ownership is configuration.</b> Who owns an incident (the responder team, with its vendor and contract), who approves a refund and who executes it (the refund desk, per business), and — on every user — whether they are <b>Salam team or a contract resource</b>, read from the e-mail address. He can see at a glance how many of the people on the console are TCS, Sigma or Salam.</li>
+    <li>Look at him for this one: “the executive role opens the dashboard, the NOC wall and the assistant — and no customer record at all.”</li>
   </ul>
   <div class="next"><b>Bridge:</b> “All of this took ten months.”</div>
 </section>
@@ -252,91 +282,82 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
 <h2 class="grp">The close</h2>
 
 <section class="s">
-  <div class="sh"><span class="sn">11</span><span class="st">Ten months</span><span class="sm">29:30 · 2.5 min</span></div>
-  <div class="say">“December, a first line of code. March, live through Ramadan. May, through Hajj. June, Sales Operations. August, the MVNO side complete. This month, both businesses in one console.”</div>
+  <div class="sh"><span class="sn">11</span><span class="st">Ten months</span><span class="sm">29:00 · 2 min</span></div>
+  <div class="say">“December, a first line of code. March, live through Ramadan. May, through Hajj. June, Sales Operations. August, the MVNO side complete. September, both businesses in one console — with owners, contract clocks and the refund desk.”</div>
   <ul class="cue">
     <li>Deliver the dates as a rhythm, not a list. It should sound inevitable.</li>
-    <li>The point is not speed — it is that <b>every one of those milestones was a real operating season, not a demo</b>.</li>
-    <li>Next: assisted resolution — draft root cause from the evidence already attached to the incident, and ServiceNow.</li>
-    <li>Then predictive — degradation flagged before a threshold breaks.</li>
+    <li>The point is not speed — every milestone was a <b>real operating season</b>, not a demo.</li>
+    <li>Next, S1 2027: assisted resolution — a draft root cause from the evidence on the incident; ServiceNow; the Fixed refund desk on Moyasar; the GPU host for the agents. Then predictive — degradation flagged before a threshold breaks.</li>
   </ul>
-  <div class="next"><b>Bridge:</b> “And the value of it was never confined to IT.”</div>
+  <div class="warn">Cut in the 25-minute version; the dates are on slide 13 as well.</div>
+  <div class="next"><b>Bridge:</b> “And the value was never confined to IT.”</div>
 </section>
 
 <section class="s">
-  <div class="sh"><span class="sn">12</span><span class="st">Value beyond IT</span><span class="sm">32:00 · 3 min</span></div>
+  <div class="sh"><span class="sn">12</span><span class="st">Value beyond IT</span><span class="sm">31:00 · 2 min</span></div>
   <div class="say">“Four parts of this business already use it, and not one of them is my team.”</div>
   <ul class="cue">
     <li>Call centre — one number gives the agent the full picture and the real failure reason.</li>
     <li>Sales and dealer operations — in daily use since June; they rate the accuracy and the depth highly.</li>
-    <li>Business and growth — payment success by rail, abandonment, eligibility. The levers that decide conversion.</li>
-    <li>And now leadership: <b>“the number in the review is the number the operation is running on, at the moment you read it.”</b></li>
-    <li>Close the section: <b>“every journey this watches is a journey a customer pays for. Visibility there is not an IT metric.”</b></li>
+    <li>Business, growth and now finance — payment success by rail, abandonment, eligibility, and the money owed back to customers found before the complaint, reconciled with the refund register.</li>
+    <li>And leadership: <b>“the number in the review is the number the operation is running on, at the moment you read it.”</b></li>
   </ul>
-  <div class="next"><b>Bridge:</b> “Which is why I am asking for three things.”</div>
+  <div class="warn">Cut in the 25-minute version.</div>
+  <div class="next"><b>Bridge:</b> “Which is why I am asking for three things — but first, two slides on scale.”</div>
 </section>
 
-
-
-
-
 <section class="s">
-  <div class="sh"><span class="sn">13</span><span class="st">What it took — one initiative, end to end</span><span class="sm">35:00 · 3 min</span></div>
-  <div class="say">“Before the ask, two slides about scale — what was done, and what it can become. <em>Everything on the previous twelve slides was designed, built, deployed and operated by one person, in ten months, alongside the day job.</em>”</div>
+  <div class="sh"><span class="sn">13</span><span class="st">What it took — one initiative, end to end</span><span class="sm">33:00 · 2.5 min</span></div>
+  <div class="say">“Everything on the previous twelve slides was designed, built, deployed and operated by one person, in ten months, <em>alongside the day job</em>.”</div>
   <ul class="cue">
-    <li>Walk the seven cards left to right, one phrase each: <b>programme</b> (two consoles into one, in a quarter), <b>experience</b> (26 roles, ten teams), <b>interface</b> (24 pages, one design language), <b>depth</b> (177 rules, 423 endpoints, ≈77,000 lines), <b>AI</b> (chosen, measured and budgeted on our own server), <b>journeys</b> (read from the code), <b>integrations</b> (32, with the evidence).</li>
-    <li>Then the bottom band. Left: what this proves — <b>no licence, no vendor, no external services; one person carried it end to end</b>. Say it plainly, once, and move on.</li>
-    <li>Right: what it can become — one sentence here, the next slide carries it: <b>the same platform, white-labelled, as a Salam B2B product, with Salam as the reference customer.</b></li>
-    <li>Do not argue ownership in the room. The point of the slide is credit and opportunity, not a claim. If the question comes, answer with the Q&amp;A line below.</li>
+    <li>Walk the seven cards left to right, one phrase each: programme (two consoles into one, in a quarter), experience (26 roles, ten teams), interface (24 pages, one design language), depth (182 rules, 462 endpoints, ≈80,000 lines, 70+ tables), AI (Yusr and two agents, chosen, measured and budgeted on our own server), journeys (read from the code), integrations (32, with the evidence).</li>
+    <li>Bottom band, left: what this proves — no licence, no vendor, no external services; <b>one person carried it end to end</b>. Say it once, plainly, and move on.</li>
+    <li>Right: what it can become — one sentence, the next slide carries it.</li>
   </ul>
-  <div class="nums"><span>Lines of code <b>≈77,000</b></span><span>API endpoints <b>423</b></span><span>Integrations <b>32</b></span><span>Months <b>10</b></span></div>
+  <div class="warn">Do not argue ownership in the room. The slide is credit and opportunity, not a claim. If “what happens if you leave?” comes here, give the Q&amp;A answer: the runbooks live on the rules, the docs in the repo, the operating model of the next phase is the team, not the author — that is part of the ask.</div>
+  <div class="nums"><span>Lines of code <b>≈80,000</b></span><span>API endpoints <b>462</b></span><span>Integrations <b>32</b></span><span>Months <b>10</b></span></div>
   <div class="next"><b>Bridge:</b> “That is what it took. Here is why it is worth more than one operator.”</div>
 </section>
 
 <section class="s">
-  <div class="sh"><span class="sn">14</span><span class="st">What it can become — the Salam B2B opportunity</span><span class="sm">38:00 · 3 min</span></div>
-  <div class="say">“We built it for Salam. <em>Every operator in the Kingdom has the same blind spot</em> — and runs on the same national integrations we already watch.”</div>
+  <div class="sh"><span class="sn">14</span><span class="st">What it can become — the Salam B2B opportunity</span><span class="sm">35:30 · 2.5 min</span></div>
+  <div class="say">“We built it for Salam. Every operator in the Kingdom has the same blind spot — and runs on the same national integrations we already watch.”</div>
   <ul class="cue">
-    <li><b>The need.</b> Nafath, Yakeen, Absher, Semati, SADAD, the couriers, the SMS gateways — every operator here has them, and every one has the gap we closed: APM tools watch servers, business journeys fail silently. No market product ships a KSA journey.</li>
-    <li><b>Salam’s edge.</b> Born inside a Saudi operator, proven on a mobile and a fixed business at once, ~1.5 million customers, data in the Kingdom, AI on-premise, zero licences. A reference no vendor can claim. The MVNOs and challengers decide in weeks.</li>
-    <li><b>The offer.</b> Salam OpsConsole, white-labelled — brand, name, theme and every connection are configuration — three ways to run it: shared cloud, dedicated cloud, on-premise. Priced by subscriber band. Salam is the reference customer and the distributor.</li>
-    <li><b>Already in hand.</b> A white-label build with a synthetic demo tenant — nothing of Salam’s inside — a product page in English and Arabic, a demo that stands up in ten minutes. A prospect’s POC runs read-only on their replica.</li>
-    <li><b>The proposal.</b> A joint taskforce, Digital Operations with Salam B2B, to package, brand and price it this quarter: IP and legal under Salam, the product name, the commercial model, the first two prospects. <b>No capex, no headcount — a decision.</b></li>
-    <li>Do not quote market sizes or revenue figures; there are none on the slide on purpose. If asked, the answer is “that is the taskforce’s first deliverable.”</li>
+    <li>The need: Nafath, Yakeen, Absher, Semati, SADAD, the couriers, the SMS gateways — every operator here has them, and the same gap: APM tools watch servers, business journeys fail silently. No market product ships a KSA journey pre-mapped.</li>
+    <li>Salam's edge: born inside a Saudi operator, proven on a mobile and a fixed business at once, ~1.5 million customers, data in the Kingdom, AI on-premise, zero licences. A reference no vendor can claim.</li>
+    <li>The offer: Salam OpsConsole, white-labelled — brand, name, theme and every connection are configuration — three ways to run it: shared cloud, dedicated cloud, on-premise. Priced by subscriber band. Salam is the reference customer and the distributor.</li>
+    <li>Already in hand: a white-label build with a synthetic demo tenant — nothing of Salam's inside — a product page in English and Arabic, a demo that stands up in ten minutes. A prospect's POC runs read-only on their replica.</li>
+    <li>The proposal: a joint taskforce, Digital Operations with Salam B2B, this quarter — IP and legal under Salam, the name, the commercial model, the first two prospects. <b>No capex, no headcount — a decision.</b></li>
   </ul>
+  <div class="warn">He ran channel strategy and customer success at Oracle: expect “who supports it, what SLA do we sign, how do we price, who owns the IP”. Answers in the Q&amp;A; do not quote market sizes or revenue — “that is the taskforce's first deliverable.”</div>
   <div class="nums"><span>Customers <b>~1.5M</b></span><span>Deployment models <b>3</b></span><span>Licences <b>0</b></span></div>
   <div class="next"><b>Bridge:</b> “Which brings me to the three decisions.”</div>
 </section>
 
 <section class="s">
-  <div class="sh"><span class="sn">15</span><span class="st">Sponsor. Launch. Commercialize.</span><span class="sm">41:00 · 3 min</span></div>
-  <div class="say">“Built in-house, running in production on both businesses, with AI already inside it. <em>Three decisions turn a working tool into a Salam capability — and a Salam product.</em>”</div>
+  <div class="sh"><span class="sn">15</span><span class="st">Sponsor. Launch. Commercialize.</span><span class="sm">38:00 · 2 min</span></div>
+  <div class="say">“Built in-house, running in production on both businesses, with AI already inside it. Three decisions turn a working tool into a Salam capability — <em>and a Salam product</em>.”</div>
   <ul class="cue">
-    <li><b>One — sponsorship.</b> Make it the operational reference. Used in reviews, instead of rebuilt in slides every month.</li>
-    <li><b>Two — launch it officially, as a Salam product,</b> and back the next phase on this platform, not a second one. It has earned a name.</li>
-    <li><b>Three — commercialize:</b> the joint taskforce with Salam B2B, this quarter. Salam as the reference customer, the Kingdom as the market.</li>
+    <li><b>One — sponsorship.</b> Make it the operational reference: used in the monthly review instead of rebuilt in slides. Concretely: the executive dashboard is the first screen of the vendor review, and the refund desk is the register Finance reads.</li>
+    <li><b>Two — launch it officially</b>, as a Salam product, and back the next phase on this platform, not a second one: the GPU host, ServiceNow access, an owner for the Fixed data feed, and the second and third engineers who make it the team's, not the author's.</li>
+    <li><b>Three — commercialize</b>: the joint taskforce with Salam B2B, this quarter. Salam as the reference customer, the Kingdom as the market.</li>
     <li>Then stop talking. Ask directly: <b>“can I have those three?”</b> and let the silence do the work.</li>
   </ul>
-  <div class="warn">Leave four to six minutes for questions. If the room goes quiet, offer: “I can open any screen you want, live, right now.” That offer has never failed to start a conversation.</div>
+  <div class="warn">Leave six to eight minutes for questions — he will use them. If the room goes quiet, offer: “I can open any screen you want, live, right now.” Customer 360 with a masked customer is the one that always starts a conversation.</div>
 </section>
 
-<h2 class="grp">If they ask</h2>
+<h2 class="grp">If they ask · the short answers (the full list of CIO questions is in the project doc)</h2>
 
-<div class="qa"><div class="q">“What did it cost?”</div><div class="a">Built in-house by the existing team alongside delivery work. <b>No licence, no vendor contract, no external professional services.</b> The cost is our people's time — and the alternative was paying for a product that does not know a Salam journey and building the mapping anyway.</div></div>
-
-<div class="qa"><div class="q">“What happens if you leave?”</div><div class="a">Fair question, and the honest answer is it is a risk we are actively reducing. Everything is documented in-repo, the runbooks sit on the rules themselves rather than in someone's head, and the next phase is about <b>making the platform operable by the team rather than by its authors</b>. That is part of what I am asking you to back.</div></div>
-
-<div class="qa"><div class="q">“Why not buy an observability product?”</div><div class="a">The market products watch <b>infrastructure</b> — CPU, latency, errors. We needed something that watches a <b>Salam journey</b>: a port-in, a Nafath check, an SDA dealer order, a QR referral. No vendor ships that. We would have paid for a licence and then built exactly this on top of it.</div></div>
-
-<div class="qa"><div class="q">“Is customer data safe in an AI system?”</div><div class="a">Inference runs <b>on our own infrastructure</b> — nothing leaves Salam. Data is masked before it reaches a model. And the model proposes; it never decides or acts. Every reveal of a real value is a deliberate, audited action by a named person.</div></div>
-
-<div class="qa"><div class="q">“How do I know these numbers are real?”</div><div class="a">Every figure on these slides comes out of the running platform, and I can open it live in this room. <b>That is rather the point of the whole thing.</b></div></div>
-
-<div class="qa"><div class="q">“Can this be sold outside Salam — and who would own it?”</div><div class="a">Salam would. The proposal is that Salam packages and sells it, with the operations team that built it leading the product line — the Kingdom’s other operators share every national integration we already watch (Nafath, Yakeen, Semati, SADAD, the couriers), and none of the market products know a KSA journey. <b>What I am asking for today is the mandate to scope that properly: legal, brand and the commercial model.</b> The demo tenant with synthetic data already exists, so nothing of Salam’s leaves the building in a pitch.</div></div>
-
-<div class="qa"><div class="q">“What would commercialising cost Salam?”</div><div class="a">This quarter: a taskforce’s time, a legal review and a brand decision. The platform, the white-label build, the demo tenant and the product page exist. Hosting for a first customer is one dedicated VM in a Saudi region, or the customer’s own servers. <b>No capex decision is on the table today — only whether we scope it.</b></div></div>
-
-<div class="qa"><div class="q">“What is still missing?”</div><div class="a">Answer this one straight, it buys credibility. Assisted resolution is not built yet. ServiceNow is not integrated yet. One Fixed data feed needs an owner. And coverage of the Fixed side is newer than Mobile, so it will need tuning for another month. <b>None of that is a reason to wait to make it official.</b></div></div>
+<div class="qa"><div class="q">“What did it cost, and what does it cost to run?”</div><div class="a">Built in-house by the existing team alongside delivery work — no licence, no vendor contract, no professional services. Running it is two VMs on our own estate and the people's time; the AI runs on a CPU server today, and the one hardware ask is a GPU host. The alternative was a product that does not know a Salam journey, plus building the mapping anyway.</div></div>
+<div class="qa"><div class="q">“What happens if you leave? Is this one person's tool?”</div><div class="a">Fair question, and the honest answer is that it is a risk we are reducing on purpose. Everything is documented in the repository, the runbooks sit on the rules themselves, ownership sits in the registry, and the next phase is about making the platform <b>operable by the team rather than by its author</b> — two engineers, the enablement sessions already run for L1 and L2. That is part of what I am asking you to back.</div></div>
+<div class="qa"><div class="q">“Why not buy an observability product — Dynatrace, AppDynamics, Splunk?”</div><div class="a">They watch infrastructure — CPU, latency, errors — and they are good at it; we may still want one under the platform. What they do not ship is a <b>Salam journey</b>: a port-in, a Nafath check, an SDA dealer order, a QR referral, a refund owed. That mapping is the value, and we would have built it on top of any product. Zero licence is the bonus, not the reason.</div></div>
+<div class="qa"><div class="q">“How do I know the vendor figures are fair — TCS and Sigma will dispute them.”</div><div class="a">Every number links to the incidents behind it, with timestamps from our own timers; the contract clauses are quoted next to the actual; blips under five minutes are excluded; the penalty is labelled a candidate until the monthly review. The point is not to punish — it is that the vendor conversation now starts from a shared list rather than two decks. TCS has been invited to calibrate the P1 rules with us.</div></div>
+<div class="qa"><div class="q">“Is customer data safe in an AI system?”</div><div class="a">Inference runs on our own infrastructure — nothing leaves Salam. Data is masked before it reaches a model; a real value is revealed only by a named person, and that reveal is audited. The models propose; they never decide, never act, never write to a system of record. Token ceilings per person and per agent, every call logged with its cost.</div></div>
+<div class="qa"><div class="q">“The refund desk — who is accountable if the agent is wrong?”</div><div class="a">The same people as today, with better evidence. The agent reviews and proposes; the approver approves by name on the page; L2 posts the refund in proxycms; the console closes the case only when the register shows it. The approvers, the executing team and the two clocks are configuration in Teams management, and the audit trail carries every step. A wrong proposal costs a click, not money.</div></div>
+<div class="qa"><div class="q">“How do I know these numbers are real?”</div><div class="a">Every figure on these slides comes out of the running platform, and I can open it live in this room. That is rather the point.</div></div>
+<div class="qa"><div class="q">“Can this be sold outside Salam — and who would own it?”</div><div class="a">Salam would. The proposal is that Salam packages and sells it, with the operations team that built it leading the product line. The Kingdom's operators share every national integration we already watch, and none of the market products know a KSA journey. Today's ask is the mandate to scope it properly: legal, brand and the commercial model. The synthetic demo tenant exists, so nothing of Salam's leaves the building in a pitch.</div></div>
+<div class="qa"><div class="q">“What would commercialising cost Salam — and who supports a customer?”</div><div class="a">This quarter: a taskforce's time, a legal review and a brand decision. Hosting for a first customer is one dedicated VM in a Saudi region, or their own servers. Support is the same L1/L2 model we run for ourselves, sold as a subscription by subscriber band — the taskforce prices it. No capex decision is on the table today, only whether we scope it.</div></div>
+<div class="qa"><div class="q">“What is still missing?”</div><div class="a">Answer straight — it buys credibility. Assisted resolution is not built. ServiceNow is not integrated. The Fixed refund desk has its definition but not its detectors. One Fixed data feed needs an owner. Coverage of Fixed is newer than Mobile and will need tuning for another month. None of that is a reason to wait to make it official.</div></div>
 
 </div>
 <script>
