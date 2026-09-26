@@ -86,8 +86,17 @@ function budget(messages, cap = PROMPT_CHARS) {
   return { messages: out, trimmed };
 }
 
+/* ---- ONE context size for every call (27 Sep 2026) -----------------------------------------------------------------
+ * Ollama keeps one runner per (model, num_ctx): a call asking for a different num_ctx than the loaded one makes it
+ * RELOAD the model — a full 5 GB load on this CPU box. Yusr, the incident triage, the mapping and the refund review
+ * asked for 4096 while Agent 1 asked for 8192, so the model was reloaded at least twice every 15 minutes, all day
+ * (152, 27 Sep 01:22 KSA: /api/ps showed ctx 8192, two minutes later ctx 4096). Every call now uses LLM_NUM_CTX
+ * (default 8192 — the size the prompt budget above was written for); a per-call numCtx is only ever a MINIMUM. */
+const NUM_CTX = Math.max(2048, Number(E.LLM_NUM_CTX) || 8192);
+
 /* ---- one request to one provider ---- */
 async function callProvider(p, { messages, maxTokens, temperature, numCtx, json }) {
+  numCtx = Math.max(NUM_CTX, Number(numCtx) || 0);
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), p.timeoutMs || 75000);
   const headers = { 'Content-Type': 'application/json' }; if (p.key) headers.Authorization = `Bearer ${p.key}`;
   try {
@@ -114,7 +123,7 @@ async function callProvider(p, { messages, maxTokens, temperature, numCtx, json 
     };
     const attempt = async (o) => {
       const b = { model: p.model, stream: false, keep_alive: '30m', messages: o.merge ? merged() : base,
-        options: { temperature: temperature ?? 0.2, num_predict: o.predict || maxTokens || 220, num_ctx: o.ctx || numCtx || 8192 } };
+        options: { temperature: temperature ?? 0.2, num_predict: o.predict || maxTokens || 220, num_ctx: o.ctx || numCtx } };
       if (o.format) b.format = 'json';
       const r = await fetch(`${p.url}/api/chat`, { method: 'POST', headers, body: JSON.stringify(b), signal: ctl.signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -122,9 +131,10 @@ async function callProvider(p, { messages, maxTokens, temperature, numCtx, json 
     };
     /* Rung order matters on a CPU box: the cheap fixes first. Folding the system prompt into the user turn costs
      * nothing; RAISING num_ctx makes Ollama RELOAD the model (152 has ~6 GB free and llama3.1 needs 5.6 GB at 4k),
-     * so the context rung is last and capped by LLM_MAX_CTX (8192) — never 16k on this host. */
+     * so the context rung is last and capped by LLM_MAX_CTX (8192) — never 16k on this host. With the defaults
+     * (LLM_NUM_CTX = LLM_MAX_CTX = 8192) the last rung asks for the size already loaded, so it never reloads. */
     const MAXCTX = Math.max(2048, Number(E.LLM_MAX_CTX) || 8192);
-    const bigCtx = Math.min(MAXCTX, Math.max(8192, numCtx || 0));
+    const bigCtx = Math.min(MAXCTX, Math.max(NUM_CTX, numCtx || 0));
     const ladder = json
       ? [{ format: true, label: 'json grammar' },
          { format: false, label: 'no grammar' },
@@ -235,7 +245,7 @@ async function selftest(which = 'primary') {
     const t0 = Date.now();
     const messages = [{ role: 'system', content: 'You are an operations assistant. Answer with a JSON object {"ok":true,"note":"<5 words>"}.' },
       { role: 'user', content: `${pr.chars > 100 ? filler(pr.chars) + '\n' : ''}Reply with the JSON object now.` }];
-    try { const a = await callProvider(p, { messages, json: pr.json, maxTokens: 60, numCtx: 8192 });
+    try { const a = await callProvider(p, { messages, json: pr.json, maxTokens: 60 });
       out.push({ ...pr, ok: !!(a && a.text), ms: Date.now() - t0, answer: String((a && a.text) || '').slice(0, 120), tokens: (a && ((a.ptok || 0) + (a.ctok || 0))) || null }); }
     catch (e) { out.push({ ...pr, ok: false, ms: Date.now() - t0, error: String(e.message || e).slice(0, 300) }); }
   }

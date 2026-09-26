@@ -220,7 +220,7 @@ Customer timeline (last events): ${ev.timeline.length ? ev.timeline.map(t => `${
 Deterministic reading: verdict ${pre.verdict}, reason "${pre.reason || '-'}", ${pre.cause}
 REASONS: ${reasons.join(' | ')}`;
     try {
-      out = await llm.chat({ system: SYSTEM, user, purpose: 'agent-refund.review', caller: 'salam-agent-incident', json: true, maxTokens: 300, numCtx: 4096, temperature: 0.1 });
+      out = await llm.chat({ system: SYSTEM, user, purpose: 'agent-refund.review', caller: 'salam-agent-incident', json: true, maxTokens: 300, temperature: 0.1 });
       j = out.json && typeof out.json === 'object' && VERDICTS.includes(String(out.json.verdict || '').toLowerCase()) ? out.json : null;
       if (!j) log(`review #${c.id}: unusable model answer (${out.provider} ${out.model}, ${out.ms} ms${out.jsonError ? ', ' + out.jsonError : ''})`);
     } catch (e) { llmDown = !!e.llm; log(`review #${c.id}: model ${e.llm ? 'unavailable' : 'failed'} — ${e.message.slice(0, 120)}; deterministic verdict kept`); }

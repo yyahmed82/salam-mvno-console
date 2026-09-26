@@ -602,7 +602,7 @@ async function ruleContext(q) {
 /* ------------------------------ LLM (llm.js) ------------------------------ */
 /* 10 Sep 2026: Yusr no longer talks to Ollama directly — llm.js owns the providers (primary + on-prem fallback,
  * automatic failover, llm_calls audit). The prompt layout and the CPU-tuned options are unchanged:
- * 3 history turns × 500 chars, num_predict 220, num_ctx 4096, keep_alive 30m (set inside llm.js). */
+ * 3 history turns × 500 chars, num_predict 220, num_ctx = LLM_NUM_CTX (one size for every caller, 27 Sep 2026), keep_alive 30m (set inside llm.js). */
 const llm = require('./llm');
 async function ollamaChat({ cfg, system, history, user, actor }) {
   const messages = [{ role: 'system', content: system }];
@@ -616,7 +616,7 @@ async function ollamaChat({ cfg, system, history, user, actor }) {
    * noticeably shorter answer. Settable from Settings › Assist so it can be tuned, and reverted,
    * without a deploy. Default unchanged at 220: nothing moves until somebody chooses it. */
   const cap = Math.min(400, Math.max(60, Number(cfg && cfg.maxTokens) || 220));
-  const out = await llm.chat({ messages, purpose: 'yusr.chat', caller: 'console', actor, maxTokens: cap, numCtx: 4096, temperature: 0.2 });
+  const out = await llm.chat({ messages, purpose: 'yusr.chat', caller: 'console', actor, maxTokens: cap, temperature: 0.2 });
   return out.text;
 }
 
@@ -1318,7 +1318,7 @@ async function warm() {
     if (!cfg.enabled) return;
     /* Send the REAL system prompt: the point of warming is not just keeping the model in RAM but keeping the
      * evaluated SYSTEM_BASE prefix in the slot cache (a bare 'ok' warm evicted it every 20 minutes). */
-    await llm.chat({ messages: [{ role: 'system', content: SYSTEM_BASE }, { role: 'user', content: 'ok' }], purpose: 'yusr.warm', caller: 'console', maxTokens: 1, numCtx: 4096, temperature: 0.2 });
+    await llm.chat({ messages: [{ role: 'system', content: SYSTEM_BASE }, { role: 'user', content: 'ok' }], purpose: 'yusr.warm', caller: 'console', maxTokens: 1, temperature: 0.2 });
   } catch (e) { /* best effort */ }
 }
 function startWarm() {

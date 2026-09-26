@@ -195,7 +195,7 @@ async function assess(ids) {
     const batch = rows.slice(i, i + CFG.llmBatch); batches++;
     const user = `New signatures (${batch.length}):\n` + batch.map(r => `- id ${r.id} · segment ${r.segment} · source ${r.source} · endpoint ${r.endpoint || '?'} · code ${r.code || '?'} · seen ${r.total}× on ${(r.hosts || []).join(',') || '?'}\n  pattern: ${r.message_pattern}\n  sample: ${String(r.sample || '').slice(0, 220)}`).join('\n');
     try {
-      const out = await llm.chat({ system: SYSTEM, user, purpose: 'agent-log.assess', caller: 'salam-agent-log', json: true, maxTokens: 900, numCtx: 8192, temperature: 0.1 });
+      const out = await llm.chat({ system: SYSTEM, user, purpose: 'agent-log.assess', caller: 'salam-agent-log', json: true, maxTokens: 900, temperature: 0.1 });
       const items = (out.json && Array.isArray(out.json.items)) ? out.json.items : [];
       for (const it of items) {
         const row = batch.find(b => Number(b.id) === Number(it.id)); if (!row) continue;

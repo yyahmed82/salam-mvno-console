@@ -112,7 +112,7 @@ Busiest backend signatures last 2 h (${ev.seg}): ${ev.sigs.length ? ev.sigs.map(
 Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${String(c.body).slice(0, 120)}`).join(' | ') : 'none'}${flapping ? '\nNOTE: this incident is FLAPPING (re-opened ' + a.reopen_count + ' times).' : ''}`;
   let out = null, j = null;
   try {
-    out = await llm.chat({ system: SYSTEM + `\nTEAMS: ${await teamCatalog()}`, user, purpose: 'agent-incident.triage', caller: 'salam-agent-incident', json: true, maxTokens: 320, numCtx: 4096, temperature: 0.1 });
+    out = await llm.chat({ system: SYSTEM + `\nTEAMS: ${await teamCatalog()}`, user, purpose: 'agent-incident.triage', caller: 'salam-agent-incident', json: true, maxTokens: 320, temperature: 0.1 });
     j = (out.json && typeof out.json === 'object' && (out.json.probable_cause || out.json.suggested_action)) ? out.json : null;
     if (!j) log(`triage #${a.id}: unusable model answer (${out.provider} ${out.model}, ${out.ms} ms, ${String(out.text || '').length} chars${out.jsonError ? ', ' + out.jsonError : ''}): ${String(out.text || '').slice(0, 160).replace(/\s+/g, ' ')}`);
   }
@@ -186,7 +186,7 @@ Current owner on the rule: ${current ? current.key : (r.team || 'none')}
 Keyword candidates: ${cands}
 TEAMS: ${await teamCatalog()}`;
           try {
-            const out = await llm.chat({ system: MAP_SYSTEM, user, purpose: 'agent-incident.map', caller: 'salam-agent-incident', json: true, maxTokens: 120, numCtx: 4096, temperature: 0.1 });
+            const out = await llm.chat({ system: MAP_SYSTEM, user, purpose: 'agent-incident.map', caller: 'salam-agent-incident', json: true, maxTokens: 120, temperature: 0.1 });
             const j = out.json && typeof out.json === 'object' ? out.json : null;
             const t = j && j.team ? await teams.resolve(j.team) : null;
             if (t) { pick = t.key; confidence = Math.max(0.1, Math.min(0.9, Number(j.confidence) || 0.5)); method = 'model'; reason = String(j.reason || '').slice(0, 200); stats.modelled++; }
