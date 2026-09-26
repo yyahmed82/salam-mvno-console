@@ -160,6 +160,10 @@ async function buildProfile({ key }) {
     last_seen: lines.length ? lines[0].created_at : (order ? order.created_at : null)
   };
 
+  /* REFUND EXPOSURE (25 Sep 2026): what the radar already knows this customer is owed — before the complaint */
+  try { const rr = require('./refundRadar'); const f9 = v => { const d = String(v || '').replace(/\D/g, ''); const l = d.slice(-9); return l.length === 9 ? ['966' + l, '0' + l, l, '+966' + l] : []; };
+    identity.refund_exposure = await rr.forCustomer({ mobiles: [...f9(mobile), ...f9(id), ...(visitor && visitor.mobile ? f9(visitor.mobile) : [])], orderIds: [order && order.id, ...lines.map(l => l.id)].filter(Boolean).map(String) });
+  } catch (_) { identity.refund_exposure = []; }
   const found = !!order || lines.length > 0 || events.length > 0 || !!userRow;
   /* A COUNT ONLY — never the other customer's rows, never their national id. The operator learns
    * that the contact number is shared; they learn nothing about whoever else is using it. */

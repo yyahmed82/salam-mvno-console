@@ -4297,7 +4297,9 @@ app.get('/api/escalation/oncall', requireCap('manageSync'), async (req, res) => 
 });
 /* ── Agents & LLM layer (agentsApi.js): /api/llm/*, /api/agents/* — root tier ── */
 require('./agentsApi').mount(app, { audit, requireCap, requireRoot });
-require('./agentsMission').mount(app, { requireCap });   // AI agents mission control — readable by incident roles
+require('./agentsMission').mount(app, { requireCap });
+/* ── Refund exposure (refundRadar.js, 25 Sep 2026): refund candidates detected before the complaint ── */
+require('./refundRadar').mount(app, { requireView, audit, roles });   // AI agents mission control — readable by incident roles
 /* ── Responder teams, re-assignment, manual tickets, Agent 2 rule → team mapping (teamsApi.js / teams.js, 24 Sep 2026) ── */
 require('./teamsApi').mount(app, { audit, requireCap, requireSuper });
 /* ── Acknowledgement SLA (ackSla.js): reminders 1/2/3 + management escalation for unacknowledged alerts ── */
@@ -6938,6 +6940,7 @@ app.listen(PORT, async () => {
   try { require('./fixedErrCatalog').start(); } catch (e) { console.error('Error catalogue:', e.message); }
   try { require('./fixedChannelMetrics').start(); } catch (e) { console.error('Fixed channel metrics:', e.message); }
   try { require('./fixedErrorTrend').start(); } catch (e) { console.error('Fixed error trend rollup:', e.message); }
+  try { require('./refundRadar').start(); } catch (e) { console.error('Refund radar:', e.message); }
   require('./customMetrics').load().catch(e => console.error('Custom metrics:', e.message));
   try { require('./smsProbe').start(); } catch (e) { console.error('SMS probe:', e.message); }
   try { require('./zipkinCollector').start(); } catch (e) { console.error('APIGW trace collector:', e.message); }

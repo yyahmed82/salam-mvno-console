@@ -200,6 +200,34 @@ tr:last-child td{border-bottom:none}
 .brandline img{height:15px;width:auto;flex:0 0 auto;object-fit:contain;opacity:.9}
 .count{font-variant-numeric:tabular-nums;letter-spacing:.04em}
 @media (max-width:900px){ .split,.c4,.c3,.c2{grid-template-columns:1fr} .hero,.heroScrim{display:none} .eq{grid-template-columns:1fr} .eq .op{padding:4px 0} }
+/* ---- slide 14 : what it took, what it can become ---- */
+.slide.s14{padding-top:clamp(38px,5vh,72px);padding-bottom:clamp(62px,8vh,92px);gap:clamp(9px,1.3vh,16px)}
+.s14 h2{font-size:clamp(24px,2.7vw,40px)}
+.s14 .row{gap:clamp(9px,.9vw,14px)}
+.s14 .card{padding:clamp(11px,1.15vw,17px);gap:5px;border-radius:15px}
+.s14 .ct{font-size:clamp(13px,1vw,16px)}
+.s14 .cb{font-size:clamp(11px,.84vw,13px);line-height:1.48}
+.s14 .cb b{color:var(--ink);font-weight:700}
+.s14 .kk{font-size:clamp(13px,1.05vw,16px);font-weight:800;letter-spacing:-.02em;color:var(--green);margin-top:3px;font-variant-numeric:tabular-nums}
+.s14 .card.blue .kk{color:var(--blue)}
+.s14 .band{display:grid;grid-template-columns:1fr 1.35fr;gap:clamp(9px,.9vw,14px)}
+.s14 .band .col{border:1px solid var(--line);border-radius:15px;padding:clamp(11px,1.15vw,17px);background:var(--glass);display:flex;flex-direction:column;gap:5px}
+.s14 .band .col.now{border-color:rgba(0,230,118,.42);background:linear-gradient(150deg,rgba(0,230,118,.12),rgba(0,230,118,.02))}
+.s14 .band .dhead{margin-bottom:2px}
+.s14 .band .cb{font-size:clamp(11.5px,.9vw,14px)}
+.s14 .who{font-size:clamp(11.5px,.9vw,14px);color:var(--ink);font-weight:700;margin-top:2px}
+.s14 .who small{display:block;color:var(--dim);font-weight:400;font-size:clamp(10.5px,.8vw,12.5px);margin-top:1px}
+.s14 .ask{display:flex;align-items:baseline;gap:8px;margin-top:3px;font-size:clamp(11.5px,.9vw,14px);color:var(--ink);font-weight:700;line-height:1.45}
+.s14 .ask span{color:var(--green);white-space:nowrap}
+@media (max-width:900px){ .s14 .band{grid-template-columns:1fr} }
+.s14.b2b .card{padding:clamp(14px,1.4vw,22px);gap:7px}
+.s14.b2b .ct{font-size:clamp(15px,1.2vw,19px)}
+.s14.b2b .cb{font-size:clamp(12.5px,.95vw,15px);line-height:1.55}
+.s14.b2b .kk{font-size:clamp(14px,1.1vw,17px)}
+.s14 .card.amber .kk{color:var(--amber)}
+.s14.b2b .band .col{padding:clamp(14px,1.4vw,22px)}
+.s14.b2b .band .cb{font-size:clamp(12.5px,.95vw,15px)}
+.s14.b2b .ask{font-size:clamp(12.5px,.95vw,15px)}
 </style>
 </head>
 <body>
@@ -242,7 +270,7 @@ tr:last-child td{border-bottom:none}
   <div class="inner">
     <div class="eyebrow r">Salam &nbsp;&middot;&nbsp; Digital Operations</div>
     <h1 class="r">Salam<br/>Observability Portal</h1>
-    <div class="lede r">From closing tickets to <em>controlling service</em>.<br/>Built in-house. <em>MVNO and Fixed now run in one console.</em></div>
+    <div class="lede r">From closing tickets to <em>controlling service &mdash; and protecting revenue</em>.<br/>Built in-house. <em>MVNO and Fixed now run in one console.</em></div>
     <div class="meta r">Executive brief &middot; September 2026</div>
   </div>
 </section>
@@ -256,13 +284,13 @@ tr:last-child td{border-bottom:none}
     <div class="row c3 r" style="margin-top:10px">
       <div class="card"><div class="tagline">Mobile &middot; MVNO</div><div class="ct">Selfcare, DMS, payments</div>
         <div class="cb">Orders, activations, Nafath identity, payment rails, dealer network and courier delivery &mdash; 21 journeys watched step by step.</div>
-        <div class="k" style="font-size:clamp(15px,1.15vw,18px);margin-top:6px">62 alert rules</div></div>
+        <div class="k" style="font-size:clamp(15px,1.15vw,18px);margin-top:6px">62 alert rules &middot; 21 journeys</div></div>
       <div class="card"><div class="tagline">Fixed &middot; FTTH &middot; 5G home</div><div class="ct">Four digital channels</div>
         <div class="cb">Epurchase on the web, the Salam Home app, the SDA dealer map and QR referral orders &mdash; each with its own funnel, errors and providers.</div>
-        <div class="k" style="font-size:clamp(15px,1.15vw,18px);margin-top:6px">115 alert rules</div></div>
+        <div class="k" style="font-size:clamp(15px,1.15vw,18px);margin-top:6px">115 alert rules &middot; 4 channels</div></div>
       <div class="card blue"><div class="tagline blue">Shared spine</div><div class="ct">Built once, used by both</div>
         <div class="cb">Customer 360, the AI assistant, alerting and escalation, service objectives, exports, the audit trail and the role model &mdash; one implementation, not two.</div>
-        <div class="k blue" style="font-size:clamp(15px,1.15vw,18px);margin-top:6px">24 pages, 26 roles</div></div>
+        <div class="k blue" style="font-size:clamp(15px,1.15vw,18px);margin-top:6px">24 pages &middot; 26 roles &middot; 0 licences</div></div>
     </div>
     <div class="row c2 r" style="margin-top:12px">
       <div class="card plain"><div class="tagline">Why it matters operationally</div>
@@ -390,7 +418,7 @@ tr:last-child td{border-bottom:none}
 <!-- 07 AI LIVE -->
 <section class="slide" data-dur="8000">
   <div class="inner">
-    <div class="eyebrow r" style="color:var(--blue)">Automation &amp; AI &middot; the new area of operations monitoring</div>
+    <div class="eyebrow r" style="color:var(--blue)">Automation &amp; AI &middot; sovereign, on our own infrastructure</div>
     <h2 class="wide r">Detection is automated. Understanding is assisted by AI.</h2>
     <div class="row c3" style="margin-top:8px">
       <div class="card blue r"><div class="tagline blue">In-console assistant</div><div class="ct" style="font-size:clamp(19px,1.7vw,26px)">SALAM Assist</div>
@@ -404,10 +432,10 @@ tr:last-child td{border-bottom:none}
         <div class="k blue" style="font-size:clamp(15px,1.15vw,18px);margin-top:6px">Classification proposed</div></div>
     </div>
     <div class="row c2 r" style="margin-top:12px">
-      <div class="card plain"><div class="tagline blue">Where it runs</div>
-        <div class="cb" style="font-size:clamp(13px,1vw,16px)">On our own infrastructure, with local inference. Customer data is masked before anything reaches a model, and no operational data leaves Salam to be answered.</div></div>
+      <div class="card plain"><div class="tagline blue">Data sovereignty &amp; the PDPL</div>
+        <div class="cb" style="font-size:clamp(13px,1vw,16px)">On our own infrastructure, with local inference &mdash; an 8B model measured at 17.6 tokens/s on our own server. Customer data is masked before anything reaches a model, and no operational data leaves Salam to be answered.</div></div>
       <div class="card plain"><div class="tagline blue">What it is allowed to decide</div>
-        <div class="cb" style="font-size:clamp(13px,1vw,16px)">Nothing. It proposes a cause and a classification and attaches its reasoning; an engineer accepts or rejects it, and that acceptance is the record.</div></div>
+        <div class="cb" style="font-size:clamp(13px,1vw,16px)">Nothing. AI proposes, people decide: it suggests a cause and a classification and attaches its reasoning; an engineer accepts or rejects it, and that acceptance is the record.</div></div>
     </div>
     <div class="quote r" style="max-width:none;margin-top:12px;font-size:clamp(18px,1.85vw,28px)">Automation finds it. AI explains it. <span class="g">The decision, and the accountability for it, stay with the engineer.</span></div>
   </div>
@@ -513,7 +541,75 @@ tr:last-child td{border-bottom:none}
     </div>
     <div class="card r" style="margin-top:12px;background:transparent;border-color:rgba(92,200,255,.22)"><div class="tagline blue">And now, leadership</div>
       <div class="cb" style="font-size:clamp(13px,1.02vw,16.5px)">An executive role added this month opens the same live platform &mdash; the executive dashboard, the NOC wall and the assistant &mdash; with no operational page and no customer record behind it. The number in the review is the number the operation is running on, at the moment it is read.</div></div>
-    <div class="quote r" style="max-width:none;margin-top:12px;font-size:clamp(17px,1.7vw,26px)">Every journey the portal watches is a journey a customer pays for. <span class="g">Visibility there is not an IT metric.</span></div>
+    <div class="quote r" style="max-width:none;margin-top:12px;font-size:clamp(17px,1.7vw,26px)">Every journey the portal watches is a journey a customer pays for. <span class="g">Observability there is revenue protection.</span></div>
+  </div>
+</section>
+
+<!-- 13 WHAT IT TOOK -->
+<section class="slide s14" data-dur="15000">
+  <div class="inner">
+    <div class="eyebrow r">What it took &nbsp;&middot;&nbsp; and what it can become</div>
+    <h2 class="wide r">One initiative, end to end &mdash; and the makings of a Salam B2B product.</h2>
+    <div class="row c4 r">
+      <div class="card"><div class="tagline">Programme</div><div class="ct">Two consoles into one, in a quarter</div>
+        <div class="cb">A convergence plan in eight phases, delivered part-time &middot; a third URL beside the two production consoles, parity proven, then cutover &middot; L1 and L2 enablement sessions, a migration mail, a runbook for every change.</div>
+        <div class="kk">2 platforms &rarr; 1</div></div>
+      <div class="card"><div class="tagline">Experience</div><div class="ct">Every role sees exactly its job</div>
+        <div class="cb">26 roles across ten teams on an L1 &rarr; L2 &rarr; L3 ladder, an executive view that is only an executive view &middot; a guided tour, one lookup box for both businesses, bilingual navigation &middot; phone and iPad, light and dark.</div>
+        <div class="kk">26 roles &middot; 10 teams</div></div>
+      <div class="card"><div class="tagline">Interface</div><div class="ct">24 pages, one design language</div>
+        <div class="cb">Dashboards, NOC wall and radar, dealer maps, order trace, error boards, Customer 360 &middot; every table exports to Excel and PDF, every mail wears the same shell &middot; hand-built, no framework, no build step.</div>
+        <div class="kk">24 pages</div></div>
+      <div class="card"><div class="tagline">Depth</div><div class="ct">Every measurement defined and governed</div>
+        <div class="cb">177 alert rules with runbooks, 33 DMS flow rules, objectives with error budgets, hour-of-week baselines &middot; impact counting, acknowledgement SLA and escalation, audit trail, demo mode &middot; 423 API endpoints, 42 tables, 15 collectors and probes.</div>
+        <div class="kk">&asymp;77,000 lines of code</div></div>
+    </div>
+    <div class="row c3 r">
+      <div class="card blue"><div class="tagline blue">AI, selected and sized</div><div class="ct">On-prem models, budgeted, audited</div>
+        <div class="cb">Yusr plus two agents &mdash; log intelligence every 15 minutes, incident triage every 3 minutes &middot; the model chosen and measured on our own server (8B, 17.6 tokens/s), PII masked before inference, nothing leaves Salam &middot; token ceilings per person and per agent, every call recorded with its cost.</div>
+        <div class="kk">3 AI capabilities live</div></div>
+      <div class="card"><div class="tagline">Journeys</div><div class="ct">Read from the code, not from a slide</div>
+        <div class="cb">21 Mobile journeys step by step, the dealer journeys reverse-engineered from the DMS source, four Fixed channels with their funnels &middot; one customer across both businesses, an order trace with every API call &middot; failures split business vs technical, money at risk counted.</div>
+        <div class="kk">21 Mobile &middot; 4 Fixed channels</div></div>
+      <div class="card"><div class="tagline">APIs &amp; integrations</div><div class="ct">32 integrations mapped, evidence attached</div>
+        <div class="cb">Identity (Nafath, Yakeen, Absher, Semati), six payment rails, eight couriers, SMS &middot; CST Arqami live through a JDBC bridge, Remedy escalations read-only, gateway traces, the OSB archive &middot; app and API logs collected over SSH, masked at source.</div>
+        <div class="kk">32 integrations</div></div>
+    </div>
+    <div class="band r">
+      <div class="col"><div class="dhead">What this proves</div>
+        <div class="cb">Product, design, engineering, data, AI and operations &mdash; carried end to end by <b>one person</b>, in ten months, alongside the day job. No licence, no vendor, no external professional services.</div>
+        <div class="who">Yosri A. Yahmed<small>Head of Digital Operations &middot; designed, built, deployed and operated the platform</small></div></div>
+      <div class="col now"><div class="dhead">What it can become &mdash; a Salam B2B product</div>
+        <div class="cb">The same platform, white-labelled: every connection is configuration, journeys and integrations packaged per operator, on-prem AI, three ways to run it &mdash; shared cloud, dedicated cloud, on-premise. <b>Salam as the reference customer</b>; the operators of the Kingdom and the Gulf as the market.</div>
+        <div class="ask"><span>The ask &rarr;</span><span style="color:var(--ink);white-space:normal;font-weight:700">a mandate to package it under Salam&rsquo;s name &mdash; legal, brand and commercial model &mdash; this quarter.</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 WHAT IT CAN BECOME -->
+<section class="slide s14 b2b" data-dur="15000">
+  <div class="inner">
+    <div class="eyebrow r">What it can become &nbsp;&middot;&nbsp; the Salam B2B opportunity</div>
+    <h2 class="wide r">We built it for Salam. Every operator in the Kingdom has the same blind spot.</h2>
+    <div class="row c3 r">
+      <div class="card"><div class="tagline">The need</div><div class="ct">Same integrations, same blind spot</div>
+        <div class="cb">Every operator here runs on the national integrations we already watch &mdash; Nafath, Yakeen, Absher, Semati, SADAD, the couriers, the SMS gateways &mdash; and every one of them has the gap we closed: APM tools watch servers while business journeys fail silently. <b>No market product ships a KSA journey.</b></div>
+        <div class="kk">Shared by every operator in the Kingdom</div></div>
+      <div class="card blue"><div class="tagline blue">Salam&rsquo;s edge</div><div class="ct">Born inside a Saudi operator</div>
+        <div class="cb">Proven on a mobile and a fixed business at once, on ~1.5 million customers, in production. Data stays in the Kingdom, the AI runs on-premise, and there is no licence to pass on. <b>A reference no vendor can claim</b> &mdash; and the challengers and MVNOs decide in weeks, not procurement cycles.</div>
+        <div class="kk">Proven on ~1.5M customers &middot; 0 licences</div></div>
+      <div class="card amber"><div class="tagline amber">The offer</div><div class="ct">From cost centre to product line</div>
+        <div class="cb"><b>Salam OpsConsole</b> &mdash; white-labelled: brand, name, theme and every connection are configuration; journeys and integrations packaged per operator; three ways to run it &mdash; shared cloud, dedicated cloud, on-premise &mdash; priced by subscriber band. Salam as the reference customer and the distributor.</div>
+        <div class="kk">SaaS &middot; dedicated cloud &middot; on-premise</div></div>
+    </div>
+    <div class="band r">
+      <div class="col"><div class="dhead">Already in hand</div>
+        <div class="cb">A white-label build with a synthetic demo tenant &mdash; <b>no Salam data inside</b> &mdash; a product page in English and Arabic, and a demo that stands up in ten minutes. Nothing of Salam&rsquo;s leaves the building in a pitch; the POC for a prospect runs read-only on their replica.</div></div>
+      <div class="col now"><div class="dhead">The proposal</div>
+        <div class="cb">Commission a <b>joint taskforce &mdash; Digital Operations with Salam B2B</b> &mdash; to package, brand and price the platform this quarter: IP and legal under Salam, the product name, the commercial model, the first two prospects.</div>
+        <div class="ask"><span>Decision today &rarr;</span><span style="color:var(--ink);white-space:normal;font-weight:700">the taskforce and its mandate. No capex, no headcount &mdash; a quarter of focused work and Salam owns the outcome.</span></div></div>
+    </div>
+    <div class="quote r" style="max-width:none;margin-top:2px;font-size:clamp(16px,1.6vw,25px)">The market products watch infrastructure. This one watches a Salam journey &mdash; <span class="g">and every operator here has the same journeys.</span></div>
   </div>
 </section>
 
@@ -523,10 +619,10 @@ tr:last-child td{border-bottom:none}
     <div class="s9-left">
       <img class="s9-logo r" src="data:image/png;base64,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" alt="Salam"/>
       <div class="s9-sub r">Digital Operations</div>
-      <div class="s9-title r">Sponsor.<br><span class="accent">Launch.</span></div>
+      <div class="s9-title r">Sponsor.<br><span class="accent">Launch. Commercialize.</span></div>
       <div class="s9-divider r"></div>
       <div class="s9-banner r">Designed and built in-house, running in production on <strong>both MVNO and Fixed</strong>, with AI already inside it and
-      177 governed alert rules behind it. <strong>Three decisions turn a working tool into a Salam capability.</strong></div>
+      177 governed alert rules behind it. <strong>Three decisions turn a working tool into a Salam capability &mdash; and a Salam product.</strong></div>
       <div class="s9-pillars r">
         <div class="s9-pillar">
           <div class="s9-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg></div>
@@ -538,13 +634,13 @@ tr:last-child td{border-bottom:none}
           <div class="s9-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9 11l3 3 6-6"/></svg></div>
           <div class="s9-p1">02 &middot; LAUNCH</div>
           <div class="s9-p2">Officially, as a Salam product</div>
-          <div class="s9-p3">In-house, in production, AI inside &mdash; and running both businesses every day.</div>
+          <div class="s9-p3">In-house, in production, AI inside &mdash; and the next phase backed on this platform, not a second one.</div>
         </div>
         <div class="s9-pillar">
           <div class="s9-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></div>
-          <div class="s9-p1">03 &middot; BACK</div>
-          <div class="s9-p2">The next phase</div>
-          <div class="s9-p3">Assisted resolution, then predictive &mdash; on this platform, not a second one.</div>
+          <div class="s9-p1">03 &middot; COMMERCIALIZE</div>
+          <div class="s9-p2">A joint taskforce with Salam B2B</div>
+          <div class="s9-p3">Package, brand and price it this quarter &mdash; Salam as the reference customer, the Kingdom as the market.</div>
         </div>
       </div>
       <div class="s9-thanks r">Built in-house, live in production, and ready to show at any time.</div>
@@ -586,9 +682,9 @@ tr:last-child td{border-bottom:none}
         </svg>
       </div>
       <div class="s9-kpis r">
-        <div class="s9-kpi"><div class="s9-kl">BUSINESSES</div><div class="s9-kv">2</div><div class="s9-ks">one console</div></div>
+        <div class="s9-kpi"><div class="s9-kl">CUSTOMERS</div><div class="s9-kv">~1.5M</div><div class="s9-ks">both businesses, one console</div></div>
         <div class="s9-kpi"><div class="s9-kl">ALERT RULES</div><div class="s9-kv">177</div><div class="s9-ks">each with a runbook</div></div>
-        <div class="s9-kpi"><div class="s9-kl">AI LIVE</div><div class="s9-kv">3</div><div class="s9-ks">in production</div></div>
+        <div class="s9-kpi"><div class="s9-kl">LICENCES</div><div class="s9-kv">0</div><div class="s9-ks">built in-house</div></div>
       </div>
     </div>
   </div>
@@ -603,7 +699,7 @@ tr:last-child td{border-bottom:none}
     <button class="btn" id="prev" title="Previous">&lsaquo;</button>
     <button class="btn" id="play" title="Pause / play">&#10073;&#10073;</button>
     <button class="btn" id="next" title="Next">&rsaquo;</button>
-    <span class="count"><span id="cur">01</span> / <span id="tot">12</span></span>
+    <span class="count"><span id="cur">01</span> / <span id="tot">15</span></span>
   </div>
 </div>
 <div class="nav" style="justify-content:center;bottom:0;padding-bottom:22px"><div class="dots" id="dots"></div></div>

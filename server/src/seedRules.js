@@ -397,6 +397,18 @@ const RULES = [
     metric_key: 'app_ip_block_count', operator: 'gte', threshold: 1000, window_hours: 1, min_sample: 0,
     description: 'Rate-limiter blocking at storm level — recharge/voucher journeys effectively degraded for many customers. PROVISIONAL.',
     runbook: 'Same drill as the surge rule; at this level treat as a customer-impacting incident: verify settings immediately and inform the app team; consider a temporary ip_session_time raise to neutralise the gap-block while investigating.' },
+  /* REFUND EXPOSURE (25 Sep 2026) — the mail review of 2,338 refund threads: every approved refund was a platform event
+   * we could have seen first. Both rules are business-class: the customer paid, the platform did not deliver. */
+  { key: 'refund_exposure_surge', name: 'Refund exposure rising — customers paid, service not delivered (P2)', severity: 'P2', team: 'Digital Ops',
+    alert_class: 'business',
+    metric_key: 'refund_exposure_new', operator: 'gte', threshold: 8, window_hours: 24, min_sample: 0,
+    description: 'refundRadar detected 8+ new refund candidates in 24 h (paid-not-activated, port-in twice, change plan charged then failed, SIM replacement paid, delivery failed on a paid order, charged twice). Baseline from the mail review: ~2/day in Aug, ~4/day in Sep 2026. A surge = one flow broke after a release or a partner (Semati, Tap/UPG, courier) degraded — money already owed.',
+    runbook: '1) Mobile → Refund exposure: the kind with the surge names the flow. 2) Open 2–3 cases → Customer 360 trace: same error (Semati 727/738, IAM token, courier state)? 3) Fix the flow / raise with the partner; the cases stay listed until refunded. 4) Send the batch to L2 for refund with the INC numbers — no more waiting for the complaint.' },
+  { key: 'refund_exposure_backlog', name: 'Refund backlog — open candidates above 3,000 SAR (P3)', severity: 'P3', team: 'Digital Ops',
+    alert_class: 'business',
+    metric_key: 'refund_exposure_open_sar', operator: 'gte', threshold: 3000, window_hours: 24, min_sample: 0,
+    description: 'Sum of OPEN refund candidates (not yet approved / refunded / dismissed) above 3,000 SAR — customers waiting for money the platform already knows it owes. Stays raised until the backlog is worked.',
+    runbook: '1) Mobile → Refund exposure → filter Open, oldest first. 2) Approve / refund with the INC number, or dismiss with a note (false positive). 3) Recurring kinds → product defect ticket (port-in twice, change-plan IAM token, eSIM replacement).' },
   { key: 'app_crash_surge', name: 'App crashes rising (unhandled exceptions, P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'technical',  // nil-errors etc. — the platform failed, customer got a meaningless -501
     metric_key: 'app_crash_count', operator: 'gte', threshold: 400, window_hours: 1, min_sample: 0,

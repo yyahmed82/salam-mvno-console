@@ -656,6 +656,7 @@ Rules:
 - Answer ONLY from the CONTEXT provided. If the context doesn't contain the answer, say so and suggest where to look in the console.
 - "Open incidents" means the open_alerts data — NEVER lists found in runbook text. If open_alerts is present and empty, say there are no open incidents.
 - Each incident carries trigger_codes (which error codes/conditions define that alert) and alert_class (business = the API answered "no" · technical = the platform failed to answer). When asked why an alert fired or what it means, QUOTE the trigger_codes verbatim and state the class. If trigger_codes is empty, say it is not documented yet rather than guessing codes.
+- REFUND EXPOSURE: customer.identity.refund_exposure lists refund candidates the console detected for this customer (kind, amount, status open/approved/refunded/dismissed, evidence). When any is open, say so plainly right after the name — the customer is owed money — and point to Mobile › Refund exposure; never say "no refund is due" when an open candidate exists.
 - CUSTOMER NAME: every answer about a customer STARTS with the customer's full name when the context has it (customer.identity.customer_name for Mobile, fixed_customer.customer_name for Fixed) — e.g. "Abdullah Ilyas — Mobile, Visitor 52, order at payment step". If the name is masked ("Abdullah …") show it as given; if absent say "name not on file".
 - Masked values like 05*****290 are intentional PII masking — never try to guess them.
 - When a subscriber has failed steps, explain the most likely cause in plain words, quote the relevant response/error from the trace, and give the next troubleshooting step.
@@ -699,6 +700,11 @@ function identityFacts(ctx) {
    * account, Fixed from the BSS custName. Masked form ("Mohamed …") when the asker may not unmask. */
   const nm = (c && c.found && c.identity && c.identity.customer_name) || (ctx.fixed_customer && ctx.fixed_customer.found && ctx.fixed_customer.customer_name) || null;
   if ((c && c.found) || (ctx.fixed_customer && ctx.fixed_customer.found)) L.push(nm ? `👤 **${nm}**` : '👤 Name not on file');
+  /* REFUND EXPOSURE — deterministic, before the model narrates */
+  const rx = (c && c.found && c.identity && c.identity.refund_exposure) || [];
+  const rxOpen = rx.filter(x => x.status === 'open');
+  if (rxOpen.length) L.push(`💸 Refund exposure — ${rxOpen.length} open candidate(s), ${rxOpen.reduce((a, x) => a + Number(x.amount || 0), 0).toFixed(2)} SAR the platform already owes: ` + rxOpen.slice(0, 3).map(x => `${x.label} (${Number(x.amount || 0).toFixed(2)} SAR, ${String(x.event_at || '').slice(0, 10)})`).join(', ') + ' → Mobile › Refund exposure');
+  else if (rx.length) L.push(`💸 Refund candidates: ${rx.length}, none open (${rx.map(x => x.status).join(', ')})`);
   if (c && c.found) {
     if (sl && (sl.lines || []).length) L.push(`📱 Mobile — ${sl.lines.length} active line(s): ` + sl.lines.map(l => `${l.msisdn} (${l.source}${l.since ? ', since ' + l.since : ''})`).join(', ')
       + (sl.primary_line_bss && sl.primary_line_bss.plan ? ` · BSS plan ${sl.primary_line_bss.plan}${sl.primary_line_bss.status ? ' · ' + sl.primary_line_bss.status : ''}` : ''));

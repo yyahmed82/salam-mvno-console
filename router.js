@@ -10,6 +10,7 @@
     // Growth was absorbed into Monitoring → Resellers. Old links keep working.
     analytics:{view:"analytics"}, growth:{view:"monitoring",monTab:"resellers"}, resellers:{view:"monitoring",monTab:"resellers"},
     dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, "alert-journey":{view:"alertjourney"}, alertjourney:{view:"alertjourney"}, sla:{sla:true}, slo:{sla:true}, "slo-settings":{sloSettings:true}, "sla-targets":{sloSettings:true}, "vendor-contracts":{vendorContracts:true}, vendors:{vendorContracts:true}, "semati-clearance":{semati:true}, semati:{semati:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
+    refunds:{view:"refunds"}, "refund-exposure":{view:"refunds"},
     alerts:{view:"alerts"}, "fixed-alerts":{view:"alerts",seg:"fixed"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"}, mvnohld:{view:"topology2",t2:"hld"}, "bss-atlas":{view:"topology2",t2:"hld"}, journeys:{view:"explorer"}, integrations:{view:"integrations"},
     subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true}, "fixed-oncall":{oncall:true,seg:"fixed"},
     settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
@@ -26,7 +27,7 @@
     /* CST section (16 Sep 2026, super admin): #arqami · #cst-escalations (cstpage.js) */
     arqami:{cst:"arqami"}, "cst-escalations":{cst:"escalations"}, cst:{cst:"escalations"}
   };
-  const VIEW_HASH={landing:"home",execops:"exec",nocwall:"noc",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",alertjourney:"alert-journey",errors:"troubleshoot",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
+  const VIEW_HASH={landing:"home",execops:"exec",nocwall:"noc",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",alertjourney:"alert-journey",errors:"troubleshoot",refunds:"refunds",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
   let _cur=null;
 
   /* ---- ROLE GUARD (2 Sep 2026) ---------------------------------------------------------------
@@ -180,7 +181,7 @@
 	      /* clickNav is a no-op when the tab is already active, so any view that only renders on a
 	       * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
-      const OPENER={ landing:"openLanding", execops:"openExecOps", nocwall:"openNocWall", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2", alertjourney:"openAlertJourney" };
+      const OPENER={ refunds:"openRefunds", landing:"openLanding", execops:"openExecOps", nocwall:"openNocWall", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2", alertjourney:"openAlertJourney" };
       const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{
         if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); let t=m?m[1]:"overview";
           if(t==="exec"||t==="ops") t="overview";   // merged into the Operations Dashboard

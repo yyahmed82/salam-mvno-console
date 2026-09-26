@@ -932,6 +932,31 @@ const METRICS = {
       } catch (e) { return []; }
     }
   },
+  /* REFUND EXPOSURE (25 Sep 2026, refundRadar.js): money the platform already owes customers, detected before the
+   * complaint — paid-not-activated, port-in twice, change plan charged then failed, SIM replacement paid, delivery
+   * failed on a paid order, charged twice. Counts NEW candidates detected in the window (surge = a broken flow), and
+   * the OPEN backlog (nobody refunding). */
+  refund_exposure_new: {
+    label: 'Refund exposure — new candidates detected', unit: 'count', higherIsBad: true,
+    sourceTables: 'refund_candidates (console, from payments/orders/activation/change_plan/delivery)',
+    async compute(src, now, w) {
+      try { const db = require('./db');
+        const r = await db.console.query(`SELECT kind, count(*)::int n, coalesce(sum(amount),0)::float sar FROM refund_candidates WHERE detected_at >= $1::timestamptz - ($2||' hours')::interval AND detected_at < $1::timestamptz GROUP BY 1`, [now, w]);
+        const tot = r.rows.reduce((a, x) => a + x.n, 0);
+        return [{ dim: {}, value: tot, sample: tot }, ...r.rows.map(x => ({ dim: { kind: x.kind }, value: x.n, sample: x.n }))];
+      } catch (e) { return []; }
+    }
+  },
+  refund_exposure_open_sar: {
+    label: 'Refund exposure — open backlog (SAR)', unit: 'count', higherIsBad: true,
+    sourceTables: 'refund_candidates (console)',
+    async compute(src, now, w) {
+      try { const db = require('./db');
+        const r = await db.console.query(`SELECT count(*)::int n, coalesce(sum(amount),0)::float sar FROM refund_candidates WHERE status = 'open'`);
+        return [{ dim: {}, value: Math.round(r.rows[0].sar), sample: r.rows[0].n }];
+      } catch (e) { return []; }
+    }
+  },
   app_crash_count: {
     label: 'App crashes (unhandled exceptions → -501)', unit: 'count', higherIsBad: true,
     sourceTables: 'api_error_events (app error log)',

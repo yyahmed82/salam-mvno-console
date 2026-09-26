@@ -36,3 +36,6 @@ cache/
 
 server/jdbc/*.jar
 server/jdbc/*.class
+
+# local exports (mail dumps, reviews, workbooks) - never in git
+Claude outputs/
