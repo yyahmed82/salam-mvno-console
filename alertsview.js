@@ -646,7 +646,7 @@
       }
       h += `<tr${isChild?' style="opacity:.62"':''} class="${a.status==='open'&&!a.ack_at?'unacked':''}">
         <td style="border-left:4px solid ${sevColor(a.severity)}"><span class="sevpill" style="background:${sevColor(a.severity)}">${esc(a.severity)}</span></td>
-        <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span> ${teamChip(a.team)}${a.source==='manual'?` <span class="rl" title="opened by hand by ${esc(a.created_by||'')}">· manual ticket</span>`:''}${a.reassign_count?` <span class="rl" title="re-assigned ${a.reassign_count}×">· ↪${a.reassign_count}</span>`:''}${corrLine}</td>
+        <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span> ${teamChip(a.team)}${a.source==='manual'?` <span class="rl" title="opened by hand by ${esc(a.created_by||'')}">· manual ticket</span>`:a.source==='agent'?` <span class="rl" title="opened by the refund desk (Agent 2)">· 🤖 refund batch</span>`:''}${a.reassign_count?` <span class="rl" title="re-assigned ${a.reassign_count}×">· ↪${a.reassign_count}</span>`:''}${corrLine}</td>
         <td>${impact}</td>
         <td><b>${esc(a.message? (a.message.split("observed ")[1]||"").split(" · ")[0] : "")}</b><br><span class="rl">${esc(a.window_hours)}h window</span></td>
         <td>${stateTag}</td>

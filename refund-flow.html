@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Refund cycle — old vs new · Salam Operations Console</title>
+<meta name="description" content="Dataflow of the Mobile refund cycle before and after the Refund exposure section and the Agent 2 refund desk.">
+<style>
+  :root{--bg:#f6f8fa;--card:#ffffff;--card2:#f8fafc;--ink:#1a2b3c;--muted:#64748b;--line:#e2e8f0;--green:#0e9f5a;--red:#dc2626;--amber:#d97706;--blue:#2563eb;--purple:#7c3aed;--teal:#0d9488;
+    --lane:#f1f5f9;--lane2:#f8fafc;--human:#fff7ed;--human-b:#fdba74;--bad:#fef2f2;--bad-b:#fca5a5;--ok:#ecfdf5;--ok-b:#6ee7b7;--sys:#eef2ff;--sys-b:#a5b4fc;--agent:#f5f3ff;--agent-b:#c4b5fd;--pain:#b91c1c;--gain:#047857}
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){--bg:#0b1220;--card:#141f33;--card2:#1a2740;--ink:#e6edf6;--muted:#93a4bb;--line:#2b3a52;--green:#10b981;--red:#f87171;--amber:#fbbf24;--blue:#60a5fa;--purple:#a78bfa;--teal:#2dd4bf;
+    --lane:#111a2c;--lane2:#0f1727;--human:#3a2a15;--human-b:#b45309;--bad:#3a1d1d;--bad-b:#b91c1c;--ok:#0f2f24;--ok-b:#059669;--sys:#1e2a4a;--sys-b:#4f46e5;--agent:#2a2140;--agent-b:#7c3aed;--pain:#fca5a5;--gain:#6ee7b7} }
+  :root[data-theme="dark"]{--bg:#0b1220;--card:#141f33;--card2:#1a2740;--ink:#e6edf6;--muted:#93a4bb;--line:#2b3a52;--green:#10b981;--red:#f87171;--amber:#fbbf24;--blue:#60a5fa;--purple:#a78bfa;--teal:#2dd4bf;
+    --lane:#111a2c;--lane2:#0f1727;--human:#3a2a15;--human-b:#b45309;--bad:#3a1d1d;--bad-b:#b91c1c;--ok:#0f2f24;--ok-b:#059669;--sys:#1e2a4a;--sys-b:#4f46e5;--agent:#2a2140;--agent-b:#7c3aed;--pain:#fca5a5;--gain:#6ee7b7}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1380px;margin:0 auto;padding:22px 16px 40px}
+  header{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px} header h1{margin:0;font-size:22px;letter-spacing:-.01em} header .sub{color:var(--muted);font-size:13px;max-width:900px}
+  header .sp{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .btn{cursor:pointer;font:inherit;font-size:12px;font-weight:700;padding:6px 13px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink)} .btn:hover{border-color:var(--green);color:var(--green)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-bottom:14px}
+  .card h2{margin:0 0 4px;font-size:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap} .card h2 .tag{font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;border-radius:999px;padding:2px 9px;color:#fff} .tag.old{background:var(--red)} .tag.new{background:var(--green)}
+  .card .lead{color:var(--muted);font-size:12.5px;margin:0 0 10px;max-width:1000px}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px} .scroll svg{display:block;min-width:900px;width:100%;height:auto}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:8px} .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px;border:1px solid transparent}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:10px} .kpi{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card2)} .kpi .l{font-size:10.5px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)} .kpi .v{font-size:20px;font-weight:800;margin-top:2px} .kpi .s{font-size:11.5px;color:var(--muted)} .kpi.bad .v{color:var(--pain)} .kpi.good .v{color:var(--gain)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px} th{text-align:left;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);padding:8px;border-bottom:1px solid var(--line)} td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top} td.old{color:var(--pain)} td.new{color:var(--gain)} td b{color:var(--ink)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px} @media (max-width:900px){.grid2{grid-template-columns:1fr}}
+  .foot{color:var(--muted);font-size:11.5px;margin-top:8px}
+  @media print{ body{background:#fff;color:#111} .btn{display:none} .card{break-inside:avoid;border-color:#cbd5e1} .scroll svg{min-width:0} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><div><h1>💸 The refund cycle — old vs new</h1><div class="sub">Mobile · money owed to a customer after a payment the platform did not deliver on (activation, port-in, plan change, SIM / eSIM replacement, delivery, duplicate capture). Left to right is time; each lane is who or what holds the case. Red boxes are where the old cycle lost days; purple boxes are what the console and the Agent 2 refund desk do on their own.</div></div>
+    <div class="sp"><button class="btn" id="theme">◐ Theme</button><button class="btn" onclick="window.print()">⎙ Print / PDF</button><a class="btn" href="./#refunds" style="text-decoration:none">Open Refund exposure ›</a></div></header>
+
+  <div class="card"><h2><span class="tag old">Old</span> Mail-driven cycle — until 25 Sep 2026</h2>
+    <p class="lead">Nothing watched the platform: the case existed only once the customer complained. L2 rebuilt the facts by hand from proxycms and the database, typed them into a mail, waited for an approval reply, posted the refund, and no register kept what was decided or why.</p>
+    <div class="scroll" id="old"></div>
+    <div class="legend"><span><i style="background:var(--bad);border-color:var(--bad-b)"></i>failure / waiting</span><span><i style="background:var(--human);border-color:var(--human-b)"></i>a person, by hand</span><span><i style="background:var(--sys);border-color:var(--sys-b)"></i>a system</span><span><i style="background:var(--ok);border-color:var(--ok-b)"></i>money back</span></div>
+    <div class="kpis"><div class="kpi bad"><div class="l">Detection</div><div class="v">the customer</div><div class="s">days after the failure — a call, a tweet, a visit</div></div><div class="kpi bad"><div class="l">Evidence</div><div class="v">retyped</div><div class="s">L2 queries proxycms / DB, pastes into a mail table</div></div><div class="kpi bad"><div class="l">Approval</div><div class="v">a mail thread</div><div class="s">Re: Re: Request for Refund Approval — no record</div></div><div class="kpi bad"><div class="l">Time to refund</div><div class="v">5 – 10 days</div><div class="s">complaint → INC → analysis → approval → refund</div></div><div class="kpi bad"><div class="l">Learning</div><div class="v">none</div><div class="s">no register, no reasons over time, no RCA</div></div></div></div>
+
+  <div class="card"><h2><span class="tag new">New</span> Detected, reviewed, batched, reconciled — alpha.98 → alpha.100 (26 Sep 2026)</h2>
+    <p class="lead">The console reads the replica every 15 minutes and lists the case with its evidence before anyone complains. The refund desk (Agent 2) reviews it — rules first, the on-prem model when the rules are unsure — assigns it to the Mobile L2 team, mails the new cases, sends the daily approval request with the payment ids L2 needs, opens an incident that the ack SLA chases, and closes the case from the proxycms register itself. Every step is recorded; the reasons and the misses feed the RCA and the next detectors.</p>
+    <div class="scroll" id="new"></div>
+    <div class="legend"><span><i style="background:var(--bad);border-color:var(--bad-b)"></i>failure</span><span><i style="background:var(--sys);border-color:var(--sys-b)"></i>console / system</span><span><i style="background:var(--agent);border-color:var(--agent-b)"></i>Agent 2 · refund desk</span><span><i style="background:var(--human);border-color:var(--human-b)"></i>a person — one click, with a record</span><span><i style="background:var(--ok);border-color:var(--ok-b)"></i>money back</span></div>
+    <div class="kpis"><div class="kpi good"><div class="l">Detection</div><div class="v">≤ 35 min</div><div class="s">prod-sync every 20 min + six detectors every 15 min, 30-day window</div></div><div class="kpi good"><div class="l">Evidence</div><div class="v">attached</div><div class="s">Semati code, courier state, payment ref, timeline — on the case</div></div><div class="kpi good"><div class="l">Approval</div><div class="v">one click</div><div class="s">on the page, by name, with time — or the batch mail</div></div><div class="kpi good"><div class="l">Time to refund</div><div class="v">same / next day</div><div class="s">often before the customer calls</div></div><div class="kpi good"><div class="l">Learning</div><div class="v">every case</div><div class="s">flagged-first %, lead time, reasons, missed → detectors</div></div></div></div>
+
+  <div class="grid2">
+    <div class="card"><h2>Step by step</h2><table><thead><tr><th>Step</th><th>Old</th><th>New</th></tr></thead><tbody>
+      <tr><td><b>Who notices</b></td><td class="old">the customer, days later</td><td class="new">the console, within 35 min (replica + detectors)</td></tr>
+      <tr><td><b>Where the case lives</b></td><td class="old">an INC in Remedy + a mail thread</td><td class="new">a candidate row with evidence, status, INC, team, batch — Mobile › Refund exposure</td></tr>
+      <tr><td><b>Who classifies</b></td><td class="old">L2, by hand, one case at a time</td><td class="new">Agent 2: rules + on-prem model → verdict, proxycms reason, cause, first action; 👍 / 👎 teaches it</td></tr>
+      <tr><td><b>Who is told</b></td><td class="old">whoever is on the To: line</td><td class="new">the responder team (members + DL) — one digest per tick; the batch to the approvers; ChatOps on the incident</td></tr>
+      <tr><td><b>Approval</b></td><td class="old">a reply in the thread</td><td class="new">Approve on the page (audited) or the daily batch mail with the XLSX</td></tr>
+      <tr><td><b>Execution</b></td><td class="old">L2 finds the payment in proxycms, creates the refund</td><td class="new">same act in proxycms — the payment id and the reason are already on the case</td></tr>
+      <tr><td><b>Closure</b></td><td class="old">INC closed by hand; nothing else</td><td class="new">prod-sync copies <code>refunds</code> → the case closes as Refunded · proxycms with the INC; the batch incident resolves</td></tr>
+      <tr><td><b>Chasing</b></td><td class="old">a reminder mail, maybe</td><td class="new">the incident's ack SLA, reminders and escalation ladder; alerts on surge, backlog, gateway failures</td></tr>
+      <tr><td><b>Learning</b></td><td class="old">—</td><td class="new">flagged-first %, median lead time, reasons by category with an owner, the missed list → new detectors and product fixes</td></tr>
+    </tbody></table></div>
+    <div class="card"><h2>What runs where</h2><table><thead><tr><th>Piece</th><th>Runs</th><th>Does</th></tr></thead><tbody>
+      <tr><td><b>prod-sync</b></td><td>salam-unified · every 20 min</td><td>copies payments, orders, checkouts, activation logs, deliveries, <code>refunds</code>, <code>refund_reasons</code>, <code>admin_users</code> (no credentials) to the replica</td></tr>
+      <tr><td><b>Refund radar</b></td><td>salam-unified · every 15 min</td><td>six detectors → <code>refund_candidates</code>; correlates open cases with the proxycms register; auto-resolves what the platform delivered</td></tr>
+      <tr><td><b>Agent 2 · refund desk</b></td><td>salam-agent-incident · every 15 min</td><td>review → assign → digest mail → daily batch (09:00 KSA) + incident → reconcile; policy in Settings (settings key <code>agent_refund</code>)</td></tr>
+      <tr><td><b>Alert engine</b></td><td>salam-unified</td><td>refund_exposure_surge (P2) · refund_exposure_backlog (P3) · refund_gateway_failed (P3) · the batch incident itself</td></tr>
+      <tr><td><b>People</b></td><td>the page</td><td>approve / mark refunded / dismiss with the INC; L2 posts in proxycms; 👍 / 👎 on the desk's review</td></tr>
+      <tr><td><b>Exports</b></td><td>the page</td><td>XLSX (six sheets) and PDF per period; the batch XLSX per approval request</td></tr>
+    </tbody></table><div class="foot">Identities are masked on the page and in every mail; the audited unmask shows them to authorised users. Nothing here writes to production or to the replica beyond the read-only copy.</div></div>
+  </div>
+</div>
+<script>
+(function(){
+  const root=document.documentElement; const saved=(()=>{ try{ return localStorage.getItem('rf_flow_theme'); }catch(_){ return null; } })(); if(saved) root.setAttribute('data-theme',saved);
+  document.getElementById('theme').addEventListener('click',()=>{ const cur=root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'); const nx=cur==='dark'?'light':'dark'; root.setAttribute('data-theme',nx); try{ localStorage.setItem('rf_flow_theme',nx); }catch(_){} });
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  /* a swimlane flow: lanes (rows) × steps (columns); nodes carry a lane, a column, a kind and 1–4 lines of text */
+  function flow(el, spec){
+    const CW=spec.colW||176, LH=spec.laneH||98, LW=150, PAD=12, NW=CW-22, NH=LH-26;
+    const W=LW+PAD+spec.cols*CW+PAD, H=PAD+spec.lanes.length*LH+PAD+22;
+    const FILL={bad:'var(--bad)',human:'var(--human)',sys:'var(--sys)',ok:'var(--ok)',agent:'var(--agent)',neutral:'var(--card2)'}; const STROKE={bad:'var(--bad-b)',human:'var(--human-b)',sys:'var(--sys-b)',ok:'var(--ok-b)',agent:'var(--agent-b)',neutral:'var(--line)'};
+    const pos=n=>({x:LW+PAD+n.col*CW+11, y:PAD+spec.lanes.indexOf(n.lane)*LH+13});
+    const byId={}; spec.nodes.forEach(n=>byId[n.id]=n);
+    let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial,sans-serif">
+      <defs><marker id="${el.id}-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted)"/></marker><marker id="${el.id}-arb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--red)"/></marker></defs>`;
+    spec.lanes.forEach((l,i)=>{ const y=PAD+i*LH; s+=`<rect x="${PAD}" y="${y}" width="${W-2*PAD}" height="${LH-4}" rx="10" fill="${i%2?'var(--lane2)':'var(--lane)'}"/><text x="${PAD+12}" y="${y+22}" font-size="12" font-weight="800" fill="var(--ink)">${esc(l)}</text>${spec.laneSub&&spec.laneSub[i]?`<text x="${PAD+12}" y="${y+38}" font-size="10.5" fill="var(--muted)">${esc(spec.laneSub[i])}</text>`:''}`; });
+    (spec.steps||[]).forEach((t,i)=>{ s+=`<text x="${LW+PAD+i*CW+CW/2}" y="${H-8}" font-size="10.5" font-weight="700" text-anchor="middle" fill="var(--muted)">${esc(t)}</text>`; });
+    spec.edges.forEach(e=>{ const a=byId[e.from], b=byId[e.to]; if(!a||!b) return; const pa=pos(a), pb=pos(b); let x1,y1,x2,y2;
+      if(b.col>a.col){ x1=pa.x+NW; y1=pa.y+NH/2; x2=pb.x; y2=pb.y+NH/2; } else if(b.col<a.col){ x1=pa.x; y1=pa.y+NH/2; x2=pb.x+NW; y2=pb.y+NH/2; } else { const down=pb.y>pa.y; x1=pa.x+NW/2; y1=down?pa.y+NH:pa.y; x2=pb.x+NW/2; y2=down?pb.y:pb.y+NH; }
+      const mx=(x1+x2)/2; const d=b.col===a.col?`M${x1},${y1} L${x2},${y2}`:`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+      s+=`<path d="${d}" fill="none" stroke="${e.bad?'var(--red)':'var(--muted)'}" stroke-width="${e.bad?2:1.6}" ${e.dash?'stroke-dasharray="5 4"':''} marker-end="url(#${el.id}-${e.bad?'arb':'ar'})" opacity=".9"/>`;
+      if(e.label){ const lx=(x1+x2)/2, ly=(y1+y2)/2-6; s+=`<text x="${lx}" y="${ly}" font-size="10" text-anchor="middle" fill="${e.bad?'var(--pain)':'var(--muted)'}" font-weight="700" paint-order="stroke" stroke="var(--card)" stroke-width="4" stroke-linejoin="round">${esc(e.label)}</text>`; } });
+    spec.nodes.forEach(n=>{ const p=pos(n); const lines=String(n.text).split('\n'); s+=`<g><rect x="${p.x}" y="${p.y}" width="${NW}" height="${NH}" rx="10" fill="${FILL[n.kind||'neutral']}" stroke="${STROKE[n.kind||'neutral']}" stroke-width="1.4"/>`;
+      if(n.badge) s+=`<text x="${p.x+NW-8}" y="${p.y+14}" font-size="10" text-anchor="end" font-weight="800" fill="${n.kind==='bad'?'var(--pain)':n.kind==='ok'?'var(--gain)':'var(--muted)'}">${esc(n.badge)}</text>`;
+      lines.forEach((ln,i)=>{ s+=`<text x="${p.x+10}" y="${p.y+(n.badge?26:20)+i*13}" font-size="${i===0?11.5:10.5}" font-weight="${i===0?'800':'500'}" fill="${i===0?'var(--ink)':'var(--muted)'}">${esc(ln)}</text>`; }); s+=`</g>`; });
+    el.innerHTML=s+'</svg>';
+  }
+  flow(document.getElementById('old'),{
+    lanes:['Customer','Platform','Call centre · L1','L2 team (TCS)','Approver · Digital Ops','proxycms → gateway','Console'], laneSub:['','selfcare app · BSS · Semati · courier','Remedy INC','mail + proxycms + DB queries','mail thread','refund · reversal · ZATCA','before 25 Sep'],
+    cols:8, steps:['T0 · payment','T0 · failure','T+2–5 d · complaint','INC','analysis','approval mail','execution','T+5–10 d'],
+    nodes:[
+      {id:'pay',lane:'Customer',col:0,kind:'neutral',text:'Pays\norder · plan change ·\nSIM / eSIM replacement'},
+      {id:'fail',lane:'Platform',col:1,kind:'bad',badge:'silent',text:'Fails after payment\nSemati 727 / 738 · IAM token ·\ncourier returned · double capture'},
+      {id:'wait',lane:'Customer',col:2,kind:'bad',badge:'days',text:'Notices, calls\nnothing activated · money gone\ncalls again'},
+      {id:'inc',lane:'Call centre · L1',col:3,kind:'human',text:'Opens an INC\nRemedy · forwards to L2\nno evidence attached'},
+      {id:'inv',lane:'L2 team (TCS)',col:4,kind:'human',badge:'by hand',text:'Investigates\nproxycms · DB queries ·\nrebuilds the facts'},
+      {id:'mail',lane:'L2 team (TCS)',col:5,kind:'human',text:'Types the mail table\nINC · amount · date ·\nreason · proof'},
+      {id:'appr',lane:'Approver · Digital Ops',col:5,kind:'bad',badge:'thread',text:'“Request for Refund Approval”\nreads, replies · Re: Re: Re:\nno register'},
+      {id:'post',lane:'L2 team (TCS)',col:6,kind:'human',text:'Posts the refund\nfinds the payment id ·\npicks a reason'},
+      {id:'gw',lane:'proxycms → gateway',col:6,kind:'sys',text:'Refund → reversal\nHyperPay · Tap · Salam Pay\nZATCA credit note'},
+      {id:'back',lane:'Customer',col:7,kind:'ok',badge:'T+5–10 d',text:'Money back\nINC closed by hand'},
+      {id:'blind',lane:'Console',col:3,kind:'bad',badge:'blind',text:'Sees nothing\nno case, no KPI, no reasons,\nmisses unknown'}
+    ],
+    edges:[{from:'pay',to:'fail'},{from:'fail',to:'wait',bad:true,label:'nobody is told'},{from:'wait',to:'inc',label:'call'},{from:'inc',to:'inv'},{from:'inv',to:'mail'},{from:'mail',to:'appr',label:'mail'},{from:'appr',to:'post',bad:true,label:'reply · hours–days'},{from:'post',to:'gw'},{from:'gw',to:'back'}]
+  });
+  flow(document.getElementById('new'),{
+    lanes:['Customer','Platform','Replica · prod-sync','Console · detectors','Agent 2 · refund desk','L2 team (TCS)','Approver · Digital Ops','proxycms → gateway'], laneSub:['','selfcare app · BSS · Semati · courier','every 20 min','every 15 min · 30-day window','rules + on-prem model · every 15 min','members + DL · ack SLA','one click · audited','refund · reversal · ZATCA'],
+    cols:9, steps:['T0 · payment','T0 · failure','≤ 20 min','≤ 35 min','+ minutes','same tick','09:00 KSA · batch','execution','close'],
+    nodes:[
+      {id:'pay',lane:'Customer',col:0,kind:'neutral',text:'Pays\norder · plan change ·\nSIM / eSIM replacement'},
+      {id:'fail',lane:'Platform',col:1,kind:'bad',badge:'same failure',text:'Fails after payment\nSemati 727 / 738 · IAM token ·\ncourier returned · double capture'},
+      {id:'sync',lane:'Replica · prod-sync',col:2,kind:'sys',text:'Copies the tables\npayments · orders · checkouts ·\nactivation · deliveries · refunds'},
+      {id:'det',lane:'Console · detectors',col:3,kind:'sys',badge:'6 kinds',text:'Detects the case\nevidence attached: code, courier,\npayment ref, timeline'},
+      {id:'rev',lane:'Agent 2 · refund desk',col:4,kind:'agent',badge:'review',text:'Reviews & classifies\nverdict · proxycms reason ·\ncause · first action · confidence'},
+      {id:'asg',lane:'Agent 2 · refund desk',col:5,kind:'agent',badge:'assign + notify',text:'Assigns to Mobile L2\none digest per tick\nto members + DL'},
+      {id:'l2n',lane:'L2 team (TCS)',col:5,kind:'human',text:'Sees the case\nevidence, verdict, reason —\nnothing to rebuild'},
+      {id:'bat',lane:'Agent 2 · refund desk',col:6,kind:'agent',badge:'batch',text:'Approval request\ntable + XLSX + payment ids ·\nincident opened, ack SLA'},
+      {id:'apr',lane:'Approver · Digital Ops',col:6,kind:'human',badge:'1 click',text:'Approves on the page\nby name, with time —\nor replies to the batch'},
+      {id:'post',lane:'L2 team (TCS)',col:7,kind:'human',text:'Posts the refund\npayment id + reason\nfrom the review'},
+      {id:'gw',lane:'proxycms → gateway',col:7,kind:'sys',text:'Refund → reversal\nHyperPay · Tap · Salam Pay\nZATCA credit note'},
+      {id:'rec',lane:'Console · detectors',col:8,kind:'sys',badge:'reconciled',text:'Closes from the register\nRefunded · proxycms · INC ·\nbatch + incident resolved'},
+      {id:'back',lane:'Customer',col:8,kind:'ok',badge:'same / next day',text:'Money back\noften before the call'},
+      {id:'learn',lane:'Agent 2 · refund desk',col:8,kind:'agent',badge:'learn',text:'KPIs & RCA\nflagged-first % · lead time ·\nreasons · missed → detectors'}
+    ],
+    edges:[{from:'pay',to:'fail'},{from:'fail',to:'sync',label:'read-only copy'},{from:'sync',to:'det'},{from:'det',to:'rev',label:'candidate'},{from:'rev',to:'asg'},{from:'asg',to:'l2n',label:'digest mail'},{from:'asg',to:'bat',label:'daily'},{from:'bat',to:'apr',label:'mail + incident'},{from:'apr',to:'post',label:'approved'},{from:'post',to:'gw'},{from:'gw',to:'rec',label:'refunds → replica',dash:true},{from:'rec',to:'back'},{from:'rec',to:'learn'}]
+  });
+})();
+</script>
+</body>
+</html>

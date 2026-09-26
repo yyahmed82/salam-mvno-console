@@ -107,6 +107,9 @@ async function ensure() {
   await db.console.query(`CREATE TABLE IF NOT EXISTS refund_radar_runs (id bigserial PRIMARY KEY, at timestamptz DEFAULT now(), ms int, found int, new_rows int, auto_resolved int, errors jsonb)`);
   await db.console.query(`ALTER TABLE refund_radar_runs ADD COLUMN IF NOT EXISTS ledger_refunded int`);
   await db.console.query(`ALTER TABLE refund_radar_runs ADD COLUMN IF NOT EXISTS timing jsonb`);
+  /* the refund desk (Agent 2) keeps its tables beside the candidates — created here so the console can join them
+   * before the agent process has ever run (lazy require: refundDesk requires this module) */
+  try { await require('./refundDesk').ensureDeskSchema(); } catch (e) { console.error('[refund-radar] desk schema:', e.message); }
 }
 
 /* ---------------------------------------------------------------------------------------------- detectors */
@@ -451,20 +454,25 @@ async function overview(q = {}) {
     detectors: detectorHealth, runs: runs.rows, last_run: runs.rows[0] || lastRun, lookback_days: LOOKBACK_DAYS, tick_min: TICK_MS / 60e3, sim_checkout_types: SIM_CHECKOUT_TYPES
   };
 }
-async function list({ status = 'open', kind, q, limit = 200, from, to, days } = {}) {
+async function list({ status = 'open', kind, q, limit = 200, from, to, days, verdict, batch } = {}) {
   await ensure();
   const p = periodOf({ from, to, days });
   /* open = the current backlog whatever the period; closed statuses = what was done IN the period; all = both */
   /* $1/$2 are ALWAYS referenced (typed) — a bound parameter no branch mentions is the "could not determine data type" error */
   const w = [`$1::timestamptz <= $2::timestamptz`]; const par = [p.fromTs, p.toTs];
-  if (status === 'open' || status === 'approved') w.push(`status = '${status}'`);
-  else if (status && status !== 'all') { par.push(status); w.push(`status = $${par.length}`, `coalesce(resolved_at, updated_at, detected_at) >= $1::timestamptz AND coalesce(resolved_at, updated_at, detected_at) < $2::timestamptz`); }
-  else w.push(`(status IN ('open','approved') OR (detected_at >= $1::timestamptz AND detected_at < $2::timestamptz) OR (coalesce(resolved_at, updated_at) >= $1::timestamptz AND coalesce(resolved_at, updated_at) < $2::timestamptz))`);
-  if (kind) { par.push(kind); w.push(`kind = $${par.length}`); }
-  if (q) { par.push('%' + String(q).replace(/\D/g, '').slice(-9) + '%'); par.push('%' + String(q).trim() + '%'); w.push(`(mobile ILIKE $${par.length - 1} OR order_id ILIKE $${par.length} OR payment_id ILIKE $${par.length} OR identifier ILIKE $${par.length - 1} OR inc ILIKE $${par.length} OR customer_name ILIKE $${par.length} OR ledger->>'inc' ILIKE $${par.length})`); }
+  if (verdict) { par.push(verdict); w.push(`r.verdict = $${par.length}`); }
+  if (batch) { par.push(Number(batch)); w.push(`c.batch_id = $${par.length}`); }
+  if (status === 'open' || status === 'approved') w.push(`c.status = '${status}'`);
+  else if (status && status !== 'all') { par.push(status); w.push(`c.status = $${par.length}`, `coalesce(c.resolved_at, c.updated_at, c.detected_at) >= $1::timestamptz AND coalesce(c.resolved_at, c.updated_at, c.detected_at) < $2::timestamptz`); }
+  else w.push(`(c.status IN ('open','approved') OR (c.detected_at >= $1::timestamptz AND c.detected_at < $2::timestamptz) OR (coalesce(c.resolved_at, c.updated_at) >= $1::timestamptz AND coalesce(c.resolved_at, c.updated_at) < $2::timestamptz))`);
+  if (kind) { par.push(kind); w.push(`c.kind = $${par.length}`); }
+  if (q) { par.push('%' + String(q).replace(/\D/g, '').slice(-9) + '%'); par.push('%' + String(q).trim() + '%'); w.push(`(c.mobile ILIKE $${par.length - 1} OR c.order_id ILIKE $${par.length} OR c.payment_id ILIKE $${par.length} OR c.identifier ILIKE $${par.length - 1} OR c.inc ILIKE $${par.length} OR c.customer_name ILIKE $${par.length} OR c.ledger->>'inc' ILIKE $${par.length})`); }
   par.push(Math.min(2000, Number(limit) || 200));
-  const r = await db.console.query(`SELECT id, kind, side, mobile, order_id, payment_id, amount::float AS amount, customer_name, identifier, event_at, detected_at, last_seen_at, evidence, status, inc, note, updated_by, updated_at, resolved_at, ledger, ledger_at
-      FROM refund_candidates WHERE ${w.join(' AND ')} ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, coalesce(resolved_at, updated_at, event_at) DESC LIMIT $${par.length}`, par);
+  const r = await db.console.query(`SELECT c.id, c.kind, c.side, c.mobile, c.order_id, c.payment_id, c.amount::float AS amount, c.customer_name, c.identifier, c.event_at, c.detected_at, c.last_seen_at, c.evidence, c.status, c.inc, c.note, c.updated_by, c.updated_at, c.resolved_at, c.ledger, c.ledger_at,
+             c.team, c.assignee, c.batch_id, c.reviewed_at,
+             CASE WHEN r.id IS NULL THEN NULL ELSE jsonb_build_object('verdict', r.verdict, 'reason', r.reason, 'category', r.category, 'cause', r.cause, 'action', r.action, 'customer_note', r.customer_note, 'priority', r.priority,
+               'confidence', r.confidence, 'deterministic', r.deterministic, 'model', r.model, 'helpful', r.helpful, 'at', coalesce(r.updated_at, r.created_at)) END AS agent
+      FROM refund_candidates c LEFT JOIN refund_reviews r ON r.candidate_id = c.id WHERE ${w.join(' AND ')} ORDER BY CASE c.status WHEN 'open' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, coalesce(c.resolved_at, c.updated_at, c.event_at) DESC LIMIT $${par.length}`, par);
   return { rows: r.rows, period: p };
 }
 async function forCustomer({ mobiles = [], orderIds = [] } = {}) {
@@ -582,7 +590,7 @@ function mount(app, { requireView, audit, roles }) {
     return out; };
   app.get('/api/refunds/overview', gate, async (req, res) => { try { const o = await overview(req.query); o.impact.missed = mask(req, o.impact.missed); res.json(o); } catch (e) { res.status(500).json({ error: e.message }); } });
   app.get('/api/refunds', gate, async (req, res) => { try {
-      const out = await list({ status: req.query.status, kind: req.query.kind, q: req.query.q, limit: req.query.limit, from: req.query.from, to: req.query.to, days: req.query.days });
+      const out = await list({ status: req.query.status, kind: req.query.kind, q: req.query.q, limit: req.query.limit, from: req.query.from, to: req.query.to, days: req.query.days, verdict: req.query.verdict, batch: req.query.batch });
       if (mayUnmask(req) && audit) audit(req, 'PII_UNMASK', '/api/refunds', { rows: out.rows.length }).catch?.(() => {});
       res.json({ rows: mask(req, out.rows), period: out.period, kinds: KINDS });
     } catch (e) { res.status(500).json({ error: e.message }); } });

@@ -4299,7 +4299,8 @@ app.get('/api/escalation/oncall', requireCap('manageSync'), async (req, res) => 
 require('./agentsApi').mount(app, { audit, requireCap, requireRoot });
 require('./agentsMission').mount(app, { requireCap });
 /* ── Refund exposure (refundRadar.js, 25 Sep 2026): refund candidates detected before the complaint ── */
-require('./refundRadar').mount(app, { requireView, audit, roles });   // AI agents mission control — readable by incident roles
+require('./refundRadar').mount(app, { requireView, audit, roles });
+require('./refundDesk').mount(app, { requireView, requireCap, audit });   // Agent 2 · refund desk: reviews, batches, policy   // AI agents mission control — readable by incident roles
 /* ── Responder teams, re-assignment, manual tickets, Agent 2 rule → team mapping (teamsApi.js / teams.js, 24 Sep 2026) ── */
 require('./teamsApi').mount(app, { audit, requireCap, requireSuper });
 /* ── Acknowledgement SLA (ackSla.js): reminders 1/2/3 + management escalation for unacknowledged alerts ── */

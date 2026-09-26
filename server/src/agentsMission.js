@@ -21,6 +21,7 @@ const INTERVALS = {
   log: Math.max(2, Number(process.env.AGENT_LOG_INTERVAL_MIN) || 15) * 60e3,
   incident: Math.max(1, Number(process.env.AGENT_INCIDENT_INTERVAL_MIN) || 3) * 60e3,
   'incident.map': 6 * 3600e3,
+  refund: Math.max(2, Number(process.env.AGENT_REFUND_INTERVAL_MIN) || 15) * 60e3,
 };
 const REPORT_HOUR = Number.isFinite(Number(process.env.AGENT_LOG_REPORT_HOUR)) ? Number(process.env.AGENT_LOG_REPORT_HOUR) : 6;
 const ENABLED = { log: process.env.AGENT_LOG_ENABLED !== '0', incident: process.env.AGENT_INCIDENT_ENABLED !== '0' };
@@ -50,6 +51,17 @@ function narrate(agent, r) {
     if (n(s.errors)) bits.push(`${n(s.errors)} error(s)`);
     return bits.join(' · ');
   }
+  if (agent === 'refund') {
+    if (s.disabled) return 'desk switched off (policy)';
+    if (!n(s.checked) && !s.batch) return 'no refund candidate waiting for a review';
+    const bits = [`reviewed ${n(s.reviewed)} refund case(s)`];
+    const v = ['refund', 'wait', 'dismiss', 'investigate'].filter(k => n(s[k])).map(k => `${k} ${n(s[k])}`); if (v.length) bits.push(v.join(' · '));
+    if (n(s.modelled)) bits.push(`${n(s.modelled)} with the model`); else if (s.model_down) bits.push('rules only (model unavailable)');
+    if (n(s.notified)) bits.push(`team mailed (${n(s.notified)} new)`);
+    if (s.batch) bits.push(`approval batch #${s.batch.id}: ${n(s.batch.cases)} case(s)${s.batch.sent ? ', mailed' : ', NOT mailed'}${s.batch.alert_id ? ', incident #' + s.batch.alert_id : ''}`);
+    if (n(s.batches_closed)) bits.push(`${n(s.batches_closed)} batch(es) closed`);
+    return bits.join(' · ');
+  }
   if (agent === 'incident.map') {
     if (!n(s.rules)) return 'no rule to map';
     return `${n(s.rules)} rules → ${n(s.proposed)} proposal(s) (${n(s.deterministic)} by keywords · ${n(s.modelled)} by the model · ${n(s.lowConfidence)} weak) · ${n(s.unchanged)} unchanged${s.modelUnavailable ? ' · model unavailable' : ''}`;
@@ -65,7 +77,7 @@ function nextReport() {
 async function mission() {
   const q = async (sql, p) => { try { return (await C().query(sql, p)).rows; } catch (e) { return []; } };
   const now = Date.now();
-  const [runs, hourly, calls5, callsHour, tokensToday, triage, sigs, sigNew, proposals, reports, queue, feedback, yusr] = await Promise.all([
+  const [runs, hourly, calls5, callsHour, tokensToday, triage, sigs, sigNew, proposals, reports, queue, feedback, yusr, refundRows] = await Promise.all([
     q(`SELECT agent, started_at, finished_at, ok, stats, error FROM (SELECT *, row_number() OVER (PARTITION BY agent ORDER BY started_at DESC) rn FROM agent_runs WHERE started_at >= now() - interval '48 hours') x WHERE rn <= 40 ORDER BY started_at DESC`),
     q(`SELECT agent, date_trunc('hour', started_at) AS h, count(*)::int AS runs, count(*) FILTER (WHERE ok = false)::int AS failed FROM agent_runs WHERE started_at >= now() - interval '24 hours' GROUP BY 1,2`),
     q(`SELECT caller, purpose, count(*)::int AS calls, max(at) AS last_at, round(avg(ms))::int AS avg_ms, count(*) FILTER (WHERE NOT ok)::int AS failed FROM llm_calls WHERE at >= now() - interval '5 minutes' GROUP BY 1,2`),
@@ -85,6 +97,11 @@ async function mission() {
               (SELECT count(*)::int FROM alert_rules r WHERE coalesce(r.enabled, true) AND NOT EXISTS (SELECT 1 FROM alert_rule_team_suggestions s WHERE s.rule_key = r.key) AND (r.team IS NULL OR r.team = '')) AS rules_unmapped`),
     q(`SELECT count(*) FILTER (WHERE helpful IS NULL AND created_at >= now() - interval '7 days')::int AS awaiting, count(*) FILTER (WHERE helpful)::int AS helpful, count(*) FILTER (WHERE helpful = false)::int AS unhelpful FROM agent_triage`),
     q(`SELECT count(*)::int AS calls24, count(DISTINCT actor)::int AS people24, round(avg(ms) FILTER (WHERE ok))::int AS avg_ms, max(at) AS last_at, count(*) FILTER (WHERE blocked)::int AS blocked FROM llm_calls WHERE purpose LIKE 'yusr.%' AND at >= now() - interval '24 hours'`),
+    q(`SELECT count(*) FILTER (WHERE c.status IN ('open','approved') AND r.id IS NULL)::int AS to_review, count(*) FILTER (WHERE c.status IN ('open','approved'))::int AS open,
+              count(*) FILTER (WHERE c.status IN ('open','approved') AND c.batch_id IS NULL AND (c.status = 'approved' OR r.verdict = 'refund'))::int AS batchable,
+              coalesce(sum(c.amount) FILTER (WHERE c.status IN ('open','approved') AND c.batch_id IS NULL AND (c.status = 'approved' OR r.verdict = 'refund')),0)::float AS batchable_sar,
+              (SELECT count(*)::int FROM refund_batches WHERE status = 'open') AS open_batches
+         FROM refund_candidates c LEFT JOIN refund_reviews r ON r.candidate_id = c.id`),
   ]);
   const byAgent = k => runs.filter(r => r.agent === k);
   const last = k => byAgent(k)[0] || null;
@@ -102,6 +119,7 @@ async function mission() {
   const hoursOf = k => hourly.filter(h => h.agent === k).map(h => ({ h: h.h, runs: h.runs, failed: h.failed }));
   const tokOf = caller => tokensToday.find(t => t.caller === caller) || { calls: 0, ok: 0, blocked: 0, tokens: 0, avg_ms: null };
   const qz = queue[0] || {};
+  const refundQ = (refundRows && refundRows[0]) || {};
   const fb = feedback[0] || {};
   const sg = sigs[0] || {};
   const agents = [
@@ -130,6 +148,15 @@ async function mission() {
       human: [{ label: 'proposals to approve', n: n(qz.proposals_pending), hint: 'nothing is applied until someone approves it', link: '#alerts?tab=rules' }],
       calls: callsOf('salam-agent-incident').filter(c => c.purpose === 'agent-incident.map'), hours: hoursOf('incident.map'), tokens: { calls: 0, tokens: 0 }, tokensHourly: [],
       next: { tick: nextTick(last('incident.map') && last('incident.map').started_at, INTERVALS['incident.map']) } },
+    { key: 'refund', name: 'Refund desk', short: 'Agent 2 · refunds', pm2: 'salam-agent-incident', role: 'Reviews every refund candidate the console detects (verdict, proxycms reason, cause, first action), assigns it to the Mobile L2 team, mails the new cases, sends the daily approval batch and opens its incident, closes batches from the proxycms register.',
+      state: stateOf('refund', ENABLED.incident), enabled: ENABLED.incident, last: last('refund'), every: INTERVALS.refund,
+      did: byAgent('refund').filter(r => n((r.stats || {}).checked) || (r.stats || {}).batch || r.ok === false).slice(0, 12).map(r => ({ at: r.started_at, end: r.finished_at, ok: r.ok, text: narrate('refund', r), stats: r.stats })),
+      quiet: byAgent('refund').filter(r => !n((r.stats || {}).checked) && !(r.stats || {}).batch && r.ok !== false).length,
+      outputs: { refund: refundQ },
+      queue: [{ label: 'refund cases to review', n: n(refundQ.to_review), hint: `of ${n(refundQ.open)} open candidates`, link: '#refunds?tab=desk' }, { label: 'ready for the approval batch', n: n(refundQ.batchable), hint: `${Number(refundQ.batchable_sar || 0).toFixed(2)} SAR · verdict refund, not sent yet`, link: '#refunds?tab=desk' }],
+      human: [{ label: 'open approval batches', n: n(refundQ.open_batches), hint: 'approve / refund / dismiss the cases on Refund exposure; the batch closes itself from the proxycms register', link: '#refunds?tab=desk' }],
+      calls: callsOf('salam-agent-incident').filter(c => c.purpose === 'agent-refund.review'), hours: hoursOf('refund'), tokens: { calls: 0, tokens: 0 }, tokensHourly: [],
+      next: { tick: nextTick(last('refund') && last('refund').started_at, INTERVALS.refund) } },
     { key: 'yusr', name: 'Yusr assistant', short: 'Assistant', pm2: 'salam-unified', role: 'Answers the people on the console — incidents, KPIs, customers — with the same on-prem model; rule-based when the budget is spent.',
       state: (yusr[0] && n(yusr[0].calls24)) ? ((now - new Date(yusr[0].last_at).getTime()) < 5 * 60e3 ? 'working' : 'idle') : 'idle', enabled: true, last: null, every: null,
       did: [], outputs: { yusr: yusr[0] || {} }, queue: [], human: [],
@@ -140,8 +167,8 @@ async function mission() {
   const [pf, usage] = await Promise.all([perf(), usage7d(q)]);
   const inflight = pulseInflight();
   for (const a of agents) { const mine = inflight.filter(x => x.agent === a.key); a.inflight = mine; if (mine.length) a.state = 'working'; }
-  const PROC = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', yusr: 'salam-unified' };
-  const CALLER = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', yusr: 'console' };
+  const PROC = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', refund: 'salam-agent-incident', yusr: 'salam-unified' };
+  const CALLER = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', refund: 'salam-agent-incident', yusr: 'console' };
   for (const a of agents) { a.proc = pf.procs[PROC[a.key]] || null; a.usage = usage.byCaller[CALLER[a.key]] || null; }
   return { at: new Date().toISOString(), agents, brain, budget, perf: pf, usage, timeline: { runs: hourly, calls: callsHour }, intervals: INTERVALS, reportHour: REPORT_HOUR };
 }

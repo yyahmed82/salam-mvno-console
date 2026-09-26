@@ -253,6 +253,9 @@ async function main() {
   if (!CFG.enabled) { log('disabled (AGENT_INCIDENT_ENABLED=0) — idle'); setInterval(() => {}, 3600e3); return; }
   log(`armed: every ${CFG.intervalMin} min · up to ${CFG.maxPerTick} incidents per tick · lookback ${CFG.lookbackHours} h`);
   setTimeout(() => tick(), 15000); setInterval(() => tick(), CFG.intervalMin * 60000);
+  /* the refund desk (26 Sep 2026): same process, same model budget — reviews the refund candidates, mails the team,
+   * builds the daily approval batch and its incident, reconciles with the proxycms register */
+  try { const desk = require('./refundDesk'); await desk.ensureSchema(); desk.start(); } catch (e) { log('refund desk', e.message); }
   /* rule → team proposals: once shortly after boot, then every 6 h (only rules that changed or were never mapped) */
   setTimeout(() => mapRules().catch(e => log('map', e.message)), 60000); setInterval(() => mapRules().catch(e => log('map', e.message)), 6 * 3600e3);
 }
