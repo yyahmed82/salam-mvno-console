@@ -27,6 +27,10 @@ const IDX = [
   ['delivery_requests', 'idx_src_deliv_on_id', '(delivery_on_id)'],
   ['delivery_requests', 'idx_src_deliv_rcv_mobile', '(receiver_mobile)'],
   ['checkouts', 'idx_src_checkouts_created', '(created_at DESC)'],
+  /* refund exposure (26 Sep 2026): the detectors join orders to checkouts by the checkout CODE and pair port-in orders by
+   * the ported number every 15 min over 30 days — neither column is indexed in the app (it never looks them up). */
+  ['checkouts', 'idx_src_checkouts_code', '(checkout_id)'],
+  ['onboarding_orders', 'idx_src_onb_mnp', '(mnp_number)'],
   /* users — added when `users` joined the sync (21 Aug 2026). The login funnel counts accepted
    * passwords with `WHERE current_sign_in_at >= $1` and freshness() takes `max(current_sign_in_at)`;
    * with no index both are sequential scans over ~505k rows. Two of them per page load was enough

@@ -113,8 +113,23 @@ async function ensure() {
 /* payment → order: OnboardingOrder payments carry the order id; Checkout payments go through checkouts.checkout_id (code) */
 /* uuid columns are compared as uuid (index lookups); a non-uuid payment_on_id (recharge, bill …) yields NULL, never an error */
 const SAFE_UUID = (col) => `CASE WHEN ${col} ~ '^[0-9a-fA-F-]{36}$' THEN ${col}::uuid END`;
-const PAY_ORDER = `LEFT JOIN checkouts c ON p.payment_on_type = 'Checkout' AND c.id = ${SAFE_UUID('p.payment_on_id')}
-   JOIN onboarding_orders o ON (p.payment_on_type = 'OnboardingOrder' AND o.id = ${SAFE_UUID('p.payment_on_id')}) OR (c.id IS NOT NULL AND o.checkout_id::text = c.checkout_id::text)`;
+/* payment → order, two index-friendly paths instead of one OR-ed join (an OR in a join condition forces a nested loop over
+ * every order; on the production replica that is the 45 s cap every tick):
+ *   OnboardingOrder payments carry the order id            → onboarding_orders pkey
+ *   Checkout payments carry the checkout id → checkout CODE → onboarding_orders.checkout_id (indexed in the app) */
+const PNA = (via) => `
+    SELECT 'paid_not_activated' AS kind, p.id::text AS ukey, p.customer_mobile_number AS mobile, o.id::text AS order_id, p.id::text AS payment_id, p.amount,
+           o.customer_name, o.nationality_id_number AS identifier, p.created_at AS event_at,
+           jsonb_build_object('gateway', p.vendor, 'ref', p.payment_reference_id, 'platform', p.platform, 'order_state', o.aasm_state, 'order_status', o.status,
+             'port_in', o.number_order_type = 1, 'paid_via', '${via}', 'selected_number', (SELECT identifier FROM numbers n WHERE n.onboarding_order_id = o.id ORDER BY n.created_at DESC LIMIT 1),
+             'last_activation', (SELECT coalesce(a.status_code,'') || ' ' || left(coalesce(a.response::text, ''), 200) FROM activation_logs a WHERE a.onboarding_order_id = o.id ORDER BY a.created_at DESC LIMIT 1)) AS evidence
+      FROM payments p
+      ${via === 'Checkout' ? `JOIN checkouts c ON c.id = ${SAFE_UUID('p.payment_on_id')} JOIN onboarding_orders o ON o.checkout_id = c.checkout_id`
+                           : `JOIN onboarding_orders o ON o.id = ${SAFE_UUID('p.payment_on_id')}`}
+     WHERE p.payment_on_type = '${via}' AND p.status = 'success' AND p.created_at >= now() - interval '${LOOKBACK_DAYS} days'
+       AND p.created_at < CASE WHEN o.number_order_type = 1 THEN now() - interval '7 days' ELSE now() - interval '6 hours' END
+       AND coalesce(o.activated, false) = false ${via === 'Checkout' ? 'AND coalesce(c.checkout_type, 0) <> 5' : ''}
+       AND NOT EXISTS (SELECT 1 FROM activation_logs a WHERE a.onboarding_order_id = o.id AND a.state = true)`;
 const D = (n) => `now() - interval '${Number(n)} days'`;
 /* the same line written four ways in the app (966…, 0…, 9 digits, +966…) */
 const MSISDN_FORMS = (col) => `(${col}, right(regexp_replace(coalesce(${col},''), '\\D', '', 'g'), 9), '966' || right(regexp_replace(coalesce(${col},''), '\\D', '', 'g'), 9), '0' || right(regexp_replace(coalesce(${col},''), '\\D', '', 'g'), 9))`;
@@ -122,27 +137,17 @@ const MSISDN_FORMS = (col) => `(${col}, right(regexp_replace(coalesce(${col},'')
 /* Every detector: { sql, params() } — the bind list is EXACTLY what its SQL references (the 25 Sep version bound two
  * parameters to all six statements, which Postgres rejects at prepare time; no detector ever ran in production). */
 const DETECTORS = {
-  paid_not_activated: { params: () => [], sql: `
-    SELECT 'paid_not_activated' AS kind, p.id::text AS ukey, p.customer_mobile_number AS mobile, o.id::text AS order_id, p.id::text AS payment_id, p.amount,
-           o.customer_name, o.nationality_id_number AS identifier, p.created_at AS event_at,
-           jsonb_build_object('gateway', p.vendor, 'ref', p.payment_reference_id, 'platform', p.platform, 'order_state', o.aasm_state, 'order_status', o.status,
-             'port_in', o.number_order_type = 1, 'selected_number', (SELECT identifier FROM numbers n WHERE n.onboarding_order_id = o.id ORDER BY n.created_at DESC LIMIT 1),
-             'last_activation', (SELECT coalesce(a.status_code,'') || ' ' || left(coalesce(a.response::text, ''), 200) FROM activation_logs a WHERE a.onboarding_order_id = o.id ORDER BY a.created_at DESC LIMIT 1)) AS evidence
-      FROM payments p ${PAY_ORDER}
-     WHERE p.status = 'success' AND p.created_at >= ${D(LOOKBACK_DAYS)}
-       AND p.created_at < CASE WHEN o.number_order_type = 1 THEN now() - interval '7 days' ELSE now() - interval '6 hours' END
-       AND coalesce(o.activated, false) = false AND coalesce(c.checkout_type, 0) <> 5
-       AND NOT EXISTS (SELECT 1 FROM activation_logs a WHERE a.onboarding_order_id = o.id AND a.state = true)` },
+  paid_not_activated: { params: () => [], sql: `${PNA('OnboardingOrder')} UNION ALL ${PNA('Checkout')}` },
   portin_twice: { params: () => [], sql: `
     SELECT 'portin_twice' AS kind, o2.id::text AS ukey, o2.mobile_number AS mobile, o2.id::text AS order_id, p.id::text AS payment_id, p.amount,
            o2.customer_name, o2.nationality_id_number AS identifier, p.created_at AS event_at,
            jsonb_build_object('ported_number', o2.mnp_number, 'first_order', o1.id::text, 'first_order_at', o1.created_at, 'first_activated', o1.activated, 'gateway', p.vendor, 'ref', p.payment_reference_id) AS evidence
       FROM onboarding_orders o1
       JOIN onboarding_orders o2 ON o2.mnp_number = o1.mnp_number AND o2.id <> o1.id AND o2.created_at > o1.created_at
-      JOIN payments p ON p.status = 'success' AND ((p.payment_on_type = 'OnboardingOrder' AND p.payment_on_id = o2.id::text) OR (p.payment_on_type = 'Checkout' AND p.payment_on_id IN (SELECT c.id::text FROM checkouts c WHERE c.checkout_id::text = o2.checkout_id::text)))
+      JOIN payments p ON p.status = 'success' AND ((p.payment_on_type = 'OnboardingOrder' AND p.payment_on_id = o2.id::text) OR (p.payment_on_type = 'Checkout' AND p.payment_on_id IN (SELECT c.id::text FROM checkouts c WHERE c.checkout_id = o2.checkout_id)))
      WHERE o2.created_at >= ${D(LOOKBACK_DAYS)} AND o1.created_at >= ${D(LOOKBACK_DAYS * 3)}
        AND o1.number_order_type = 1 AND o2.number_order_type = 1 AND coalesce(o1.mnp_number,'') <> ''
-       AND EXISTS (SELECT 1 FROM payments p1 WHERE p1.status IN ('success','refunded') AND ((p1.payment_on_type = 'OnboardingOrder' AND p1.payment_on_id = o1.id::text) OR (p1.payment_on_type = 'Checkout' AND p1.payment_on_id IN (SELECT c.id::text FROM checkouts c WHERE c.checkout_id::text = o1.checkout_id::text))))` },
+       AND EXISTS (SELECT 1 FROM payments p1 WHERE p1.status IN ('success','refunded') AND ((p1.payment_on_type = 'OnboardingOrder' AND p1.payment_on_id = o1.id::text) OR (p1.payment_on_type = 'Checkout' AND p1.payment_on_id IN (SELECT c.id::text FROM checkouts c WHERE c.checkout_id = o1.checkout_id))))` },
   change_plan_paid_failed: { params: () => [], sql: `
     SELECT 'change_plan_paid_failed' AS kind, l.id::text AS ukey, l.mobile_number AS mobile, NULL::text AS order_id, p.id::text AS payment_id, p.amount,
            NULL::text AS customer_name, NULL::text AS identifier, l.created_at AS event_at,
@@ -168,7 +173,7 @@ const DETECTORS = {
            o.customer_name, o.nationality_id_number AS identifier, d.created_at AS event_at,
            jsonb_build_object('courier', d.vendor, 'state', d.delivery_state, 'reference', d.external_reference_id, 'gateway', p.vendor, 'ref', p.payment_reference_id) AS evidence
       FROM delivery_requests d JOIN onboarding_orders o ON o.id = ${SAFE_UUID('d.delivery_on_id')} AND coalesce(d.delivery_on_type, 'OnboardingOrder') = 'OnboardingOrder'
-      JOIN payments p ON p.status = 'success' AND ((p.payment_on_type = 'OnboardingOrder' AND p.payment_on_id = o.id::text) OR (p.payment_on_type = 'Checkout' AND p.payment_on_id IN (SELECT c.id::text FROM checkouts c WHERE c.checkout_id::text = o.checkout_id::text)))
+      JOIN payments p ON p.status = 'success' AND ((p.payment_on_type = 'OnboardingOrder' AND p.payment_on_id = o.id::text) OR (p.payment_on_type = 'Checkout' AND p.payment_on_id IN (SELECT c.id::text FROM checkouts c WHERE c.checkout_id = o.checkout_id)))
      WHERE d.created_at >= ${D(LOOKBACK_DAYS)} AND d.delivery_state = ANY($1::text[]) AND coalesce(o.activated, false) = false
        AND NOT EXISTS (SELECT 1 FROM delivery_requests d2 WHERE d2.delivery_on_id = d.delivery_on_id AND d2.created_at > d.created_at AND NOT (d2.delivery_state = ANY($1::text[])))` },
   duplicate_charge: { params: () => [], sql: `
@@ -182,7 +187,17 @@ const DETECTORS = {
 };
 
 const lastTiming = {};
-let lastRun = null; let running = false;
+let lastRun = null; let running = false; let runningSince = null;
+const PROCESS_STARTED_AT = new Date().toISOString();
+/* the replica indexes the detectors lean on — built by indexSource.js at every boot (CONCURRENTLY, best-effort);
+ * the page reports which are missing so a slow detector is explained, not guessed */
+const SOURCE_INDEXES = ['idx_src_payments_created', 'idx_src_payments_status_created', 'idx_src_payments_on_id', 'idx_src_checkouts_code', 'idx_src_onb_created', 'idx_src_onb_mnp',
+  'idx_src_cpl_created', 'idx_src_cpl_mobile', 'idx_src_deliv_created', 'idx_src_deliv_on_id', 'idx_src_actlog_order'];
+async function sourceIndexes() {
+  try { const r = await db.source.query(`SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = ANY($1::text[])`, [SOURCE_INDEXES]);
+    const have = new Set(r.rows.map(x => x.indexname)); return { present: SOURCE_INDEXES.filter(n => have.has(n)), missing: SOURCE_INDEXES.filter(n => !have.has(n)) }; }
+  catch (e) { return { present: [], missing: SOURCE_INDEXES, error: e.message }; }
+}
 
 async function detect() {
   const found = []; const errors = {};
@@ -265,7 +280,7 @@ async function correlate() {
 }
 
 async function tick() {
-  if (running || !db.console || !db.source) return; running = true; const t0 = Date.now();
+  if (running || !db.console || !db.source) return; running = true; runningSince = new Date().toISOString(); const t0 = Date.now();
   try {
     await ensure();
     const { found, errors } = await detect();
@@ -296,7 +311,7 @@ async function tick() {
       [lastRun.ms, found.length, newRows, auto, JSON.stringify(errors), led.refunded || 0, JSON.stringify(lastTiming)]).catch(() => {});
     await db.console.query(`DELETE FROM refund_radar_runs WHERE at < now() - interval '90 days'`).catch(() => {});
   } catch (e) { lastRun = { at: new Date().toISOString(), error: e.message }; console.error('[refund-radar]', e.message); }
-  finally { running = false; }
+  finally { running = false; runningSince = null; }
 }
 function start() {
   if (!db.console || !db.source) return;
@@ -382,7 +397,7 @@ async function ledgerRows(p, { limit = 5000, reason, status, vendor, q, category
 async function overview(q = {}) {
   await ensure();
   const p = periodOf(q);
-  const [byKind, cand, openRow, runs, led, handled] = await Promise.all([
+  const [byKind, cand, openRow, runs, led, handled, idx] = await Promise.all([
     db.console.query(`SELECT kind, status, count(*)::int n, coalesce(sum(amount),0)::float sar FROM refund_candidates WHERE (detected_at >= $1::timestamptz AND detected_at < $2::timestamptz) OR status = 'open' GROUP BY 1,2`, [p.fromTs, p.toTs]),
     db.console.query(`SELECT kind, status, amount::float AS amount, detected_at, event_at, updated_at, resolved_at, ledger FROM refund_candidates WHERE detected_at >= $1::timestamptz AND detected_at < $2::timestamptz`, [p.fromTs, p.toTs]),
     db.console.query(`SELECT count(*)::int open, coalesce(sum(amount),0)::float sar, min(event_at) oldest, count(*) FILTER (WHERE detected_at >= now() - interval '24 hours')::int new_24h,
@@ -394,18 +409,19 @@ async function overview(q = {}) {
     ledgerRows(p, { limit: 60000 }).catch(e => ({ available: false, rows: [], error: e.message })),
     db.console.query(`SELECT status, updated_by, count(*)::int n, coalesce(sum(amount),0)::float sar,
                              percentile_cont(0.5) WITHIN GROUP (ORDER BY greatest(0, extract(epoch FROM (coalesce(resolved_at, updated_at) - detected_at)) / 3600.0)) AS med_h
-                        FROM refund_candidates WHERE status <> 'open' AND coalesce(resolved_at, updated_at) >= $1::timestamptz AND coalesce(resolved_at, updated_at) < $2::timestamptz GROUP BY 1,2`, [p.fromTs, p.toTs])
+                        FROM refund_candidates WHERE status <> 'open' AND coalesce(resolved_at, updated_at) >= $1::timestamptz AND coalesce(resolved_at, updated_at) < $2::timestamptz GROUP BY 1,2`, [p.fromTs, p.toTs]),
+    sourceIndexes()
   ]);
   /* series per bucket: candidates detected · refunds posted in proxycms (all / success) · caught-first count */
   const B = buckets(p); const S = Object.fromEntries(B.map(k => [k, { bucket: k, detected_n: 0, detected_sar: 0, refunds_n: 0, refunds_sar: 0, success_n: 0, success_sar: 0, failed_n: 0, caught_first_n: 0, platform_n: 0, auto_n: 0 }]));
   for (const c of cand.rows) { const s = S[bucketKey(c.detected_at, p.g)]; if (s) { s.detected_n++; s.detected_sar += Number(c.amount || 0); } }
   const L = led.rows || [];
   const byReason = {}, byCat = {}, byVendor = {}, byAdmin = {}, byType = { refund: 0, reverse: 0 }, byStatus = {}, byPaidFor = {};
-  const leads = [], toRefundH = []; let caughtFirst = 0, platformN = 0, missed = 0, platformSar = 0, caughtSar = 0, successSar = 0, successN = 0, failN = 0, pendingN = 0, autoN = 0, missedRows = [];
+  const leads = [], toRefundH = []; let caughtFirst = 0, platformN = 0, missed = 0, platformSar = 0, caughtSar = 0, successSar = 0, successN = 0, failN = 0, pendingN = 0, autoN = 0, autoSar = 0, autoPlatformN = 0, autoPlatformSar = 0, missedRows = [];
   for (const x of L) {
     const s = S[bucketKey(x.created_at, p.g)];
     const amt = Number(x.amount || 0);
-    if (s) { s.refunds_n++; s.refunds_sar += amt; if (x.status === 'success') { s.success_n++; s.success_sar += amt; } if (x.status === 'fail') s.failed_n++; if (x.platform) s.platform_n++; if (x.auto) s.auto_n++; if (x.console && x.console.caught_first) s.caught_first_n++; }
+    if (s) { s.refunds_n++; s.refunds_sar += amt; if (x.status === 'success') { s.success_n++; s.success_sar += amt; } if (x.status === 'fail') s.failed_n++; if (x.platform && !x.auto) s.platform_n++; if (x.auto) s.auto_n++; if (x.console && x.console.caught_first) s.caught_first_n++; }
     const R = byReason[x.reason] = byReason[x.reason] || { reason: x.reason, category: x.category, n: 0, sar: 0, success_n: 0, success_sar: 0, fail_n: 0, pending_n: 0, auto_n: 0, manual_n: 0, caught_first_n: 0, caught_n: 0, missed_n: 0, platform: x.platform };
     R.n++; R.sar += amt; if (x.status === 'success') { R.success_n++; R.success_sar += amt; } if (x.status === 'fail') R.fail_n++; if (x.status === 'pending') R.pending_n++; if (x.auto) R.auto_n++; else R.manual_n++;
     const C = byCat[x.category] = byCat[x.category] || { category: x.category, ...(CATEGORIES[x.category] || CATEGORIES.other), n: 0, sar: 0, success_sar: 0, caught_first_n: 0, missed_n: 0, reasons: {} };
@@ -414,9 +430,11 @@ async function overview(q = {}) {
     const A = byAdmin[x.refunded_by] = byAdmin[x.refunded_by] || { by: x.refunded_by, n: 0, sar: 0, auto: x.auto }; A.n++; A.sar += amt;
     const PF = byPaidFor[x.paid_for || '—'] = byPaidFor[x.paid_for || '—'] || { paid_for: x.paid_for || '—', n: 0, sar: 0 }; PF.n++; PF.sar += amt;
     byType[x.type] = (byType[x.type] || 0) + 1; byStatus[x.status] = (byStatus[x.status] || 0) + 1;
-    if (x.status === 'success') { successSar += amt; successN++; } if (x.status === 'fail') failN++; if (x.status === 'pending') pendingN++; if (x.auto) autoN++;
+    if (x.status === 'success') { successSar += amt; successN++; } if (x.status === 'fail') failN++; if (x.status === 'pending') pendingN++; if (x.auto) { autoN++; autoSar += amt; if (x.platform) { autoPlatformN++; autoPlatformSar += amt; } }
     if (x.console) { R.caught_n++; if (x.console.caught_first) { R.caught_first_n++; C.caught_first_n++; caughtFirst++; caughtSar += amt; leads.push(x.console.lead_h); toRefundH.push(x.console.lead_h); } }
-    if (x.platform) { platformN++; platformSar += amt; if (!x.console) { missed++; R.missed_n++; C.missed_n++; if (missedRows.length < 60) missedRows.push({ id: x.id, created_at: x.created_at, reason: x.reason, amount: amt, paid_for: x.paid_for, checkout_kind: x.checkout_kind, by: x.refunded_by, inc: x.inc }); } }
+    /* the impact population = platform-caused refunds POSTED BY AN ADMIN: the ones that travel through the approval mails.
+     * Auto-generated refunds (the app reverses a failed change plan by itself within minutes) are counted apart. */
+    if (x.platform && !x.auto) { platformN++; platformSar += amt; if (!x.console) { missed++; R.missed_n++; C.missed_n++; if (missedRows.length < 60) missedRows.push({ id: x.id, created_at: x.created_at, reason: x.reason, amount: amt, paid_for: x.paid_for, checkout_kind: x.checkout_kind, by: x.refunded_by, inc: x.inc }); } }
   }
   const catList = Object.values(byCat).map(c => ({ ...c, reasons: Object.entries(c.reasons).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([reason, n]) => ({ reason, n })), share: L.length ? Math.round(1000 * c.n / L.length) / 10 : 0 })).sort((a, b) => b.n - a.n);
   const detectorHealth = Object.keys(DETECTORS).map(k => { const lr = runs.rows[0]; const err = lr && lr.errors ? lr.errors[k] : (lastRun && lastRun.errors ? lastRun.errors[k] : null); const tm = (lr && lr.timing && lr.timing[k]) ?? lastTiming[k]; return { kind: k, label: KINDS[k].label, ok: !err, error: err || null, ms: tm ?? null }; });
@@ -424,9 +442,11 @@ async function overview(q = {}) {
   for (const k of Object.keys(H)) H[k].med_h = median(H[k].med_h);
   return {
     period: p, kinds: KINDS, categories: CATEGORIES, by_kind: byKind.rows, open: openRow.rows[0], series: B.map(k => S[k]),
-    ledger: { available: led.available, error: led.error || null, tables: led.tables || {}, n: L.length, sar: L.reduce((a, x) => a + Number(x.amount || 0), 0), success_n: successN, success_sar: successSar, fail_n: failN, pending_n: pendingN, auto_n: autoN, manual_n: L.length - autoN,
+    ledger: { available: led.available, error: led.error || null, tables: led.tables || {}, n: L.length, sar: L.reduce((a, x) => a + Number(x.amount || 0), 0), success_n: successN, success_sar: successSar, fail_n: failN, pending_n: pendingN, auto_n: autoN, auto_sar: autoSar, manual_n: L.length - autoN,
       by_reason: Object.values(byReason).sort((a, b) => b.n - a.n), by_category: catList, by_vendor: Object.values(byVendor).sort((a, b) => b.n - a.n), by_admin: Object.values(byAdmin).sort((a, b) => b.n - a.n), by_type: byType, by_status: byStatus, by_paid_for: Object.values(byPaidFor).sort((a, b) => b.n - a.n) },
-    impact: { platform_n: platformN, platform_sar: platformSar, caught_first_n: caughtFirst, caught_first_sar: caughtSar, caught_first_pct: platformN ? Math.round(1000 * caughtFirst / platformN) / 10 : null, missed_n: missed, missed: missedRows, median_lead_h: median(leads), median_detect_to_refund_h: median(toRefundH) },
+    impact: { platform_n: platformN, platform_sar: platformSar, caught_first_n: caughtFirst, caught_first_sar: caughtSar, caught_first_pct: platformN ? Math.round(1000 * caughtFirst / platformN) / 10 : null, missed_n: missed, missed: missedRows, median_lead_h: median(leads), median_detect_to_refund_h: median(toRefundH),
+      auto_n: autoN, auto_sar: autoSar, auto_platform_n: autoPlatformN, auto_platform_sar: autoPlatformSar },
+    running, running_since: runningSince, process_started_at: PROCESS_STARTED_AT, source_indexes: idx,
     handling: H, detected_in_period: cand.rows.length, detected_sar_in_period: cand.rows.reduce((a, x) => a + Number(x.amount || 0), 0),
     detectors: detectorHealth, runs: runs.rows, last_run: runs.rows[0] || lastRun, lookback_days: LOOKBACK_DAYS, tick_min: TICK_MS / 60e3, sim_checkout_types: SIM_CHECKOUT_TYPES
   };
@@ -482,13 +502,13 @@ function xlsx(d, actor, masked) {
   const S = [[`Refund exposure — Mobile — ${p.from} → ${p.to} (KSA days, ${p.g} buckets) — generated ${ksa(new Date().toISOString())} KSA by ${actor}${masked ? ' — identities masked' : ' — identities unmasked (audited)'}`], [],
     ['Open candidates now', ov.open.open, 'SAR', money(ov.open.sar)], ['New candidates in the period', ov.detected_in_period, 'SAR', money(ov.detected_sar_in_period)],
     ['Refunds posted in proxycms (period)', LG.n, 'SAR', money(LG.sar)], ['  of which success', LG.success_n, 'SAR', money(LG.success_sar)], ['  pending at the gateway', LG.pending_n], ['  failed at the gateway', LG.fail_n], ['  auto-generated by the app', LG.auto_n], ['  posted by an admin', LG.manual_n],
-    ['Platform-caused refunds (activation, change plan, platform categories)', I.platform_n, 'SAR', money(I.platform_sar)], ['  flagged by the console BEFORE the refund', I.caught_first_n, '%', I.caught_first_pct == null ? '' : I.caught_first_pct], ['  median lead time (detection → refund)', I.median_lead_h == null ? '' : H(I.median_lead_h)], ['  not flagged (detector gap)', I.missed_n],
+    ['Platform-caused refunds posted by an admin (activation, change plan, platform categories)', I.platform_n, 'SAR', money(I.platform_sar)], ['  flagged by the console BEFORE the refund', I.caught_first_n, '%', I.caught_first_pct == null ? '' : I.caught_first_pct], ['  median lead time (detection → refund)', I.median_lead_h == null ? '' : H(I.median_lead_h)], ['  not flagged (detector gap)', I.missed_n], ['Auto-refunded by the app (no admin, no mail)', I.auto_n, 'SAR', money(I.auto_sar), 'of which platform-caused', I.auto_platform_n],
     ...Object.entries(ov.handling).map(([k, v]) => [`Closed in the console as ${k.replace('_', ' ')}`, v.n, 'SAR', money(v.sar), 'median hours open', v.med_h == null ? '' : Math.round(v.med_h * 10) / 10]),
     [], ['Detector', 'Status', 'Last run ms', 'Error'], ...ov.detectors.map(x => [x.label, x.ok ? 'ok' : 'ERROR', x.ms == null ? '' : x.ms, x.error || ''])];
   const C = [['Id', 'Kind', 'Status', 'Event (KSA)', 'Detected (KSA)', 'Customer', 'Mobile', 'Identifier', 'Order / checkout', 'Payment', 'SAR', 'INC', 'Note', 'Updated by', 'Updated (KSA)', 'proxycms refund', 'Refund status', 'Refund reason', 'Refunded by', 'Refund at (KSA)', 'Evidence']];
   d.cands.forEach(r => { const L = r.ledger || {}; C.push([r.id, (KINDS[r.kind] || {}).label || r.kind, r.status, ksa(r.event_at), ksa(r.detected_at), r.customer_name || '', r.mobile || '', r.identifier || '', r.order_id || '', r.payment_id || '', money(r.amount), r.inc || L.inc || '', r.note || '', r.updated_by || '', ksa(r.updated_at), L.id || '', L.status || (L.pay_status === 'refunded' ? 'payment refunded' : ''), L.reason || '', L.by || '', ksa(L.at), evText(r.evidence)]); });
   const R = [['Refund id', 'Created (KSA)', 'SAR', 'Status', 'Type', 'Reason', 'Category', 'Owner', 'Refunded by', 'INC', 'Notes', 'Fail reason', 'Vendor', 'Paid for', 'Checkout kind', 'SIM', 'Target / order', 'Payment', 'Mobile', 'Customer', 'Console kind', 'Console detected (KSA)', 'Caught before the refund', 'Lead time']];
-  d.ledger.forEach(x => { const c = x.console; R.push([x.id, ksa(x.created_at), money(x.amount), x.status, x.type, x.reason, x.category_label, (CATEGORIES[x.category] || {}).owner || '', x.refunded_by, x.inc || '', x.notes || '', x.fail_reason || '', x.vendor || '', x.paid_for || '', x.checkout_kind || '', x.sim || '', x.target || '', x.payment_id || '', x.mobile || '', x.customer_name || '', c ? c.label : '', c ? ksa(c.detected_at) : '', c ? (c.caught_first ? 'yes' : 'no') : (x.platform ? 'MISSED' : 'n/a'), c ? H(c.lead_h) : '']); });
+  d.ledger.forEach(x => { const c = x.console; R.push([x.id, ksa(x.created_at), money(x.amount), x.status, x.type, x.reason, x.category_label, (CATEGORIES[x.category] || {}).owner || '', x.refunded_by, x.inc || '', x.notes || '', x.fail_reason || '', x.vendor || '', x.paid_for || '', x.checkout_kind || '', x.sim || '', x.target || '', x.payment_id || '', x.mobile || '', x.customer_name || '', c ? c.label : '', c ? ksa(c.detected_at) : '', c ? (c.caught_first ? 'yes' : 'no') : (x.auto ? 'auto-refund' : x.platform ? 'MISSED' : 'n/a'), c ? H(c.lead_h) : '']); });
   const RR = [['Reason', 'Category', 'Owner', 'Refunds', 'SAR', 'Success', 'Success SAR', 'Pending', 'Failed', 'Auto', 'Manual', 'Caught before the refund', 'Flagged (any time)', 'Not flagged (platform)']];
   LG.by_reason.forEach(r => RR.push([r.reason, (CATEGORIES[r.category] || CATEGORIES.other).label, (CATEGORIES[r.category] || CATEGORIES.other).owner, r.n, money(r.sar), r.success_n, money(r.success_sar), r.pending_n, r.fail_n, r.auto_n, r.manual_n, r.caught_first_n, r.caught_n, r.platform ? r.missed_n : '']));
   const PP = [['Bucket (KSA)', 'Candidates detected', 'Detected SAR', 'Refunds posted', 'Refunds SAR', 'Successful refunds', 'Success SAR', 'Failed refunds', 'Platform-caused', 'Auto-generated', 'Caught before the refund']];
@@ -514,7 +534,7 @@ function pdf(d, actor, masked) {
   doc.space(10); doc.h2('The period in numbers');
   doc.kv([['Open candidates now', `${ov.open.open} - ${money(ov.open.sar)} SAR - ${ov.open.older_7d} older than 7 days`], ['New candidates in the period', `${ov.detected_in_period} - ${money(ov.detected_sar_in_period)} SAR`],
     ['Refunds posted in proxycms', LG.available ? `${LG.n} - ${money(LG.sar)} SAR - ${LG.success_n} success - ${LG.pending_n} pending - ${LG.fail_n} failed - ${LG.auto_n} auto-generated` : 'ledger not in the replica yet'],
-    ['Platform-caused refunds', `${I.platform_n} - ${money(I.platform_sar)} SAR (activation / change plan / platform categories)`],
+    ['Platform-caused, posted by an admin', `${I.platform_n} - ${money(I.platform_sar)} SAR (activation / change plan / platform categories)`], ['Auto-refunded by the app', `${I.auto_n} - ${money(I.auto_sar)} SAR - ${I.auto_platform_n} platform-caused, reversed by the app itself`],
     ['Flagged before the refund', I.platform_n ? `${I.caught_first_n} of ${I.platform_n} (${I.caught_first_pct} %) - median lead ${H(I.median_lead_h) || '-'}` : '-'],
     ['Not flagged (detector gap)', String(I.missed_n)],
     ...Object.entries(ov.handling).map(([k, v]) => [`Closed as ${k.replace('_', ' ')}`, `${v.n} - ${money(v.sar)} SAR${v.med_h != null ? ` - median ${Math.round(v.med_h)} h open` : ''}`])], { boldVal: true });
@@ -546,7 +566,7 @@ function pdf(d, actor, masked) {
   if (lg.length) {
     doc.h2(`proxycms refunds in the period - ${d.ledger.length} (first ${lg.length} shown)`);
     doc.table([{ label: 'Created', w: 10 }, { label: 'SAR', w: 6, align: 'right' }, { label: 'Status', w: 6 }, { label: 'Reason', w: 22 }, { label: 'By', w: 12 }, { label: 'INC', w: 9 }, { label: 'Paid for', w: 11 }, { label: 'Mobile', w: 10 }, { label: 'Console', w: 14 }],
-      lg.map(x => [ksa(x.created_at), money(x.amount), x.status, clip(x.reason, 44), x.refunded_by, x.inc || '-', `${x.paid_for || ''}${x.checkout_kind ? ' - ' + x.checkout_kind : ''}`, x.mobile || '', x.console ? `${x.console.caught_first ? 'caught first' : 'flagged'} ${H(x.console.lead_h)}` : (x.platform ? 'MISSED' : '-')]), { size: 6.8, rowColor: ri => lg[ri].platform && !lg[ri].console ? CC.amber : null });
+      lg.map(x => [ksa(x.created_at), money(x.amount), x.status, clip(x.reason, 44), x.refunded_by, x.inc || '-', `${x.paid_for || ''}${x.checkout_kind ? ' - ' + x.checkout_kind : ''}`, x.mobile || '', x.console ? `${x.console.caught_first ? 'caught first' : 'flagged'} ${H(x.console.lead_h)}` : (x.auto ? 'auto' : x.platform ? 'MISSED' : '-')]), { size: 6.8, rowColor: ri => lg[ri].platform && !lg[ri].auto && !lg[ri].console ? CC.amber : null });
   }
   doc.p(masked ? 'Identities are masked in this export.' : 'Identities are unmasked in this export; the export is audited.', { color: CC.muted, size: 8 });
   return doc.buffer();
@@ -590,6 +610,9 @@ function mount(app, { requireView, audit, roles }) {
       if (audit) audit(req, 'REFUND_CANDIDATE_STATUS', String(row.id), { status: row.status, inc: row.inc, kind: row.kind }).catch?.(() => {});
       res.json(mask(req, row));
     } catch (e) { res.status(400).json({ error: e.message }); } });
-  app.post('/api/refunds/run', gate, async (req, res) => { try { await tick(); res.json(lastRun || { ok: true }); } catch (e) { res.status(500).json({ error: e.message }); } });
+  app.post('/api/refunds/run', gate, async (req, res) => { try {
+      if (running) return res.json({ running: true, since: runningSince, last_run: lastRun });
+      await tick(); res.json(lastRun || { ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); } });
 }
-module.exports = { KINDS, CATEGORIES, DETECTORS, categorize, ensure, tick, start, overview, list, ledgerRows, forCustomer, setStatus, periodOf, exportData, xlsx, pdf, mount, LOOKBACK_DAYS };
+module.exports = { KINDS, CATEGORIES, DETECTORS, categorize, ensure, sourceIndexes, tick, start, overview, list, ledgerRows, forCustomer, setStatus, periodOf, exportData, xlsx, pdf, mount, LOOKBACK_DAYS };
