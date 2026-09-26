@@ -51,11 +51,11 @@
       <tr><td><b>Who notices</b></td><td class="old">the customer, days later</td><td class="new">the console, within 35 min (replica + detectors)</td></tr>
       <tr><td><b>Where the case lives</b></td><td class="old">an INC in Remedy + a mail thread</td><td class="new">a candidate row with evidence, status, INC, team, batch — Mobile › Refund exposure</td></tr>
       <tr><td><b>Who classifies</b></td><td class="old">L2, by hand, one case at a time</td><td class="new">Agent 2 proposes: rules + on-prem model → verdict, proxycms reason, cause, first action; 👍 / 👎 teaches it — a person decides</td></tr>
-      <tr><td><b>Who is told</b></td><td class="old">whoever is on the To: line</td><td class="new">the responder team (members + DL) — one digest per tick; the batch to the approvers; ChatOps on the incident</td></tr>
+      <tr><td><b>Who is told</b></td><td class="old">whoever is on the To: line</td><td class="new">defined once per business in Settings › Teams › <b>Refund desks</b>: the executing team (members + DL) gets one digest per tick; the approval request goes <b>To</b> the desk's approvers and <b>Cc</b> the team — nobody else, no fallback list, nobody of the other business</td></tr>
       <tr><td><b>Approval</b></td><td class="old">a reply in the thread</td><td class="new">Approve on the page (audited) or the daily batch mail with the XLSX</td></tr>
       <tr><td><b>Execution</b></td><td class="old">L2 finds the payment in proxycms, creates the refund</td><td class="new">same act, by L2, in proxycms — the payment id and the reason are already on the case; the agent has no write path to proxycms or the gateway</td></tr>
       <tr><td><b>Closure</b></td><td class="old">INC closed by hand; nothing else</td><td class="new">prod-sync copies <code>refunds</code> → the case closes as Refunded · proxycms with the INC; the batch incident resolves</td></tr>
-      <tr><td><b>Chasing</b></td><td class="old">a reminder mail, maybe</td><td class="new">the incident's ack SLA, reminders and escalation ladder; alerts on surge, backlog, gateway failures</td></tr>
+      <tr><td><b>Chasing</b></td><td class="old">a reminder mail, maybe</td><td class="new">an internal P4 ticket per request chased by the P4 ack ladder; two desk clocks — a decision within 24 h of the request, the refund posted within 48 h of the approval — with a P4 rule each when a case is overdue; alerts on surge, backlog, gateway failures</td></tr>
       <tr><td><b>Learning</b></td><td class="old">—</td><td class="new">flagged-first %, median lead time, reasons by category with an owner, the missed list → new detectors and product fixes</td></tr>
     </tbody></table></div>
     <div class="card"><h2>What runs where</h2><table><thead><tr><th>Piece</th><th>Runs</th><th>Does</th></tr></thead><tbody>
@@ -123,9 +123,9 @@
       {id:'rev',lane:'Agent 2 · refund desk',col:4,kind:'agent',badge:'review',text:'Reviews & classifies\nverdict · proxycms reason ·\ncause · first action · confidence'},
       {id:'asg',lane:'Agent 2 · refund desk',col:5,kind:'agent',badge:'assign + notify',text:'Assigns to Mobile L2\none digest per tick\nto members + DL'},
       {id:'l2n',lane:'L2 team (TCS)',col:5,kind:'human',text:'Sees the case\nevidence, verdict, reason —\nnothing to rebuild'},
-      {id:'bat',lane:'Agent 2 · refund desk',col:6,kind:'agent',badge:'prepares',text:'Approval request\ntable + XLSX + payment ids ·\nsent by a person · ticket'},
-      {id:'apr',lane:'Approver · Digital Ops',col:6,kind:'human',badge:'1 click',text:'Approves on the page\nby name, with time —\nor replies to the batch'},
-      {id:'post',lane:'L2 team (TCS)',col:7,kind:'human',text:'Posts the refund\npayment id + reason\nfrom the review'},
+      {id:'bat',lane:'Agent 2 · refund desk',col:6,kind:'agent',badge:'prepares',text:'Approval request\ntable + XLSX + payment ids ·\nTo approvers · Cc L2 · P4 ticket'},
+      {id:'apr',lane:'Approver · Digital Ops',col:6,kind:'human',badge:'1 click · 24 h',text:'Approves on the page\nby name, with time —\nnamed on the desk (Settings › Teams)'},
+      {id:'post',lane:'L2 team (TCS)',col:7,kind:'human',badge:'48 h',text:'Posts the refund\npayment id + reason\nfrom the review'},
       {id:'gw',lane:'proxycms → gateway',col:7,kind:'sys',text:'Refund → reversal\nHyperPay · Tap · Salam Pay\nZATCA credit note'},
       {id:'rec',lane:'Console · detectors',col:8,kind:'sys',badge:'reconciled',text:'Closes from the register\nRefunded · proxycms · INC ·\nbatch + incident resolved'},
       {id:'back',lane:'Customer',col:8,kind:'ok',badge:'same / next day',text:'Money back\noften before the call'},

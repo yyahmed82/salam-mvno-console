@@ -67,9 +67,12 @@ async function recipients(column = 'mail_alert', seg) {
 
 // generic sender — returns {sent, dev, error, recipients}. Dev (no SMTP) logs + does not send.
 // `attachments` (optional) is passed straight to nodemailer: [{filename, content, contentType}].
-async function sendHtml(to, subject, html, attachments, text) {
-  const emails = (to || []).map(r => (typeof r === 'string' ? r : r.email));
-  const base = { recipients: emails, subject };
+// `opts.cc` (26 Sep 2026): a WORKFLOW mail among colleagues who know each other (a refund approval request: approvers in
+// To, the executing team in Cc) — sent as one message with an explicit To and Cc, never through the bulk Bcc path below.
+async function sendHtml(to, subject, html, attachments, text, opts) {
+  const emails = [...new Set((to || []).map(r => (typeof r === 'string' ? r : r.email)).map(e => String(e || '').trim().toLowerCase()).filter(Boolean))];
+  const ccList = [...new Set(((opts && opts.cc) || []).map(r => (typeof r === 'string' ? r : r.email)).map(e => String(e || '').trim().toLowerCase()).filter(e => e && !emails.includes(e)))];
+  const base = { recipients: emails, subject, ...(ccList.length ? { cc: ccList } : {}) };
   if (!emails.length) return { ...base, sent: false, reason: 'no recipients' };
   if (!smtpConfigured()) { console.log(`[MAIL] (dev/no-SMTP) would email ${emails.length}: ${subject}`); return { ...base, sent: false, dev: true }; }
   if (mailBlocked()) return { ...base, sent: false, error: 'email paused after repeated failures: ' + mailCb.lastErr, paused: true };
@@ -90,11 +93,12 @@ async function sendHtml(to, subject, html, attachments, text) {
      * Single-recipient mails (OTP, ticket updates) are unchanged. */
     const mode = (process.env.MAIL_BULK_MODE || 'bcc').toLowerCase();
     const msg = { from: fromAddress(), subject, html, ...(text ? { text } : {}), attachments: withLogo };
-    if (emails.length <= 1) await t.sendMail({ ...msg, to: emails[0] });
+    if (ccList.length) await t.sendMail({ ...msg, to: emails.join(','), cc: ccList.join(',') });   // workflow mail: everyone sees who is addressed and who is copied
+    else if (emails.length <= 1) await t.sendMail({ ...msg, to: emails[0] });
     else if (mode === 'individual') { for (const e of emails) await t.sendMail({ ...msg, to: e }); }
     else await t.sendMail({ ...msg, to: fromAddress(), bcc: emails.join(',') });
     mailOk();
-    return { ...base, sent: true, bulk: emails.length > 1 ? mode : null };
+    return { ...base, sent: true, bulk: !ccList.length && emails.length > 1 ? mode : null, workflow: ccList.length > 0 };
   } catch (e) { mailFail(e.message); return { ...base, sent: false, error: e.message }; }
 }
 

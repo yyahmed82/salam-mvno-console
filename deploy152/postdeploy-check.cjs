@@ -219,6 +219,28 @@ const json = r => { try { return JSON.parse(r.body); } catch (e) { return null; 
     }
   } catch (e) { check(false, 'refund exposure reachable', e.message); }
 
+  // ── 5c. refund desks — WHO handles refunds (26 Sep 2026: alpha.100's approver fallback mailed batch #1 to the
+  //        Fixed/Sigma people; since alpha.102 the request goes ONLY to the approvers typed on the desk) ────────
+  head('5c · refund desks (Settings › Teams › Refund desks)');
+  try {
+    const dv = await get('/api/refunds/desk', 30000);
+    const d = json(dv);
+    check(dv.code === 200 && !!d && Array.isArray(d.desks), 'desk status answers', `HTTP ${dv.code} in ${dv.ms}ms`);
+    if (d && Array.isArray(d.desks)) {
+      for (const k of d.desks) {
+        const appr = k.approvers_effective || [], warn = (k.warnings || []).map(w => w.code);
+        const line = `team ${k.team_info ? k.team_info.name : k.team + ' (MISSING)'} · approvers ${appr.length ? appr.join(', ') : 'NONE'} · cc ${(k.cc_effective || []).length} · ticket ${k.ticket_severity} · SLA ${k.approve_within_h} h / ${k.refund_within_h} h · mode ${k.mode}${k.saved ? '' : ' · defaults (never saved)'}`;
+        if (!k.ready) note(`${k.label}: planned`, line);
+        else (appr.length ? check : (l, t) => note(l, t))(true, `${k.label}: approvers defined`, line);
+        for (const w of (k.warnings || [])) if (w.code !== 'not_ready' && w.code !== 'disabled') note(`${k.label}: ${w.code}`, w.text);
+        if (k.ready && k.sla && k.sla.approval) note(`${k.label}: SLA clocks`, `decision ${k.sla.approval.waiting} waiting · ${k.sla.approval.overdue} overdue · execution ${k.sla.execution.waiting} waiting · ${k.sla.execution.overdue} overdue`);
+        if (warn.includes('cross_business') || warn.includes('cross_business_cc') || warn.includes('cross_business_team')) check(false, `${k.label}: no address of the other business`, 'see the warnings above — remove them on the desk');
+      }
+      const rules = d.rules || [];
+      for (const key of ['refund_approval_overdue', 'refund_execution_overdue']) { const r = rules.find(x => x.key === key); check(!!r, `rule ${key} seeded`, r ? `${r.severity} → ${r.team}${r.enabled ? '' : ' (disabled)'}` : 'missing — init.js seeds it at boot'); }
+    }
+  } catch (e) { check(false, 'refund desk reachable', e.message); }
+
   // ── 6. integrations that are meant to be off stay off (and say so) ───────────────
   head('6 · optional integrations');
   // "configured" is not "working". A URL pointing at an unreachable host — or still holding the

@@ -469,10 +469,10 @@ async function list({ status = 'open', kind, q, limit = 200, from, to, days, ver
   if (q) { par.push('%' + String(q).replace(/\D/g, '').slice(-9) + '%'); par.push('%' + String(q).trim() + '%'); w.push(`(c.mobile ILIKE $${par.length - 1} OR c.order_id ILIKE $${par.length} OR c.payment_id ILIKE $${par.length} OR c.identifier ILIKE $${par.length - 1} OR c.inc ILIKE $${par.length} OR c.customer_name ILIKE $${par.length} OR c.ledger->>'inc' ILIKE $${par.length})`); }
   par.push(Math.min(2000, Number(limit) || 200));
   const r = await db.console.query(`SELECT c.id, c.kind, c.side, c.mobile, c.order_id, c.payment_id, c.amount::float AS amount, c.customer_name, c.identifier, c.event_at, c.detected_at, c.last_seen_at, c.evidence, c.status, c.inc, c.note, c.updated_by, c.updated_at, c.resolved_at, c.ledger, c.ledger_at,
-             c.team, c.assignee, c.batch_id, c.reviewed_at,
+             c.team, c.assignee, c.batch_id, c.reviewed_at, c.decided_at, c.decided_by, bt.created_at AS batch_at,
              CASE WHEN r.id IS NULL THEN NULL ELSE jsonb_build_object('verdict', r.verdict, 'reason', r.reason, 'category', r.category, 'cause', r.cause, 'action', r.action, 'customer_note', r.customer_note, 'priority', r.priority,
                'confidence', r.confidence, 'deterministic', r.deterministic, 'model', r.model, 'helpful', r.helpful, 'at', coalesce(r.updated_at, r.created_at)) END AS agent
-      FROM refund_candidates c LEFT JOIN refund_reviews r ON r.candidate_id = c.id WHERE ${w.join(' AND ')} ORDER BY CASE c.status WHEN 'open' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, coalesce(c.resolved_at, c.updated_at, c.event_at) DESC LIMIT $${par.length}`, par);
+      FROM refund_candidates c LEFT JOIN refund_reviews r ON r.candidate_id = c.id LEFT JOIN refund_batches bt ON bt.id = c.batch_id WHERE ${w.join(' AND ')} ORDER BY CASE c.status WHEN 'open' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, coalesce(c.resolved_at, c.updated_at, c.event_at) DESC LIMIT $${par.length}`, par);
   return { rows: r.rows, period: p };
 }
 async function forCustomer({ mobiles = [], orderIds = [] } = {}) {
@@ -486,8 +486,13 @@ async function forCustomer({ mobiles = [], orderIds = [] } = {}) {
 async function setStatus(id, { status, inc, note }, actor) {
   const ok = ['open', 'approved', 'refunded', 'dismissed'];
   if (!ok.includes(status)) throw new Error('status must be one of ' + ok.join(', '));
+  /* decided_at / decided_by (26 Sep 2026): the first human decision — the desk SLA "approval" clock stops here, the
+   * "execution" clock starts here; a reopen clears it */
   const r = await db.console.query(`UPDATE refund_candidates SET status = $2, inc = coalesce(nullif($3,''), inc), note = coalesce(nullif($4,''), note), updated_by = $5, updated_at = now(),
-      resolved_at = CASE WHEN $2 IN ('refunded','dismissed') THEN now() ELSE NULL END WHERE id = $1 RETURNING *`, [id, status, inc || null, note || null, actor || null]);
+      resolved_at = CASE WHEN $2 IN ('refunded','dismissed') THEN now() ELSE NULL END,
+      decided_at = CASE WHEN $2 IN ('approved','refunded','dismissed') THEN coalesce(decided_at, now()) ELSE NULL END,
+      decided_by = CASE WHEN $2 IN ('approved','refunded','dismissed') THEN coalesce(decided_by, $5) ELSE NULL END
+      WHERE id = $1 RETURNING *`, [id, status, inc || null, note || null, actor || null]);
   if (!r.rowCount) throw new Error('not found');
   return r.rows[0];
 }

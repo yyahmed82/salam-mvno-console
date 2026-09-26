@@ -957,6 +957,26 @@ const METRICS = {
       } catch (e) { return []; }
     }
   },
+  /* THE DESK SLAs (26 Sep 2026, Settings › Teams › Refund desks — refundDesk.slaStatus): the two clocks of the Mobile
+   * desk. approval = cases in a sent approval request with no decision after approve_within_h (default 24 h);
+   * execution = approved cases the proxycms register does not show refunded after refund_within_h (default 48 h).
+   * value = overdue now, sample = waiting now. Both rules are P4 — internal tickets chased by the ack ladder. */
+  refund_sla_approval_overdue: {
+    label: 'Refund approval overdue — request sent, no decision within the desk SLA', unit: 'count', higherIsBad: true,
+    sourceTables: 'refund_candidates + refund_batches (console)',
+    async compute(src, now, w) {
+      try { const desk = require('./refundDesk'); const s = await desk.slaStatus(await desk.getPolicy('mobile'));
+        return [{ dim: {}, value: s.approval.overdue, sample: s.approval.waiting }]; } catch (e) { return []; }
+    }
+  },
+  refund_sla_execution_overdue: {
+    label: 'Refund execution overdue — approved, not posted in proxycms within the desk SLA', unit: 'count', higherIsBad: true,
+    sourceTables: 'refund_candidates (console) ↔ refunds (replica of proxycms, via the radar correlation)',
+    async compute(src, now, w) {
+      try { const desk = require('./refundDesk'); const s = await desk.slaStatus(await desk.getPolicy('mobile'));
+        return [{ dim: {}, value: s.execution.overdue, sample: s.execution.waiting }]; } catch (e) { return []; }
+    }
+  },
   /* THE LEDGER SIDE (26 Sep 2026): proxycms `refunds` rows whose gateway request FAILED (status 'fail' — Refund#update_response
    * puts the payment back to 'success' and the customer still has no money). Replica table, present once prodSync has
    * copied it; before that the metric simply returns nothing. */

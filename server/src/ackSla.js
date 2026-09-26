@@ -8,7 +8,7 @@
  *         ──30 min─▶ Reminder 3  → same audience, red critical + ESCALATION mail to management (for information)
  *         ──every N min after──▶ Reminder 3 repeats (P1 by default) until someone acknowledges
  *
- * Everything is CONFIGURABLE per business (Mobile / Fixed) and per priority (P1 / P2 / P3) — Settings ▸ SLA ▸
+ * Everything is CONFIGURABLE per business (Mobile / Fixed) and per priority (P1 / P2 / P3 / P4) — Settings ▸ SLA ▸
  * "Acknowledgement SLA". Timing uses alerts.opened_wall (real clock) like escalation.js, so replay / sim clocks
  * never fire reminders. A reminder stops the moment the alert is acknowledged, snoozed or resolved; correlated
  * children (an open provider root above them) are not reminded separately — the root is.
@@ -30,15 +30,19 @@ const db = require('./db');
 const SEG = require('./segment');
 const settings = { get: k => require('./settings').getSetting(k), set: (k, v) => require('./settings').setSetting(k, v) };
 
-const PRIORITIES = ['P1', 'P2', 'P3'];
+/* P4 (26 Sep 2026): the INTERNAL tickets — the refund desk's approval batches, its two SLA rules, manual P4 tickets. Until
+ * now a P4 borrowed the P3 ladder (30 / 60 / 120 min); it gets its own, gentle one: 4 h · 12 h · 24 h, no repeat, no
+ * management mail — the team is reminded, nobody is paged. Editable per business in Settings › SLA like the others. */
+const PRIORITIES = ['P1', 'P2', 'P3', 'P4'];
 const BUSINESSES = ['mobile', 'fixed'];
 const SEG_OF_BIZ = { mobile: 'mvno', fixed: 'fixed' };
 const DEFAULT_LADDER = {
   P1: { r1: 5,  r2: 15, r3: 30,  repeat: 30, management: true },
   P2: { r1: 15, r2: 30, r3: 60,  repeat: 60, management: true },
   P3: { r1: 30, r2: 60, r3: 120, repeat: 0,  management: false },
+  P4: { r1: 240, r2: 720, r3: 1440, repeat: 0, management: false },
 };
-const bizDefaults = () => ({ enabled: true, management: '', chatops: true, P1: { ...DEFAULT_LADDER.P1 }, P2: { ...DEFAULT_LADDER.P2 }, P3: { ...DEFAULT_LADDER.P3 } });
+const bizDefaults = () => ({ enabled: true, management: '', chatops: true, P1: { ...DEFAULT_LADDER.P1 }, P2: { ...DEFAULT_LADDER.P2 }, P3: { ...DEFAULT_LADDER.P3 }, P4: { ...DEFAULT_LADDER.P4 } });
 const DEFAULTS = { enabled: true, mobile: bizDefaults(), fixed: bizDefaults() };
 const LEVEL = {
   1: { word: 'Reminder 1', pill: 'REMINDER 1 · UNACKNOWLEDGED', color: '#d97706', bg: '#fff7ed', border: '#f59e0b', fg: '#9a3412', tone: 'notice' },

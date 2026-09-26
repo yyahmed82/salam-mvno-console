@@ -5,6 +5,8 @@
  *   GET  /api/teams                         registry (active) + the caller's memberships       any signed-in user
  *   GET  /api/teams/memberships             { email: [ {key, can_*} ] }                          super admin
  *   PUT  /api/teams/memberships/:email      replace one person's teams                            super admin
+ *   GET  /api/teams/refund-desks            who handles refunds per business (refundDesk.js)      super admin
+ *   PUT  /api/teams/refund-desks/:business  save one desk (team, approvers, cc, ticket, SLAs)      super admin
  *   GET  /api/teams/:key                    team + members + contract obligations                 any signed-in user
  *   PUT  /api/teams/:key                    create / edit (Settings › Teams)                      super admin
  *   PUT  /api/teams/:key/members            replace the member set                                super admin
@@ -39,6 +41,22 @@ function mount(app, { audit, requireCap, requireSuper }) {
       const out = await teams.setUserTeams(req.params.email, (req.body || {}).teams || [], req.actor);
       await audit(req, 'team.user', req.params.email, { teams: out.map(t => t.key) });
       res.json({ ok: true, teams: out });
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  /* ---- refund desks (26 Sep 2026): WHO HANDLES REFUNDS, per business — the executing team, the approvers, the copy list,
+   * the internal ticket (P4 by default), the two SLA clocks, the agent's mode. Settings › Teams › Refund desks, super admin.
+   * Registered before /api/teams/:key so the literal path is not swallowed by the parameter route. ---- */
+  app.get('/api/teams/refund-desks', requireSuper, async (req, res) => {
+    try { res.json(await require('./refundDesk').desksView()); } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.put('/api/teams/refund-desks/:business', requireSuper, async (req, res) => {
+    try {
+      const desk = require('./refundDesk'); const biz = String(req.params.business || '').toLowerCase();
+      if (!desk.BUSINESSES.includes(biz)) return res.status(400).json({ error: `business must be one of ${desk.BUSINESSES.join(', ')}` });
+      const p = await desk.setPolicy(biz, req.body || {}, req.actor);
+      await audit(req, 'refund.desk', biz, { team: p.team, approvers: p.approvers, cc: p.cc, mode: p.mode, enabled: p.enabled, ticket_severity: p.ticket_severity, open_incident: p.open_incident, chatops: p.chatops, approve_within_h: p.approve_within_h, refund_within_h: p.refund_within_h, report_hour: p.report_hour });
+      const view = await desk.desksView();
+      res.json({ ok: true, desk: view.desks.find(d => d.business === biz) || p, rules: view.rules });
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
   app.get('/api/teams/:key', async (req, res) => {

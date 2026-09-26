@@ -50,7 +50,7 @@
   /* ── settings section (SLA page) ────────────────────────────────────────────────────────────── *
    * Cards and history rows carry data-biz (21 Sep 2026) so the SLA page's MVNO | Fixed tabs show one
    * business: CSS hides the other one, it stays in the DOM, so Save still sends both sides as loaded. */
-  const PR=["P1","P2","P3"], BZ=[["mobile","📱 Mobile (MVNO)","var(--green,#0e9f5a)","mvno"],["fixed","🏠 Fixed","var(--purple,#7c3aed)","fixed"]];
+  const PR=["P1","P2","P3","P4"], BZ=[["mobile","📱 Mobile (MVNO)","var(--green,#0e9f5a)","mvno"],["fixed","🏠 Fixed","var(--purple,#7c3aed)","fixed"]];
   window.renderAckSlaSettings=async function(host){
     if(!host) return; ensureCss();
     host.innerHTML=`<div class="sub">Loading acknowledgement SLA…</div>`;
