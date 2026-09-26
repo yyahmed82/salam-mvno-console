@@ -53,6 +53,7 @@ cp deploy152/sync-watchdog.cjs "$STAGE/server/sync-watchdog.cjs" 2>/dev/null || 
 cp deploy152/check-fixed-sources.cjs "$STAGE/server/check-fixed-sources.cjs" 2>/dev/null || true  # Fixed › Errors read-model census (read-only, needs pg + src/)
 cp deploy152/test-budget-mails.cjs "$STAGE/server/test-budget-mails.cjs" 2>/dev/null || true   # send the real AI-budget mails to one address for review (writes nothing)
 cp deploy152/install-watchdog.sh "$STAGE/install-watchdog.sh" 2>/dev/null || true
+cp deploy152/install-ollama.sh "$STAGE/install-ollama.sh" 2>/dev/null || true   # Ollama systemd unit with the memory ceiling (run once on 152: bash /apps/unified/install-ollama.sh)
 cp server/package.json        "$STAGE/server/"
 [ -d server/jdbc ] && { mkdir -p "$STAGE/server/jdbc"; cp server/jdbc/*.java "$STAGE/server/jdbc/" 2>/dev/null || true; }   # Arqami JDBC bridge source (compiled on 152)
 # build stamp → /api/version reports the milestone actually shipped (VERSION file + git commit/tag)
@@ -141,6 +142,7 @@ else
   cp -f /tmp/csync/server/find-activation-ledger.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/server/dealer-check.cjs "$APP/server/" 2>/dev/null || true
   cp -f /tmp/csync/install-watchdog.sh "$APP/" 2>/dev/null || true
+  cp -f /tmp/csync/install-ollama.sh "$APP/" 2>/dev/null || true
   rm -f "$APP/healthcheck.cjs" 2>/dev/null || true   # remove the old misplaced copy
   echo "▸ server + web files updated"
 fi
