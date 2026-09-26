@@ -1,3 +1,7 @@
+## 2.0.0-alpha.105 — 27 Sep 2026 — Healthcheck: a WARN probe joining a CRIT episode no longer mails; only a level change or a new CRIT probe does
+
+- 01:17 KSA, five minutes after the first alpha.104 mail: "CRIT — Box memory 97% · CPU load 9.2" — the CPU load (a symptom of the same swapping box) crossed its WARN line and, being a change of the set of probes that are not OK, earned an immediate mail. On a box that is swapping the load flaps around the threshold all night. `prodHealth.js`: an edge is now the **overall level changing** (up, or down to OK) or a **probe becoming CRIT inside a CRIT episode** (an escalation); a WARN probe joining or leaving, or a CRIT probe clearing while another keeps the level, rides along in the next reminder — whose subject and attention list always carry the current picture. The state file keeps the CRIT set (`crit`); the mail's policy line says so. Verified in the sandbox: WARN joins → silent · second CRIT probe → mail "new CRIT probe" · clears while CRIT persists → silent · reminders 30 → 60 → 120 min unchanged.
+
 ## 2.0.0-alpha.104 — 27 Sep 2026 — Prod-safety healthcheck: memory measured as Linux sees it, the consumers named, no more flapping, reminders with backoff
 
 - **Why**: 26 Sep — a whole day of `[Salam Ops] Healthcheck CRIT` mails from 152: "Box — memory 95 / 97 / 98 %" every 30 minutes while CRIT, plus a mail at every WARN ↔ CRIT flip around the 96 % line, and none of them said *what* was holding the memory.

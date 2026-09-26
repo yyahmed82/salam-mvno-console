@@ -5,7 +5,8 @@
  *   · CRIT  → on change, then a re-notify with backoff: HC_CRIT_THROTTLE_MIN (30) doubling up to HC_CRIT_MAX_MIN (360)
  *   · WARN  → on change, then HC_WARN_THROTTLE_MIN (120) doubling up to HC_WARN_MAX_MIN (720)
  *   · OK    → once, as the recovery notice                              · HEALTHCHECK_ALWAYS=1 → every run (the old cron's --always)
- *   A "change" is the overall level OR the set of probes that are not OK. Percent / count probes carry a hysteresis
+ *   A "change" is the overall level, or a new CRIT probe inside a CRIT episode; a WARN probe joining / leaving or a CRIT
+ *   probe clearing while another keeps the level rides along in the next reminder. Percent / count probes carry a hysteresis
  *   band (HC_HYST_PCT, default 2 points) on the way DOWN, so a box sitting at 95–97 % does not flip WARN/CRIT every run.
  *   (26 Sep 2026: a whole day of "Box memory 95 / 97 / 98 %" mails — every 30 min while CRIT, plus every flip.)
  *   Memory is measured as Linux sees it — MemTotal − MemAvailable from /proc/meminfo — so the page cache is not "used";
@@ -216,10 +217,17 @@ async function run({ always = false, printOnly = false } = {}) {
   const out = { overall, prodRisk, checks, body, at: now, since, headline, mailed: false, recipients: [] };
   if (printOnly) return out;
 
-  /* Mail policy: an EDGE (overall level changed, or the set of probes that are not OK changed) always mails; a
-   * persisting WARN / CRIT re-notifies with backoff — the throttle doubles at every reminder up to a cap — and
-   * the subject carries how long it has been going on. OK mails once, as the recovery notice. */
-  const changed = prev.level !== overall || (overall !== 'OK' && (prev.signature || '') !== signature);
+  /* Mail policy: an EDGE always mails — the overall level changed (up, or down to OK), or a probe that was not CRIT
+   * became CRIT while the level was already CRIT (an escalation inside the episode). A WARN probe joining or leaving,
+   * or a CRIT probe clearing while another keeps the level, is NOT an edge (27 Sep 2026, 01:17 KSA: "CPU load 9.2"
+   * joined the memory CRIT and earned its own mail five minutes after the last one — on a box that is swapping the
+   * load flaps around the threshold all night); those changes ride along in the next reminder, whose subject and
+   * attention list always show the current picture. A persisting WARN / CRIT re-notifies with backoff — the wait
+   * doubles at every reminder up to a cap — and the subject carries how long it has been going on. OK mails once. */
+  const critNow = bad.filter(c => c.level === 'CRIT').map(c => c.name);
+  const critBefore = Array.isArray(prev.crit) ? prev.crit : [];
+  const escalated = overall === 'CRIT' && critNow.some(n => !critBefore.includes(n)) && prev.level === 'CRIT';
+  const changed = prev.level !== overall || escalated;
   const n = changed ? 0 : Number(prev.reminders || 0);                         // reminders already sent in this episode
   const base = overall === 'CRIT' ? num('HC_CRIT_THROTTLE_MIN', 30) : num('HC_WARN_THROTTLE_MIN', 120);
   const cap = overall === 'CRIT' ? num('HC_CRIT_MAX_MIN', 360) : num('HC_WARN_MAX_MIN', 720);
@@ -228,7 +236,7 @@ async function run({ always = false, printOnly = false } = {}) {
   let should = always || process.env.HEALTHCHECK_ALWAYS === '1';
   if (!should) should = changed ? (overall !== 'OK' || prev.level === 'WARN' || prev.level === 'CRIT') : (overall !== 'OK' && dueAgain);
   const to = String(process.env.HEALTHCHECK_EMAILS || '').split(',').map(s => s.trim()).filter(Boolean);
-  out.recipients = to; out.reason = should ? (always ? 'forced' : changed ? `${overall} (change)` : `${overall} reminder ${n + 1}`) : `suppressed (${overall} for ${fmtDur(nowMs - since)}, next reminder in ${fmtDur(waitMin * 60000 - (nowMs - (prev.lastEmailAt || nowMs)))})`;
+  out.recipients = to; out.reason = should ? (always ? 'forced' : changed ? `${overall} (${escalated ? 'new CRIT probe' : 'change'})` : `${overall} reminder ${n + 1}`) : `suppressed (${overall} for ${fmtDur(nowMs - since)}, next reminder in ${fmtDur(waitMin * 60000 - (nowMs - (prev.lastEmailAt || nowMs)))})`;
   const policy = { base, cap, n, waitMin, since, changed };
   if (should && to.length) {
     try {
@@ -241,7 +249,7 @@ async function run({ always = false, printOnly = false } = {}) {
     } catch (e) { out.mailError = e.message; }
   } else if (should && !to.length) out.mailError = 'HEALTHCHECK_EMAILS not set';
   const probes = {}; for (const c of checks) probes[c.name] = c.level;
-  try { fs.writeFileSync(stateFile, JSON.stringify({ level: overall, signature, since, probes,
+  try { fs.writeFileSync(stateFile, JSON.stringify({ level: overall, signature, crit: critNow, since, probes,
     lastEmailAt: out.mailed ? nowMs : (changed ? null : prev.lastEmailAt), reminders: out.mailed ? (changed ? 0 : n + 1) : n })); } catch (_) {}
   return out;
 }
@@ -277,7 +285,7 @@ function buildHtml({ checks, overall, prodRisk, now, policy, headline, fmtDur })
         <tr><th style="${th}">Status</th><th style="${th}">Check</th><th style="${th}">Detail · thresholds</th></tr>
         ${rows}
       </table>
-      <div style="color:#94a3b8;font-size:12px;margin-top:14px">Read-only probes (pg_stat_activity + OS reads), each on its own single connection which is excluded from the count. The console never writes to prod tables. Mail policy: a change of the picture always mails; a persisting CRIT is re-notified after ${num('HC_CRIT_THROTTLE_MIN', 30)} min, then the wait doubles up to ${Math.round(num('HC_CRIT_MAX_MIN', 360) / 60)} h (WARN: ${num('HC_WARN_THROTTLE_MIN', 120)} min up to ${Math.round(num('HC_WARN_MAX_MIN', 720) / 60)} h); a probe keeps its level until the value is ${num('HC_HYST_PCT', 2)} points below the threshold it crossed; OK once as the recovery notice. Memory = MemTotal − MemAvailable (the page cache is not counted).</div>
+      <div style="color:#94a3b8;font-size:12px;margin-top:14px">Read-only probes (pg_stat_activity + OS reads), each on its own single connection which is excluded from the count. The console never writes to prod tables. Mail policy: a change of the overall level (or a new CRIT probe) mails at once; a WARN probe joining or a probe clearing while the level persists is carried by the next reminder; a persisting CRIT is re-notified after ${num('HC_CRIT_THROTTLE_MIN', 30)} min, then the wait doubles up to ${Math.round(num('HC_CRIT_MAX_MIN', 360) / 60)} h (WARN: ${num('HC_WARN_THROTTLE_MIN', 120)} min up to ${Math.round(num('HC_WARN_MAX_MIN', 720) / 60)} h); a probe keeps its level until the value is ${num('HC_HYST_PCT', 2)} points below the threshold it crossed; OK once as the recovery notice. Memory = MemTotal − MemAvailable (the page cache is not counted).</div>
       <div style="color:#94a3b8;font-size:12px;margin-top:8px">— Salam Operations Console · prod-safety healthcheck</div>`;
   return notify.shell({ title: 'Prod-safety healthcheck — Operations Console', pill: overall + (prodRisk ? ' · PROD IMPACT' : ''), pillColor: color(overall), bodyHtml });
 }
