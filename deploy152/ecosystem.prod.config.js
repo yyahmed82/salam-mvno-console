@@ -41,12 +41,22 @@ const env = Object.assign({
   TZ: 'UTC'
 }, loadEnv(path.join(APP_DIR, '.env')));
 
+/* Memory guard rails (26 Sep 2026 — a day of "Box memory 95–98 %" healthchecks on 152, a box shared with production):
+ * OFF unless set in .env, so nothing changes until the real consumers are known (the healthcheck mail now names them).
+ *   PM2_MAX_MEM=1800M        → PM2 restarts the console when its RSS passes it (a leak restarts, prod is never OOM-killed for it)
+ *   PM2_AGENT_MAX_MEM=1200M  → the same for each agent process
+ *   NODE_HEAP_MB=1536 / AGENT_HEAP_MB=1024 → V8 old-space ceiling (--max-old-space-size); GC works harder before a restart */
+const guard = (maxKey, heapKey) => Object.assign({},
+  env[maxKey] ? { max_memory_restart: env[maxKey] } : {},
+  env[heapKey] ? { node_args: '--max-old-space-size=' + String(env[heapKey]).replace(/\D/g, '') } : {});
+
 module.exports = {
   apps: [{
     name: env.PM2_NAME || 'salam-unified',
     cwd: path.join(APP_DIR, 'server'),
     script: 'src/boot.js',
     env,
+    ...guard('PM2_MAX_MEM', 'NODE_HEAP_MB'),
     max_restarts: 10,
     restart_delay: 5000,
     kill_timeout: 8000,
@@ -62,6 +72,7 @@ module.exports = {
     cwd: path.join(APP_DIR, 'server'),
     script: 'src/agentLog.js',
     env,
+    ...guard('PM2_AGENT_MAX_MEM', 'AGENT_HEAP_MB'),
     max_restarts: 10,
     restart_delay: 15000,
     kill_timeout: 8000,
@@ -75,6 +86,7 @@ module.exports = {
     cwd: path.join(APP_DIR, 'server'),
     script: 'src/agentIncident.js',
     env,
+    ...guard('PM2_AGENT_MAX_MEM', 'AGENT_HEAP_MB'),
     max_restarts: 10,
     restart_delay: 15000,
     kill_timeout: 8000,
