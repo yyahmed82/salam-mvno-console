@@ -347,6 +347,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     show("agentsMenuItem", !!(SES.me && SES.me.root!==false && isSuper));
     show("missionMenuItem", isSuper || has("alerts") || has("fixed_alerts") || has("monitoring"));   // AI agents mission control (24 Sep 2026)
     show("teamsMenuItem", !!isSuper);   // responder teams (24 Sep 2026)
+    show("refundDesksMenuItem", !!isSuper);   // refund desks (26 Sep 2026) — Teams management group
     // if current active tab is hidden, jump to first visible
     const active = document.querySelector(".navtab.active");
     if(active && active.classList.contains("hidden")){
@@ -1669,7 +1670,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     body.innerHTML=`
       <div class="drawer-hd"><span class="av ud-av">${esc((u.name||u.email||"?")[0].toUpperCase())}</span>
         <div style="min-width:0"><div style="font-weight:800;font-size:14px;overflow:hidden;text-overflow:ellipsis">${esc(u.email)}</div>
-        <div style="font-size:11px;opacity:.8">${u.enabled?'Active':'Blocked'} · ${esc(src)}${u.last_login?' · last seen '+fmtLogin(u.last_login):' · never signed in'}</div></div>
+        <div style="font-size:11px;opacity:.8">${u.enabled?'Active':'Blocked'} · ${u.affiliation==='salam'?'🏢 '+esc(u.affiliation_org||'Salam team'):u.affiliation==='contract'?'📄 '+esc(u.affiliation_org||'contract')+' · contract':'❔ unclassified'} · ${esc(src)}${u.last_login?' · last seen '+fmtLogin(u.last_login):' · never signed in'}</div></div>
         <span class="x" id="udX" title="Close">×</span></div>
       <div class="ud-body">
         <div class="ud-grid">
@@ -1680,11 +1681,13 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
         <input class="um-input" id="udTeam" value="${esc(u.team||'')}" placeholder="e.g. Digital Ops · SDA · Call center">
         <div class="um-lbl">BUSINESS <span class="ud-hint">which side of the console this person works on</span></div>
         <div class="um-biz" id="udBiz">${BIZ.map(([v,l])=>`<button type="button" class="bizchip ${v} ${(u.business||'both')===v?'on':''}" data-biz="${v}">${l}</button>`).join("")}</div>
+        <div class="um-lbl">AFFILIATION <span class="ud-hint">Salam team, or a vendor's resource under a Salam contract — read from the e-mail (${esc(u.affiliation_manual?'set by hand':'rule '+(u.affiliation_rule||'none matched'))}), or decided here</span></div>
+        <select class="um-input" id="udAff" data-init=""><option value="auto">automatic — from the e-mail${u.affiliation&&!u.affiliation_manual?` → ${esc(u.affiliation==='unclassified'?'unclassified':(u.affiliation_org||u.affiliation))}`:''}</option><option value="salam">🏢 Salam team</option><option value="salam:sns">🏢 Salam team (SNS)</option><option value="salam:dxc">🏢 Salam team (DXC)</option></select>
         <div class="um-lbl">ROLES</div>
         <div class="um-checks" id="udRoles">${UM_ROLES.map(([v,l])=>`<label class="um-check"><input type="checkbox" value="${v}" ${urs.includes(v)?'checked':''}><span>${l}</span></label>`).join("")}</div>
         <div class="um-lbl">TEAM TAGS</div>
         <div class="um-tags" id="udTags">${UM_TAGS.map(t=>`<button type="button" class="tagchip ${utags.includes(t)?'on':''}" data-tag="${t}">${t}</button>`).join("")}</div>
-        <div class="um-lbl">RESPONDER TEAMS <span class="ud-hint">— incidents of these teams: may ack · resolve · re-assign (Settings › Teams)</span></div>
+        <div class="um-lbl">RESPONDER TEAMS <span class="ud-hint">— incidents of these teams: may ack · resolve · re-assign (Teams management › Responder teams)</span></div>
         <div class="um-checks" id="udTeams"><span class="rl">Loading teams…</span></div>
         <div class="um-lbl">NOTIFICATIONS &amp; ONBOARDING</div>
         <div class="um-checks">
@@ -1715,15 +1718,25 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       const mine=((mem.memberships||{})[String(u.email||"").toLowerCase()]||[]).map(x=>x.key);
       const groups={}; (reg.teams||[]).forEach(t=>{ (groups[t.domain]=groups[t.domain]||[]).push(t); });
       const host=body.querySelector("#udTeams"); if(!host) return;
-      host.innerHTML=Object.keys(groups).map(d=>`<div style="flex-basis:100%;font-size:10.5px;font-weight:800;letter-spacing:.08em;color:var(--muted);margin:4px 0 0">${esc((reg.domains||{})[d]||d).toUpperCase()}</div>`+groups[d].map(t=>`<label class="um-check" title="${esc(t.description||'')}"><input type="checkbox" data-teamkey="${esc(t.key)}" ${mine.includes(t.key)?'checked':''}><span>${esc(t.name)} <span class="ud-hint">${esc(t.level)}${t.business!=='both'?' · '+t.business:''}</span></span></label>`).join("")).join("")||`<span class="rl">No teams yet — create them in Settings › Teams.</span>`;
+      host.innerHTML=Object.keys(groups).map(d=>`<div style="flex-basis:100%;font-size:10.5px;font-weight:800;letter-spacing:.08em;color:var(--muted);margin:4px 0 0">${esc((reg.domains||{})[d]||d).toUpperCase()}</div>`+groups[d].map(t=>`<label class="um-check" title="${esc(t.description||'')}"><input type="checkbox" data-teamkey="${esc(t.key)}" ${mine.includes(t.key)?'checked':''}><span>${esc(t.name)} <span class="ud-hint">${esc(t.level)}${t.business!=='both'?' · '+t.business:''}</span></span></label>`).join("")).join("")||`<span class="rl">No teams yet — create them in Teams management › Responder teams.</span>`;
       teamsLoaded=true;
     }catch(e){ const host=body.querySelector("#udTeams"); if(host) host.innerHTML=`<span class="rl">${esc(e.message)}</span>`; } })();
+    /* affiliation (26 Sep 2026): the vendor options come from the contract registry; the initial value mirrors the row */
+    (async()=>{ const sel=body.querySelector("#udAff"); if(!sel) return;
+      let A=window.AFFS; if(!A||!A.vendors){ try{ A=await api("/api/users/affiliation"); window.AFFS=A; }catch(e){ A={vendors:{}}; } }
+      const vendors=A.vendors||{}; const orgs=new Set(Object.keys(vendors));
+      Object.entries(vendors).forEach(([id,n])=>sel.insertAdjacentHTML("beforeend",`<option value="contract:${esc(id)}">📄 ${esc(n)} · contract</option>`));
+      (A.rules||[]).filter(r=>r.kind==="contract"&&!r.vendor&&r.org&&!orgs.has(r.org.toLowerCase())).forEach(r=>{ if(![...sel.options].some(o=>o.value==="contract:"+r.org.toLowerCase())){ orgs.add(r.org.toLowerCase()); sel.insertAdjacentHTML("beforeend",`<option value="contract:${esc(r.org.toLowerCase())}">📄 ${esc(r.org)} · contract</option>`); } });
+      let init="auto";
+      if(u.affiliation_manual){ if(u.affiliation==="salam"){ const m=/\((\w+)\)/.exec(u.affiliation_org||""); init=m?"salam:"+m[1].toLowerCase():"salam"; } else if(u.affiliation==="contract"){ init="contract:"+(u.affiliation_vendor||String(u.affiliation_org||"").toLowerCase()); if(![...sel.options].some(o=>o.value===init)) sel.insertAdjacentHTML("beforeend",`<option value="${esc(init)}">📄 ${esc(u.affiliation_org||init)} · contract</option>`); } }
+      sel.value=init; sel.dataset.init=init; })();
     const msg=(t,bad)=>{ const m=body.querySelector("#udMsg"); m.textContent=t; m.style.color=bad?"var(--red)":"var(--green-dark)"; };
     body.querySelector("#udSave").onclick=async()=>{
       const roles=[...body.querySelectorAll("#udRoles input:checked")].map(x=>x.value);
       if(!roles.length){ msg("Pick at least one role.",true); return; }
+      const affSel=body.querySelector("#udAff"); const affChanged=affSel&&affSel.dataset.init!==""&&affSel.value!==affSel.dataset.init;
       const payload={ name:body.querySelector("#udName").value.trim(), mobile:body.querySelector("#udMobile").value.trim(), team:body.querySelector("#udTeam").value.trim(),
-        business:(body.querySelector("#udBiz .bizchip.on")||{}).dataset.biz||"both", roles,
+        business:(body.querySelector("#udBiz .bizchip.on")||{}).dataset.biz||"both", roles, ...(affChanged?{affiliation:affSel.value}:{}),
         tags:[...body.querySelectorAll("#udTags .tagchip.on")].map(x=>x.dataset.tag),
         mail_report:body.querySelector("#udMailReport").checked, mail_alert:body.querySelector("#udMailAlert").checked, tour_seen:body.querySelector("#udTour").checked,
         ack_mobile:body.querySelector("#udAckMobile").checked, ack_fixed:body.querySelector("#udAckFixed").checked };

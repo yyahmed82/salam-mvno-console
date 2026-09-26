@@ -482,7 +482,7 @@
     }
   }
 
-  /* RESPONDER TEAMS (24 Sep 2026): the registry from Settings › Teams — alerts.team / alert_rules.team carry the team
+  /* RESPONDER TEAMS (24 Sep 2026): the registry from Teams management › Responder teams — alerts.team / alert_rules.team carry the team
    * KEY (legacy labels such as "BSS Ops" resolve through the team aliases), so every place that shows a team goes
    * through teamOf() / teamName(). Cached 60 s; window.TEAMS is shared with ops.js (user panel) and teams.js. */
   let TEAMS={ at:0, list:[], byKey:{}, mine:[] };
@@ -499,7 +499,7 @@
   const DOMAIN_COLOR={ digital:"#0e9f5a", bss:"#7c3aed", oss:"#0891b2", infra:"#64748b", adm:"#d97706", network:"#2563eb", soc:"#dc2626", payments:"#db2777", rafm:"#9333ea", sales:"#ca8a04", other:"#64748b" };
   function teamChip(label, small){
     const t=teamOf(label);
-    if(!t) return label ? `<span class="rl" title="not in Settings › Teams — Agent 2 can propose the owning team">· ${esc(label)}</span>` : `<span class="rl" style="color:#d97706">· no team</span>`;
+    if(!t) return label ? `<span class="rl" title="not in Teams management › Responder teams — Agent 2 can propose the owning team">· ${esc(label)}</span>` : `<span class="rl" style="color:#d97706">· no team</span>`;
     const c=DOMAIN_COLOR[t.domain]||"#64748b";
     return `<span class="teamtag" style="--tc:${c}" title="${esc(t.description||'')}${t.vendor_id?' · vendor '+esc(t.vendor_id):''}">${esc(t.name)}<i>${esc(t.level)}${t.business!=='both'?' · '+(t.business==='fixed'?'🏠':'📱'):''}</i></span>`;
   }
@@ -1036,8 +1036,8 @@
         ${K?`<div class="rl" style="margin:6px 0 4px"><b>${esc(K.vendor&&K.vendor.name||"")}</b>${K.contract?` · ${esc(K.contract.title||K.contract.id)}${K.contract.effectiveTo?` · to ${esc(K.contract.effectiveTo)}`:""}${K.contract.monthlyPenaltyCapPercent?` · penalty cap ${esc(K.contract.monthlyPenaltyCapPercent)}%`:""}`:""}</div>
         <div class="ctclocks">${clock("Response",FS.response)}${clock("Restoration",FS.restoration)}${clock("Resolution",FS.resolution)}${clock("RCA",FS.rca)}</div>
         ${K.escalation?`<div class="rl" style="margin-top:4px">Escalation ladder: ${esc(K.escalation.title)}${K.escalation.ownerGroup?` · ${esc(K.escalation.ownerGroup)}`:""} · <a href="#vendor-contracts" style="color:var(--green)">Vendors &amp; contracts ›</a></div>`:""}`
-        :`<div class="rl" style="margin-top:6px">No vendor contract bound to this team${T.level==="L1"?" — Salam internal":""}. Bind one in Settings › Teams to see the signed clocks here.</div>`}`
-        :`<span class="rl" style="color:#d97706">No owning team${A.team?` — "${esc(A.team)}" is not in Settings › Teams`:""}. Re-assign it from ⋯ › Re-assign to a team, or let Agent 2 propose the mapping on the rule.</span>`}</div>`;
+        :`<div class="rl" style="margin-top:6px">No vendor contract bound to this team${T.level==="L1"?" — Salam internal":""}. Bind one in Teams management › Responder teams to see the signed clocks here.</div>`}`
+        :`<span class="rl" style="color:#d97706">No owning team${A.team?` — "${esc(A.team)}" is not in Teams management › Responder teams`:""}. Re-assign it from ⋯ › Re-assign to a team, or let Agent 2 propose the mapping on the rule.</span>`}</div>`;
     cell.innerHTML=`<div class="incgrid" style="padding:10px 6px">
       <div>${teamBlock}<h5 style="margin:14px 0 6px">TIMELINE <span class="rl" style="font-weight:400">· everything that happened, in order</span></h5><div id="inctl_${id}"><div class="rl">Loading…</div></div>
         <h5 style="margin:14px 0 6px">MESSAGE</h5><div class="mono" style="font-size:11.5px">${esc(A.message||'')}</div>${A.customers!=null?`<div class="rl" style="margin-top:4px">Impact at last evaluation: <b>${A.customers}</b> customer(s)${A.services!=null?`, ${A.services} service(s)`:''}${A.rule_severity&&A.rule_severity!==A.severity?` · rule severity ${esc(A.rule_severity)}, fired as ${esc(A.severity)} (customer floor)`:''}</div>`:''}</div>
@@ -1700,7 +1700,7 @@
         <section class="rd-sec" id="rd_route"><h4>4 · Severity &amp; routing</h4>
           <div class="fgrid">
             <div><label>SEVERITY</label><div class="sevrow" id="ru_sev_row">${sevBtns('ru_sev',g('severity','P3'))}</div><input type="hidden" id="ru_sev" value="${esc(g('severity','P3'))}"><div class="rl" style="margin-top:3px">P1 pages immediately with the shortest ack SLA · P4 is informational.</div></div>
-            <div><label>TEAM</label><select id="ru_team">${teamOptions(g('team',''), SEG)}</select><div class="rl" style="margin-top:3px">Owning team from Settings › Teams — its members hear the ack reminders first, the per-business ACK holders remain the fallback; the team's vendor contract clocks show on the incident.${(()=>{ const sg=(_teamSug||[]).find(x=>x.rule_key===g('key','')&&x.status==='proposed'); return sg?` <span style="color:#d97706">Agent 2 proposes <b>${esc(teamName(sg.suggested_team))}</b> (${Math.round((sg.confidence||0)*100)} %${sg.reason?', '+esc(sg.reason):''}).</span>`:""; })()}</div></div>
+            <div><label>TEAM</label><select id="ru_team">${teamOptions(g('team',''), SEG)}</select><div class="rl" style="margin-top:3px">Owning team from Teams management › Responder teams — its members hear the ack reminders first, the per-business ACK holders remain the fallback; the team's vendor contract clocks show on the incident.${(()=>{ const sg=(_teamSug||[]).find(x=>x.rule_key===g('key','')&&x.status==='proposed'); return sg?` <span style="color:#d97706">Agent 2 proposes <b>${esc(teamName(sg.suggested_team))}</b> (${Math.round((sg.confidence||0)*100)} %${sg.reason?', '+esc(sg.reason):''}).</span>`:""; })()}</div></div>
           </div>
           <div class="ffull"><label>TRIGGER CODES <span class="lbl-soft">— which error codes / conditions fire this alert (shown to L2 on the incident)</span></label><input id="ru_codes" placeholder="e.g. 715, 5002 (Semati provider) · excludes 727/726 business declines" value="${esc(g('trigger_codes',''))}"></div>
         </section>

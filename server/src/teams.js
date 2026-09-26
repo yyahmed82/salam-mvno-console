@@ -6,7 +6,7 @@
  * signed response / restoration / RCA clocks of SAL-OD-14253496 next to the ack SLA, and the vendor measurement can
  * later be computed per team.
  *
- *   console_teams                 the registry (seeded below, editable in Settings › Teams; a seed row that an admin
+ *   console_teams                 the registry (seeded below, editable in Teams management › Responder teams; a seed row that an admin
  *                                 edited is left alone — merge by key only adds what is missing)
  *   console_user_teams            who is in which team and what they may do there (ack · resolve · reassign)
  *   alert_rule_team_suggestions   Agent 2's proposed rule → team mapping (deterministic first, model for the
@@ -101,7 +101,7 @@ async function ensureSchema() {
     `ALTER TABLE alerts ADD COLUMN IF NOT EXISTS priority_note text`]) await q.query(s).catch(() => {});
   /* merge the seed by key: adds what is missing; a seeded row nobody edited (updated_by IS NULL) follows the seed —
    * e.g. 24 Sep 2026: Sigma does not cover Mobile, so bss-l2 / oss-l2 / infra-l2 became Fixed-only and TCS took the
-   * Mobile BSS keywords. A row an admin saved in Settings › Teams is never touched. */
+   * Mobile BSS keywords. A row an admin saved in Teams management › Responder teams is never touched. */
   for (const t of SEED) {
     await q.query(`INSERT INTO console_teams (key, name, business, domain, level, vendor_id, contract_id, description, aliases, keywords, seeded, sort)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11)
@@ -205,13 +205,13 @@ async function canActOn(req, alert, what /* ack | resolve | reassign */) {
   if (team) {
     const m = (await C().query(`SELECT can_ack, can_resolve, can_reassign FROM console_user_teams WHERE lower(email)=$1 AND team_key=$2`, [actor, team.key])).rows[0];
     if (m && (what === 'ack' ? m.can_ack : what === 'resolve' ? m.can_resolve : what === 'reassign' ? m.can_reassign : true)) return { ok: true, via: 'team', team: team.key };
-    if (m) return { ok: false, why: `You are a member of ${team.name} without the right to ${what} its incidents — an admin can grant it in Settings › Teams.`, team: team.key };
+    if (m) return { ok: false, why: `You are a member of ${team.name} without the right to ${what} its incidents — an admin can grant it in Teams management › Responder teams.`, team: team.key };
   }
   const seg = require('./segment').segOf(alert);
   const u = (await C().query(`SELECT ack_mobile, ack_fixed FROM console_users WHERE lower(email)=$1`, [actor])).rows[0];
   if (u && (seg === 'fixed' ? u.ack_fixed : u.ack_mobile)) return { ok: true, via: 'oncall' };
   if (!team) return { ok: true, via: 'unassigned' };          // nobody owns it yet — anyone who may ack can take it
-  return { ok: false, why: `This incident belongs to ${team.name} — you are not a member and not an ACK holder for ${seg === 'fixed' ? 'Fixed' : 'Mobile'}. Ask a member to take it, or an admin to add you in Settings › Teams.`, team: team.key };
+  return { ok: false, why: `This incident belongs to ${team.name} — you are not a member and not an ACK holder for ${seg === 'fixed' ? 'Fixed' : 'Mobile'}. Ask a member to take it, or an admin to add you in Teams management › Responder teams.`, team: team.key };
 }
 /* who should hear about an incident of this team: members (enabled) + the team mail DL */
 async function audienceOf(teamKey) {

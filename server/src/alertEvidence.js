@@ -100,7 +100,7 @@ async function forAlert(a, { limit = 25, unmask = false } = {}) {
   const lim = Math.min(100, Math.max(5, Number(limit) || 25));
   const rule = (await db.console.query(`SELECT dim, description FROM alert_rules WHERE key=$1`, [a.rule_key]).catch(() => ({ rows: [] }))).rows[0] || null;
   if (String(a.rule_key || '').includes('manual_ticket')) return { kind: 'none', rows: [], note: 'Manual ticket — the evidence is what the reporter wrote in the message and the discussion.' };
-  if (a.rule_key === 'refund_batch' || a.rule_key === 'fixed_refund_batch') return { kind: 'none', rows: [], note: 'Internal ticket opened by the refund desk (Agent 2) for an approval batch — the cases, their evidence and the register state are on Refund exposure; the ticket resolves when every case is closed. Who approves and who executes: Settings › Teams › Refund desks.' };
+  if (a.rule_key === 'refund_batch' || a.rule_key === 'fixed_refund_batch') return { kind: 'none', rows: [], note: 'Internal ticket opened by the refund desk (Agent 2) for an approval batch — the cases, their evidence and the register state are on Refund exposure; the ticket resolves when every case is closed. Who approves and who executes: Teams management › Refund desks.' };
   try {
     if (isAppLog(a.rule_key)) return await fixedAppLog(a, { limit: lim });
     if (isFixedKey(a.rule_key) || a.segment === 'fixed') {

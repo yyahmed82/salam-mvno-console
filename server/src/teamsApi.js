@@ -8,7 +8,7 @@
  *   GET  /api/teams/refund-desks            who handles refunds per business (refundDesk.js)      super admin
  *   PUT  /api/teams/refund-desks/:business  save one desk (team, approvers, cc, ticket, SLAs)      super admin
  *   GET  /api/teams/:key                    team + members + contract obligations                 any signed-in user
- *   PUT  /api/teams/:key                    create / edit (Settings › Teams)                      super admin
+ *   PUT  /api/teams/:key                    create / edit (Teams management › Responder teams)                      super admin
  *   PUT  /api/teams/:key/members            replace the member set                                super admin
  *   POST /api/alerts/manual                 open a ticket by hand, assigned to a team              ackErrors
  *   POST /api/alerts/:id/reassign           move an incident to another team (reason required)    ackErrors + canActOn
@@ -44,7 +44,7 @@ function mount(app, { audit, requireCap, requireSuper }) {
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
   /* ---- refund desks (26 Sep 2026): WHO HANDLES REFUNDS, per business — the executing team, the approvers, the copy list,
-   * the internal ticket (P4 by default), the two SLA clocks, the agent's mode. Settings › Teams › Refund desks, super admin.
+   * the internal ticket (P4 by default), the two SLA clocks, the agent's mode. Teams management › Refund desks, super admin.
    * Registered before /api/teams/:key so the literal path is not swallowed by the parameter route. ---- */
   app.get('/api/teams/refund-desks', requireSuper, async (req, res) => {
     try { res.json(await require('./refundDesk').desksView()); } catch (e) { res.status(500).json({ error: e.message }); }

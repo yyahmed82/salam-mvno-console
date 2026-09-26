@@ -532,6 +532,7 @@ app.delete('/api/roles/:name', requireSuper, async (req, res) => {
 });
 
 app.get('/api/users', requireSuper, async (req, res) => {
+  try { await require('./affiliation').apply({ onlyMissing: true }); } catch (_) {}   // a row the rules never saw gets its affiliation now
   const r = await C.query(`SELECT * FROM console_users ORDER BY role, email`);
   // per-user activity for the users page (10 Sep 2026): actions 30 d, acknowledgements 30 d, last action
   const activity = {};
@@ -575,11 +576,14 @@ app.post('/api/users', requireSuper, async (req, res) => {
        ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, mobile=EXCLUDED.mobile, role=EXCLUDED.role, roles=EXCLUDED.roles, tags=EXCLUDED.tags,
          mail_report=EXCLUDED.mail_report, mail_alert=EXCLUDED.mail_alert, business=EXCLUDED.business`,
     [email, b.name || null, b.mobile || null, primary, rolesArr, tags, !!b.mail_report, !!b.mail_alert, business]);
-  await audit(req, 'user.upsert', email, { roles: rolesArr, business });
-  res.json({ ok: true });
+  let affiliation = null; try { affiliation = await require('./affiliation').classifyUser(email); } catch (_) {}
+  await audit(req, 'user.upsert', email, { roles: rolesArr, business, affiliation: affiliation && affiliation.kind });
+  res.json({ ok: true, affiliation });
 });
 app.patch('/api/users/:id', requireSuper, async (req, res) => {
-  const { role, roles: rolesArr, enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen, business, ack_mobile, ack_fixed } = req.body || {};
+  const { role, roles: rolesArr, enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen, business, ack_mobile, ack_fixed, affiliation } = req.body || {};
+  /* affiliation (26 Sep 2026): 'auto' hands the row back to the e-mail rules; 'salam' / 'contract:<vendor>' is a super admin's decision the rules never touch */
+  if (affiliation !== undefined && affiliation !== null) { try { const out = await require('./affiliation').setUser(req.params.id, affiliation, req.actor); await audit(req, 'user.affiliation', req.params.id, { affiliation, ...out }); } catch (e) { return res.status(400).json({ error: e.message }); } }
   const sets = [], vals = [];
   const fields = { enabled, team, name, mobile, tags, mail_report, mail_alert, tour_seen,
     ack_mobile: ack_mobile === undefined ? undefined : !!ack_mobile, ack_fixed: ack_fixed === undefined ? undefined : !!ack_fixed };
@@ -4303,6 +4307,7 @@ require('./refundRadar').mount(app, { requireView, audit, roles });
 require('./refundDesk').mount(app, { requireView, requireCap, audit });   // Agent 2 · refund desk: reviews, batches, policy   // AI agents mission control — readable by incident roles
 /* ── Responder teams, re-assignment, manual tickets, Agent 2 rule → team mapping (teamsApi.js / teams.js, 24 Sep 2026) ── */
 require('./teamsApi').mount(app, { audit, requireCap, requireSuper });
+require('./affiliation').mount(app, { requireSuper, audit });   // Salam team vs contract resource, from the e-mail (26 Sep 2026)
 /* ── Acknowledgement SLA (ackSla.js): reminders 1/2/3 + management escalation for unacknowledged alerts ── */
 const ackSla = require('./ackSla');
 app.get('/api/ack-sla', requireCap('manageSync'), async (req, res) => {
@@ -6928,6 +6933,7 @@ app.listen(PORT, async () => {
   try { require('./reportScheduler').start(); } catch (e) { console.error('sync-health scheduler:', e.message); }
   try { escalation.start(); } catch (e) { console.error('escalation scheduler:', e.message); }
   try { ackSla.start(); } catch (e) { console.error('ack-sla scheduler:', e.message); }
+  require('./affiliation').apply().then(r => console.log(`[AFFILIATION] ${r.checked} user(s) checked · ${r.changed} classified · salam ${r.by.salam || 0} · contract ${r.by.contract || 0} · unclassified ${r.by.unclassified || 0}`)).catch(e => console.error('affiliation:', e.message));   // Salam team vs contract (26 Sep 2026)
   try { snTicket.start(); } catch (e) { console.error('ServiceNow poller:', e.message); }
   try { require('./apiLatencyBaseline').start(); } catch (e) { console.error('latency baseline:', e.message); }
   try { require('./prodSyncScheduler').start(); } catch (e) { console.error('prod-sync scheduler:', e.message); }

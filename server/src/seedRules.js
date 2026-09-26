@@ -409,15 +409,15 @@ const RULES = [
     metric_key: 'refund_exposure_open_sar', operator: 'gte', threshold: 3000, window_hours: 24, min_sample: 0,
     description: 'Sum of OPEN refund candidates (not yet approved / refunded / dismissed) above 3,000 SAR — customers waiting for money the platform already knows it owes. Stays raised until the backlog is worked.',
     runbook: '1) Mobile → Refund exposure → filter Open, oldest first. 2) Approve / refund with the INC number, or dismiss with a note (false positive). 3) Recurring kinds → product defect ticket (port-in twice, change-plan IAM token, eSIM replacement).' },
-  /* REFUND DESK SLAs (26 Sep 2026 — Settings › Teams › Refund desks). The desk has two clocks; both rules are P4 = INTERNAL
+  /* REFUND DESK SLAs (26 Sep 2026 — Teams management › Refund desks). The desk has two clocks; both rules are P4 = INTERNAL
    * tickets: the owning team is chased by the P4 ack ladder, nobody is paged, management is not informed. Approval waits on
    * the Salam side (the approvers named on the desk), execution on the L2 team that posts the refund in proxycms. The hours
    * come from the desk (default 24 h to decide, 48 h to post); the rule only says "one or more overdue". */
   { key: 'refund_approval_overdue', name: 'Refund approval overdue — request sent, no decision within the desk SLA (P4)', severity: 'P4', team: 'digital-l1',
     alert_class: 'business',
     metric_key: 'refund_sla_approval_overdue', operator: 'gte', threshold: 1, window_hours: 24, min_sample: 0,
-    description: 'At least one case of a sent approval request (the refund desk batch) has no decision — approve / refunded / dismiss on the page — after the desk\'s approval SLA (Settings › Teams › Refund desks, default 24 h). The customer is still waiting for money the console already knows it owes; the L2 team cannot post the refund before the approval. Internal P4: the approvers are named on the ticket and on the desk.',
-    runbook: '1) Mobile › Refund exposure → Refund desk tab: the "approval overdue" tile lists the batch and the cases. 2) The approvers of the desk decide on the page (Approve — one click, recorded by name — or Dismiss with a note). 3) If the approver is away, a super admin adds a second approver on the desk (Settings › Teams › Refund desks). 4) The rule clears itself when no case is beyond the SLA.' },
+    description: 'At least one case of a sent approval request (the refund desk batch) has no decision — approve / refunded / dismiss on the page — after the desk\'s approval SLA (Teams management › Refund desks, default 24 h). The customer is still waiting for money the console already knows it owes; the L2 team cannot post the refund before the approval. Internal P4: the approvers are named on the ticket and on the desk.',
+    runbook: '1) Mobile › Refund exposure → Refund desk tab: the "approval overdue" tile lists the batch and the cases. 2) The approvers of the desk decide on the page (Approve — one click, recorded by name — or Dismiss with a note). 3) If the approver is away, a super admin adds a second approver on the desk (Teams management › Refund desks). 4) The rule clears itself when no case is beyond the SLA.' },
   { key: 'refund_execution_overdue', name: 'Refund execution overdue — approved, not posted in proxycms within the desk SLA (P4)', severity: 'P4', team: 'mobile-digital-l2',
     alert_class: 'business',
     metric_key: 'refund_sla_execution_overdue', operator: 'gte', threshold: 1, window_hours: 24, min_sample: 0,

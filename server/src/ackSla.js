@@ -255,7 +255,7 @@ async function buildMail(a, { level, repeat, elapsedMin, business, seg, cfg, sib
  *               the holders remain the ones addressed). Management is a separate list, mailed separately at R3. */
 async function audience(seg, level, teamLabel) {
   const col = seg === 'fixed' ? 'ack_fixed' : 'ack_mobile', biz = SEG.BUSINESS_OF[seg];
-  /* 24 Sep 2026: the incident's responder team (Settings › Teams) hears every reminder first — its members with
+  /* 24 Sep 2026: the incident's responder team (Teams management › Responder teams) hears every reminder first — its members with
    * can_ack, plus the team mail DL — ahead of the per-business ACK holders, who remain the on-call fallback. */
   let teamRows = [];
   try {

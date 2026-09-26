@@ -40,18 +40,21 @@
     'REGULATORY AFFAIRS':'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 7h18M6 7l-3 7a3 3 0 0 0 6 0L6 7zM18 7l-3 7a3 3 0 0 0 6 0l-3-7"/></svg>',
     'NOC WALL':'<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>'
   };
-  const SECT_DEFAULT={ SETTINGS:true };
+  SECT_ICON['CONSOLE SETTINGS']=SECT_ICON.SETTINGS; SECT_ICON['AI OPS']=SECT_ICON.AI;
+  SECT_ICON['TEAMS MANAGEMENT']='<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 13.6c3.2.2 6 2.2 6 5.4"/></svg>';
+  const SECT_DEFAULT={ 'TEAMS MANAGEMENT':true };
   const skey=g=>`settsect:${g}`;
   const wanted=g=>{ try{ const v=localStorage.getItem(skey(g)); if(v==="1") return true; if(v==="0") return false; }catch(_){} return !!SECT_DEFAULT[g]; };
   const remember=(g,open)=>{ try{ localStorage.setItem(skey(g), open?"1":"0"); }catch(_){} };
-  const titleCase=k=>k.charAt(0)+k.slice(1).toLowerCase();
+  const LABEL={ 'AI OPS':'AI Ops', 'NOC WALL':'NOC wall', 'IT GOVERNANCE':'IT governance' };
+  const titleCase=k=>LABEL[k]||(k.charAt(0)+k.slice(1).toLowerCase());
   const isItem=el=>el.classList.contains("hm-tour")||el.classList.contains("navtab");
   function markSections(){
     if(menu.dataset.sect) return; menu.dataset.sect="1";
     let sect=null, key="";
     Array.from(menu.children).forEach(el=>{
       if(el.classList.contains("hm-group")){
-        key=(el.textContent||"").trim().toUpperCase();
+        key=(el.dataset.gkey||el.textContent||"").trim().toUpperCase();   // data-gkey (26 Sep 2026): the key survives the Arabic labels
         el.dataset.gkey=key; el.dataset.collapse="1"; el.classList.add("navgroup"); el.setAttribute("role","button"); el.tabIndex=0;
         el.innerHTML=`<span class="ngi">${SECT_ICON[key]||""}</span><span class="ngl">${titleCase(key)}</span><b class="ngn"></b><i class="ngc" aria-hidden="true">▾</i>`;
         sect=document.createElement("div"); sect.className="navsect"; sect.dataset.gkey=key; sect.innerHTML='<div class="navsect-in"></div>';
@@ -78,7 +81,7 @@
     });
     /* the group holding the current page opens itself, once per page change */
     const h=(location.hash||"").replace(/^#/,"").split("?")[0];
-    const map={ "noc":"NOC WALL","arqami":"REGULATORY AFFAIRS","cst-escalations":"REGULATORY AFFAIRS","cst":"REGULATORY AFFAIRS","sla":"IT GOVERNANCE","slo":"IT GOVERNANCE","slo-settings":"IT GOVERNANCE","vendor-contracts":"IT GOVERNANCE","vendors":"IT GOVERNANCE","agents":"AI","settings-agents":"AI","settings-assist":"AI","settings-assist-clone":"AI" };
+    const map={ "settings-users":"TEAMS MANAGEMENT","teams":"TEAMS MANAGEMENT","settings-teams":"TEAMS MANAGEMENT","settings":"CONSOLE SETTINGS","settings-sync":"CONSOLE SETTINGS","settings-notify":"CONSOLE SETTINGS","settings-demo":"CONSOLE SETTINGS","audit":"CONSOLE SETTINGS","tickets":"CONSOLE SETTINGS","agents":"AI OPS","agents-live":"AI OPS","mission":"AI OPS","settings-agents":"AI OPS","settings-assist":"AI OPS", "noc":"NOC WALL","arqami":"REGULATORY AFFAIRS","cst-escalations":"REGULATORY AFFAIRS","cst":"REGULATORY AFFAIRS","sla":"IT GOVERNANCE","slo":"IT GOVERNANCE","slo-settings":"IT GOVERNANCE","vendor-contracts":"IT GOVERNANCE","vendors":"IT GOVERNANCE","settings-assist-clone":"AI OPS" };
     const want=map[h]; if(want && menu.dataset.auto!==h){ menu.dataset.auto=h; menu.querySelectorAll(".navgroup[data-collapse]").forEach(g=>setSect(g, g.dataset.gkey===want)); }
     if(![...menu.querySelectorAll(".navsect")].some(s=>s.classList.contains("open")&&!s.hidden)){ const first=menu.querySelector(".navgroup[data-collapse]:not([hidden])"); if(first) setSect(first,true); }
   }
@@ -101,6 +104,7 @@
   const auditItem=menu.querySelector("[data-audit]"); if(auditItem) auditItem.addEventListener("click", ()=>{ if(window.openAudit) window.openAudit(); closeMenu(); });
   const wb=menu.querySelector("[data-workbench]"); if(wb) wb.addEventListener("click", ()=>{ if(window.openWorkbench) window.openWorkbench(); closeMenu(); });
   const tm=menu.querySelector("[data-teams]"); if(tm) tm.addEventListener("click", ()=>{ if(window.openTeams){ window.openTeams(); if(location.hash!=="#teams") location.hash="#teams"; } closeMenu(); });
+  const trd=menu.querySelector("[data-teams-refunds]"); if(trd) trd.addEventListener("click", ()=>{ const h="teams?section=refunds"; if(window.setConsoleHash) window.setConsoleHash(h); else if(location.hash!=="#"+h) location.hash="#"+h; if(window.openTeams) window.openTeams(); closeMenu(); });   // refund desks (26 Sep 2026)
   const mi=menu.querySelector("[data-mission]"); if(mi) mi.addEventListener("click", ()=>{ if(window.openAgentsMission){ window.openAgentsMission(); if(location.hash!=="#agents-live") location.hash="#agents-live"; } closeMenu(); });
   const ag=menu.querySelector("[data-agents]"); if(ag) ag.addEventListener("click", ()=>{ if(window.openAgents){ window.openAgents(); if(location.hash!=="#agents") location.hash="#agents"; } closeMenu(); });
   const sla=menu.querySelector("[data-sla]"); if(sla) sla.addEventListener("click", ()=>{ if(window.openSla) window.openSla(); closeMenu(); });

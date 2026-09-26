@@ -2,6 +2,9 @@
  *   KPI strip (click = filter) · multi-criteria filter bar (search, business, role, status, ACK holder, mail flags, tags,
  *   sort) · compact people table with inline switches (mail alert / report, ACK Mobile / Fixed) · bulk actions on a
  *   selection · 30-day activity per user (actions, acks, MTTA, last seen) · "New user" as a drawer · XLSX export.
+ *   AFFILIATION (26 Sep 2026, Yosri): every user is Salam team or a contract resource, from the e-mail (a.shaik.sig@ =
+ *   Sigma, dev.tcs@ = TCS, .sns@ / .dxc@ = Salam) — column, KPIs, filters, CSV, bulk, and the rules drawer
+ *   (GET /api/users/affiliation · PUT …/rules · POST …/apply · PATCH /api/users/:id {affiliation}).
  * Rendered into #usersBody by ops.js renderUserMgmt() → window.renderUsersMgmt(host). The edit drawer stays in ops.js
  * (window.openUserPanel). Data: GET /api/users → { users, activity }, PATCH /api/users/:id, POST /api/users. */
 (function(){
@@ -13,7 +16,10 @@
   const TAGS=["BSS","OSS","DIGITAL","FIXED","SALES OPS","PLATFORM","IDENTITY","CALL CENTER"];
   const BIZ={mobile:["📱","Mobile","#7c3aed"],fixed:["🏠","Fixed","var(--green,#0e9f5a)"],both:["📱🏠","Both","linear-gradient(90deg,#7c3aed,#0e9f5a)"]};
   let ROLES=[]; let USERS=[]; let ACT={}; let HOST=null;
-  const F={q:"",biz:"",roles:new Set(),status:"",ack:"",mail:"",tags:new Set(),sort:"name"};
+  const F={q:"",biz:"",roles:new Set(),status:"",ack:"",mail:"",tags:new Set(),sort:"name",aff:"",org:""};
+  let AFFS={ totals:{}, orgs:[], colors:{}, vendors:{}, rules:[] };
+  const AFF=u=>{ const k=u.affiliation||"unclassified"; const org=u.affiliation_org||(k==="salam"?"Salam":k==="contract"?"contract":"unclassified"); const color=(AFFS.colors||{})[org]||(k==="salam"?"#0e9f5a":k==="contract"?"#2563eb":"#d97706"); return {k,org,color,manual:!!u.affiliation_manual}; };
+  const affChip=(u,mini)=>{ const a=AFF(u); return `<span class="um-aff ${a.k}${mini?" mini":""}" style="--c:${a.color}" title="${a.k==="unclassified"?"matched no affiliation rule — assign it in Edit, or add the rule":`${a.k==="salam"?"Salam team":"contract resource"} · ${esc(a.org)} · ${a.manual?"set by hand":"rule "+esc(u.affiliation_rule||"—")}`}">${a.k==="salam"?"🏢":a.k==="contract"?"📄":"❔"} ${esc(a.org)}${a.k==="contract"?" <i>contract</i>":""}${a.manual?" <i>✎</i>":""}</span>`; };
   const SEL=new Set();
   const ago=iso=>{ if(!iso) return null; const m=Math.round((Date.now()-new Date(iso))/60000); if(m<1) return "just now"; if(m<60) return m+" min"; const h=Math.round(m/60); if(h<48) return h+" h"; const d=Math.round(h/24); if(d<60) return d+" d"; return Math.round(d/30)+" mo"; };
   const ksa=iso=>{ if(!iso) return "—"; try{ return new Date(iso).toLocaleString("en-GB",{timeZone:"Asia/Riyadh",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:false}).replace(","," "); }catch(e){ return String(iso); } };
@@ -29,7 +35,7 @@
   function filtered(){
     const q=F.q.trim().toLowerCase();
     let list=USERS.filter(u=>{
-      if(q&&![u.email,u.name,u.team,u.mobile,(u.tags||[]).join(" "),rolesOf(u).map(roleLabel).join(" ")].some(x=>String(x||"").toLowerCase().includes(q))) return false;
+      if(q&&![u.email,u.name,u.team,u.mobile,u.affiliation_org,(u.tags||[]).join(" "),rolesOf(u).map(roleLabel).join(" ")].some(x=>String(x||"").toLowerCase().includes(q))) return false;
       if(F.biz&&(u.business||"both")!==F.biz) return false;
       if(F.roles.size&&!rolesOf(u).some(r=>F.roles.has(r))) return false;
       if(F.status==="active"&&!u.enabled) return false; if(F.status==="blocked"&&u.enabled) return false;
@@ -38,6 +44,7 @@
       if(F.ack==="mobile"&&!u.ack_mobile) return false; if(F.ack==="fixed"&&!u.ack_fixed) return false; if(F.ack==="none"&&(u.ack_mobile||u.ack_fixed)) return false;
       if(F.mail==="alert"&&!u.mail_alert) return false; if(F.mail==="report"&&!u.mail_report) return false; if(F.mail==="none"&&(u.mail_alert||u.mail_report)) return false;
       if(F.tags.size&&![...F.tags].every(t=>(u.tags||[]).includes(t))) return false;
+      if(F.aff&&AFF(u).k!==F.aff) return false; if(F.org&&(u.affiliation_org||"")!==F.org) return false;
       return true; });
     const a=ACT;
     const key={ name:u=>String(u.name||u.email).toLowerCase(), seen:u=>-(u.last_login?new Date(u.last_login).getTime():0), created:u=>-(u.created_at?new Date(u.created_at).getTime():0), activity:u=>-((a[u.email.toLowerCase()]||{}).actions30||0), acks:u=>-((a[u.email.toLowerCase()]||{}).acks30||0) }[F.sort]||(u=>u.email);
@@ -49,6 +56,9 @@
     const mob=USERS.filter(u=>(u.business||"both")==="mobile").length, fix=USERS.filter(u=>(u.business||"both")==="fixed").length, both=n-mob-fix;
     const am=USERS.filter(u=>u.ack_mobile&&u.enabled).length, af=USERS.filter(u=>u.ack_fixed&&u.enabled).length, ma=USERS.filter(u=>u.mail_alert&&u.enabled).length, mr=USERS.filter(u=>u.mail_report&&u.enabled).length, sup=USERS.filter(u=>isSuper(u)&&u.enabled).length;
     const acks=Object.values(ACT).reduce((s,x)=>s+(x.acks30||0),0);
+    const sal=USERS.filter(u=>AFF(u).k==="salam").length, con=USERS.filter(u=>AFF(u).k==="contract").length, unc=USERS.length-sal-con;
+    const orgCount=k=>{ const m={}; USERS.filter(u=>AFF(u).k===k).forEach(u=>{ const o=u.affiliation_org||"—"; m[o]=(m[o]||0)+1; }); return Object.entries(m).sort((a,b)=>b[1]-a[1]); };
+    const salOrg=orgCount("salam"), conOrg=orgCount("contract");
     const card=(v,l,sub,c,f)=>`<button type="button" class="um-kpi${f&&isOn(f)?" on":""}" ${f?`data-kf='${JSON.stringify(f)}'`:""} style="--c:${c}"><b>${v}</b><span>${l}</span>${sub?`<small>${sub}</small>`:""}</button>`;
     return `<div class="um-kpis">
       ${card(n,"USERS",`${act} active · ${blk} blocked`,"var(--green,#0e9f5a)",{status:""})}
@@ -63,6 +73,9 @@
       ${card(mr,"MAIL REPORT","daily report","#0891b2",{mail:"report"})}
       ${card(acks,"ACKS · 30 D","by all users","#16a34a",{sort:"acks"})}
       ${card(sup,"SUPER ADMINS","full access","#64748b",{status:"super"})}
+      ${card(sal,"🏢 SALAM TEAM",salOrg.length?salOrg.map(([o,n])=>(o.replace(/^Salam\s*/,"").replace(/[()]/g,"")||"employees")+" "+n).join(" · "):"employees · SNS · DXC","var(--green,#0e9f5a)",{aff:"salam"})}
+      ${card(con,"📄 CONTRACT",conOrg.length?conOrg.map(([o,n])=>o+" "+n).join(" · "):"vendor resources","#2563eb",{aff:"contract"})}
+      ${card(unc,"❔ UNCLASSIFIED",unc?"no rule matched — assign or add a rule":"every user is classified",unc?"#d97706":"#64748b",{aff:"unclassified"})}
     </div>`;
   }
   const isOn=f=>Object.entries(f).every(([k,v])=>k==="sort"?F.sort===v:F[k]===v);
@@ -75,6 +88,7 @@
         <span class="um-flbl">Status</span>${[["active","Active"],["blocked","Blocked"],["never","Never signed in"],["seen7","Seen 7 d"],["super","Super admin"]].map(([v,l])=>chip("status",v,l,F.status===v)).join("")}
         <span class="um-flbl">ACK holder</span>${[["mobile","📱 Mobile"],["fixed","🏠 Fixed"],["none","None"]].map(([v,l])=>chip("ack",v,l,F.ack===v)).join("")}
         <span class="um-flbl">Mail</span>${[["alert","Alert"],["report","Report"],["none","None"]].map(([v,l])=>chip("mail",v,l,F.mail===v)).join("")}</div>
+      <div class="um-frow"><span class="um-flbl">Affiliation</span>${[["salam","🏢 Salam team"],["contract","📄 Contract"],["unclassified","❔ Unclassified"]].map(([v,l])=>chip("aff",v,l,F.aff===v)).join("")}${orgChips()}</div>
       <div class="um-frow"><span class="um-flbl">Roles</span>${ROLES.map(([k,l])=>chip("role",k,l,F.roles.has(k))).join("")}</div>
       <div class="um-frow"><span class="um-flbl">Tags</span>${TAGS.map(t=>chip("tag",t,t,F.tags.has(t))).join("")}
         <span class="um-flbl" style="margin-left:auto">Sort</span><select id="umSort" class="um-sel">${[["name","Name"],["seen","Last seen"],["created","Newest"],["activity","Most active · 30 d"],["acks","Most acks · 30 d"]].map(([v,l])=>`<option value="${v}" ${F.sort===v?"selected":""}>${l}</option>`).join("")}</select>
@@ -83,6 +97,7 @@
     </div>`;
   }
 
+  function orgChips(){ const m={}; USERS.forEach(u=>{ if(u.affiliation_org){ m[u.affiliation_org]=(m[u.affiliation_org]||0)+1; } }); const orgs=Object.entries(m).sort((a,b)=>b[1]-a[1]); if(!orgs.length) return ""; return `<span class="um-flbl">·</span>`+orgs.map(([o,n])=>`<button type="button" class="um-fchip${F.org===o?" on":""}" data-fk="org" data-fv="${esc(o)}" style="${F.org===o?`background:${(AFFS.colors||{})[o]||"#64748b"};border-color:${(AFFS.colors||{})[o]||"#64748b"}`:""}">${esc(o)} <small style="opacity:.75">${n}</small></button>`).join(""); }
   function bulkbar(){
     if(!SEL.size) return "";
     const b=(k,l,c)=>`<button type="button" class="pill um-bulk" data-bulk="${k}" style="padding:4px 10px;border-left-color:${c||"var(--green)"}">${l}</button>`;
@@ -91,6 +106,7 @@
       ${b("mail_alert:1","+ Mail alert","#0891b2")}${b("mail_alert:0","− Mail alert","#0891b2")}${b("mail_report:1","+ Mail report","#0891b2")}${b("mail_report:0","− Mail report","#0891b2")}
       ${b("business:mobile","→ Mobile","#7c3aed")}${b("business:fixed","→ Fixed")}${b("business:both","→ Both","#64748b")}
       ${b("enabled:0","Block","#dc2626")}${b("enabled:1","Unblock")}
+      ${b("affiliation:salam","🏢 → Salam team")}${Object.entries(AFFS.vendors||{}).map(([id,n])=>b("affiliation:contract:"+id,"📄 → "+n,(AFFS.colors||{})[n]||"#2563eb")).join("")}${b("affiliation:auto","↺ affiliation from the e-mail","#64748b")}
       <button type="button" class="pill" id="umSelNone" style="padding:4px 10px;margin-left:auto">Deselect</button><span id="umBulkMsg" class="rl"></span></div>`;
   }
 
@@ -103,6 +119,7 @@
       <td class="um-who"><div class="um-av" style="background:hsl(${hue(u.email)} 55% 45%)">${esc(initials(u))}</div>
         <div class="um-id"><b>${esc(u.name||u.email.split("@")[0])}</b>${isSuper(u)?' <span class="um-super">SUPER</span>':""}<div class="um-mail">${esc(u.email)}</div><div class="um-sub">${[u.team,u.mobile].filter(Boolean).map(esc).join(" · ")||'<span style="color:var(--muted)">no team / mobile</span>'}</div>${(MEMBERS[u.email.toLowerCase()]||[]).length?`<div class="um-tagrow">${(MEMBERS[u.email.toLowerCase()]||[]).map(m=>`<span class="tagchip mini on" style="pointer-events:none;padding:1px 7px;font-size:9.5px;border-color:var(--green)" title="responder team">${esc((TEAMREG[m.key]||{}).name||m.key)}</span>`).join("")}</div>`:""}</div></td>
       <td><span class="um-bizpill" style="background:${biz[2]}">${biz[0]} ${biz[1]}</span></td>
+      <td>${affChip(u)}</td>
       <td><div class="um-roles">${rs.map(r=>`<span class="um-role${r==="super_admin"?" super":r==="admin"?" admin":""}">${esc(roleLabel(r))}</span>`).join("")||'<span class="rl">—</span>'}</div>
         ${(u.tags||[]).length?`<div class="um-tagrow">${u.tags.map(t=>`<span class="tagchip mini on" data-tag="${esc(t)}" style="pointer-events:none;padding:1px 7px;font-size:9.5px">${esc(t)}</span>`).join("")}</div>`:""}</td>
       <td><div class="um-st"><span class="status-pill ${u.enabled?"active":"blocked"}">${u.enabled?"Active":"Blocked"}</span><div class="um-last">${last}</div></div></td>
@@ -117,12 +134,12 @@
   function render(){
     if(!HOST) return;
     const list=filtered(); const allSel=list.length&&list.every(u=>SEL.has(u.id));
-    HOST.innerHTML=`<div class="um-head"><div class="rl">People who can sign in to the console — roles, business scope, notifications and who holds acknowledgements. Click a KPI to filter.</div>
-        <div class="um-headbtns"><button type="button" class="pill" id="umExport" style="border-left-color:var(--blue);padding:5px 12px">⬇ CSV</button><button type="button" class="btn" id="umNew">＋ New user</button></div></div>
+    HOST.innerHTML=`<div class="um-head"><div class="rl">People who can sign in to the console — roles, business scope, notifications, who holds acknowledgements, and whether they are <b>Salam team</b> or a vendor's <b>contract</b> resource (from the e-mail: <span class="mono">.sig@</span> Sigma · <span class="mono">.tcs@</span> TCS · <span class="mono">.sns@</span> / <span class="mono">.dxc@</span> Salam). Click a KPI to filter.</div>
+        <div class="um-headbtns"><button type="button" class="pill" id="umAffRules" style="border-left-color:#2563eb;padding:5px 12px" title="the e-mail rules that decide Salam team vs contract">🏢 Affiliation rules${(AFFS.totals||{}).unclassified?`<b style="color:#d97706">&nbsp;· ${AFFS.totals.unclassified} unclassified</b>`:""}</button><button type="button" class="pill" id="umExport" style="border-left-color:var(--blue);padding:5px 12px">⬇ CSV</button><button type="button" class="btn" id="umNew">＋ New user</button></div></div>
       ${kpis()}${toolbar(list)}${bulkbar()}
       <div class="um-wrap"><table class="umtable um-v2">
-        <tr><th class="um-c"><input type="checkbox" id="umSelAll" ${allSel?"checked":""} title="Select all shown"></th><th>USER</th><th>BUSINESS</th><th>ROLES · TAGS</th><th>STATUS</th><th class="um-c">MAIL<br>ALERT</th><th class="um-c">MAIL<br>REPORT</th><th class="um-c">ACK HOLDER<br><span class="rl">📱 · 🏠</span></th><th>ACTIVITY · 30 D</th><th>ACTIONS</th></tr>
-        ${list.map(row).join("")||`<tr><td colspan="10" style="padding:22px;color:var(--muted);text-align:center">No user matches these filters.</td></tr>`}
+        <tr><th class="um-c"><input type="checkbox" id="umSelAll" ${allSel?"checked":""} title="Select all shown"></th><th>USER</th><th>BUSINESS</th><th>AFFILIATION<br><span class="rl">Salam · contract</span></th><th>ROLES · TAGS</th><th>STATUS</th><th class="um-c">MAIL<br>ALERT</th><th class="um-c">MAIL<br>REPORT</th><th class="um-c">ACK HOLDER<br><span class="rl">📱 · 🏠</span></th><th>ACTIVITY · 30 D</th><th>ACTIONS</th></tr>
+        ${list.map(row).join("")||`<tr><td colspan="11" style="padding:22px;color:var(--muted);text-align:center">No user matches these filters.</td></tr>`}
       </table></div>`;
     wire();
   }
@@ -135,8 +152,9 @@
     h.querySelectorAll("[data-fk]").forEach(b=>b.onclick=()=>{ const k=b.dataset.fk,v=b.dataset.fv;
       if(k==="role"){ F.roles.has(v)?F.roles.delete(v):F.roles.add(v); } else if(k==="tag"){ F.tags.has(v)?F.tags.delete(v):F.tags.add(v); } else F[k]=(F[k]===v?"":v); render(); });
     h.querySelector("#umSort").onchange=e=>{ F.sort=e.target.value; render(); };
-    h.querySelector("#umClear").onclick=()=>{ F.q="";F.biz="";F.roles.clear();F.status="";F.ack="";F.mail="";F.tags.clear();F.sort="name"; render(); };
+    h.querySelector("#umClear").onclick=()=>{ F.q="";F.biz="";F.roles.clear();F.status="";F.ack="";F.mail="";F.tags.clear();F.sort="name";F.aff="";F.org=""; render(); };
     h.querySelector("#umNew").onclick=openNewUser;
+    const ar=h.querySelector("#umAffRules"); if(ar) ar.onclick=openAffRules;
     h.querySelector("#umExport").onclick=exportXlsx;
     const all=h.querySelector("#umSelAll"); if(all) all.onchange=()=>{ const list=filtered(); if(all.checked) list.forEach(u=>SEL.add(u.id)); else list.forEach(u=>SEL.delete(u.id)); render(); };
     h.querySelectorAll(".um-selchk").forEach(c=>c.onchange=()=>{ const id=Number(c.dataset.uid); c.checked?SEL.add(id):SEL.delete(id); render(); });
@@ -148,7 +166,7 @@
     h.querySelectorAll("[data-block]").forEach(b=>b.onclick=async()=>{ const id=b.dataset.block; const enable=b.classList.contains("unblock");
       if(!enable&&!b.dataset.armed){ b.dataset.armed="1"; const t0=b.textContent; b.textContent="Confirm block"; b.classList.add("arm"); setTimeout(()=>{ if(b.isConnected){ delete b.dataset.armed; b.textContent=t0; b.classList.remove("arm"); } },4000); return; }
       try{ await api("/api/users/"+id,{method:"PATCH",body:JSON.stringify({enabled:enable})}); await reload(); }catch(e){ alert(e.message); } });
-    h.querySelectorAll("[data-bulk]").forEach(b=>b.onclick=async()=>{ const [f,vraw]=b.dataset.bulk.split(":"); const v=(f==="business")?vraw:vraw==="1"; const ids=[...SEL]; const m=h.querySelector("#umBulkMsg"); let ok=0,fail=0; m.textContent=`Applying to ${ids.length}…`;
+    h.querySelectorAll("[data-bulk]").forEach(b=>b.onclick=async()=>{ const parts=b.dataset.bulk.split(":"); const f=parts[0]; const vraw=parts.slice(1).join(":"); const v=(f==="business"||f==="affiliation")?vraw:vraw==="1"; const ids=[...SEL]; const m=h.querySelector("#umBulkMsg"); let ok=0,fail=0; m.textContent=`Applying to ${ids.length}…`;
       for(const id of ids){ try{ await api("/api/users/"+id,{method:"PATCH",body:JSON.stringify({[f]:v})}); ok++; }catch(e){ fail++; } }
       m.textContent=`${ok} updated${fail?` · ${fail} failed`:""}`; await reload(); });
   }
@@ -195,18 +213,61 @@
     ov.classList.add("open"); document.addEventListener("keydown",onEsc); setTimeout(()=>body.querySelector("#nuEmail").focus(),120);
   }
 
+  /* ---- Affiliation rules drawer (26 Sep 2026): the e-mail rules, first match wins; preview before saving; unclassified list ---- */
+  function openAffRules(){
+    let ov=document.getElementById("affRulesPanel");
+    if(!ov){ ov=document.createElement("div"); ov.id="affRulesPanel"; ov.className="drawer-ov"; ov.innerHTML=`<div class="drawer" id="affRulesBody" style="width:min(760px,100vw)"></div>`; document.body.appendChild(ov); ov.addEventListener("click",e=>{ if(e.target===ov) close(); }); }
+    const body=ov.querySelector("#affRulesBody");
+    const close=()=>{ ov.classList.remove("open"); document.removeEventListener("keydown",onEsc); }; const onEsc=e=>{ if(e.key==="Escape") close(); };
+    let R=(AFFS.rules||[]).map(r=>({...r}));
+    const vendors=AFFS.vendors||{};
+    const vendorOpts=v=>`<option value="">— no vendor link</option>`+Object.entries(vendors).map(([id,n])=>`<option value="${esc(id)}"${id===v?" selected":""}>${esc(n)}</option>`).join("");
+    const paint=(preview)=>{
+      const T=AFFS.totals||{};
+      body.innerHTML=`<div class="drawer-hd"><span class="av ud-av">🏢</span><div style="min-width:0"><div style="font-weight:800;font-size:14px">Affiliation rules — Salam team or contract</div><div style="font-size:11px;opacity:.8">tested on the e-mail, first match wins · the vendor suffixes before the plain Salam domains · a user set by hand in Edit is never touched</div></div><span class="x" id="arX" title="Close">×</span></div>
+        <div class="ud-body">
+          <div class="um-affsum"><span>🏢 Salam team <b>${T.salam||0}</b></span><span>📄 contract <b>${T.contract||0}</b></span><span style="${T.unclassified?"border-color:#d97706;color:#d97706":""}">❔ unclassified <b>${T.unclassified||0}</b></span>${(AFFS.orgs||[]).map(o=>`<span style="border-color:${esc(o.color)}">${esc(o.org)} <b>${o.n}</b>${o.manual?` <small>· ${o.manual} by hand</small>`:""}</span>`).join("")}</div>
+          <div class="um-lbl">RULES <span class="ud-hint">${AFFS.custom_rules?"customised":"the defaults"} · order matters</span></div>
+          <div style="overflow-x:auto"><table class="um-rules"><tr><th>#</th><th>E-MAIL CONTAINS</th><th>KIND</th><th>ORGANISATION</th><th>VENDOR (contract registry)</th><th>NOTE</th><th></th></tr>
+            ${R.map((r,i)=>`<tr data-i="${i}"><td class="rl">${i+1}</td><td><input class="mono" data-f="match" value="${esc(r.match)}" placeholder=".tcs@ · @tcs.com"></td><td><select data-f="kind"><option value="salam"${r.kind==="salam"?" selected":""}>🏢 Salam team</option><option value="contract"${r.kind==="contract"?" selected":""}>📄 contract</option></select></td><td><input data-f="org" value="${esc(r.org)}" placeholder="TCS · Sigma · Salam (SNS)"></td><td><select data-f="vendor" ${r.kind==="salam"?"disabled":""}>${vendorOpts(r.vendor)}</select></td><td><input data-f="note" value="${esc(r.note||"")}" placeholder="why"></td><td style="white-space:nowrap"><button type="button" class="rb" data-up="${i}" title="earlier">↑</button> <button type="button" class="rb" data-down="${i}" title="later">↓</button> <button type="button" class="rb x" data-del="${i}" title="remove">✕</button></td></tr>`).join("")}
+          </table></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="pill" id="arAdd" style="padding:4px 10px;border-left-color:var(--green)">＋ Add rule</button><button type="button" class="pill" id="arPreview" style="padding:4px 10px;border-left-color:#2563eb">👁 Preview on all users</button><button type="button" class="pill" id="arReset" style="padding:4px 10px;border-left-color:#d97706">↺ Reset to the defaults</button><button type="button" class="pill" id="arApply" style="padding:4px 10px" title="run the saved rules again on every user not set by hand">▷ Re-apply now</button></div>
+          ${preview?`<div class="um-lbl" style="margin-top:12px">PREVIEW <span class="ud-hint">with the rules as edited above — nothing saved yet</span></div><div class="um-affsum">${Object.entries(preview.by).map(([k,n])=>`<span>${esc(k)} <b>${n}</b></span>`).join("")}</div>${preview.unclassified.length?`<div class="rl">Still unclassified: ${preview.unclassified.map(e=>`<span class="mono">${esc(e)}</span>`).join(", ")}</div>`:'<div class="rl" style="color:var(--green)">every user would be classified ✓</div>'}`:""}
+          ${(AFFS.unclassified||[]).length?`<div class="um-lbl" style="margin-top:12px">UNCLASSIFIED NOW <span class="ud-hint">no rule matched — assign in Edit (✎) or add the rule above</span></div><div class="um-tagrow">${AFFS.unclassified.map(u=>`<button type="button" class="tagchip on" data-uedit="${u.id}" style="border-color:#d97706;color:#d97706;background:transparent" title="open the user">${esc(u.email)}${u.enabled?"":" · blocked"} ✎</button>`).join("")}</div>`:""}
+          <div class="ud-actions"><button type="button" class="um-btn" id="arSave">Save &amp; apply to all</button><button type="button" class="tkm-btn" id="arCancel">Close</button><span class="ud-msg" id="arMsg"></span></div>
+        </div>`;
+      body.querySelector("#arX").onclick=close; body.querySelector("#arCancel").onclick=close;
+      const read=()=>{ R=[...body.querySelectorAll(".um-rules tr[data-i]")].map(tr=>({ id:(R[Number(tr.dataset.i)]||{}).id, match:tr.querySelector('[data-f="match"]').value.trim().toLowerCase(), kind:tr.querySelector('[data-f="kind"]').value, org:tr.querySelector('[data-f="org"]').value.trim(), vendor:tr.querySelector('[data-f="vendor"]').value||null, note:tr.querySelector('[data-f="note"]').value.trim() })); };
+      body.querySelectorAll('[data-f="kind"]').forEach(sel=>sel.onchange=()=>{ const v=sel.closest("tr").querySelector('[data-f="vendor"]'); v.disabled=sel.value==="salam"; if(sel.value==="salam") v.value=""; });
+      body.querySelectorAll("[data-up]").forEach(b=>b.onclick=()=>{ read(); const i=Number(b.dataset.up); if(i>0){ [R[i-1],R[i]]=[R[i],R[i-1]]; } paint(); });
+      body.querySelectorAll("[data-down]").forEach(b=>b.onclick=()=>{ read(); const i=Number(b.dataset.down); if(i<R.length-1){ [R[i+1],R[i]]=[R[i],R[i+1]]; } paint(); });
+      body.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{ read(); R.splice(Number(b.dataset.del),1); paint(); });
+      body.querySelector("#arAdd").onclick=()=>{ read(); const salamAt=R.findIndex(r=>r.match==="@salam.sa"||r.match==="@salammobile.sa"); const nr={ match:"", kind:"contract", org:"", vendor:null, note:"" }; if(salamAt>=0) R.splice(salamAt,0,nr); else R.push(nr); paint(); setTimeout(()=>{ const rows=body.querySelectorAll(".um-rules tr[data-i]"); const tr=rows[salamAt>=0?salamAt:rows.length-1]; if(tr) tr.querySelector('[data-f="match"]').focus(); },50); };
+      const msg=(t,bad)=>{ const m=body.querySelector("#arMsg"); if(m){ m.textContent=t; m.style.color=bad?"var(--red)":"var(--green-dark)"; } };
+      body.querySelector("#arPreview").onclick=async()=>{ read(); msg("Previewing…"); try{ const r=await api("/api/users/affiliation/preview",{method:"POST",body:JSON.stringify({rules:R})}); const by={}; const unc=[]; (r.results||[]).forEach(x=>{ const k=x.kind==="unclassified"?"unclassified":x.org||x.kind; by[k]=(by[k]||0)+1; if(x.kind==="unclassified") unc.push(x.email); }); paint({by,unclassified:unc}); }catch(e){ msg(e.message,true); } };
+      body.querySelector("#arSave").onclick=async()=>{ read(); if(R.some(r=>!r.match)){ msg("every rule needs a text to match (e.g. .tcs@)",true); return; } const btn=body.querySelector("#arSave"); btn.disabled=true; msg("Saving and applying…");
+        try{ const r=await api("/api/users/affiliation/rules",{method:"PUT",body:JSON.stringify({rules:R})}); AFFS=r.summary||AFFS; window.AFFS=AFFS; R=(AFFS.rules||[]).map(x=>({...x})); await reload(); paint(); msg(`Saved — ${r.applied.checked} user(s) checked, ${r.applied.changed} re-classified · Salam ${r.applied.by.salam||0} · contract ${r.applied.by.contract||0} · unclassified ${r.applied.by.unclassified||0}`); }
+        catch(e){ msg(e.message,true); btn.disabled=false; } };
+      body.querySelector("#arReset").onclick=async()=>{ if(!confirm("Reset the affiliation rules to the defaults and re-apply them to every user not set by hand?")) return; msg("Resetting…"); try{ const r=await api("/api/users/affiliation/rules",{method:"PUT",body:JSON.stringify({reset:true})}); AFFS=r.summary||AFFS; window.AFFS=AFFS; R=(AFFS.rules||[]).map(x=>({...x})); await reload(); paint(); msg("Defaults restored and applied."); }catch(e){ msg(e.message,true); } };
+      body.querySelector("#arApply").onclick=async()=>{ msg("Applying…"); try{ const r=await api("/api/users/affiliation/apply",{method:"POST",body:"{}"}); AFFS=r.summary||AFFS; window.AFFS=AFFS; await reload(); paint(); msg(`${r.applied.checked} user(s) checked · ${r.applied.changed} re-classified`); }catch(e){ msg(e.message,true); } };
+      body.querySelectorAll("[data-uedit]").forEach(b=>b.onclick=()=>{ const u=USERS.find(x=>String(x.id)===b.dataset.uedit); if(u&&window.openUserPanel){ close(); window.openUserPanel(u); } });
+    };
+    paint(); ov.classList.add("open"); document.addEventListener("keydown",onEsc);
+  }
+
   function exportXlsx(){
     const list=filtered();
-    const rows=[["Name","E-mail","Team","Responder teams","Mobile","Business","Roles","Tags","Status","Last sign-in (KSA)","Mail alert","Mail report","ACK Mobile","ACK Fixed","Actions 30 d","Acks 30 d","MTTA (min)","Created (KSA)"]];
-    list.forEach(u=>{ const a=ACT[u.email.toLowerCase()]||{}; rows.push([u.name||"",u.email,u.team||"",(MEMBERS[u.email.toLowerCase()]||[]).map(m=>(TEAMREG[m.key]||{}).name||m.key).join(", "),u.mobile||"",u.business||"both",rolesOf(u).map(roleLabel).join(", "),(u.tags||[]).join(", "),u.enabled?"active":"blocked",u.last_login?ksa(u.last_login):"never",u.mail_alert?"yes":"no",u.mail_report?"yes":"no",u.ack_mobile?"yes":"no",u.ack_fixed?"yes":"no",a.actions30||0,a.acks30||0,a.mtta_min==null?"":a.mtta_min,u.created_at?ksa(u.created_at):""]); });
+    const rows=[["Name","E-mail","Affiliation","Organisation","Vendor","Team","Responder teams","Mobile","Business","Roles","Tags","Status","Last sign-in (KSA)","Mail alert","Mail report","ACK Mobile","ACK Fixed","Actions 30 d","Acks 30 d","MTTA (min)","Created (KSA)"]];
+    list.forEach(u=>{ const a=ACT[u.email.toLowerCase()]||{}; const af=AFF(u); rows.push([u.name||"",u.email,af.k==="salam"?"Salam team":af.k==="contract"?"contract":"unclassified",u.affiliation_org||"",u.affiliation_vendor||"",u.team||"",(MEMBERS[u.email.toLowerCase()]||[]).map(m=>(TEAMREG[m.key]||{}).name||m.key).join(", "),u.mobile||"",u.business||"both",rolesOf(u).map(roleLabel).join(", "),(u.tags||[]).join(", "),u.enabled?"active":"blocked",u.last_login?ksa(u.last_login):"never",u.mail_alert?"yes":"no",u.mail_report?"yes":"no",u.ack_mobile?"yes":"no",u.ack_fixed?"yes":"no",a.actions30||0,a.acks30||0,a.mtta_min==null?"":a.mtta_min,u.created_at?ksa(u.created_at):""]); });
     const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`console_users_${new Date().toISOString().slice(0,10)}.csv`; document.body.appendChild(a); a.click(); a.remove();
   }
 
   let TEAMREG={}, MEMBERS={};
   async function reload(){ try{ const d=await api("/api/users"); USERS=d.users||[]; ACT=d.activity||{};
-      /* responder teams (24 Sep 2026): the memberships shown as chips under the name — edited in the user panel or Settings › Teams */
+      /* responder teams (24 Sep 2026): the memberships shown as chips under the name — edited in the user panel or Teams management › Responder teams */
       try{ const [r,m]=await Promise.all([api("/api/teams"), api("/api/teams/memberships")]); TEAMREG={}; (r.teams||[]).forEach(t=>{ TEAMREG[t.key]=t; }); MEMBERS=m.memberships||{}; }catch(e){}
+      try{ AFFS=await api("/api/users/affiliation"); window.AFFS=AFFS; }catch(e){}
     }catch(e){ if(HOST) HOST.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; } render(); }
 
   window.renderUsersMgmt=async function(host){ HOST=host; ensureCss(); if(!HOST.firstChild) HOST.innerHTML=`<div class="sub">Loading users…</div>`; await loadRoles(); await reload(); };
@@ -233,6 +294,9 @@
       .um-id b{font-size:13px}.um-mail{font-size:11.5px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}.um-sub{font-size:11px;color:var(--muted)}
       .um-super{display:inline-block;background:#0b3d2b;color:#c9f3de;font-size:9px;font-weight:800;letter-spacing:.6px;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:2px}
       .um-bizpill{display:inline-block;color:#fff;font-weight:700;font-size:11px;border-radius:999px;padding:3px 10px;white-space:nowrap}
+      .um-aff{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:11px;border-radius:999px;padding:2px 9px;white-space:nowrap;border:1px solid var(--c);color:var(--c);background:color-mix(in srgb,var(--c) 10%,transparent)}.um-aff i{font-style:normal;font-weight:600;opacity:.75;font-size:10px}.um-aff.unclassified{border-style:dashed}.um-aff.mini{font-size:10px;padding:1px 7px}
+      .um-rules{width:100%;border-collapse:collapse;font-size:12px}.um-rules th{text-align:left;font-size:10px;letter-spacing:.6px;color:var(--muted);padding:6px 6px;border-bottom:1px solid var(--line)}.um-rules td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:middle}.um-rules input,.um-rules select{width:100%;font:inherit;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:inherit;box-sizing:border-box}.um-rules td:nth-child(3) select{min-width:128px}.um-rules td:nth-child(2) input{min-width:150px}.um-rules td:nth-child(5) select{min-width:150px}.um-rules .mono{font-family:ui-monospace,Menlo,monospace}.um-rules .rb{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:2px 6px;font:inherit;font-size:11px;cursor:pointer}.um-rules .rb:hover{border-color:var(--green)}.um-rules .rb.x:hover{border-color:#dc2626;color:#dc2626}
+      .um-affsum{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.um-affsum span{border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:11.5px}
       .um-roles{display:flex;flex-wrap:wrap;gap:4px}.um-role{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:10.5px;font-weight:700;background:var(--bg)}.um-role.super{background:#0b3d2b;color:#c9f3de;border-color:#0b3d2b}.um-role.admin{background:rgba(14,159,90,.12);border-color:var(--green,#0e9f5a)}
       .um-tagrow{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}.um-last{font-size:11px;color:var(--muted);margin-top:3px}
       .um-ackc{display:inline-flex;gap:6px}.um-sw{transform:scale(.85)}

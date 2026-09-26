@@ -21,17 +21,17 @@
  *             default) assigned to the executing team so the ack SLA, the reminders and (optionally) ChatOps chase it.
  *   reconcile the batch closes itself when every case is refunded (proxycms, via refundRadar.correlate) or dismissed;
  *             progress is posted on the incident, which is resolved with the batch.
- *   SLA       two clocks per desk (Settings › Teams › Refund desks): approve_within_h — from the request to the
+ *   SLA       two clocks per desk (Teams management › Refund desks): approve_within_h — from the request to the
  *             decision (refund_candidates.decided_at) — and refund_within_h — from the approval to the register showing
  *             the refund. Overdue cases feed the metrics refund_sla_approval_overdue / refund_sla_execution_overdue,
  *             each behind a P4 rule (refund_approval_overdue → the Salam side, refund_execution_overdue → the L2 team).
- * WHO HANDLES REFUNDS — the desks (26 Sep 2026, settings key refund_desks, edited in Settings › Teams › Refund desks):
+ * WHO HANDLES REFUNDS — the desks (26 Sep 2026, settings key refund_desks, edited in Teams management › Refund desks):
  * one desk per business. Mobile · proxycms is live; Fixed · Moyasar is defined but has no detector yet (its cases
  * will arrive with the Fixed refund radar). RECIPIENTS ARE STRICT: the approval request goes to the approvers typed
  * on the desk — nobody else, no fallback to the L1 team or to the report audience (alpha.100's fallback mailed batch
  * #1 to the Fixed/Sigma people); with no approver the batch is NOT sent and the page says so. Every address is
  * checked against console_users: a person of the other business is dropped and reported. The Mobile desk inherits
- * the alpha.100/101 policy (settings key agent_refund) until it is saved once from Settings › Teams.
+ * the alpha.100/101 policy (settings key agent_refund) until it is saved once from Teams management › Responder teams.
  * HUMAN IN THE LOOP — the guardrails (26 Sep 2026, Yosri): the desk HELPS, people ACT. It never approves, refunds or
  * dismisses a case (refund_candidates.status is written by people on the page, or reflected from the proxycms
  * register when L2 has posted the refund), never writes to proxycms, the gateway, production or the replica, never
@@ -63,7 +63,7 @@ const money = v => Number(v || 0).toFixed(2);
 const maskMobile = m => { const s = String(m || ''); return s.length <= 3 ? '***' : '*'.repeat(Math.max(3, s.length - 3)) + s.slice(-3); };
 const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/* ---- the desks: one per business; the fields a super admin edits in Settings › Teams › Refund desks ---- */
+/* ---- the desks: one per business; the fields a super admin edits in Teams management › Refund desks ---- */
 const BUSINESSES = ['mobile', 'fixed'];
 const SEG_OF = { mobile: 'mvno', fixed: 'fixed' };
 const LABEL_OF = { mobile: 'Mobile', fixed: 'Fixed' };
@@ -81,7 +81,7 @@ const GUARDRAILS = ['never approves, refunds or dismisses a case — Approve / R
   'a case closes as "Refunded · proxycms" only when the register shows the refund L2 posted; "resolved by the platform" only when the detector no longer finds it',
   'its verdicts and reasons are proposals with a confidence; the approval request is a mail a person sends (advise mode) or that goes out daily (assist mode)',
   'its ticket and digest mails inform and chase — they change nothing on the case',
-  'it mails only the approvers and the executing team defined for the desk in Settings › Teams — no fallback list, nobody of the other business'];
+  'it mails only the approvers and the executing team defined for the desk in Teams management › Responder teams — no fallback list, nobody of the other business'];
 const VERDICTS = ['refund', 'wait', 'dismiss', 'investigate'];
 /* the proxycms reason list as of 26 Sep 2026 (refund_reasons on prod); the live table wins when the replica has it */
 const REASONS_SEED = ['Customer exceeded the limit', 'Wrong details in Onboarding order', 'Changed his mind', 'ICCID issue', 'Failed change plan from BSS', 'MSISDN Reservation Expired', 'CMS issue',
@@ -130,7 +130,7 @@ async function getDesks() {
   const out = {};
   for (const biz of BUSINESSES) {
     const raw = all[biz] && typeof all[biz] === 'object' ? all[biz] : null;
-    /* the Mobile desk inherits the alpha.100/101 policy (settings key agent_refund) until it is saved from Settings › Teams;
+    /* the Mobile desk inherits the alpha.100/101 policy (settings key agent_refund) until it is saved from Teams management › Responder teams;
      * its old approver fallback chain is gone — only typed approvers count */
     out[biz] = normalise(biz, raw || (biz === 'mobile' && legacy && typeof legacy === 'object' ? legacy : null));
     out[biz].saved = !!raw;
@@ -139,7 +139,7 @@ async function getDesks() {
 }
 const bizOf = b => BUSINESSES.includes(b) ? b : 'mobile';
 async function getPolicy(business = 'mobile') { return (await getDesks())[bizOf(business)]; }
-/* save one desk (super admin, Settings › Teams › Refund desks); the executing team must exist and cover the business */
+/* save one desk (super admin, Teams management › Refund desks); the executing team must exist and cover the business */
 async function setPolicy(business, patch, actor) {
   const biz = bizOf(business); const settings = require('./settings');
   const all = (await settings.getSetting('refund_desks')) || {}; const cur = (await getDesks())[biz];
@@ -263,10 +263,15 @@ async function crossBusiness(emails, biz) {
     const r = await C().query(`SELECT lower(email) AS email FROM console_users WHERE lower(email) = ANY($1::text[]) AND business = $2`, [emails, other]);
     return r.rows.map(x => x.email); } catch (_) { return []; }
 }
-/* who approves: ONLY the approvers typed on the desk (no L1 fallback, no report audience) minus the other business */
+/* who approves: ONLY the approvers typed on the desk (no L1 fallback, no report audience) minus the other business.
+ * An approver who is a CONTRACT resource (affiliation.js — TCS, Sigma … from the e-mail) is kept but flagged: the
+ * approval is Salam's decision, the vendor executes. */
 async function effectiveApprovers(policy) {
   const excluded = await crossBusiness(policy.approvers, policy.business);
-  return { list: policy.approvers.filter(e => !excluded.includes(e)), excluded };
+  const list = policy.approvers.filter(e => !excluded.includes(e));
+  let contract = [];
+  try { if (list.length) contract = (await C().query(`SELECT lower(email) AS email, affiliation_org AS org FROM console_users WHERE lower(email) = ANY($1::text[]) AND affiliation = 'contract'`, [list])).rows.map(x => `${x.email} (${x.org || 'contract'})`); } catch (_) {}
+  return { list, excluded, contract };
 }
 /* who is copied: the desk's copy list (cleaned the same way) + the executing team's audience */
 async function effectiveCc(policy, aud, approvers) {
@@ -279,9 +284,10 @@ function warningsFor(policy, aud, appr, ccx) {
   if (!policy.enabled) w.push({ code: 'disabled', text: `the ${policy.label} desk is switched off — nothing is reviewed, mailed or opened for it` });
   if (!policy.ready) w.push({ code: 'not_ready', text: `no detector feeds the ${policy.label} desk yet — the definition is in place for when the ${policy.gateway} refund cases are wired in` });
   if (!aud.team) w.push({ code: 'team_missing', text: `team "${policy.team}" is not in the responder registry` });
-  else if (!aud.list.length) w.push({ code: 'team_empty', text: `${aud.team.name} has no members and no mail DL — the digest of new cases and the copy of the approval request reach nobody until Settings › Teams fills them` });
+  else if (!aud.list.length) w.push({ code: 'team_empty', text: `${aud.team.name} has no members and no mail DL — the digest of new cases and the copy of the approval request reach nobody until Teams management › Responder teams fills them` });
   if (!appr.list.length) w.push({ code: 'no_approver', text: `no approver — the approval request is NOT sent (and assist mode cannot be enabled) until at least one approver is defined for the desk` });
   if (appr.excluded.length) w.push({ code: 'cross_business', text: `${appr.excluded.join(', ')} ${appr.excluded.length > 1 ? 'are' : 'is'} of the other business — never mailed by this desk, remove from the approvers` });
+  if ((appr.contract || []).length) w.push({ code: 'contract_approver', text: `${appr.contract.join(', ')} — a contract resource as approver: the approval of a refund is Salam's decision, the vendor executes it (User management › affiliation)` });
   if (ccx.excluded.length) w.push({ code: 'cross_business_cc', text: `${ccx.excluded.join(', ')} ${ccx.excluded.length > 1 ? 'are' : 'is'} of the other business — dropped from the copy list` });
   if (aud.excluded.length) w.push({ code: 'cross_business_team', text: `${aud.excluded.join(', ')} — member${aud.excluded.length > 1 ? 's' : ''} of ${aud.team ? aud.team.name : policy.team} registered for the other business — not mailed by this desk` });
   return w;
@@ -311,7 +317,7 @@ async function batchCandidates(policy) {
       WHERE c.side = $1 AND c.batch_id IS NULL AND ((c.status = 'approved') OR (c.status = 'open' AND r.verdict = 'refund')) ORDER BY c.event_at ASC LIMIT 200`, [policy.business])).rows;
 }
 /* the approval request. Nothing is sent, recorded or opened when the desk has no approver: the cases stay batchable
- * and the answer says why — the fix is in Settings › Teams › Refund desks, not in a fallback list. */
+ * and the answer says why — the fix is in Teams management › Refund desks, not in a fallback list. */
 async function buildBatch({ actor = 'agent', policy: pol, business = 'mobile' } = {}) {
   const policy = pol || await getPolicy(business); const notify = require('./notify'); const biz = LABEL_OF[policy.business];
   const rows = await batchCandidates(policy);
@@ -319,7 +325,7 @@ async function buildBatch({ actor = 'agent', policy: pol, business = 'mobile' } 
   const sar = rows.reduce((a, x) => a + Number(x.amount || 0), 0);
   const aud = await audience(policy);
   const appr = await effectiveApprovers(policy);
-  if (!appr.list.length) { log(`batch (${policy.business}): ${rows.length} case(s) · ${money(sar)} SAR waiting — NOT sent, no approver defined for the ${policy.label} desk`); return { cases: rows.length, sar, sent: false, blocked: 'no_approver', reason: `no approver is defined for the ${policy.label} desk (Settings › Teams › Refund desks) — the request was not sent; the ${rows.length} case(s) stay ready`, excluded: appr.excluded }; }
+  if (!appr.list.length) { log(`batch (${policy.business}): ${rows.length} case(s) · ${money(sar)} SAR waiting — NOT sent, no approver defined for the ${policy.label} desk`); return { cases: rows.length, sar, sent: false, blocked: 'no_approver', reason: `no approver is defined for the ${policy.label} desk (Teams management › Refund desks) — the request was not sent; the ${rows.length} case(s) stay ready`, excluded: appr.excluded }; }
   const approvers = appr.list; const ccx = await effectiveCc(policy, aud, approvers); const cc = ccx.list;
   const today = ksaDate(); const link = `${consoleUrl()}#refunds?tab=exposure&status=all`;
   const subject = `[Salam Ops · ${biz}] Request for refund approval — ${rows.length} case(s) · ${money(sar)} SAR · ${today}`;
@@ -445,7 +451,7 @@ function start() {
 /* the two clocks of a desk, measured on its cases:
  *   approval  — request (the batch mail) → decision (decided_at; a closure by the register counts as decided)
  *   execution — approval (decided_at of an approved case) → the register shows the refund (resolved_at)
- * Waiting / overdue now, and the last 30 days' attainment. Used by the page, Settings › Teams and the two metrics. */
+ * Waiting / overdue now, and the last 30 days' attainment. Used by the page, Teams management › Responder teams and the two metrics. */
 async function slaStatus(policy) {
   const biz = policy.business; const aH = String(policy.approve_within_h), rH = String(policy.refund_within_h);
   const [a, x] = await Promise.all([
@@ -472,7 +478,7 @@ async function slaStatus(policy) {
 }
 
 /* ------------------------------------------------------------------------------------------------ reads + routes */
-/* every desk with what Settings › Teams and the Refund desk tab show: the executing team, the effective recipients, the
+/* every desk with what Teams management › Responder teams and the Refund desk tab show: the executing team, the effective recipients, the
  * warnings, the SLA picture, the open cases; plus the registry teams to pick from and the two SLA rules */
 async function desksView() {
   await ensureSchema();
@@ -511,7 +517,7 @@ async function status() {
 function mount(app, { requireView, requireCap, audit }) {
   const gate = requireView('errors');
   app.get('/api/refunds/desk', gate, async (req, res) => { try { res.json(await status()); } catch (e) { res.status(500).json({ error: e.message }); } });
-  /* the desk definition is edited in Settings › Teams › Refund desks (teamsApi.js, super admin); this route stays for the
+  /* the desk definition is edited in Teams management › Refund desks (teamsApi.js, super admin); this route stays for the
    * operational knobs of the Mobile desk (alpha.100/101 callers) and writes the same record */
   app.put('/api/refunds/desk/policy', requireCap('manageSync'), async (req, res) => { try {
       const p = await setPolicy('mobile', req.body || {}, req.actor); if (audit) audit(req, 'refund.desk', 'mobile', { team: p.team, approvers: p.approvers, mode: p.mode, ticket_severity: p.ticket_severity }).catch?.(() => {}); res.json({ ok: true, policy: p });

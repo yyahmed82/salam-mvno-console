@@ -957,7 +957,7 @@ const METRICS = {
       } catch (e) { return []; }
     }
   },
-  /* THE DESK SLAs (26 Sep 2026, Settings › Teams › Refund desks — refundDesk.slaStatus): the two clocks of the Mobile
+  /* THE DESK SLAs (26 Sep 2026, Teams management › Refund desks — refundDesk.slaStatus): the two clocks of the Mobile
    * desk. approval = cases in a sent approval request with no decision after approve_within_h (default 24 h);
    * execution = approved cases the proxycms register does not show refunded after refund_within_h (default 48 h).
    * value = overdue now, sample = waiting now. Both rules are P4 — internal tickets chased by the ack ladder. */

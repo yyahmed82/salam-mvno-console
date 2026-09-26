@@ -70,7 +70,7 @@ async function evidence(a) {
   return { seg, dup, hist, lastClose: lastClose ? lastClose.body : null, corr, sigs, rule, comments };
 }
 
-/* the team list is read from Settings › Teams at every call, so a team added by an admin is offered to the model at once */
+/* the team list is read from Teams management › Responder teams at every call, so a team added by an admin is offered to the model at once */
 async function teamCatalog() {
   const rows = await teams.list().catch(() => []);
   return rows.map(t => `${t.key} = ${t.name} [${t.business}, ${t.domain} ${t.level}${t.vendor_id ? ', vendor ' + t.vendor_id : ''}]`).join(' | ') || 'digital-l1 = Salam Digital Ops';
