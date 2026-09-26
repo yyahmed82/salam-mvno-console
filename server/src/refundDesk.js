@@ -20,8 +20,13 @@
  *             SLA, the reminders and ChatOps chase it like any other ticket.
  *   reconcile the batch closes itself when every case is refunded (proxycms, via refundRadar.correlate) or dismissed;
  *             progress is posted on the incident, which is resolved with the batch.
- * Modes (settings key agent_refund): 'assist' = everything above runs on its own; 'advise' = review + assign + notify
- * only, batches are prepared on demand from the page. Never writes to production or replica DBs. */
+ * HUMAN IN THE LOOP — the guardrails (26 Sep 2026, Yosri): the desk HELPS, people ACT. It never approves, refunds or
+ * dismisses a case (refund_candidates.status is written by people on the page, or reflected from the proxycms
+ * register when L2 has posted the refund), never writes to proxycms, the gateway, production or the replica, never
+ * creates a refund anywhere. Its verdicts are proposals; its mails say so; the refund itself is L2's act in proxycms.
+ * Modes (settings key agent_refund): 'advise' (DEFAULT) = review + route to the team + digest of new cases; the
+ * approval batch and its ticket are PREPARED by the desk and SENT by a person from the page. 'assist' = the batch
+ * mail and its ticket also go out daily on their own — still no approval, no refund, no dismissal by the agent. */
 'use strict';
 process.env.TZ = process.env.TZ || 'UTC';
 const db = require('./db');
@@ -46,7 +51,13 @@ const money = v => Number(v || 0).toFixed(2);
 const maskMobile = m => { const s = String(m || ''); return s.length <= 3 ? '***' : '*'.repeat(Math.max(3, s.length - 3)) + s.slice(-3); };
 const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-const DEFAULT_POLICY = { enabled: true, mode: 'assist', team: 'mobile-digital-l2', approvers: [], cc: [], report_hour: 9, notify_new: true, open_incident: true, chatops: true, min_confidence: 0.5 };
+const DEFAULT_POLICY = { enabled: true, mode: 'advise', team: 'mobile-digital-l2', approvers: [], cc: [], report_hour: 9, notify_new: true, open_incident: true, chatops: true, min_confidence: 0.5 };
+/* what the desk never does — shown on the page, enforced by the absence of any code path for it */
+const GUARDRAILS = ['never approves, refunds or dismisses a case — Approve / Refunded / Dismiss are buttons for people, recorded by name',
+  'never writes to proxycms, the payment gateway, production or the replica — the refund is posted by L2 in proxycms',
+  'a case closes as "Refunded · proxycms" only when the register shows the refund L2 posted; "resolved by the platform" only when the detector no longer finds it',
+  'its verdicts and reasons are proposals with a confidence; the approval request is a mail a person sends (advise mode) or that goes out daily (assist mode)',
+  'its ticket and digest mails inform and chase — they change nothing on the case'];
 const VERDICTS = ['refund', 'wait', 'dismiss', 'investigate'];
 /* the proxycms reason list as of 26 Sep 2026 (refund_reasons on prod); the live table wins when the replica has it */
 const REASONS_SEED = ['Customer exceeded the limit', 'Wrong details in Onboarding order', 'Changed his mind', 'ICCID issue', 'Failed change plan from BSS', 'MSISDN Reservation Expired', 'CMS issue',
@@ -74,7 +85,7 @@ async function ensureDeskSchema() {
 async function getPolicy() {
   let s = {}; try { s = (await require('./settings').getSetting('agent_refund')) || {}; } catch (_) {}
   const p = { ...DEFAULT_POLICY, ...(s && typeof s === 'object' ? s : {}) };
-  p.mode = p.mode === 'advise' ? 'advise' : 'assist'; p.enabled = p.enabled !== false;
+  p.mode = p.mode === 'assist' ? 'assist' : 'advise'; p.enabled = p.enabled !== false;
   p.approvers = Array.isArray(p.approvers) ? p.approvers.filter(Boolean) : String(p.approvers || '').split(/[,\s;]+/).filter(Boolean);
   p.cc = Array.isArray(p.cc) ? p.cc.filter(Boolean) : String(p.cc || '').split(/[,\s;]+/).filter(Boolean);
   p.report_hour = Math.min(23, Math.max(0, Number(p.report_hour) || 0)); p.min_confidence = Math.min(1, Math.max(0, Number(p.min_confidence) || 0.5));
@@ -185,7 +196,7 @@ async function notifyNew(items, policy) {
   const sar = items.reduce((a, x) => a + Number(x.c.amount || 0), 0);
   const link = `${consoleUrl()}#refunds?tab=exposure`;
   const body = `<div style="background:#eaf6ff;border:1px solid #bfdcf5;border-left:4px solid #0891b2;border-radius:8px;padding:12px 16px;margin-bottom:14px"><div style="font-weight:800;color:#0c4a6e;font-size:13px">🤖 The refund desk reviewed ${items.length} new case(s) — ${money(sar)} SAR owed to customers, assigned to ${esc((aud.team && aud.team.name) || policy.team)}.</div>
-      <div style="font-size:12.5px;color:#334155;margin-top:6px">Each row is a payment the platform did not deliver on, detected on the replica before any complaint. The verdict is the desk's proposal; approve, refund or dismiss on the page. <a href="${link}" style="color:#0e9f5a;font-weight:700">Open Refund exposure ›</a></div></div>
+      <div style="font-size:12.5px;color:#334155;margin-top:6px">Each row is a payment the platform did not deliver on, detected on the replica before any complaint. The verdict is the desk's <b>proposal</b> — nothing has been approved, refunded or dismissed: those are your decisions on the page, and the refund itself is posted by L2 in proxycms. <a href="${link}" style="color:#0e9f5a;font-weight:700">Open Refund exposure ›</a></div></div>
     <table style="border-collapse:collapse;width:100%">${headHtml(['Ref', 'Kind', 'Customer', 'SAR', 'Verdict', 'Proposed reason', 'Why'])}${items.map(({ c, r }) => rowHtml([[`#${c.id}`], [esc(kindLabel(c.kind))], [esc(maskMobile(c.mobile))], [money(c.amount), true], [`<b>${esc(r.verdict)}</b> ${Math.round((r.confidence || 0) * 100)}%`], [esc(r.reason || '—')], [esc(r.cause || '')]])).join('')}</table>
     <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Operations Console · Agent 2 · refund desk · identities masked; the console shows them to authorised users</div>`;
   const html = notify.shell({ title: `Refund desk — ${items.length} new case(s)`, badge: 'OPERATIONS CONSOLE · MOBILE', pill: `${money(sar)} SAR · REVIEW`, pillColor: '#d97706', bodyHtml: body });
@@ -216,7 +227,7 @@ async function buildBatch({ actor = 'agent', policy: pol } = {}) {
   const today = ksaDate(); const link = `${consoleUrl()}#refunds?tab=exposure&status=all`;
   const subject = `[Salam Ops · Mobile] Request for refund approval — ${rows.length} case(s) · ${money(sar)} SAR · ${today}`;
   const body = `<div style="background:#eaf6ff;border:1px solid #bfdcf5;border-left:4px solid #0e9f5a;border-radius:8px;padding:12px 16px;margin-bottom:14px"><div style="font-weight:800;color:#0c4a6e;font-size:13px">${rows.length} customer(s) are owed ${money(sar)} SAR — paid, not delivered by the platform, detected by the console and reviewed by the refund desk.</div>
-      <div style="font-size:12.5px;color:#334155;margin-top:6px">Approve on the page (one click per case, recorded with your name and time) or reply to this mail; ${esc((aud.team && aud.team.name) || policy.team)} posts each approved refund in proxycms with the reason below — the console closes the case from the register. <a href="${link}" style="color:#0e9f5a;font-weight:700">Open the batch ›</a></div></div>
+      <div style="font-size:12.5px;color:#334155;margin-top:6px">This is a request for <b>your</b> approval: nothing has been approved or refunded by the console. Approve on the page (one click per case, recorded with your name and time) or reply to this mail; ${esc((aud.team && aud.team.name) || policy.team)} then posts each approved refund in proxycms with the reason below — the console closes the case from the register. <a href="${link}" style="color:#0e9f5a;font-weight:700">Open the batch ›</a></div></div>
     <table style="border-collapse:collapse;width:100%">${headHtml(['Ref · INC', 'Amount', 'Date', 'Reason', 'Proof / analysis', 'Customer', 'Payment (proxycms)'])}${rows.map(x => rowHtml([[`<b>#${x.id}</b>${x.inc ? '<br>' + esc(x.inc) : ''}${x.status === 'approved' ? '<br><span style="color:#0e9f5a;font-weight:700">approved</span>' : ''}`], [money(x.amount), true], [esc(ksa(x.event_at))], [esc(x.reason || '—')], [`${esc(kindLabel(x.kind))}: ${esc(x.cause || '')}${x.action ? '<br><span style="color:#64748b">' + esc(x.action) + '</span>' : ''}`], [esc(maskMobile(x.mobile))], [`<span style="font-family:ui-monospace,Menlo,monospace;font-size:11px">${esc(x.payment_id || '—')}</span>`]])).join('')}
       <tr><td colspan="7" style="padding:8px;font-weight:800;text-align:right">Total ${money(sar)} SAR</td></tr></table>
     <div style="color:#94a3b8;font-size:12px;margin-top:14px">— Salam Operations Console · Agent 2 · refund desk · the workbook attached carries the full evidence · identities masked; the console shows them to authorised users</div>`;
@@ -318,7 +329,7 @@ async function status() {
   ]);
   const team = reg.find(t => t.key === policy.team) || null;
   const aud = await audience(policy.team);
-  return { policy, cfg: { interval_min: CFG.intervalMin, max_per_tick: CFG.maxPerTick, max_model_per_tick: CFG.maxModelPerTick, enabled: CFG.enabled }, queue: q.rows[0], verdicts: verdicts.rows, batches: batches.rows, runs: runs.rows, last_run: runs.rows[0] || lastRun,
+  return { policy, guardrails: GUARDRAILS, cfg: { interval_min: CFG.intervalMin, max_per_tick: CFG.maxPerTick, max_model_per_tick: CFG.maxModelPerTick, enabled: CFG.enabled }, queue: q.rows[0], verdicts: verdicts.rows, batches: batches.rows, runs: runs.rows, last_run: runs.rows[0] || lastRun,
     team: team ? { key: team.key, name: team.name, business: team.business, level: team.level, mail_dl: team.mail_dl, members: aud.list.length - (team.mail_dl ? 1 : 0) } : { key: policy.team, name: policy.team, missing: true },
     teams: reg.filter(t => t.active !== false && (t.business === 'mobile' || t.business === 'both')).map(t => ({ key: t.key, name: t.name, level: t.level, domain: t.domain })),
     approvers_effective: await effectiveApprovers(policy), reasons: await knownReasons() };
@@ -340,4 +351,4 @@ function mount(app, { requireView, requireCap, audit }) {
       if (!r.rowCount) return res.status(404).json({ error: 'no review for this candidate' }); res.json(r.rows[0]);
     } catch (e) { res.status(500).json({ error: e.message }); } });
 }
-module.exports = { CFG, DEFAULT_POLICY, ensureSchema, ensureDeskSchema, getPolicy, setPolicy, preClassify, reviewOne, buildBatch, reconcile, tick, start, status, mount, knownReasons };
+module.exports = { CFG, DEFAULT_POLICY, GUARDRAILS, ensureSchema, ensureDeskSchema, getPolicy, setPolicy, preClassify, reviewOne, buildBatch, reconcile, tick, start, status, mount, knownReasons };
