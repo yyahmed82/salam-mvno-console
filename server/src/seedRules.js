@@ -409,6 +409,11 @@ const RULES = [
     metric_key: 'refund_exposure_open_sar', operator: 'gte', threshold: 3000, window_hours: 24, min_sample: 0,
     description: 'Sum of OPEN refund candidates (not yet approved / refunded / dismissed) above 3,000 SAR — customers waiting for money the platform already knows it owes. Stays raised until the backlog is worked.',
     runbook: '1) Mobile → Refund exposure → filter Open, oldest first. 2) Approve / refund with the INC number, or dismiss with a note (false positive). 3) Recurring kinds → product defect ticket (port-in twice, change-plan IAM token, eSIM replacement).' },
+  { key: 'refund_gateway_failed', name: 'Refund failed at the payment gateway — customer still unpaid (P3)', severity: 'P3', team: 'Digital Ops',
+    alert_class: 'business',
+    metric_key: 'refund_gateway_failed', operator: 'gte', threshold: 1, window_hours: 24, min_sample: 0,
+    description: 'A refund posted in proxycms came back FAILED from the gateway (refunds.status = fail — Tap / HyperPay / Salam Pay rejected the reversal, the app put the payment back to success). The customer was told the money is coming and it is not. Zero is the normal value.',
+    runbook: '1) Mobile → Refund exposure → proxycms register → filter status = failed: the fail_reason column is the gateway answer. 2) proxycms › Refunds › the row › Re-Request (or Rsync Refund when pending). 3) If the gateway keeps rejecting (settled > 6 months, card closed) → manual refund through Finance with the INC.' },
   { key: 'app_crash_surge', name: 'App crashes rising (unhandled exceptions, P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'technical',  // nil-errors etc. — the platform failed, customer got a meaningless -501
     metric_key: 'app_crash_count', operator: 'gte', threshold: 400, window_hours: 1, min_sample: 0,

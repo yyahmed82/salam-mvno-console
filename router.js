@@ -187,6 +187,7 @@
           if(t==="exec"||t==="ops") t="overview";   // merged into the Operations Dashboard
           window[fn](t); }
         else if(r.view==="alerts"){ window[fn](r.seg||"mvno"); }
+        else if(r.view==="refunds"){ window[fn](qs?"refunds?"+qs:""); }   // #refunds?tab=ledger&from=..&to=.. — the navtab click above has already reset the hash to a bare #refunds
         else if(r.view==="topology2"){ const m=/(?:^|&)t=([a-z]+)/.exec(qs||""); window[fn](r.t2||(m?m[1]:"map")); }   // #mvnohld / #topology2?t=hld
         else window[fn](); }catch(e){} }
       // Subscriber 360 deep link: #subscriber?key=966...

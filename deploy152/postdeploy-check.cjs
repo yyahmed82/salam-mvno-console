@@ -197,6 +197,28 @@ const json = r => { try { return JSON.parse(r.body); } catch (e) { return null; 
     await s.end();
   } catch (e) { check(false, 'replica reachable', e.message); }
 
+  // ── 5b. refund exposure — the six detectors must RUN (26 Sep 2026: all six failed for a day on a bind-parameter
+  //        mismatch and the page showed 0 candidates while refund mails kept arriving) ───────────────────────────
+  head('5b · refund exposure (Mobile › Refund exposure)');
+  try {
+    const ov = await get('/api/refunds/overview?days=7', 30000);
+    const o = json(ov);
+    check(ov.code === 200 && !!o && Array.isArray(o.detectors), 'overview answers', `HTTP ${ov.code} in ${ov.ms}ms`);
+    if (o && Array.isArray(o.detectors)) {
+      const lr = o.last_run || {};
+      if (!lr.at) note('no detector run recorded yet', 'the first tick runs 40 s after boot, then every ' + (o.tick_min || 15) + ' min — re-run this check in a minute');
+      else {
+        const ageMin = Math.round((Date.now() - new Date(lr.at)) / 60000);
+        check(ageMin <= 3 * (o.tick_min || 15), 'detectors ran recently', `last run ${ageMin} min ago · ${lr.found} found · ${lr.ms} ms`);
+        for (const d of o.detectors) check(d.ok, `detector ${d.kind}`, d.ok ? `${d.ms == null ? '' : d.ms + ' ms'}` : 'ERROR: ' + d.error);
+      }
+      const L = o.ledger || {};
+      (L.available ? check : (l, d) => note(l, d))(true, 'proxycms refund register in the replica',
+        L.available ? `refunds table present · ${L.n} refund(s) in the last 7 days · ${L.fail_n || 0} failed at the gateway` : 'refunds / refund_reasons / admin_users arrive with the next prod-sync tick (PROD_SYNC_INTERVAL_MIN)');
+      if (o.open) note('open candidates now', `${o.open.open} · ${Number(o.open.sar || 0).toFixed(2)} SAR · ${o.open.new_24h} new in 24 h`);
+    }
+  } catch (e) { check(false, 'refund exposure reachable', e.message); }
+
   // ── 6. integrations that are meant to be off stay off (and say so) ───────────────
   head('6 · optional integrations');
   // "configured" is not "working". A URL pointing at an unreachable host — or still holding the

@@ -21,6 +21,11 @@ const DEFAULT_TABLES = [
   // 'channels' MUST precede 'nafath_logs' (nafath_logs.channel_id → channels.id, fk_rails_d768a88037).
   'plans', 'sellers', 'settings', 'versions', 'channels', 'plan_channels',
   'onboarding_orders', 'checkouts', 'payments',
+  /* THE REFUND LEDGER (26 Sep 2026): proxycms › Refunds is `refunds` (payment_id, admin_user_id, refund_reason_id,
+   * status pending/success/fail, refund_type, notes with the INC, fail_reason) + `refund_reasons` (the reason list) +
+   * `admin_users` (who refunded — email and role only, every credential column is skipped below). Mobile › Refund
+   * exposure correlates its candidates with these rows and reports per period what was refunded, by whom and why. */
+  'refund_reasons', 'admin_users', 'refunds',
   /* THE SELECTED NUMBER (25 Sep 2026): the MSISDN chosen before activation — the admin panel's "Number" column — is a
    * row of public.numbers (identifier, onboarding_order_id, reservation_id, expires_at). Without it a visitor at the
    * payment step was "No customer found" under the number the front line has. Kept right after onboarding_orders. */
@@ -53,7 +58,10 @@ const DEFAULT_TABLES = [
  * query and never travel over the wire. */
 const SKIP_COLUMNS = {
   users: ['password_digest', 'otp_secret_key', 'reset_password_token', 'confirmation_token',
-    'unlock_token', 'authentication_token', 'encrypted_password']
+    'unlock_token', 'authentication_token', 'encrypted_password'],
+  /* proxycms admins: the console needs the e-mail behind refunds.admin_user_id, never a hash, a token or an IP */
+  admin_users: ['encrypted_password', 'reset_password_token', 'reset_password_sent_at', 'remember_created_at', 'unlock_token',
+    'current_sign_in_ip', 'last_sign_in_ip']
 };
 
 const BATCH   = Number(process.env.PROD_SYNC_BATCH || 10000);
@@ -235,6 +243,8 @@ async function planTable(prod, table) {
     catch (e) { console.warn(`[PROD-SYNC] ${table}: cannot add column ${c.column_name}: ${e.message.slice(0, 80)}`); }
   }
   if (table === 'numbers') await db.source.query(`CREATE INDEX IF NOT EXISTS idx_src_numbers_identifier ON "${localSchema}"."numbers" (identifier)`).catch(() => {});
+  if (table === 'refunds') { await db.source.query(`CREATE INDEX IF NOT EXISTS idx_src_refunds_payment ON "${localSchema}"."refunds" (payment_id)`).catch(() => {});
+    await db.source.query(`CREATE INDEX IF NOT EXISTS idx_src_refunds_created ON "${localSchema}"."refunds" (created_at)`).catch(() => {}); }
   lc = await columns(db.source, localSchema, table);
   const pkArr = await primaryKey(db.source, localSchema, table);
   const uniques = await uniqueKeys(db.source, localSchema, table);

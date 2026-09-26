@@ -957,6 +957,20 @@ const METRICS = {
       } catch (e) { return []; }
     }
   },
+  /* THE LEDGER SIDE (26 Sep 2026): proxycms `refunds` rows whose gateway request FAILED (status 'fail' — Refund#update_response
+   * puts the payment back to 'success' and the customer still has no money). Replica table, present once prodSync has
+   * copied it; before that the metric simply returns nothing. */
+  refund_gateway_failed: {
+    label: 'Refunds failed at the gateway (proxycms)', unit: 'count', higherIsBad: true,
+    sourceTables: 'refunds (replica of proxycms)',
+    async compute(src, now, w) {
+      try { const db = require('./db');
+        const ok = await db.source.query(`SELECT to_regclass('public.refunds') r`); if (!ok.rows[0] || !ok.rows[0].r) return [];
+        const r = await db.source.query(`SELECT count(*)::int n, count(*) FILTER (WHERE status = 'fail')::int failed FROM refunds WHERE updated_at >= $1::timestamp - ($2||' hours')::interval AND updated_at < $1::timestamp`, [now, w]);
+        return [{ dim: {}, value: r.rows[0].failed, sample: r.rows[0].n }];
+      } catch (e) { return []; }
+    }
+  },
   app_crash_count: {
     label: 'App crashes (unhandled exceptions → -501)', unit: 'count', higherIsBad: true,
     sourceTables: 'api_error_events (app error log)',
