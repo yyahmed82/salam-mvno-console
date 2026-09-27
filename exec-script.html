@@ -81,14 +81,14 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
 <body>
 <header class="top">
   <b>Executive brief — speaker notes · the CIO demo</b>
-  <small id="clock">15 slides · ~40 min + Q&amp;A · 25-min cut marked</small>
+  <small id="clock">14 slides · ~39 min + Q&amp;A · 25-min cut marked</small>
   <button class="tbtn" id="th" type="button">Dark</button>
   <button class="tbtn" id="pr" type="button" style="margin-left:0">Print</button>
 </header>
 <div class="wrap">
 
 <h1>Salam Observability Portal — the demo for the CIO, 27 September 2026</h1>
-<div class="sub">One line to open each slide, the cues underneath it, the live screen to open, and the bridge into the next. Times are cumulative; the room decides the rest. Updated 26 Sep for alpha.103: 182 rules, responder teams with contract clocks, refund exposure and the Agent 2 refund desk, Teams management, Salam-team-vs-contract on every user.</div>
+<div class="sub">One line to open each slide, the cues underneath it, the live screen to open, and the bridge into the next. Times are cumulative; the room decides the rest. Updated 26 Sep for alpha.103: 182 rules, responder teams with contract clocks, refund exposure and the Agent 2 refund desk, Teams management, Salam-team-vs-contract on every user. <b>27 Sep:</b> slide 13 now carries the financial case (four levers, in SAR); the B2B-market slide is hidden for this run — the deck is 14 slides and the close is slide 14.</div>
 
 <div class="plan">
   <h2>Before the room · ten minutes</h2>
@@ -117,9 +117,8 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
     <li><b>Access, PII, ownership</b> <span class="t">26:30</span></li>
     <li class="cut"><b>Ten months</b> <span class="t">29:00</span></li>
     <li class="cut"><b>Value beyond IT</b> <span class="t">31:00</span></li>
-    <li><b>What it took</b> — one initiative, end to end <span class="t">33:00</span></li>
-    <li><b>What it can become</b> — the Salam B2B opportunity <span class="t">35:30</span></li>
-    <li><b>Sponsor. Launch. Commercialize.</b> — the ask <span class="t">38:00</span></li>
+    <li><b>What it took, what it returns</b> — one initiative, four levers in SAR <span class="t">33:00</span></li>
+    <li><b>Sponsor. Launch. Commercialize.</b> — the ask <span class="t">37:00</span></li>
   </ol>
 </div>
 
@@ -132,6 +131,7 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
     <li><b>Slide 5</b> → Mobile › Alerts: an open incident, its owning team, the contract clocks in the drawer, the runbook.<span class="t">#alerts</span></li>
     <li><b>Slide 7</b> → AI Ops › Mission control (the agents live), then Yusr with one number.<span class="t">#agents-live</span></li>
     <li><b>Slide 10</b> → Teams management › Responder teams (one team, its members, the clocks) and the Refund desks section.<span class="t">#teams</span></li>
+    <li><b>Slide 13</b> → only if he asks where the 1.16 M or the 10 % come from: Vendors &amp; contracts › Contracts tab (monthly fee, cap, chain, renewal radar) — the deck figures are read from there.<span class="t">#vendor-contracts</span></li>
     <li><b>Q&amp;A</b> → Customer 360 with a masked customer; Vendors &amp; contracts if he asks about penalties.<span class="t">#subscriber</span></li>
   </ol>
 </div>
@@ -289,7 +289,7 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
     <li>The point is not speed — every milestone was a <b>real operating season</b>, not a demo.</li>
     <li>Next, S1 2027: assisted resolution — a draft root cause from the evidence on the incident; ServiceNow; the Fixed refund desk on Moyasar; the GPU host for the agents. Then predictive — degradation flagged before a threshold breaks.</li>
   </ul>
-  <div class="warn">Cut in the 25-minute version; the dates are on slide 13 as well.</div>
+  <div class="warn">Cut in the 25-minute version; the milestones survive as the strip on slide 13.</div>
   <div class="next"><b>Bridge:</b> “And the value was never confined to IT.”</div>
 </section>
 
@@ -303,44 +303,34 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
     <li>And leadership: <b>“the number in the review is the number the operation is running on, at the moment you read it.”</b></li>
   </ul>
   <div class="warn">Cut in the 25-minute version.</div>
-  <div class="next"><b>Bridge:</b> “Which is why I am asking for three things — but first, two slides on scale.”</div>
+  <div class="next"><b>Bridge:</b> “Which is why I am asking for three things — but first, what it took, and what it gives back.”</div>
 </section>
 
 <section class="s">
-  <div class="sh"><span class="sn">13</span><span class="st">What it took — one initiative, end to end</span><span class="sm">33:00 · 2.5 min</span></div>
-  <div class="say">“Everything on the previous twelve slides was designed, built, deployed and operated by one person, in ten months, <em>alongside the day job</em>.”</div>
+  <div class="sh"><span class="sn">13</span><span class="st">What it took, what it returns — one initiative, four levers in SAR</span><span class="sm">33:00 · 4 min</span></div>
+  <div class="say">“Everything on the previous twelve slides was designed, built, deployed and operated by one person, in ten months, <em>alongside the day job</em> — and it pays Salam back four ways. The chips tell you which figures are measured and which are ceilings.”</div>
   <ul class="cue">
-    <li>Walk the seven cards left to right, one phrase each: programme (two consoles into one, in a quarter), experience (26 roles, ten teams), interface (24 pages, one design language), depth (182 rules, 462 endpoints, ≈80,000 lines, 70+ tables), AI (Yusr and two agents, chosen, measured and budgeted on our own server), journeys (read from the code), integrations (32, with the evidence).</li>
-    <li>Bottom band, left: what this proves — no licence, no vendor, no external services; <b>one person carried it end to end</b>. Say it once, plainly, and move on.</li>
-    <li>Right: what it can become — one sentence, the next slide carries it.</li>
+    <li><b>The strip, ten seconds</b>: two platforms into one, 26 roles and ten teams, 24 pages, 182 rules on ≈80,000 lines, Yusr and two agents on our own server, 21 Mobile journeys and four Fixed channels, 32 integrations. Do not read the tiles; point at them.</li>
+    <li><b>Lever 1 — revenue protected (measured).</b> Money already found leaking: ≈131 k SAR of duplicate bill payments on Fixed in Q1 (Finance's own count, 492 payments) and 10.7 k SAR of app refunds on Mobile May → September (126 cases, three defects behind most of it). A customer refunded <b>before the complaint</b> stays; a defect fixed once stops paying one refund at a time. Growth and retention are the point; the console watches every journey for ~1.5 M customers and B2B accounts are next on the same journeys.</li>
+    <li><b>Lever 2 — penalty credits (contractual ceiling).</b> TCS 697 k and Sigma 464 k SAR a month of L1/L2 managed services, ≈1.16 M; both contracts cap credits at 10 % — up to ≈1.4 M SAR a year, <b>deducted from the invoice</b> when a breach is proven and agreed. The console measures every obligation with our clocks, per incident, with the clause next to the actual. Precedent: SR 1.03 M applied to Wipro in 2022. Say the word <b>candidate</b> before he does — nothing is claimed until Finance validates the eligible fee.</li>
+    <li><b>Lever 3 — the internal product (avoided spend).</b> The Call Centre is customer number one: Customer 360, view-as-user, the real failure reason, refund status, Yusr — instead of the tools it plans to buy. Charged back per seat internally, the same package and price list Salam B2B would sell outside. No per-seat licence, no new vendor; adding a team is configuration in Teams management.</li>
+    <li><b>Lever 4 — vendor scope (renewal target).</b> Both L1/L2 renewals are on the table now. Size them on what the console already does: 182 rules with the next step written, 33 checks an engineer used to run by hand, agents reading the logs every 15 minutes and drafting the triage every 3. Every 10 % taken out of the two scopes is ≈1.4 M SAR a year — <b>a target for the negotiation, not a saving booked</b>.</li>
+    <li>Bottom band: what this proves — <b>one person carried it end to end</b>, no licence, no vendor, no external services; say it once and move on. Right: the financial case in one breath, then the ask — the console in the monthly vendor review and at the renewal table, and a price list for the Call Centre this quarter.</li>
   </ul>
-  <div class="warn">Do not argue ownership in the room. The slide is credit and opportunity, not a claim. If “what happens if you leave?” comes here, give the Q&amp;A answer: the runbooks live on the rules, the docs in the repo, the operating model of the next phase is the team, not the author — that is part of the ask.</div>
-  <div class="nums"><span>Lines of code <b>≈80,000</b></span><span>API endpoints <b>462</b></span><span>Integrations <b>32</b></span><span>Months <b>10</b></span></div>
-  <div class="next"><b>Bridge:</b> “That is what it took. Here is why it is worth more than one operator.”</div>
+  <div class="warn">Do not add the four numbers up into one “ROI” — they are different kinds (measured leak, contractual ceiling, avoided licence, negotiation target) and he will notice. Do not name a competitor tool or a price for it; “the tools the Call Centre plans to buy” is enough. If “against which contract?” comes: the last signed instruments — TCS Amendment 4, Sigma 167-2024 with its addenda — and the renewal is his decision, the measurement is ours. The “what happens if you leave?” answer stays in the Q&amp;A: runbooks on the rules, docs in the repo, the two engineers in the ask.</div>
+  <div class="nums"><span>Found leaking <b>≈142 k SAR</b></span><span>L1/L2 fees <b>≈1.16 M SAR / month</b></span><span>Credit cap <b>10 % ≈ 1.4 M / yr</b></span><span>Licence per seat <b>0</b></span><span>Months <b>10</b></span></div>
+  <div class="next"><b>Bridge:</b> “That is what it took, and what it gives back. Three decisions make it official.”</div>
 </section>
 
-<section class="s">
-  <div class="sh"><span class="sn">14</span><span class="st">What it can become — the Salam B2B opportunity</span><span class="sm">35:30 · 2.5 min</span></div>
-  <div class="say">“We built it for Salam. Every operator in the Kingdom has the same blind spot — and runs on the same national integrations we already watch.”</div>
-  <ul class="cue">
-    <li>The need: Nafath, Yakeen, Absher, Semati, SADAD, the couriers, the SMS gateways — every operator here has them, and the same gap: APM tools watch servers, business journeys fail silently. No market product ships a KSA journey pre-mapped.</li>
-    <li>Salam's edge: born inside a Saudi operator, proven on a mobile and a fixed business at once, ~1.5 million customers, data in the Kingdom, AI on-premise, zero licences. A reference no vendor can claim.</li>
-    <li>The offer: Salam OpsConsole, white-labelled — brand, name, theme and every connection are configuration — three ways to run it: shared cloud, dedicated cloud, on-premise. Priced by subscriber band. Salam is the reference customer and the distributor.</li>
-    <li>Already in hand: a white-label build with a synthetic demo tenant — nothing of Salam's inside — a product page in English and Arabic, a demo that stands up in ten minutes. A prospect's POC runs read-only on their replica.</li>
-    <li>The proposal: a joint taskforce, Digital Operations with Salam B2B, this quarter — IP and legal under Salam, the name, the commercial model, the first two prospects. <b>No capex, no headcount — a decision.</b></li>
-  </ul>
-  <div class="warn">He ran channel strategy and customer success at Oracle: expect “who supports it, what SLA do we sign, how do we price, who owns the IP”. Answers in the Q&amp;A; do not quote market sizes or revenue — “that is the taskforce's first deliverable.”</div>
-  <div class="nums"><span>Customers <b>~1.5M</b></span><span>Deployment models <b>3</b></span><span>Licences <b>0</b></span></div>
-  <div class="next"><b>Bridge:</b> “Which brings me to the three decisions.”</div>
-</section>
+<!-- The B2B-market slide (formerly 14) is hidden in the deck for the 27 Sep run; its answers stay in the Q&amp;A below. -->
 
 <section class="s">
-  <div class="sh"><span class="sn">15</span><span class="st">Sponsor. Launch. Commercialize.</span><span class="sm">38:00 · 2 min</span></div>
+  <div class="sh"><span class="sn">14</span><span class="st">Sponsor. Launch. Commercialize.</span><span class="sm">37:00 · 2 min</span></div>
   <div class="say">“Built in-house, running in production on both businesses, with AI already inside it. Three decisions turn a working tool into a Salam capability — <em>and a Salam product</em>.”</div>
   <ul class="cue">
     <li><b>One — sponsorship.</b> Make it the operational reference: used in the monthly review instead of rebuilt in slides. Concretely: the executive dashboard is the first screen of the vendor review, and the refund desk is the register Finance reads.</li>
     <li><b>Two — launch it officially</b>, as a Salam product, and back the next phase on this platform, not a second one: the GPU host, ServiceNow access, an owner for the Fixed data feed, and the second and third engineers who make it the team's, not the author's.</li>
-    <li><b>Three — commercialize</b>: the joint taskforce with Salam B2B, this quarter. Salam as the reference customer, the Kingdom as the market.</li>
+    <li><b>Three — commercialize</b>: the joint taskforce with Salam B2B, this quarter — the Call Centre as the first customer, Salam as the reference, the Kingdom as the market. The external pitch is not in this deck; if he asks, the answers are in the Q&amp;A below.</li>
     <li>Then stop talking. Ask directly: <b>“can I have those three?”</b> and let the silence do the work.</li>
   </ul>
   <div class="warn">Leave six to eight minutes for questions — he will use them. If the room goes quiet, offer: “I can open any screen you want, live, right now.” Customer 360 with a masked customer is the one that always starts a conversation.</div>
@@ -356,6 +346,8 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
 <div class="qa"><div class="q">“The refund desk — who is accountable if the agent is wrong?”</div><div class="a">The same people as today, with better evidence. The agent reviews and proposes; the approver approves by name on the page; L2 posts the refund in proxycms; the console closes the case only when the register shows it. The approvers, the executing team and the two clocks are configuration in Teams management, and the audit trail carries every step. A wrong proposal costs a click, not money.</div></div>
 <div class="qa"><div class="q">“How do I know these numbers are real?”</div><div class="a">Every figure on these slides comes out of the running platform, and I can open it live in this room. That is rather the point.</div></div>
 <div class="qa"><div class="q">“Can this be sold outside Salam — and who would own it?”</div><div class="a">Salam would. The proposal is that Salam packages and sells it, with the operations team that built it leading the product line. The Kingdom's operators share every national integration we already watch, and none of the market products know a KSA journey. Today's ask is the mandate to scope it properly: legal, brand and the commercial model. The synthetic demo tenant exists, so nothing of Salam's leaves the building in a pitch.</div></div>
+<div class="qa"><div class="q">“Is the 1.4 M on slide 13 real money?”</div><div class="a">Not yet — it is the contractual ceiling: credits are capped at 10 % of the fees, and the two L1/L2 contracts run at ≈1.16 M SAR a month, so the most the clauses allow is ≈1.4 M a year. What is real today is the measurement: every obligation timed by our clocks, per incident, with the clause next to the actual. A figure becomes money the month Finance validates the eligible fee and the vendor agrees the breach — that is why the slide says <b>candidate</b>. The same 10 % appears twice on purpose, once as credits when they miss and once as scope when we renew; they are two different conversations and the deck never adds them together.</div></div>
+<div class="qa"><div class="q">“What does the Call Centre pay, then?”</div><div class="a">An internal charge-back per seat, set with Salam B2B by the taskforce — no figure today. What is certain is what it does not pay: a per-seat licence and an integration project, because the journeys, Customer 360, view-as-user and the roles already exist. The price list is the same one Salam B2B would sell outside, which is the point of starting inside.</div></div>
 <div class="qa"><div class="q">“What would commercialising cost Salam — and who supports a customer?”</div><div class="a">This quarter: a taskforce's time, a legal review and a brand decision. Hosting for a first customer is one dedicated VM in a Saudi region, or their own servers. Support is the same L1/L2 model we run for ourselves, sold as a subscription by subscriber band — the taskforce prices it. No capex decision is on the table today, only whether we scope it.</div></div>
 <div class="qa"><div class="q">“What is still missing?”</div><div class="a">Answer straight — it buys credibility. Assisted resolution is not built. ServiceNow is not integrated. The Fixed refund desk has its definition but not its detectors. One Fixed data feed needs an owner. Coverage of Fixed is newer than Mobile and will need tuning for another month. None of that is a reason to wait to make it official.</div></div>
 

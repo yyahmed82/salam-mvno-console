@@ -228,6 +228,48 @@ tr:last-child td{border-bottom:none}
 .s14.b2b .band .col{padding:clamp(14px,1.4vw,22px)}
 .s14.b2b .band .cb{font-size:clamp(12.5px,.95vw,15px)}
 .s14.b2b .ask{font-size:clamp(12.5px,.95vw,15px)}
+/* ---- slide 13 : what it took (strip) · what it returns (four levers, in SAR) ---- */
+.slide[hidden]{display:none}
+.s14.money .took{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:clamp(7px,.7vw,11px)}
+.s14.money .levers{grid-template-columns:repeat(4,minmax(0,1fr))}
+.s14.money .tile{border:1px solid var(--line);border-radius:12px;padding:clamp(8px,.8vw,12px) clamp(9px,.9vw,13px);background:var(--glass);display:flex;flex-direction:column;gap:2px;transition:border-color .3s,background .3s}
+.s14.money .tile:hover{border-color:rgba(0,230,118,.34);background:rgba(255,255,255,.055)}
+.s14.money .tile .tagline{font-size:clamp(9px,.66vw,10.5px);letter-spacing:.14em}
+.s14.money .tile .kk{font-size:clamp(13px,1.05vw,16px);margin-top:0;line-height:1.15}
+.s14.money .tile .cb{font-size:clamp(10px,.74vw,11.5px);line-height:1.35}
+.s14.money .tile.blue{border-color:rgba(92,200,255,.22)} .s14.money .tile.blue .kk,.s14.money .tile.blue .tagline{color:var(--blue)}
+.s14.money .mhead{display:flex;align-items:center;gap:12px;margin-top:2px;flex-wrap:wrap}
+.s14.money .mhead .tagline{white-space:nowrap;font-size:clamp(11px,.85vw,13px);letter-spacing:.22em}
+.s14.money .mhead i{flex:1;height:1px;min-width:40px;background:linear-gradient(90deg,var(--line),transparent);display:block}
+.s14.money .legend{display:flex;gap:6px;flex-wrap:wrap}
+.s14.money .chip{display:inline-flex;align-items:center;gap:6px;font-size:clamp(9px,.66vw,10.5px);letter-spacing:.12em;font-weight:800;text-transform:uppercase;padding:3px 8px;border-radius:999px;border:1px solid;white-space:nowrap;line-height:1.2}
+.s14.money .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;display:block}
+.s14.money .chip.meas{color:var(--green);border-color:rgba(0,230,118,.42);background:rgba(0,230,118,.08)}
+.s14.money .chip.cap{color:var(--amber);border-color:rgba(255,176,32,.45);background:rgba(255,176,32,.08)}
+.s14.money .chip.avoid{color:var(--blue);border-color:rgba(92,200,255,.45);background:rgba(92,200,255,.08)}
+.s14.money .chip.tgt{color:var(--amber);border-color:rgba(255,176,32,.45);border-style:dashed;background:transparent}
+.s14.money .levers .card{gap:6px;padding:clamp(12px,1.2vw,18px)}
+.s14.money .levers .card.amber:hover{border-color:rgba(255,176,32,.5)}
+.s14.money .lh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.s14.money .ln{width:22px;height:22px;flex:0 0 22px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:900;border:1px solid rgba(0,230,118,.45);color:var(--green);background:rgba(0,230,118,.08);font-variant-numeric:tabular-nums}
+.s14.money .card.amber .ln{border-color:rgba(255,176,32,.5);color:var(--amber);background:rgba(255,176,32,.08)}
+.s14.money .card.blue .ln{border-color:rgba(92,200,255,.5);color:var(--blue);background:rgba(92,200,255,.08)}
+.s14.money .lh .chip{margin-left:auto}
+.s14.money .amt{font-size:clamp(21px,2.1vw,34px);font-weight:900;letter-spacing:-.035em;line-height:1;color:var(--green);font-variant-numeric:tabular-nums;margin-top:3px}
+.s14.money .amt small{font-size:.46em;font-weight:700;color:var(--dim);letter-spacing:-.01em;margin-left:4px}
+.s14.money .card.amber .amt{color:var(--amber)} .s14.money .card.blue .amt{color:var(--blue)}
+.s14.money .sub{font-size:clamp(10.5px,.78vw,12.5px);color:var(--ink);font-weight:600;line-height:1.35}
+.s14.money .src{font-size:clamp(9.5px,.7vw,11px);color:var(--faint);line-height:1.4;margin-top:auto;padding-top:5px;border-top:1px solid var(--line)}
+.s14.money .band{grid-template-columns:1fr 1.6fr}
+.s14.money .band .cb b{color:var(--ink)}
+.s14.money .band .col.now .cb .g{color:var(--green);font-weight:700}
+.slide.s14.money{padding-top:clamp(26px,4vh,64px);padding-bottom:clamp(54px,7.5vh,90px)}
+.s14.money .lh{flex-wrap:nowrap} .s14.money .lh .tagline{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(10px,.74vw,11.5px);letter-spacing:.1em}
+.s14.money .lh .chip{font-size:9px;letter-spacing:.1em;padding:2px 6px}
+@media (max-width:1300px){ .s14.money .lh{flex-wrap:wrap} .s14.money .lh .chip{margin-left:0} .s14.money .lh .tagline{overflow:visible;white-space:normal} .s14.money .src{display:none} }
+@media (max-height:800px){ .s14.money .tile .cb{display:none} .s14.money h2{font-size:clamp(22px,2.4vw,34px)} .s14.money .levers .cb{line-height:1.42} }
+@media (max-width:1100px){ .s14.money .tile .cb{display:none} .s14.money .levers .cb{font-size:clamp(10px,.78vw,12px)} .s14.money .levers .card{padding:clamp(10px,1vw,14px)} }
+@media (max-width:900px),(max-height:600px){ .slide.s14.money{justify-content:flex-start;overflow-y:auto} .s14.money .took{grid-template-columns:repeat(2,minmax(0,1fr))} .s14.money .tile .cb{display:block} .s14.money .levers{grid-template-columns:1fr} .s14.money .band{grid-template-columns:1fr} }
 </style>
 </head>
 <body>
@@ -549,48 +591,56 @@ tr:last-child td{border-bottom:none}
 </section>
 
 <!-- 13 WHAT IT TOOK -->
-<section class="slide s14" data-dur="15000">
+<section class="slide s14 money" data-dur="18000">
   <div class="inner">
-    <div class="eyebrow r">What it took &nbsp;&middot;&nbsp; and what it can become</div>
-    <h2 class="wide r">One initiative, end to end &mdash; and the makings of a Salam B2B product.</h2>
-    <div class="row c4 r">
-      <div class="card"><div class="tagline">Programme</div><div class="ct">Two consoles into one, in a quarter</div>
-        <div class="cb">A convergence plan in eight phases, delivered part-time &middot; a third URL beside the two production consoles, parity proven, then cutover &middot; L1 and L2 enablement sessions, a migration mail, a runbook for every change.</div>
-        <div class="kk">2 platforms &rarr; 1</div></div>
-      <div class="card"><div class="tagline">Experience</div><div class="ct">Every role sees exactly its job</div>
-        <div class="cb">26 roles across ten teams on an L1 &rarr; L2 &rarr; L3 ladder, an executive view that is only an executive view &middot; a guided tour, one lookup box for both businesses, bilingual navigation &middot; phone and iPad, light and dark.</div>
-        <div class="kk">26 roles &middot; 10 teams</div></div>
-      <div class="card"><div class="tagline">Interface</div><div class="ct">24 pages, one design language</div>
-        <div class="cb">Dashboards, NOC wall and radar, dealer maps, order trace, error boards, Customer 360 &middot; every table exports to Excel and PDF, every mail wears the same shell &middot; hand-built, no framework, no build step.</div>
-        <div class="kk">24 pages</div></div>
-      <div class="card"><div class="tagline">Depth</div><div class="ct">Every measurement defined and governed</div>
-        <div class="cb">182 alert rules with runbooks, 33 DMS flow rules, objectives with error budgets, hour-of-week baselines &middot; impact counting, acknowledgement SLA and escalation, audit trail, demo mode &middot; 462 API endpoints, 70+ tables, 15 collectors and probes.</div>
-        <div class="kk">&asymp;80,000 lines of code</div></div>
+    <div class="eyebrow r">What it took &nbsp;&middot;&nbsp; and what it returns</div>
+    <h2 class="wide r">One initiative, end to end &mdash; and four ways it pays Salam back.</h2>
+    <div class="took r">
+      <div class="tile"><div class="tagline">Programme</div><div class="kk">2 platforms &rarr; 1</div><div class="cb">Two consoles into one, in a quarter &middot; parity proven, then cutover</div></div>
+      <div class="tile"><div class="tagline">Experience</div><div class="kk">26 roles &middot; 10 teams</div><div class="cb">Every role sees exactly its job &middot; bilingual, phone and iPad</div></div>
+      <div class="tile"><div class="tagline">Interface</div><div class="kk">24 pages</div><div class="cb">One design language &middot; hand-built, no framework, no build step</div></div>
+      <div class="tile"><div class="tagline">Depth</div><div class="kk">182 rules</div><div class="cb">&asymp;80,000 lines, 462 endpoints, 70+ tables, 15 collectors &middot; a runbook on every rule</div></div>
+      <div class="tile blue"><div class="tagline">AI</div><div class="kk">Yusr &middot; 2 agents</div><div class="cb">On our own server, PII masked, budgeted, every call costed</div></div>
+      <div class="tile"><div class="tagline">Journeys</div><div class="kk">21 Mobile &middot; 4 Fixed</div><div class="cb">Read from the code &middot; business vs technical, money at risk counted</div></div>
+      <div class="tile"><div class="tagline">Integrations</div><div class="kk">32 mapped</div><div class="cb">Identity, payments, couriers, SMS, CST, Remedy &middot; evidence attached</div></div>
     </div>
-    <div class="row c3 r">
-      <div class="card blue"><div class="tagline blue">AI, selected and sized</div><div class="ct">On-prem models, budgeted, audited</div>
-        <div class="cb">Yusr plus two agents &mdash; log intelligence every 15 minutes, incident triage every 3 minutes, rule-to-team mapping, a refund desk every 15 minutes &middot; the model chosen and measured on our own server (8B, 17.6 tokens/s), PII masked before inference, nothing leaves Salam &middot; token ceilings per person and per agent, every call recorded with its cost.</div>
-        <div class="kk">Yusr &middot; 2 agents &middot; 4 duties</div></div>
-      <div class="card"><div class="tagline">Journeys</div><div class="ct">Read from the code, not from a slide</div>
-        <div class="cb">21 Mobile journeys step by step, the dealer journeys reverse-engineered from the DMS source, four Fixed channels with their funnels &middot; one customer across both businesses, an order trace with every API call &middot; failures split business vs technical, money at risk counted.</div>
-        <div class="kk">21 Mobile &middot; 4 Fixed channels</div></div>
-      <div class="card"><div class="tagline">APIs &amp; integrations</div><div class="ct">32 integrations mapped, evidence attached</div>
-        <div class="cb">Identity (Nafath, Yakeen, Absher, Semati), six payment rails, eight couriers, SMS &middot; CST Arqami live through a JDBC bridge, Remedy escalations read-only, gateway traces, the OSB archive &middot; app and API logs collected over SSH, masked at source.</div>
-        <div class="kk">32 integrations</div></div>
+    <div class="mhead r"><div class="tagline">What it returns &middot; four levers, in SAR</div><i></i>
+      <div class="legend"><span class="chip meas">Measured</span><span class="chip cap">Contractual ceiling</span><span class="chip avoid">Avoided spend</span><span class="chip tgt">Renewal target</span></div></div>
+    <div class="row c4 levers r">
+      <div class="card"><div class="lh"><span class="ln">1</span><span class="tagline">Revenue protected</span><span class="chip meas">Measured</span></div>
+        <div class="amt">&asymp;142k<small>SAR found leaking</small></div>
+        <div class="sub">131k SAR duplicate bill payments on Fixed (Q1) &middot; 10.7k SAR app refunds on Mobile (May &rarr; Sep)</div>
+        <div class="cb">A customer refunded <b>before the complaint</b> stays a customer; a defect fixed once stops paying refunds one at a time &mdash; three defects sit behind most of the Mobile money. Every journey watched for <b>~1.5M customers</b>, both businesses; B2B accounts next, same journeys, same Customer&nbsp;360.</div>
+        <div class="src">Refund register &middot; 6 detectors live on Mobile, the Fixed detectors next &middot; Moyasar Q1 duplicates from Finance</div></div>
+      <div class="card amber"><div class="lh"><span class="ln">2</span><span class="tagline amber">Penalty credits</span><span class="chip cap">Ceiling</span></div>
+        <div class="amt">up to 1.4M<small>SAR / year</small></div>
+        <div class="sub">10&nbsp;% cap on &asymp;1.16M SAR / month of L1/L2 managed services (TCS &middot; Sigma) &mdash; deducted from the invoice</div>
+        <div class="cb">Every obligation measured by <b>our clocks</b>, per incident, with the clause quoted next to the actual &mdash; a breach that is <b>proven and agreed</b> becomes a credit. Precedent exists: SR&nbsp;1.03M applied to Wipro in 2022. Sigma&rsquo;s 2025 self-reports: 99.2&ndash;99.8&nbsp;%, no credit claimed.</div>
+        <div class="src">Signed instruments: TCS Amendment 4 (697k / month) &middot; Sigma 167-2024 with addenda (464k / month run-rate) &middot; candidates until Finance validates</div></div>
+      <div class="card blue"><div class="lh"><span class="ln">3</span><span class="tagline blue">Internal product</span><span class="chip avoid">Avoided</span></div>
+        <div class="amt">0<small>SAR licence per seat</small></div>
+        <div class="sub">The Call Centre is customer number one of the Salam B2B product &mdash; instead of the tools it plans to buy</div>
+        <div class="cb">Customer 360, view-as-user, the real failure reason, refund status and Yusr are already what a front-line agent needs; the Call Centre role exists. <b>Charged back per seat internally</b>, the same package, price list and SLA that Salam B2B sells outside &mdash; no per-seat licence, no new vendor.</div>
+        <div class="src">24 pages &middot; 26 roles &middot; adding a team is configuration in Teams management, not a contract</div></div>
+      <div class="card amber"><div class="lh"><span class="ln">4</span><span class="tagline amber">Vendor scope</span><span class="chip tgt">Target</span></div>
+        <div class="amt">1.4M<small>SAR / year per 10&nbsp;%</small></div>
+        <div class="sub">Both L1/L2 renewals are due now &mdash; size them on what the console does, not on what the vendor proposes</div>
+        <div class="cb">One platform instead of two consoles; 182 rules with the next step written; 33 checks an engineer used to run by hand; agents that read the logs every 15 minutes and <b>draft the triage every 3</b>. The heavy, repeated work is done before a person opens the ticket &mdash; fewer eyes on dashboards to pay for.</div>
+        <div class="src">Baseline &asymp;1.16M SAR / month (TCS + Sigma) &middot; a target for the negotiation, not a saving booked</div></div>
     </div>
     <div class="band r">
       <div class="col"><div class="dhead">What this proves</div>
         <div class="cb">Product, design, engineering, data, AI and operations &mdash; carried end to end by <b>one person</b>, in ten months, alongside the day job. No licence, no vendor, no external professional services.</div>
         <div class="who">Yosri A. Yahmed<small>Head of Digital Operations &middot; designed, built, deployed and operated the platform</small></div></div>
-      <div class="col now"><div class="dhead">What it can become &mdash; a Salam B2B product</div>
-        <div class="cb">The same platform, white-labelled: every connection is configuration, journeys and integrations packaged per operator, on-prem AI, three ways to run it &mdash; shared cloud, dedicated cloud, on-premise. <b>Salam as the reference customer</b>; the operators of the Kingdom and the Gulf as the market.</div>
-        <div class="ask"><span>The ask &rarr;</span><span style="color:var(--ink);white-space:normal;font-weight:700">a mandate to package it under Salam&rsquo;s name &mdash; legal, brand and commercial model &mdash; this quarter.</span></div></div>
+      <div class="col now"><div class="dhead">The financial case, in one breath</div>
+        <div class="cb">Zero licences, two VMs. <span class="g">Two 10&nbsp;% levers on 1.16M SAR a month</span> &mdash; penalties when they miss, scope when we renew. Customer money found before the complaint. A product the Call Centre buys from Salam instead of the market. Every figure links to an incident, a case or a clause &mdash; <b>the SAR are candidates until Finance validates them.</b></div>
+        <div class="ask"><span>The ask &rarr;</span><span style="color:var(--ink);white-space:normal;font-weight:700">the console in the monthly vendor review and at the renewal table; a price list for the Call Centre this quarter.</span></div></div>
     </div>
   </div>
 </section>
 
-<!-- 14 WHAT IT CAN BECOME -->
-<section class="slide s14 b2b" data-dur="15000">
+<!-- 14 WHAT IT CAN BECOME — hidden for the 27 Sep run (the money story on slide 13 replaces it); remove the hidden attribute to show it again -->
+<section class="slide s14 b2b" data-dur="15000" hidden>
   <div class="inner">
     <div class="eyebrow r">What it can become &nbsp;&middot;&nbsp; the Salam B2B opportunity</div>
     <h2 class="wide r">We built it for Salam. Every operator in the Kingdom has the same blind spot.</h2>
@@ -702,14 +752,15 @@ tr:last-child td{border-bottom:none}
     <button class="btn" id="prev" title="Previous">&lsaquo;</button>
     <button class="btn" id="play" title="Pause / play">&#10073;&#10073;</button>
     <button class="btn" id="next" title="Next">&rsaquo;</button>
-    <span class="count"><span id="cur">01</span> / <span id="tot">15</span></span>
+    <span class="count"><span id="cur">01</span> / <span id="tot">14</span></span>
   </div>
 </div>
 <div class="nav" style="justify-content:center;bottom:0;padding-bottom:22px"><div class="dots" id="dots"></div></div>
 
 <script>
 (function(){
- const slides=[...document.querySelectorAll('.slide')], N=slides.length;
+ // a slide with the hidden attribute stays in the file but leaves the deck: no dot, no number, not reachable
+ const slides=[...document.querySelectorAll('.slide:not([hidden])')], N=slides.length;
  const dotsEl=document.getElementById('dots'), curEl=document.getElementById('cur'), totEl=document.getElementById('tot');
  const playBtn=document.getElementById('play');
  totEl.textContent=String(N).padStart(2,'0');
