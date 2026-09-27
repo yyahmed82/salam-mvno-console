@@ -269,6 +269,99 @@ tr:last-child td{border-bottom:none}
 @media (max-width:1300px){ .s14.money .lh{flex-wrap:wrap} .s14.money .lh .chip{margin-left:0} .s14.money .lh .tagline{overflow:visible;white-space:normal} .s14.money .src{display:none} }
 @media (max-height:800px){ .s14.money .tile .cb{display:none} .s14.money h2{font-size:clamp(22px,2.4vw,34px)} .s14.money .levers .cb{line-height:1.42} }
 @media (max-width:1100px){ .s14.money .tile .cb{display:none} .s14.money .levers .cb{font-size:clamp(10px,.78vw,12px)} .s14.money .levers .card{padding:clamp(10px,1vw,14px)} }
+/* ---- slide 14 : the ask on one page — 01 endorse & enable (beta → launch) · 02 sponsor the resources (hardware | software) ---- */
+.slide.askp{padding-top:clamp(26px,4vh,64px);padding-bottom:clamp(54px,7.5vh,90px)}
+.askp h2{font-size:clamp(24px,2.6vw,40px)}
+.askp .lede{font-size:clamp(12.5px,1vw,18px);max-width:none;margin-top:-3px}
+.askp .lede em{color:var(--ink);font-weight:700}
+.askp .ic{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto;display:block}
+.askp .ak-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.22fr);gap:clamp(10px,1vw,16px);align-items:stretch}
+.askp .ak-card{position:relative;overflow:hidden;padding:clamp(12px,1.2vw,18px);gap:clamp(8px,1.1vh,12px);border-radius:16px}
+.askp .ak-card::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--green),rgba(0,230,118,0) 72%)}
+.askp .ak-card::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 70% at 0% 0%,rgba(0,230,118,.10),transparent 60%)}
+.askp .ak-card.blue::before{background:linear-gradient(90deg,var(--blue),rgba(92,200,255,0) 72%)}
+.askp .ak-card.blue::after{background:radial-gradient(120% 70% at 0% 0%,rgba(92,200,255,.09),transparent 60%)}
+.askp .ak-card>*{position:relative;z-index:1}
+.askp .ak-h{display:flex;align-items:center;gap:12px}
+.askp .ak-h>div{min-width:0;flex:1}
+.askp .band .col:first-child .kps{margin:auto 0}
+.askp .ak-n{font-size:clamp(28px,2.6vw,42px);font-weight:900;letter-spacing:-.04em;line-height:.9;color:transparent;-webkit-text-stroke:1.3px var(--green);font-variant-numeric:tabular-nums}
+.askp .ak-card.blue .ak-n{-webkit-text-stroke-color:var(--blue)}
+.askp .ak-t{font-size:clamp(16px,1.35vw,24px);font-weight:800;letter-spacing:-.02em;color:var(--ink);line-height:1.15;margin-top:2px}
+.askp .ak-t .sep{color:var(--faint);font-weight:300;margin:0 .22em}
+.askp .pill{margin-left:auto;align-self:flex-start;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:clamp(9px,.66vw,11.5px);letter-spacing:.12em;font-weight:800;text-transform:uppercase;padding:4px 9px;border-radius:999px;border:1px solid rgba(0,230,118,.45);color:var(--green);background:rgba(0,230,118,.08)}
+.askp .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+.askp .pill.blue{color:var(--blue);border-color:rgba(92,200,255,.45);background:rgba(92,200,255,.08)}
+/* the beta → launch track */
+.askp .ak-track{position:relative;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding-top:2px}
+.askp .ak-track::before{content:"";position:absolute;left:12.5%;right:12.5%;top:17px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--green) 0%,var(--green) 33.4%,rgba(0,230,118,.30) 33.4%,rgba(92,200,255,.30) 100%)}
+.askp .ak-track::after{content:"";position:absolute;left:37.5%;width:25%;top:17px;height:2px;background:linear-gradient(90deg,transparent,var(--green),transparent) no-repeat;background-size:40% 100%;animation:akflow 2.2s linear infinite}
+@keyframes akflow{from{background-position:-67% 0}to{background-position:167% 0}}
+.askp .st{display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px;min-width:0}
+.askp .st .nd{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:15px;margin-bottom:5px;position:relative;z-index:1;background:#061a10;border:1.5px solid rgba(255,255,255,.22);color:var(--dim)}
+.askp .st.done .nd{background:var(--green);border-color:var(--green);color:#04100A;box-shadow:0 0 16px rgba(0,230,118,.45)}
+.askp .st.now .nd{border:2px solid var(--green);color:var(--green);background:#062015;animation:akpulse 2.2s ease-out infinite}
+.askp .st.next .nd{border:1.5px dashed rgba(0,230,118,.6);color:var(--green)}
+.askp .st.loop .nd{border-color:rgba(92,200,255,.6);color:var(--blue);background:#061521}
+@keyframes akpulse{0%{box-shadow:0 0 0 0 rgba(0,230,118,.55)}70%{box-shadow:0 0 0 12px rgba(0,230,118,0)}100%{box-shadow:0 0 0 0 rgba(0,230,118,0)}}
+.askp .st b{font-size:clamp(12px,.95vw,16px);font-weight:800;color:var(--ink);letter-spacing:-.01em;line-height:1.2}
+.askp .st .when{font-size:clamp(8.5px,.62vw,11px);letter-spacing:.14em;font-weight:800;text-transform:uppercase;color:var(--green)}
+.askp .st.loop .when{color:var(--blue)}
+.askp .st .d{font-size:clamp(10px,.74vw,13px);color:var(--dim);line-height:1.35;margin-top:2px}
+.askp .ak-sub{font-size:clamp(8.5px,.64vw,11px);letter-spacing:.16em;font-weight:800;text-transform:uppercase;color:var(--faint);margin-top:auto}
+.askp .ak-en{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.askp .en{display:flex;align-items:center;gap:9px;padding:7px 10px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.025);font-size:clamp(10.5px,.8vw,14px);color:var(--ink);font-weight:600;line-height:1.3;transition:border-color .3s,background .3s}
+.askp .en:hover{border-color:rgba(0,230,118,.4);background:rgba(0,230,118,.06)}
+.askp .en .bx{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:0 0 26px;background:rgba(0,230,118,.1);color:var(--green);font-size:14px}
+/* hardware | software */
+.askp .ak-hs{display:grid;grid-template-columns:minmax(0,1.06fr) minmax(0,1fr);gap:clamp(8px,.8vw,12px);flex:1}
+.askp .hsx{border:1px solid rgba(92,200,255,.16);border-radius:12px;padding:clamp(9px,.9vw,13px);background:rgba(92,200,255,.03);display:flex;flex-direction:column;gap:7px;min-width:0}
+.askp .hs-h{display:flex;align-items:center;gap:8px;font-size:clamp(10px,.74vw,12.5px);letter-spacing:.14em;font-weight:800;text-transform:uppercase;color:var(--blue)}
+.askp .hs-h .bx{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;flex:0 0 24px;background:rgba(92,200,255,.12);color:var(--blue);font-size:14px}
+.askp .hs-h small{letter-spacing:.01em;text-transform:none;font-weight:600;color:var(--dim);font-size:clamp(10px,.74vw,11.5px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.askp table.spec{font-size:clamp(10.5px,.78vw,14px);border-collapse:separate;border-spacing:0}
+.askp .spec th{font-size:clamp(8.5px,.6vw,11px);letter-spacing:.12em;text-transform:uppercase;font-weight:800;color:var(--faint);text-align:left;padding:4px 8px}
+.askp .spec th.rec{color:var(--blue);background:rgba(92,200,255,.09);border-radius:7px 7px 0 0}
+.askp .spec td{padding:4px 8px;border-bottom:1px solid rgba(255,255,255,.06);color:var(--ink);font-weight:600;white-space:nowrap}
+.askp .spec td:first-child{color:var(--dim);font-weight:600;width:auto;padding-left:0}
+.askp .spec td.rec{color:var(--blue);background:rgba(92,200,255,.09)}
+.askp .spec tr:last-child td{border-bottom:none}
+.askp .spec tr:last-child td.rec{border-radius:0 0 7px 7px}
+.askp .stat{display:flex;gap:8px;align-items:flex-start;font-size:clamp(10px,.76vw,13.5px);line-height:1.38;color:var(--amber);font-weight:600;padding:6px 9px;border-radius:9px;background:rgba(255,176,32,.07);border:1px solid rgba(255,176,32,.25)}
+.askp .stat i{width:7px;height:7px;border-radius:50%;background:var(--amber);flex:0 0 7px;margin-top:4px;box-shadow:0 0 8px rgba(255,176,32,.8)}
+.askp .cost{font-size:clamp(10px,.76vw,13.5px);color:var(--dim);line-height:1.4}
+.askp .cost b{color:var(--ink)}
+.askp .sw-big{display:flex;align-items:baseline;gap:6px;font-size:clamp(11px,.82vw,13px);color:var(--dim);font-weight:600}
+.askp .sw-big b{font-size:clamp(22px,2vw,32px);font-weight:900;letter-spacing:-.04em;color:var(--green);line-height:1}
+.askp .ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.askp .ul li{display:flex;gap:7px;align-items:flex-start;font-size:clamp(10px,.76vw,13.5px);color:var(--ink);line-height:1.35}
+.askp .ul li .ic{color:var(--green);font-size:12px;margin-top:2px}
+.askp .ul.acc li .ic{color:var(--blue)}
+.askp .ul li em{font-style:normal;color:var(--dim)}
+.askp .lbl{font-size:clamp(8.5px,.62vw,11px);letter-spacing:.14em;font-weight:800;text-transform:uppercase;color:var(--blue);margin-top:3px}
+/* why it is worth it · who takes it further */
+.askp .band{grid-template-columns:minmax(0,1.32fr) minmax(0,1fr)}
+.askp .kps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(8px,.9vw,14px)}
+.askp .kp{display:flex;flex-direction:column;gap:4px;padding-left:10px;border-left:2px solid rgba(255,176,32,.5);min-width:0}
+.askp .kp.g{border-left-color:rgba(0,230,118,.55)}
+.askp .kv{font-size:clamp(19px,1.75vw,32px);font-weight:900;letter-spacing:-.035em;color:var(--amber);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.askp .kp.g .kv{color:var(--green)}
+.askp .kv small{font-size:.5em;font-weight:700;color:var(--dim);letter-spacing:0;margin-left:3px}
+.askp .kl2{font-size:clamp(10px,.74vw,13px);color:var(--dim);line-height:1.38}
+.askp .kl2 b{color:var(--ink)} .askp .nw{white-space:nowrap}
+.askp .who2{display:flex;align-items:flex-start;gap:10px}
+.askp .who2 .av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:0 0 30px;background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.45);color:var(--green);font-size:15px;margin-top:1px}
+.askp .band .col.now .cb .g{color:var(--green);font-weight:700}
+@media (max-height:800px){ .askp .lede{display:none} .askp h2{font-size:clamp(22px,2.4vw,34px)} }
+@media (max-width:1300px){ .askp .hs-h small{display:none} .askp .ak-en{gap:6px} .askp .en{padding:6px 8px} }
+@media (max-width:900px),(max-height:600px){ .slide.askp{justify-content:flex-start;overflow-y:auto} .askp .ak-grid,.askp .band{grid-template-columns:1fr} .askp .lede{display:block}
+  .askp .st .d,.askp .ul li,.askp .kl2,.askp .cost,.askp .stat{font-size:12px} .askp .en{font-size:12.5px} .askp table.spec{font-size:12.5px} .askp .hs-h small{display:inline} }
+@media (max-width:600px){ .askp .ak-hs,.askp .ak-en,.askp .kps{grid-template-columns:1fr} .askp .ak-track{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:14px}
+  .askp .ak-track::before,.askp .ak-track::after{display:none} .askp .ak-h{flex-wrap:wrap;row-gap:8px} .askp .ak-h>div{flex-basis:calc(100% - 90px)} .askp .pill{margin-left:0;order:3} .askp .kp{padding-left:12px} }
+@media (prefers-reduced-motion:reduce){ .askp .ak-track::after,.askp .st.now .nd{animation:none} }
+/* phone: 18 px gutters; the brand line and the dots give way to the prev / play / next controls (they collided below 600 px) */
+@media (max-width:600px){ :root{--pad:18px} .brandline{display:none} .dots{display:none}
+  .ctrl{background:rgba(4,16,10,.86);border:1px solid var(--line);border-radius:999px;padding:5px 12px 5px 5px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)} }
 @media (max-width:900px),(max-height:600px){ .slide.s14.money{justify-content:flex-start;overflow-y:auto} .s14.money .took{grid-template-columns:repeat(2,minmax(0,1fr))} .s14.money .tile .cb{display:block} .s14.money .levers{grid-template-columns:1fr} .s14.money .band{grid-template-columns:1fr} }
 </style>
 </head>
@@ -666,6 +759,97 @@ tr:last-child td{border-bottom:none}
   </div>
 </section>
 
+<!-- 14 THE ASK ON ONE PAGE — endorse & enable · sponsor the resources (from the GPU node request of 13 / 18 Sep) -->
+<section class="slide s14 askp" data-dur="18000">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="ak-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="ak-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+    <symbol id="ak-flag" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></symbol>
+    <symbol id="ak-loop" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M20.5 3.5V9H15"/></symbol>
+    <symbol id="ak-shield" viewBox="0 0 24 24"><path d="M12 2.5L4.5 6v6c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.3-4.4"/></symbol>
+    <symbol id="ak-chart" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M6.5 17v-5M11 17V7M15.5 17v-8M20 17V4"/></symbol>
+    <symbol id="ak-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.7.8 2.7 2.5 3 5.2"/></symbol>
+    <symbol id="ak-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></symbol>
+    <symbol id="ak-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></symbol>
+    <symbol id="ak-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+    <symbol id="ak-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4"/><path d="M10.5 12.5L20 3M16.5 6.5l3 3M14 9l2 2"/></symbol>
+    <symbol id="ak-team" viewBox="0 0 24 24"><circle cx="12" cy="7.5" r="3.2"/><path d="M5.5 20c.7-3.5 3.3-5.5 6.5-5.5s5.8 2 6.5 5.5"/><circle cx="4.8" cy="10" r="2.1"/><circle cx="19.2" cy="10" r="2.1"/></symbol>
+  </svg>
+  <div class="inner">
+    <div class="eyebrow r">The ask &nbsp;&middot;&nbsp; on one page</div>
+    <h2 class="wide r">From beta to a Salam product &mdash; endorse it, and resource it.</h2>
+    <div class="lede r">Everything else is built, in production and licence-free. What remains is <em>a mandate, one GPU server and three access decisions.</em></div>
+    <div class="ak-grid r">
+      <div class="card ak-card">
+        <div class="ak-h"><span class="ak-n">01</span>
+          <div><div class="tagline">Endorse &amp; enable</div><div class="ak-t">Beta &rarr; official launch</div></div>
+          <span class="pill">Decision today</span></div>
+        <div class="ak-track">
+          <div class="st done"><span class="nd"><svg class="ic"><use href="#ak-check"/></svg></span><b>Beta</b><span class="when">Live now</span><span class="d">Mobile + Fixed &middot; 182 rules &middot; 26 roles &middot; AI inside</span></div>
+          <div class="st now"><span class="nd"><svg class="ic"><use href="#ak-pen"/></svg></span><b>Endorse</b><span class="when">Today</span><span class="d">Salam&rsquo;s official operations console</span></div>
+          <div class="st next"><span class="nd"><svg class="ic"><use href="#ak-flag"/></svg></span><b>Launch</b><span class="when">Cutover</span><span class="d">One URL &mdash; the two legacy consoles retire</span></div>
+          <div class="st loop"><span class="nd"><svg class="ic"><use href="#ak-loop"/></svg></span><b>Run &amp; enhance</b><span class="when">Continuous</span><span class="d">Operations as usual, enhancements every release</span></div>
+        </div>
+        <div class="ak-sub">What enabling it means</div>
+        <div class="ak-en">
+          <div class="en"><span class="bx"><svg class="ic"><use href="#ak-shield"/></svg></span>Security review &amp; pen-test before the launch</div>
+          <div class="en"><span class="bx"><svg class="ic"><use href="#ak-chart"/></svg></span>Monthly and vendor reviews run on its numbers</div>
+          <div class="en"><span class="bx"><svg class="ic"><use href="#ak-users"/></svg></span>Onboarding mandate &mdash; Call Centre, Finance, vendor teams</div>
+          <div class="en"><span class="bx"><svg class="ic"><use href="#ak-db"/></svg></span>A named owner for the Fixed data feed</div>
+        </div>
+      </div>
+      <div class="card blue ak-card">
+        <div class="ak-h"><span class="ak-n">02</span>
+          <div><div class="tagline blue">Sponsor the resources</div><div class="ak-t">Hardware<span class="sep">|</span>Software</div></div>
+          <span class="pill blue">Raised 13 Sep</span></div>
+        <div class="ak-hs">
+          <div class="hsx">
+            <div class="hs-h"><span class="bx"><svg class="ic"><use href="#ak-chip"/></svg></span>Hardware <small>&middot; GPU inference node</small></div>
+            <table class="spec">
+              <thead><tr><th></th><th>Minimum</th><th class="rec">Recommended</th></tr></thead>
+              <tbody>
+                <tr><td>GPU</td><td>L4 &middot; 24 GB</td><td class="rec">L40S &middot; 48 GB</td></tr>
+                <tr><td>vCPU</td><td>16</td><td class="rec">32</td></tr>
+                <tr><td>RAM</td><td>32 GB</td><td class="rec">64 GB</td></tr>
+                <tr><td>SSD /data</td><td>250 GB</td><td class="rec">500 GB</td></tr>
+              </tbody>
+            </table>
+            <div class="stat"><i></i><span>Asked 13 Sep for 27 Sep &middot; at the 18 Sep check 8 of 9 items were open &mdash; no GPU assigned yet</span></div>
+            <div class="cost"><b>&asymp;45&ndash;70k SAR once</b> for an L40S server (indicative) &mdash; or &asymp;2&ndash;4k SAR / month rented in-Kingdom as a bridge</div>
+          </div>
+          <div class="hsx">
+            <div class="hs-h"><span class="bx"><svg class="ic"><use href="#ak-layers"/></svg></span>Software <small>&middot; open stack + access</small></div>
+            <div class="sw-big"><b>0</b> SAR in licences</div>
+            <ul class="ul">
+              <li><svg class="ic"><use href="#ak-check"/></svg><span>vLLM &middot; Qwen3 &middot; ALLaM <em>&mdash; open models, Apache-2.0</em></span></li>
+              <li><svg class="ic"><use href="#ak-check"/></svg><span>NVIDIA driver 550+ &middot; CUDA 12.x</span></li>
+              <li><svg class="ic"><use href="#ak-check"/></svg><span>RHEL 9.4 &middot; Python 3.11 <em>&mdash; the VM&rsquo;s own entitlement</em></span></li>
+            </ul>
+            <div class="lbl">Three access decisions</div>
+            <ul class="ul acc">
+              <li><svg class="ic"><use href="#ak-key"/></svg><span>Egress to the model repos <em>&mdash; or an internal mirror</em></span></li>
+              <li><svg class="ic"><use href="#ak-key"/></svg><span>ServiceNow API <em>&mdash; incidents out, state back</em></span></li>
+              <li><svg class="ic"><use href="#ak-key"/></svg><span>SSO with our directory</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="band r">
+      <div class="col"><div class="dhead">Why it is worth it &mdash; measured against the vendor contracts</div>
+        <div class="kps">
+          <div class="kp"><div class="kv">&lt; <span class="count" data-count="2">2</span><small>days</small></div><div class="kl2">of L1/L2 fees buys the GPU server &mdash; <b>&le;70k SAR once</b> vs &asymp;38k SAR a day</div></div>
+          <div class="kp"><div class="kv"><span class="count" data-count="139" data-suffix="k">139k</span><small>SAR / yr</small></div><div class="kl2">one point of scope at each renewal &mdash; <b>pays for the server in year one</b></div></div>
+          <div class="kp g"><div class="kv">12 s &rarr; 2 s</div><div class="kl2">incident triage on GPU (projected) &middot; <b class="nw">1 &rarr; 9</b> streams at once</div></div>
+        </div></div>
+      <div class="col now"><div class="dhead">Who takes it to product level</div>
+        <div class="who2"><span class="av"><svg class="ic"><use href="#ak-team"/></svg></span>
+          <div class="cb"><b>The AI team, with Ahmad Shhadeh&rsquo;s support</b>, beside Digital Operations &mdash; operations as usual, enhancements continuous, <span class="g">on our own platform instead of more vendor scope.</span></div></div>
+        <div class="ask"><span>Decision today &rarr;</span><span style="color:var(--ink);white-space:normal;font-weight:700">endorse the launch &middot; sponsor the node and the three accesses &middot; assign the AI team.</span></div></div>
+    </div>
+  </div>
+</section>
+
 <!-- 08 CLOSE -->
 <section class="slide final" data-dur="13000">
   <div class="s9-grid">
@@ -752,7 +936,7 @@ tr:last-child td{border-bottom:none}
     <button class="btn" id="prev" title="Previous">&lsaquo;</button>
     <button class="btn" id="play" title="Pause / play">&#10073;&#10073;</button>
     <button class="btn" id="next" title="Next">&rsaquo;</button>
-    <span class="count"><span id="cur">01</span> / <span id="tot">14</span></span>
+    <span class="count"><span id="cur">01</span> / <span id="tot">15</span></span>
   </div>
 </div>
 <div class="nav" style="justify-content:center;bottom:0;padding-bottom:22px"><div class="dots" id="dots"></div></div>

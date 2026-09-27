@@ -81,14 +81,14 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
 <body>
 <header class="top">
   <b>Executive brief — speaker notes · the CIO demo</b>
-  <small id="clock">14 slides · ~39 min + Q&amp;A · 25-min cut marked</small>
+  <small id="clock">15 slides · ~41 min + Q&amp;A · 25-min cut marked</small>
   <button class="tbtn" id="th" type="button">Dark</button>
   <button class="tbtn" id="pr" type="button" style="margin-left:0">Print</button>
 </header>
 <div class="wrap">
 
 <h1>Salam Observability Portal — the demo for the CIO, 27 September 2026</h1>
-<div class="sub">One line to open each slide, the cues underneath it, the live screen to open, and the bridge into the next. Times are cumulative; the room decides the rest. Updated 26 Sep for alpha.103: 182 rules, responder teams with contract clocks, refund exposure and the Agent 2 refund desk, Teams management, Salam-team-vs-contract on every user. <b>27 Sep:</b> slide 13 now carries the financial case (four levers, in SAR); the B2B-market slide is hidden for this run — the deck is 14 slides and the close is slide 14.</div>
+<div class="sub">One line to open each slide, the cues underneath it, the live screen to open, and the bridge into the next. Times are cumulative; the room decides the rest. Updated 26 Sep for alpha.103: 182 rules, responder teams with contract clocks, refund exposure and the Agent 2 refund desk, Teams management, Salam-team-vs-contract on every user. <b>27 Sep:</b> slide 13 now carries the financial case (four levers, in SAR); the B2B-market slide is hidden for this run. <b>27 Sep, later:</b> a new slide 14, <em>the ask on one page</em> — endorse &amp; enable (beta → official launch) and sponsor the resources (hardware | software, from the GPU-node request of 13 / 18 Sep); the deck is 15 slides and the close is slide 15.</div>
 
 <div class="plan">
   <h2>Before the room · ten minutes</h2>
@@ -98,12 +98,13 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
     <li><b>Open the live tabs in this order</b> and leave them open: Executive dashboard · Mobile › Alerts · Mobile › Refund exposure · Customer 360 · AI Ops › Mission control · Teams management › Responder teams.<span class="t">2 min</span></li>
     <li><b>Sign in as yourself</b> (super admin — every screen opens) and have the <b>CIO / Executive</b> role ready in a second window if he asks what <em>he</em> would see.<span class="t">1 min</span></li>
     <li><b>Hard-refresh</b> the console and the deck (both shipped today) and open the deck as <span class="mono">exec-brief.html?present=1</span> — presenter mode: it opens paused, a click or → is the next slide, ← goes back, F is full screen, and the slide number stays in the address bar so a tab switch or a reload lands on the same slide. Without <span class="mono">?present</span> the deck auto-advances every 7–15 s. Dark theme on the projector.<span class="t">1 min</span></li>
+    <li><b>Check the GPU-node ticket</b> with Infra before you walk in — slide 14 says what the 18 Sep validation found (8 of 9 items open, no GPU assigned). If anything moved since, say the new status first; it earns trust.<span class="t">2 min</span></li>
     <li><b>Do not open</b> User management while sharing the screen unless asked — it lists real names and addresses.<span class="t"></span></li>
   </ol>
 </div>
 
 <div class="plan">
-  <h2>The run of play · 40 min</h2>
+  <h2>The run of play · 41 min</h2>
   <ol>
     <li><b>Title</b> — why we are here <span class="t">0:00</span></li>
     <li><b>One console, two businesses</b> <span class="t">2:00</span></li>
@@ -118,7 +119,8 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
     <li class="cut"><b>Ten months</b> <span class="t">29:00</span></li>
     <li class="cut"><b>Value beyond IT</b> <span class="t">31:00</span></li>
     <li><b>What it took, what it returns</b> — one initiative, four levers in SAR <span class="t">33:00</span></li>
-    <li><b>Sponsor. Launch. Commercialize.</b> — the ask <span class="t">37:00</span></li>
+    <li><b>The ask on one page</b> — endorse &amp; enable · sponsor hardware | software <span class="t">37:00</span></li>
+    <li><b>Sponsor. Launch. Commercialize.</b> — the close <span class="t">39:30</span></li>
   </ol>
 </div>
 
@@ -132,6 +134,7 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
     <li><b>Slide 7</b> → AI Ops › Mission control (the agents live), then Yusr with one number.<span class="t">#agents-live</span></li>
     <li><b>Slide 10</b> → Teams management › Responder teams (one team, its members, the clocks) and the Refund desks section.<span class="t">#teams</span></li>
     <li><b>Slide 13</b> → only if he asks where the 1.16 M or the 10 % come from: Vendors &amp; contracts › Contracts tab (monthly fee, cap, chain, renewal radar) — the deck figures are read from there.<span class="t">#vendor-contracts</span></li>
+    <li><b>Slide 14</b> → only if he asks for the numbers behind the GPU: AI Ops › Mission control › <em>Move to vLLM / GPU</em> — measured tok/s, triage time, the backlog, the options in SAR.<span class="t">#agents-live</span></li>
     <li><b>Q&amp;A</b> → Customer 360 with a masked customer; Vendors &amp; contracts if he asks about penalties.<span class="t">#subscriber</span></li>
   </ol>
 </div>
@@ -319,17 +322,32 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
   </ul>
   <div class="warn">Do not add the four numbers up into one “ROI” — they are different kinds (measured leak, contractual ceiling, avoided licence, negotiation target) and he will notice. Do not name a competitor tool or a price for it; “the tools the Call Centre plans to buy” is enough. If “against which contract?” comes: the last signed instruments — TCS Amendment 4, Sigma 167-2024 with its addenda — and the renewal is his decision, the measurement is ours. The “what happens if you leave?” answer stays in the Q&amp;A: runbooks on the rules, docs in the repo, the two engineers in the ask.</div>
   <div class="nums"><span>Found leaking <b>≈142 k SAR</b></span><span>L1/L2 fees <b>≈1.16 M SAR / month</b></span><span>Credit cap <b>10 % ≈ 1.4 M / yr</b></span><span>Licence per seat <b>0</b></span><span>Months <b>10</b></span></div>
-  <div class="next"><b>Bridge:</b> “That is what it took, and what it gives back. Three decisions make it official.”</div>
+  <div class="next"><b>Bridge:</b> “That is what it took, and what it gives back. Here is what it needs from you — on one page.”</div>
 </section>
 
 <!-- The B2B-market slide (formerly 14) is hidden in the deck for the 27 Sep run; its answers stay in the Q&amp;A below. -->
 
 <section class="s">
-  <div class="sh"><span class="sn">14</span><span class="st">Sponsor. Launch. Commercialize.</span><span class="sm">37:00 · 2 min</span></div>
+  <div class="sh"><span class="sn">14</span><span class="st">The ask on one page — endorse &amp; enable · sponsor hardware | software</span><span class="sm">37:00 · 2.5 min</span></div>
+  <div class="say">“Everything you have seen is built, in production and licence-free. What it needs from you fits on one page: <em>a mandate to launch it officially, one GPU server and three access decisions</em>.”</div>
+  <ul class="cue">
+    <li><b>Left, 01 — endorse &amp; enable: beta → official launch.</b> Walk the track in one breath: beta is live on both businesses today; your endorsement is the step we are on; the launch is the cutover — one URL, the two legacy consoles redirect and retire (phase 6 of the convergence plan); after that it runs and improves continuously. Enabling it means four things: a security review and pen-test <b>before</b> the launch (offer it, do not wait to be asked), the monthly and vendor reviews run on its numbers, a mandate to onboard the Call Centre, Finance and the vendor teams, and a named owner for the Fixed data feed.</li>
+    <li><b>Right, 02 — hardware.</b> The GPU inference node raised with Infra on 13 Sep: an existing VM re-provisioned — L4 24 GB minimum, <b>L40S 48 GB recommended</b> (the 48 GB class runs the 32B models we want for incident analysis, with real concurrency), 16 → 32 vCPU, 32 → 64 GB RAM, 250 → 500 GB SSD for the model cache. At the 18 Sep validation 8 of 9 items were open: no GPU passed through to the VM, CPU and RAM below the minimum, the /data disk not mounted, drivers, Python 3.11 and egress missing — only the network was ready. What unblocks it: a ticket with an owner and an ETA this week. If we have to buy: ≈45–70k SAR once for an L40S server, or ≈2–4k SAR a month rented in-Kingdom as a bridge — indicative market ranges, not quotes.</li>
+    <li><b>Right, 02 — software.</b> Zero licences: vLLM, Qwen3 and ALLaM are open models under Apache-2.0; NVIDIA's driver and CUDA cost nothing; the VM keeps its RHEL entitlement. What it needs are <b>three access decisions</b>, not purchases: HTTPS egress to the model and package repositories (or an internal mirror), the ServiceNow API (incidents out, ticket state back), SSO with our directory.</li>
+    <li><b>Bottom left — why it is worth it.</b> The whole GPU server costs less than two days of what we pay the L1/L2 vendors (≈38k SAR a day on the ≈1.16M-a-month baseline of slide 13). One point of scope at each renewal is ≈139k SAR a year — it pays for the server in year one. And the agents stop waiting: incident triage from 12 seconds to about 2, nine streams at once instead of one (projected).</li>
+    <li><b>Bottom right — who.</b> The AI team, with Ahmad Shhadeh's support, beside Digital Operations — operations as usual, enhancements continuous, on our own platform instead of more vendor scope. Then read the decision line — endorse the launch, sponsor the node and the three accesses, assign the AI team — and move to the close.</li>
+  </ul>
+  <div class="warn">The status line is the 18 Sep validation — update it aloud if Infra has moved. The costs are indicative (SAR market ranges from the vLLM move plan) and the triage speed is projected; say both words. The vendor comparison uses the same baseline as slide 13 — never add it to the four levers. If he asks “and if the estate cannot pass a GPU through?”: the fallback written into the request — a CPU-only node, 32 vCPU / 64 GB / 250 GB, a slower stack with smaller models — or an in-Kingdom L40S rental as a bridge while the server is bought; before either, the free step this week is a 3B model for the mechanical duties on 152. The GPU answer decides the design — that is why the ticket needs an owner.</div>
+  <div class="nums"><span>GPU minimum <b>L4 24 GB</b></span><span>Recommended <b>L40S 48 GB</b></span><span>Hardware <b>≤70k SAR once</b></span><span>Licences <b>0</b></span><span>Access decisions <b>3</b></span><span>Checks open 18 Sep <b>8 / 9</b></span></div>
+  <div class="next"><b>Bridge:</b> “That is the whole ask. Three decisions make it official — and the last one is about what it becomes.”</div>
+</section>
+
+<section class="s">
+  <div class="sh"><span class="sn">15</span><span class="st">Sponsor. Launch. Commercialize.</span><span class="sm">39:30 · 2 min</span></div>
   <div class="say">“Built in-house, running in production on both businesses, with AI already inside it. Three decisions turn a working tool into a Salam capability — <em>and a Salam product</em>.”</div>
   <ul class="cue">
     <li><b>One — sponsorship.</b> Make it the operational reference: used in the monthly review instead of rebuilt in slides. Concretely: the executive dashboard is the first screen of the vendor review, and the refund desk is the register Finance reads.</li>
-    <li><b>Two — launch it officially</b>, as a Salam product, and back the next phase on this platform, not a second one: the GPU host, ServiceNow access, an owner for the Fixed data feed, and the second and third engineers who make it the team's, not the author's.</li>
+    <li><b>Two — launch it officially</b>, as a Salam product, and back the next phase on this platform, not a second one: the GPU node and the three accesses of slide 14, an owner for the Fixed data feed, and the AI team with Ahmad Shhadeh's support — so it is the team's, not the author's.</li>
     <li><b>Three — commercialize</b>: the joint taskforce with Salam B2B, this quarter — the Call Centre as the first customer, Salam as the reference, the Kingdom as the market. The external pitch is not in this deck; if he asks, the answers are in the Q&amp;A below.</li>
     <li>Then stop talking. Ask directly: <b>“can I have those three?”</b> and let the silence do the work.</li>
   </ul>
@@ -348,6 +366,8 @@ h2.grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--
 <div class="qa"><div class="q">“Can this be sold outside Salam — and who would own it?”</div><div class="a">Salam would. The proposal is that Salam packages and sells it, with the operations team that built it leading the product line. The Kingdom's operators share every national integration we already watch, and none of the market products know a KSA journey. Today's ask is the mandate to scope it properly: legal, brand and the commercial model. The synthetic demo tenant exists, so nothing of Salam's leaves the building in a pitch.</div></div>
 <div class="qa"><div class="q">“Is the 1.4 M on slide 13 real money?”</div><div class="a">Not yet — it is the contractual ceiling: credits are capped at 10 % of the fees, and the two L1/L2 contracts run at ≈1.16 M SAR a month, so the most the clauses allow is ≈1.4 M a year. What is real today is the measurement: every obligation timed by our clocks, per incident, with the clause next to the actual. A figure becomes money the month Finance validates the eligible fee and the vendor agrees the breach — that is why the slide says <b>candidate</b>. The same 10 % appears twice on purpose, once as credits when they miss and once as scope when we renew; they are two different conversations and the deck never adds them together.</div></div>
 <div class="qa"><div class="q">“What does the Call Centre pay, then?”</div><div class="a">An internal charge-back per seat, set with Salam B2B by the taskforce — no figure today. What is certain is what it does not pay: a per-seat licence and an integration project, because the journeys, Customer 360, view-as-user and the roles already exist. The price list is the same one Salam B2B would sell outside, which is the point of starting inside.</div></div>
+<div class="qa"><div class="q">“Why do we need a GPU at all — can't the CPU do it?”</div><div class="a">The agents already wait on the CPU: an incident triage note takes about 12 seconds, one at a time; the log-signature backlog takes hours to drain; Yusr queues behind the agents during an incident storm. The GPU runs the 32B model class we want for incident analysis, nine streams at once, and nothing leaves our network. Before any purchase there is a free step this week — a small model for the mechanical duties on the current server — but it buys speed, not concurrency. <b>The GPU is the destination; the CPU step is the bridge.</b></div></div>
+<div class="qa"><div class="q">“What exactly is blocking the GPU node?”</div><div class="a">At the 18 Sep validation: no NVIDIA device passed through to the VM (VMware DirectPath I/O or a vGPU profile), 8 vCPU and 15 GB instead of 16 / 32, the new 250 GB disk not mounted as /data, Python 3.6 instead of 3.11, no driver, CUDA or container runtime, and no route to the model and package repositories. The network is ready. It needs one ticket with an owner and an ETA — and if the estate cannot pass a GPU through, a clear “no” this week so we switch to the CPU-only design or a rental bridge instead of waiting.</div></div>
 <div class="qa"><div class="q">“What would commercialising cost Salam — and who supports a customer?”</div><div class="a">This quarter: a taskforce's time, a legal review and a brand decision. Hosting for a first customer is one dedicated VM in a Saudi region, or their own servers. Support is the same L1/L2 model we run for ourselves, sold as a subscription by subscriber band — the taskforce prices it. No capex decision is on the table today, only whether we scope it.</div></div>
 <div class="qa"><div class="q">“What is still missing?”</div><div class="a">Answer straight — it buys credibility. Assisted resolution is not built. ServiceNow is not integrated. The Fixed refund desk has its definition but not its detectors. One Fixed data feed needs an owner. Coverage of Fixed is newer than Mobile and will need tuning for another month. None of that is a reason to wait to make it official.</div></div>
 
