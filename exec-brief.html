@@ -38,6 +38,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,'Segoe UI'
 h1{font-size:clamp(38px,5.2vw,76px);line-height:1.02;margin:0;letter-spacing:-.035em;font-weight:800}
 h2{font-size:clamp(28px,3.4vw,50px);line-height:1.06;margin:0;letter-spacing:-.028em;font-weight:800;max-width:19ch}
 h2.wide{max-width:none}
+h2{text-wrap:balance}
 .lede{font-size:clamp(16px,1.35vw,22px);line-height:1.55;color:var(--dim);max-width:62ch;font-weight:400}
 .lede em{color:var(--ink);font-style:normal;font-weight:600}
 .meta{font-size:clamp(12px,.95vw,15px);color:var(--faint);line-height:1.7}
@@ -241,20 +242,22 @@ tr:last-child td{border-bottom:none}
 .s14.money .mhead{display:flex;align-items:center;gap:12px;margin-top:2px;flex-wrap:wrap}
 .s14.money .mhead .tagline{white-space:nowrap;font-size:clamp(11px,.85vw,13px);letter-spacing:.22em}
 .s14.money .mhead i{flex:1;height:1px;min-width:40px;background:linear-gradient(90deg,var(--line),transparent);display:block}
-.s14.money .legend{display:flex;gap:6px;flex-wrap:wrap}
 .s14.money .chip{display:inline-flex;align-items:center;gap:6px;font-size:clamp(9px,.66vw,10.5px);letter-spacing:.12em;font-weight:800;text-transform:uppercase;padding:3px 8px;border-radius:999px;border:1px solid;white-space:nowrap;line-height:1.2}
 .s14.money .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;display:block}
 .s14.money .chip.meas{color:var(--green);border-color:rgba(0,230,118,.42);background:rgba(0,230,118,.08)}
-.s14.money .chip.cap{color:var(--amber);border-color:rgba(255,176,32,.45);background:rgba(255,176,32,.08)}
+.s14.money .chip.ceil{color:var(--amber);border-color:rgba(255,176,32,.45);background:rgba(255,176,32,.08)}
 .s14.money .chip.avoid{color:var(--blue);border-color:rgba(92,200,255,.45);background:rgba(92,200,255,.08)}
-.s14.money .chip.tgt{color:var(--amber);border-color:rgba(255,176,32,.45);border-style:dashed;background:transparent}
+.s14.money .chip.tgt{color:var(--amber);border-color:rgba(255,176,32,.45);background:transparent}
+/* a ring = a figure still to be realised (contractual ceiling, renewal target); a dot = money that is real today */
+.s14.money .chip.ceil::before,.s14.money .chip.tgt::before{background:transparent;border:1.5px solid currentColor;width:7px;height:7px;box-sizing:border-box}
+.s14.money .kind{display:flex;margin:1px 0 1px}
+.s14.money .kind .chip{font-size:clamp(9px,.66vw,11px);padding:3px 9px}
 .s14.money .levers .card{gap:6px;padding:clamp(12px,1.2vw,18px)}
 .s14.money .levers .card.amber:hover{border-color:rgba(255,176,32,.5)}
 .s14.money .lh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .s14.money .ln{width:22px;height:22px;flex:0 0 22px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:900;border:1px solid rgba(0,230,118,.45);color:var(--green);background:rgba(0,230,118,.08);font-variant-numeric:tabular-nums}
 .s14.money .card.amber .ln{border-color:rgba(255,176,32,.5);color:var(--amber);background:rgba(255,176,32,.08)}
 .s14.money .card.blue .ln{border-color:rgba(92,200,255,.5);color:var(--blue);background:rgba(92,200,255,.08)}
-.s14.money .lh .chip{margin-left:auto}
 .s14.money .amt{font-size:clamp(21px,2.1vw,34px);font-weight:900;letter-spacing:-.035em;line-height:1;color:var(--green);font-variant-numeric:tabular-nums;margin-top:3px}
 .s14.money .amt small{font-size:.46em;font-weight:700;color:var(--dim);letter-spacing:-.01em;margin-left:4px}
 .s14.money .card.amber .amt{color:var(--amber)} .s14.money .card.blue .amt{color:var(--blue)}
@@ -265,9 +268,9 @@ tr:last-child td{border-bottom:none}
 .s14.money .band .col.now .cb .g{color:var(--green);font-weight:700}
 .slide.s14.money{padding-top:clamp(26px,4vh,64px);padding-bottom:clamp(54px,7.5vh,90px)}
 .s14.money .lh{flex-wrap:nowrap} .s14.money .lh .tagline{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(10px,.74vw,11.5px);letter-spacing:.1em}
-.s14.money .lh .chip{font-size:9px;letter-spacing:.1em;padding:2px 6px}
-@media (max-width:1300px){ .s14.money .lh{flex-wrap:wrap} .s14.money .lh .chip{margin-left:0} .s14.money .lh .tagline{overflow:visible;white-space:normal} .s14.money .src{display:none} }
-@media (max-height:800px){ .s14.money .tile .cb{display:none} .s14.money h2{font-size:clamp(22px,2.4vw,34px)} .s14.money .levers .cb{line-height:1.42} }
+@media (max-width:1300px){ .s14.money .lh{flex-wrap:wrap} .s14.money .lh .tagline{overflow:visible;white-space:normal} .s14.money .src{display:none} }
+@media (max-height:860px){ .s14.money .tile .cb{display:none} }
+@media (max-height:800px){ .s14.money .src{display:none} .s14.money h2{font-size:clamp(22px,2.4vw,34px)} .s14.money .levers .cb{line-height:1.42} }
 @media (max-width:1100px){ .s14.money .tile .cb{display:none} .s14.money .levers .cb{font-size:clamp(10px,.78vw,12px)} .s14.money .levers .card{padding:clamp(10px,1vw,14px)} }
 /* ---- slide 14 : the ask on one page — 01 endorse & enable (beta → launch) · 02 sponsor the resources (hardware | software) ---- */
 .slide.askp{padding-top:clamp(26px,4vh,64px);padding-bottom:clamp(54px,7.5vh,90px)}
@@ -539,7 +542,7 @@ tr:last-child td{border-bottom:none}
     <h2 class="wide r">&ldquo;Working&rdquo; is now a number agreed in advance.</h2>
     <div class="eq r" style="margin-top:14px">
       <div class="box"><div class="tagline">Before</div><div class="ct">An opinion, after the fact</div>
-        <div class="cb">Whether a journey was healthy was settled in the meeting that followed the complaint, by whoever had the better anecdote.</div></div>
+        <div class="cb">Journey health was assessed only after a complaint &mdash; from individual observations, not an agreed measure.</div></div>
       <div class="op">&rarr;</div>
       <div class="box"><div class="tagline">Now</div><div class="ct">A target, set beforehand</div>
         <div class="cb">Each journey carries its objective, its warning band and the window it is measured over &mdash; editable by governance, visible to everyone.</div></div>
@@ -582,22 +585,22 @@ tr:last-child td{border-bottom:none}
 <section class="slide" data-dur="12000">
   <div class="inner">
     <div class="eyebrow r">One week ago &middot; a worked example</div>
-    <h2 class="wide r">A question that would have cost a week, answered the same day.</h2>
+    <h2 class="wide r">Hours or days by hand &mdash; the console answers directly.</h2>
     <div class="row c3 r" style="margin-top:10px">
       <div class="card amber"><div class="tagline amber">08:00 &mdash; the escalation</div><div class="ct">&ldquo;Significant drop in web orders&rdquo;</div>
         <div class="cb">A business report showed one channel at roughly half the previous month. It arrived as a suspected technical fault, with a request to investigate.</div></div>
-      <div class="card"><div class="tagline">Same day &mdash; the arithmetic</div><div class="ct">The months were different lengths</div>
+      <div class="card"><div class="tagline">On the console &mdash; the arithmetic</div><div class="ct">The months were different lengths</div>
         <div class="cb">Per day the two periods were <b>33.1 against 33.0</b> &mdash; identical. The 45% gap was seventeen days measured against thirty-one. The channel was at its highest rolling average of the year.</div></div>
-      <div class="card"><div class="tagline">Same day &mdash; the real signal</div><div class="ct">Smaller, real, and not a fault</div>
+      <div class="card"><div class="tagline">Same screen &mdash; the real signal</div><div class="ct">Smaller, real, and not a fault</div>
         <div class="cb">One genuine dip remained. But traffic was <b>up 31%</b> while orders were <b>up 8%</b>, every provider and partner moved together, and no step in the funnel changed. Demand and mix &mdash; not a failure.</div></div>
     </div>
     <div class="row c2 r" style="margin-top:14px">
-      <div class="card plain"><div class="tagline">What it would have cost before</div>
-        <div class="cb" style="font-size:clamp(13px,1vw,16px)">A week of cross-team investigation, three teams pulled off delivery work, and most likely a conclusion nobody could evidence either way.</div></div>
-      <div class="card plain"><div class="tagline">What it cost instead</div>
-        <div class="cb" style="font-size:clamp(13px,1vw,16px)">One read of the report, one query against our own order data, and a reply the same day with the funnel, the providers and the partners all shown. The business side kept its answer; IT kept its week.</div></div>
+      <div class="card plain"><div class="tagline">By hand &mdash; hours to days</div>
+        <div class="cb" style="font-size:clamp(13px,1vw,16px)">Extracts from each system, the two periods aligned in a spreadsheet, and a cross-team review to agree the reading &mdash; before anyone can say whether there is a fault at all.</div></div>
+      <div class="card plain"><div class="tagline">With the console &mdash; directly</div>
+        <div class="cb" style="font-size:clamp(13px,1vw,16px)">Orders per day and per channel, the funnel step by step, the providers and the partners &mdash; already side by side on one screen. The escalation was answered with its evidence, without pulling a single team off delivery.</div></div>
     </div>
-    <div class="quote r" style="max-width:none;margin-top:10px;font-size:clamp(16px,1.6vw,25px)">The value is not that we were right. <span class="g">It is that being right took hours and came with the evidence attached.</span></div>
+    <div class="quote r" style="max-width:none;margin-top:10px;font-size:clamp(16px,1.6vw,25px)">The value is not that we were right. <span class="g">It is that the answer was already on the screen &mdash; with the evidence attached.</span></div>
   </div>
 </section>
 
@@ -697,34 +700,37 @@ tr:last-child td{border-bottom:none}
       <div class="tile"><div class="tagline">Journeys</div><div class="kk">21 Mobile &middot; 4 Fixed</div><div class="cb">Read from the code &middot; business vs technical, money at risk counted</div></div>
       <div class="tile"><div class="tagline">Integrations</div><div class="kk">32 mapped</div><div class="cb">Identity, payments, couriers, SMS, CST, Remedy &middot; evidence attached</div></div>
     </div>
-    <div class="mhead r"><div class="tagline">What it returns &middot; four levers, in SAR</div><i></i>
-      <div class="legend"><span class="chip meas">Measured</span><span class="chip cap">Contractual ceiling</span><span class="chip avoid">Avoided spend</span><span class="chip tgt">Renewal target</span></div></div>
+    <div class="mhead r"><div class="tagline">What it returns &middot; four levers, in SAR</div><i></i></div>
     <div class="row c4 levers r">
-      <div class="card"><div class="lh"><span class="ln">1</span><span class="tagline">Revenue protected</span><span class="chip meas">Measured</span></div>
+      <div class="card"><div class="lh"><span class="ln">1</span><span class="tagline">Revenue protected</span></div>
         <div class="amt">&asymp;142k<small>SAR found leaking</small></div>
+        <div class="kind"><span class="chip meas">Measured</span></div>
         <div class="sub">131k SAR duplicate bill payments on Fixed (Q1) &middot; 10.7k SAR app refunds on Mobile (May &rarr; Sep)</div>
         <div class="cb">A customer refunded <b>before the complaint</b> stays a customer; a defect fixed once stops paying refunds one at a time &mdash; three defects sit behind most of the Mobile money. Every journey watched for <b>~1.5M customers</b>, both businesses; B2B accounts next, same journeys, same Customer&nbsp;360.</div>
         <div class="src">Refund register &middot; 6 detectors live on Mobile, the Fixed detectors next &middot; Moyasar Q1 duplicates from Finance</div></div>
-      <div class="card amber"><div class="lh"><span class="ln">2</span><span class="tagline amber">Penalty credits</span><span class="chip cap">Ceiling</span></div>
+      <div class="card amber"><div class="lh"><span class="ln">2</span><span class="tagline amber">Penalty credits</span></div>
         <div class="amt">up to 1.4M<small>SAR / year</small></div>
+        <div class="kind"><span class="chip ceil">Contractual ceiling</span></div>
         <div class="sub">10&nbsp;% cap on &asymp;1.16M SAR / month of L1/L2 managed services (TCS &middot; Sigma) &mdash; deducted from the invoice</div>
         <div class="cb">Every obligation measured by <b>our clocks</b>, per incident, with the clause quoted next to the actual &mdash; a breach that is <b>proven and agreed</b> becomes a credit. Precedent exists: SR&nbsp;1.03M applied to Wipro in 2022. Sigma&rsquo;s 2025 self-reports: 99.2&ndash;99.8&nbsp;%, no credit claimed.</div>
         <div class="src">Signed instruments: TCS Amendment 4 (697k / month) &middot; Sigma 167-2024 with addenda (464k / month run-rate) &middot; candidates until Finance validates</div></div>
-      <div class="card blue"><div class="lh"><span class="ln">3</span><span class="tagline blue">Internal product</span><span class="chip avoid">Avoided</span></div>
+      <div class="card blue"><div class="lh"><span class="ln">3</span><span class="tagline blue">Internal product</span></div>
         <div class="amt">0<small>SAR licence per seat</small></div>
+        <div class="kind"><span class="chip avoid">Avoided spend</span></div>
         <div class="sub">The Call Centre is customer number one of the Salam B2B product &mdash; instead of the tools it plans to buy</div>
         <div class="cb">Customer 360, view-as-user, the real failure reason, refund status and Yusr are already what a front-line agent needs; the Call Centre role exists. <b>Charged back per seat internally</b>, the same package, price list and SLA that Salam B2B sells outside &mdash; no per-seat licence, no new vendor.</div>
         <div class="src">24 pages &middot; 26 roles &middot; adding a team is configuration in Teams management, not a contract</div></div>
-      <div class="card amber"><div class="lh"><span class="ln">4</span><span class="tagline amber">Vendor scope</span><span class="chip tgt">Target</span></div>
+      <div class="card amber"><div class="lh"><span class="ln">4</span><span class="tagline amber">Vendor scope</span></div>
         <div class="amt">1.4M<small>SAR / year per 10&nbsp;%</small></div>
+        <div class="kind"><span class="chip tgt">Renewal target</span></div>
         <div class="sub">Both L1/L2 renewals are due now &mdash; size them on what the console does, not on what the vendor proposes</div>
         <div class="cb">One platform instead of two consoles; 182 rules with the next step written; 33 checks an engineer used to run by hand; agents that read the logs every 15 minutes and <b>draft the triage every 3</b>. The heavy, repeated work is done before a person opens the ticket &mdash; fewer eyes on dashboards to pay for.</div>
         <div class="src">Baseline &asymp;1.16M SAR / month (TCS + Sigma) &middot; a target for the negotiation, not a saving booked</div></div>
     </div>
     <div class="band r">
       <div class="col"><div class="dhead">What this proves</div>
-        <div class="cb">Product, design, engineering, data, AI and operations &mdash; carried end to end by <b>one person</b>, in ten months, alongside the day job. No licence, no vendor, no external professional services.</div>
-        <div class="who">Yosri A. Yahmed<small>Head of Digital Operations &middot; designed, built, deployed and operated the platform</small></div></div>
+        <div class="cb"><b>That Salam can build it itself.</b> Our Digital Operations team delivered it in-house &mdash; product, design, engineering, data, AI and operations &mdash; in ten months, alongside the day job, together with the L1/L2 and business teams who use it. No licence, no vendor, no external professional services.</div>
+        <div class="who">Led by Yosri A. Yahmed<small>Head of Digital Operations &middot; programme lead &mdash; vision, architecture and delivery</small></div></div>
       <div class="col now"><div class="dhead">The financial case, in one breath</div>
         <div class="cb">Zero licences, two VMs. <span class="g">Two 10&nbsp;% levers on 1.16M SAR a month</span> &mdash; penalties when they miss, scope when we renew. Customer money found before the complaint. A product the Call Centre buys from Salam instead of the market. Every figure links to an incident, a case or a clause &mdash; <b>the SAR are candidates until Finance validates them.</b></div>
         <div class="ask"><span>The ask &rarr;</span><span style="color:var(--ink);white-space:normal;font-weight:700">the console in the monthly vendor review and at the renewal table; a price list for the Call Centre this quarter.</span></div></div>
