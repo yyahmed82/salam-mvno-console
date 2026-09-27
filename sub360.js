@@ -267,8 +267,67 @@
         <button class="pill" id="sbLogSms" style="border-left-color:#8b5cf6">✉ OTP / SMS log</button>
         <button class="pill" id="sbLogLogin" style="border-left-color:#0ea5e9">◔ Login &amp; session</button>
         <button class="pill" id="sbLogTl" style="border-left-color:var(--good)">⇄ Full cross-system timeline</button>
+        <button class="pill" id="sbLogRch" style="border-left-color:#f59e0b">💳 Recharge / bill-pay attempts</button>
       </div>
       <div id="sbLogOut"></div></div>`;
+  }
+  /* RECHARGE / BILL-PAY ATTEMPTS (27 Sep 2026) — what the customer met on my.salammobile.sa › Recharge number / the app's
+   * recharge screen, without opening Monitoring: the IP limiter's verdict (-704, "blocked since …", Unblock for super
+   * admins), the lookup failures from the IPs the app knows for this customer, the postpaid due-amount path as the
+   * console's own live reads saw it, and whether the platform is failing for everyone right now. */
+  const RCH_CODES={ '-704':'blocked by the IP rate limiter', '-112':'number unknown to BSS', '-512':'shown as "account suspended" — any gateway/BSS failure on the profile read',
+    '-513':'line still pending in BSS', '-501':'backend error — the postpaid due-amount path (/bss/account/*)', '-500':'backend not reachable',
+    '-609':'details do not match', '-511':'plan not eligible', '-151':'voucher recharge failed' };
+  const rchMeaning=c=>RCH_CODES[String(c)]||('code '+c);
+  const rchAct=a=>/validate_details|voucher/.test(String(a||''));
+  async function renderRecharge(out, ipQuery){
+    const q=ipQuery||curKey; const um=unmasked?'&unmask=1':'';
+    const [att, ips]=await Promise.all([
+      api('/api/subscriber/recharge-attempts?q='+encodeURIComponent(curKey)+'&hours=48'),
+      api('/api/monitoring/ip-search?q='+encodeURIComponent(q)+'&hours=48'+um).catch(e=>({error:e.message, ips:[], notes:[]}))
+    ]);
+    let h='';
+    const blocked=(ips.ips||[]).filter(x=>x.blocks>0||x.blocked_now);
+    const recent=[]; (ips.ips||[]).forEach(x=>(x.recent||[]).forEach(r=>{ if(rchAct(r.act)) recent.push(Object.assign({ip:x.ip},r)); }));
+    recent.sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+    const dap=att.due_amount_path||{}, line=att.line||{}, pf=att.platform||{}, lh=pf.last_hour||{};
+    // 1 · the verdict
+    if(blocked.length){
+      const b=blocked[0];
+      h+=`<div class="okbox" style="border-left:3px solid #dc2626"><b>Blocked by the IP rate limiter</b> — ${esc(b.ip)}${b.source?' ('+esc(b.source)+')':''}: ${b.blocks} blocked attempt(s), first ${esc(KSA(b.first_block))}, last ${esc(KSA(b.last_block))}${b.retries?' · prior attempts '+esc(b.retries):''} · blocked now: <b>${b.blocked_now?'yes':(b.live&&b.live.error)?'unknown ('+esc(b.live.error)+')':(b.live&&b.live.configured===false)?'unknown — IPRL_REDIS_URL not set':'no'}</b>. The customer sees "We detected an error! Make sure the information used is accurate." — the information is fine.${isSuper()?` <button class="pill" data-rch-unblock="${esc(b.ip)}" style="border-left-color:#dc2626;margin-left:8px">Unblock this IP</button>`:''}</div>`;
+    } else if(dap.needed && dap.last_failure && (!dap.last_success || new Date(dap.last_failure.taken_at)>new Date(dap.last_success.taken_at))){
+      h+=`<div class="okbox" style="border-left:3px solid #d97706"><b>Postpaid due-amount path failing</b> — the console's own read of the BSS account family failed at ${esc(KSA(dap.last_failure.taken_at))} (${esc(dap.last_failure.panel)} · ${esc(dap.last_failure.error||('HTTP '+dap.last_failure.http))}). The recharge page needs the same calls for a postpaid line and has no fallback: the customer gets the generic popup (code -501).</div>`;
+    } else if(recent.length){
+      h+=`<div class="okbox" style="border-left:3px solid #d97706"><b>${recent.length} failed attempt(s)</b> from this customer's IPs in 48 h — last: ${esc(KSA(recent[0].ts))} · ${esc(rchMeaning(recent[0].error_code))}.</div>`;
+    } else if(!(ips.ips||[]).length){
+      h+=`<div class="okbox" style="border-left:3px solid #64748b"><b>No IP on file for this customer</b> — ${esc((ips.notes||[]).join(' ')||ips.error||'no app account, so the app\'s error log (which carries no customer identity) cannot be matched to him.')} Paste the customer's public IP (from the app's error dialog, or DevTools › Network › validate_details) to check the limiter:</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px"><input id="sbRchIp" placeholder="e.g. 5.42.10.7" style="flex:1;min-width:180px;max-width:280px"><button class="pill" id="sbRchIpGo" style="border-left-color:#f59e0b">Check this IP</button></div>`;
+    } else {
+      h+=`<div class="okbox" style="border-left:3px solid var(--good)"><b>Nothing failed</b> from this customer's known IPs in the last 48 h, and the limiter does not hold them.</div>`;
+    }
+    // 2 · the line and the path it takes
+    h+=`<div class="rl" style="padding:4px 2px">Line: <b>${esc(line.paid_label||'unknown')}</b>${line.state_label?' · state '+esc(line.state_label):''}${line.profile_seen_at?' · profile read live '+esc(KSA(line.profile_seen_at)):' · no live profile read yet (open a BSS panel once)'} — ${line.paid_type===1?'pay-the-bill path: profile → account profile v2 → account balance query':line.paid_type===0?'prepaid path: profile → balance':'path unknown until the profile is read'}.${dap.checks_7d?` Account-family reads by the console in 7 days: ${dap.checks_7d}, failed ${dap.failures_7d}${dap.last_success?', last OK '+esc(KSA(dap.last_success.taken_at)):''}.`:''}</div>`;
+    // 3 · the attempts
+    if(recent.length){
+      h+=`<div style="border:1px solid var(--line);border-radius:8px;max-height:260px;overflow:auto;margin-top:6px"><table class="sb-tbl">
+        <thead><tr><th>When (KSA)</th><th>Code</th><th>What the customer met</th><th>Prior tries</th><th>Platform</th><th>IP</th></tr></thead><tbody>
+        ${recent.slice(0,25).map(r=>`<tr><td class="rl mono" style="white-space:nowrap">${esc(KSA(r.ts))}</td><td class="mono" style="font-weight:700;color:${String(r.error_code)==='-704'?'#dc2626':'#d97706'}">${esc(r.error_code)}</td><td>${esc(rchMeaning(r.error_code))}${r.message&&String(r.error_code)!=='-704'?' <span class="rl">· '+esc(String(r.message).slice(0,80))+'</span>':''}</td><td class="rl">${r.retry_count!=null?esc(r.retry_count):'—'}</td><td class="rl">${esc(r.platform||'—')}</td><td class="rl mono">${esc(r.ip)}</td></tr>`).join('')}
+        </tbody></table></div>`;
+    }
+    // 4 · everyone else right now
+    const codes=(pf.by_code||[]).map(x=>`${x.code} ×${x.n}`).join(' · ');
+    h+=`<div class="rl" style="padding:8px 2px 2px;color:var(--muted)">Platform, all customers — last hour: <b>${lh.fails||0}</b> lookup failure(s) from ${lh.ips||0} IP(s) + <b>${lh.blocks||0}</b> limiter block(s); last 48 h: ${pf.total||0} (${codes||'none'}). ${(lh.fails||0)>=12?'<b style="color:#dc2626">Failing for everyone right now — not this customer\'s data.</b> Rule recharge_lookup_fail_spike covers it.':''}</div>`;
+    (att.notes||[]).forEach(n=>{ h+=`<div class="rl" style="padding:3px 2px;color:var(--muted)">${esc(n)}</div>`; });
+    (ips.notes||[]).slice(0,3).forEach(n=>{ if(!(ips.ips||[]).length) return; h+=`<div class="rl" style="padding:3px 2px;color:var(--muted)">${esc(n)}</div>`; });
+    out().innerHTML=h;
+    const ipGo=out().querySelector('#sbRchIpGo');
+    if(ipGo) ipGo.addEventListener('click', async ()=>{ const v=(out().querySelector('#sbRchIp').value||'').trim(); if(!v) return; out().innerHTML='<div class="rl" style="padding:6px 2px">Loading…</div>'; try{ await renderRecharge(out, v); }catch(e){ out().innerHTML=`<div class="albanner">${esc(e.message)}</div>`; } });
+    out().querySelectorAll('[data-rch-unblock]').forEach(b=>b.addEventListener('click', async ()=>{
+      const ip=b.dataset.rchUnblock; if(!confirm('Release '+ip+' from the app\'s IP rate limiter? (audited)')) return;
+      b.disabled=true; b.textContent='Unblocking…';
+      try{ const r=await api2('/api/monitoring/ip-unblock',{method:'POST',body:JSON.stringify({ip})}); b.textContent=r.error?('Failed: '+r.error):('Released — '+(r.deleted||0)+' key(s)'); }
+      catch(e){ b.textContent='Failed: '+e.message; }
+    }));
   }
   function wireLogs(box){
     const out=()=>box.querySelector('#sbLogOut');
@@ -304,6 +363,8 @@
     });
     const tlB=box.querySelector('#sbLogTl');
     if(tlB) tlB.addEventListener('click', ()=>{ if(window.opsOpenTimeline) window.opsOpenTimeline(curKey, null, null, null, { lineRef:_lvLine }); });
+    const rcB=box.querySelector('#sbLogRch');
+    if(rcB) rcB.addEventListener('click', async ()=>{ busy(); try{ await renderRecharge(out); }catch(e){ out().innerHTML=`<div class="albanner">${esc(e.message)}</div>`; } });
   }
 
   /* ---- LIVE CUSTOMER VIEW (2 Sep 2026) --------------------------------------------------------
@@ -493,7 +554,7 @@
   function servicesStrip(lines){
     const inv=(curFixed&&curFixed.inventory)||{}; const fx=fixedServices();
     const ST={active:"ok",suspended:"warn",frozen:"warn",terminated:"bad",deactivated:"bad"};
-    const mob=lines.map(l=>`<button type="button" class="svc mob${l.ref===_lvLine?' sel':''}" data-lvline="${esc(l.ref)}" title="${esc(l.source)}${l.at?' · '+KSA(l.at):''} — click to make this the line BSS panels read">
+    const mob=lines.map(l=>`<button type="button" class="svc mob${l.ref===_lvLine?' sel':''}" data-lvline="${esc(l.ref)}" title="${esc(l.source)}${l.at?' · since '+KSA(l.at):l.seen_at?' · seen live '+KSA(l.seen_at):''} — click to make this the line BSS panels read">
         <span class="svc-ic">📱</span><span class="svc-body"><b class="mono">${esc(l.msisdn)}</b><span class="svc-sub">${esc(l.plan||l.source||'Salam line')}</span></span>
         <span class="svc-st ok">${l.ref===_lvLine?'selected':'line'}</span></button>`).join('');
     const fixed=fx.map(x=>{ const st=(x.state_label||x.state||'').toLowerCase(); const owed=inv.owed&&inv.owed[x.account]; return `<button type="button" class="svc fix" data-svcfixed="${esc(x.account||'')}" title="Open Fixed services">

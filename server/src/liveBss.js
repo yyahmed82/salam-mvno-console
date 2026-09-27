@@ -223,8 +223,10 @@ async function linesFor(key) {
           const found = [...new Set(String(JSON.stringify(subs)).match(/9665\d{8}/g) || [])];
           for (const m of found) {
             if (seen.has(m)) continue; seen.add(m);
+            /* `at` is the ACTIVATION date for replica-sourced lines; BSS does not tell us one here, so it stays
+             * null and `seen_at` carries the lookup time (27 Sep 2026: Yusr read the lookup time as "since 2026-09-27"). */
             out.lines.push({ ref: 'bss:' + m, msisdn: m, source: 'BSS account (live — authoritative)',
-              plan_id: null, at: new Date().toISOString(), activated: true });
+              plan_id: null, at: null, seen_at: new Date().toISOString(), activated: true });
           }
           if (!found.length) out.note = 'BSS account ' + accountId + ' found but no subscription numbers on it';
         }
@@ -243,11 +245,11 @@ async function linesFor(key) {
         if (p && !seen.has(m)) {
           seen.add(m);
           out.lines.push({ ref: 'bss:' + m, msisdn: m, source: 'BSS subscription (live — authoritative)',
-            plan_id: null, at: new Date().toISOString(), activated: true });
+            plan_id: null, at: null, seen_at: new Date().toISOString(), activated: true });
         } else if (!p) out.note = out.note || 'BSS does not know this number — not provisioned (or typo).';
       } catch (e) { out.error = out.error || ('BSS msisdn check: ' + e.message.slice(0, 100)); }
     }
-    out.lines.sort((x, z) => new Date(z.at) - new Date(x.at));
+    out.lines.sort((x, z) => new Date(z.at || z.seen_at || 0) - new Date(x.at || x.seen_at || 0));
   } catch (e) { out.error = e.message; }
   return out;
 }

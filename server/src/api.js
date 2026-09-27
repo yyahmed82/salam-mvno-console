@@ -2566,6 +2566,70 @@ app.get('/api/monitoring/app-errors/drill', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* RECHARGE / BILL-PAY ATTEMPTS (27 Sep 2026 — the CIO's "We detected an error!" on my.salammobile.sa › Recharge number).
+ * Customer 360 › Logs & Diagnostics card. The app error log carries NO customer identity, so the per-customer half of the
+ * card rides on /api/monitoring/ip-search (the IPs the app recorded for the customer, their recent errors, the limiter's
+ * live verdict). This endpoint adds what IS keyed by the customer: the paid type from the newest profile snapshot
+ * (postpaid = the due-amount path through /bss/account/get-account-profile/v2 + execute-account-blnc-query), the
+ * console's own live-panel history for that account family (a 502 there is the -501 the customer got), and the
+ * platform-wide picture of lookup failures in the window — is it him, or everyone right now? Read-only, no BSS call. */
+app.get('/api/subscriber/recharge-attempts', async (req, res) => {
+  try {
+    const raw = String(req.query.q || '').trim();
+    if (!raw) return res.status(400).json({ error: 'q required' });
+    const hours = Math.min(168, Math.max(1, Number(req.query.hours) || 48));
+    const C = db.console;
+    const out = { query: raw, hours, notes: [] };
+    const byCode = (await C.query(
+      `SELECT coalesce(error_code, 0)::int AS code, count(*)::int AS n, max(ts) AS last
+         FROM api_error_events
+        WHERE controller = 'Api::V1::RechargeController' AND ts > now() - ($1||' hours')::interval
+        GROUP BY 1 ORDER BY n DESC`, [hours])).rows;
+    const lastHour = (await C.query(
+      `SELECT count(*) FILTER (WHERE coalesce(error_code, 0) <> -704)::int AS fails,
+              count(*) FILTER (WHERE coalesce(error_code, 0) = -704)::int AS blocks,
+              count(DISTINCT ip_address) FILTER (WHERE coalesce(error_code, 0) <> -704)::int AS ips
+         FROM api_error_events
+        WHERE controller = 'Api::V1::RechargeController' AND ts > now() - interval '1 hour'`)).rows[0];
+    const hourly = (await C.query(
+      `SELECT date_trunc('hour', ts) AS h,
+              count(*) FILTER (WHERE coalesce(error_code, 0) <> -704)::int AS fails,
+              count(*) FILTER (WHERE coalesce(error_code, 0) = -704)::int AS blocks
+         FROM api_error_events
+        WHERE controller = 'Api::V1::RechargeController' AND ts > now() - ($1||' hours')::interval
+        GROUP BY 1 ORDER BY 1`, [hours])).rows;
+    out.platform = { by_code: byCode, hourly, last_hour: lastHour,
+      total: byCode.reduce((a, x) => a + x.n, 0), blocks: byCode.filter(x => x.code === -704).reduce((a, x) => a + x.n, 0) };
+    // the console's own live reads for this customer (no new BSS call — the snapshot history)
+    const d = raw.replace(/\D/g, ''); const l9 = d.slice(-9);
+    const cands = [...new Set([raw, d, l9 ? '966' + l9 : '', l9 ? '0' + l9 : ''].filter(Boolean))];
+    const snaps = (await C.query(
+      `SELECT panel, taken_at, http, ok, ms, endpoint, response FROM live_snapshots
+        WHERE cust = ANY($1::text[]) AND taken_at > now() - interval '7 days' ORDER BY taken_at DESC LIMIT 80`, [cands])).rows;
+    const prof = snaps.find(x => x.panel === 'profile' && x.ok);
+    let paid = null, state = null;
+    try {
+      const pr = prof && prof.response && prof.response.data && prof.response.data.profile;
+      if (pr && pr.paidType != null) paid = Number(pr.paidType);
+      const st = prof && prof.response && prof.response.data && prof.response.data.status;
+      if (st && st.state != null) state = String(st.state);
+    } catch (_) { }
+    out.line = { paid_type: paid, paid_label: paid === 0 ? 'prepaid' : paid === 1 ? 'postpaid' : 'unknown',
+      state, state_label: state === '0' ? 'pending' : state === '1' ? 'activated' : state === '2' ? 'deactivated' : state === '3' ? 'suspended' : state === '5' ? 'barred' : (state || 'unknown'),
+      profile_seen_at: prof ? prof.taken_at : null };
+    out.panels = snaps.map(x => ({ panel: x.panel, taken_at: x.taken_at, http: x.http, ok: x.ok, ms: x.ms,
+      family: /\/bss\/account\//.test(String(x.endpoint || '')) ? 'account' : 'subscription',
+      error: !x.ok ? String((x.response && (x.response.error || (x.response.data && x.response.data.responseMessage))) || `HTTP ${x.http || '—'}`).slice(0, 120) : null }));
+    const acct = out.panels.filter(x => x.family === 'account');
+    out.due_amount_path = { needed: paid === 1, checks_7d: acct.length,
+      failures_7d: acct.filter(x => !x.ok).length, last_failure: acct.find(x => !x.ok) || null, last_success: acct.find(x => x.ok) || null };
+    if (paid === 1) out.notes.push('Postpaid line: the recharge page must read the due amount through the BSS account family (/bss/account/*) — two more calls than a prepaid recharge, and no fallback in the app when they fail (-501).');
+    if (paid === 0) out.notes.push('Prepaid line: the recharge page needs only the subscription balance — the account family is not involved.');
+    if (state === '0') out.notes.push('The line is still PENDING in the profile the console last read — the recharge page answers -513 "not ready" for a pending line (and the app caches the profile 10 minutes after activation).');
+    res.json(roles.maskDeep(out, false));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /* IP rate-limiter unblock — releases an IP from the app's IpRetrial Redis counters.
  * super_admin only, fully audited. GET = status (safe, any monitoring viewer), POST = delete. */
 app.get('/api/monitoring/ip-block', async (req, res) => {

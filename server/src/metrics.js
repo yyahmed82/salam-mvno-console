@@ -932,6 +932,32 @@ const METRICS = {
       } catch (e) { return []; }
     }
   },
+  /* RECHARGE / BILL-PAY LOOKUP (27 Sep 2026 — the CIO's "We detected an error!" on my.salammobile.sa › Recharge
+   * number). Failures of Api::V1::RechargeController#validate_details / #validate_details_with_account in the app
+   * error log, EXCLUDING the IP-limiter blocks (-704 — app_ip_block_* own them). The recharge funnel used to start at
+   * the payment row (recharge_fail_rate, checkout_type 6): a customer refused at the lookup step never reaches it.
+   * The app logs failures only, so this is a COUNT per window with the code as a dimension:
+   *   -112 unknown number · -512 "suspended" = ANY gateway/BSS failure on the profile read (or a profile without
+   *   accountID) · -513 still PENDING (10-min profile cache after activation) · -501 backend error = the postpaid
+   *   due-amount path (/bss/account/get-account-profile/v2 + execute-account-blnc-query). A true rate needs the app to
+   *   log successes for this endpoint (one line in the app; the collector already parses the file). */
+  recharge_lookup_failures: {
+    label: 'Recharge / bill-pay lookup failures (validate_details, excl. IP blocks)', unit: 'count', higherIsBad: true,
+    sourceTables: 'api_error_events (app error log)', dims: ['code'],
+    async compute(src, now, w) {
+      try { const db = require('./db');
+        const r = await db.console.query(
+          `SELECT error_code::text AS code, count(*)::int n FROM api_error_events
+            WHERE controller = 'Api::V1::RechargeController'
+              AND coalesce(action, action_name, '') IN ('validate_details', 'validate_details_with_account')
+              AND coalesce(rate_limit, '') <> 'ip_retrial' AND coalesce(error_code, 0) <> -704
+              AND ts >= $1::timestamptz - ($2||' hours')::interval AND ts < $1::timestamptz
+            GROUP BY 1`, [now, Math.max(1, Math.round(w))]);
+        const tot = r.rows.reduce((a, x) => a + x.n, 0);
+        return [{ dim: {}, value: tot, sample: tot }, ...r.rows.map(x => ({ dim: { code: x.code }, value: x.n, sample: x.n }))];
+      } catch (e) { return []; }
+    }
+  },
   /* REFUND EXPOSURE (25 Sep 2026, refundRadar.js): money the platform already owes customers, detected before the
    * complaint — paid-not-activated, port-in twice, change plan charged then failed, SIM replacement paid, delivery
    * failed on a paid order, charged twice. Counts NEW candidates detected in the window (surge = a broken flow), and
