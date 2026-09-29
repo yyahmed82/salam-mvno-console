@@ -1,3 +1,8 @@
+## 2.0.0-alpha.116 — 29 Sep 2026 — Data SIM activation health read from the data numbers (9668…), Semati refusal rule added (server deploy)
+
+- The alpha.115 `datasim_activation_fail_rate` had an empty population: data SIMs are activated under the DATA NUMBER (msisdn 9668…) and never carry an onboarding_order_id (measured 29 Sep: 0 rows by order; by prefix in 7 days 175 BSS create-individual-subscriber calls, all OK, and 401 Semati new-mobile-number calls of which ≈ 60 % refused — 726 · 724 · 300 · 812). The metric now reads the BSS calls of 9668… numbers (Semati excluded, technical), and a new `datasim_semati_deny_rate` reads the regulator answer (business).
+- Rules: `datasim_activation_fail` (P2, ≥ 30 % of BSS calls failed / 3 h, min 10 — baseline 0) and the new `datasim_semati_deny_spike` (P3, ≥ 85 % refused / 3 h, min 20 — the refusal floor is ≈ 60 % by nature, so only a near-total refusal means something changed). Affected cases updated; Journey health › Data SIM watches both. No web file changed.
+
 ## 2.0.0-alpha.115 — 29 Sep 2026 — Data SIM as a monitored journey (TKT-000069): three metrics, three rules on Mobile digital L2, a "Data SIM" pill in Journey health (server deploy)
 
 - **Why** (TKT-000069, Sreekanth, 29 Sep): the Data SIM journey is on App screens flow (the documentation map, 24 journeys from the app code) but not on the Operational dashboard, whose Journey health strip only shows journeys backed by alert metrics (8 so far). Measured 29 Sep on the replica: 540–1,013 Data SIM orders a week (a group-11 number chosen at checkout), ≈ 20 % activated; `activation_logs` carries no `datasims` api, so activation health is read from the activation calls of those orders.

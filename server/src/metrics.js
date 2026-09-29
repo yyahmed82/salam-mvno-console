@@ -615,14 +615,28 @@ const METRICS = {
       return [{ dim: {}, value: rate(rows[0].done, rows[0].total), sample: Number(rows[0].total) }];
     }
   },
+  /* Data SIM activations are logged under the DATA NUMBER (msisdn 9668…), never with an onboarding_order_id (measured 29 Sep:
+   * 0 rows by order, 175 BSS create-individual-subscriber + 401 Semati calls by prefix in 7 days). Two layers, as for voice:
+   * the BSS/platform calls (technical) and the Semati regulator answer (business: 726 / 724 / 300 / 812 refusals ≈ 60 %). */
   datasim_activation_fail_rate: {
-    label: 'Data SIM activation (BSS) failure rate', unit: 'rate', higherIsBad: true,
-    sourceTables: 'activation_logs of Data SIM orders (numbers group 11)',
+    label: 'Data SIM activation (BSS) failure rate — Semati excluded', unit: 'rate', higherIsBad: true,
+    sourceTables: 'activation_logs (msisdn 9668…, api not Semati)',
     async compute(src, now, w) {
       const rows = await q(src, `
-        SELECT count(*) FILTER (WHERE state=false) AS failed, count(*) AS total FROM activation_logs a
-        WHERE a.created_at >= $1::timestamptz - ($2||' hours')::interval AND a.created_at < $1::timestamptz
-          AND a.onboarding_order_id IN (SELECT onboarding_order_id FROM numbers WHERE group_id = 11 AND reservation_id IS NOT NULL AND created_at >= $1::timestamptz - ($2||' hours')::interval - interval '30 days')`, [now, w]);
+        SELECT count(*) FILTER (WHERE state=false) AS failed, count(*) AS total FROM activation_logs
+        WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz
+          AND msisdn LIKE '9668%' AND api NOT ILIKE '%semati%'`, [now, w]);
+      return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
+    }
+  },
+  datasim_semati_deny_rate: {
+    label: 'Data SIM Semati refusal rate (new-mobile-number)', unit: 'rate', higherIsBad: true,
+    sourceTables: 'activation_logs (msisdn 9668…, api semati/new-mobile-number)',
+    async compute(src, now, w) {
+      const rows = await q(src, `
+        SELECT count(*) FILTER (WHERE state=false) AS failed, count(*) AS total FROM activation_logs
+        WHERE created_at >= $1::timestamptz - ($2||' hours')::interval AND created_at < $1::timestamptz
+          AND msisdn LIKE '9668%' AND api ILIKE '%semati/new-mobile-number%'`, [now, w]);
       return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
     }
   },
