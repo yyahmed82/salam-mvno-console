@@ -589,6 +589,44 @@ const METRICS = {
     }
   },
 
+  /* DATA SIM JOURNEY (29 Sep 2026, TKT-000069): the standalone Data SIM order — a group-11 number (numbers.group_id = 11)
+   * chosen at checkout, activated like any onboarding order. Measured 29 Sep: 540–1,013 orders a week, ≈20 % activated
+   * (voice onboarding ≈33 %). activation_logs carries no `datasims` api on this replica, so activation health is read
+   * from the activation calls of those orders (onboarding_order_id). The chosen-number scan is cheap (≈1M rows, ms). */
+  datasim_orders: {
+    label: 'Data SIM orders created', unit: 'count', higherIsBad: false,
+    sourceTables: 'onboarding_orders + numbers (group 11)',
+    async compute(src, now, w) {
+      const rows = await q(src, `
+        SELECT count(DISTINCT o.id) AS n FROM onboarding_orders o
+        WHERE o.created_at >= $1::timestamptz - ($2||' hours')::interval AND o.created_at < $1::timestamptz
+          AND o.id IN (SELECT onboarding_order_id FROM numbers WHERE group_id = 11 AND reservation_id IS NOT NULL AND created_at >= $1::timestamptz - ($2||' hours')::interval - interval '1 day')`, [now, w]);
+      return [{ dim: {}, value: Number(rows[0].n), sample: Number(rows[0].n) }];
+    }
+  },
+  datasim_conversion: {
+    label: 'Data SIM conversion (activated / created)', unit: 'ratio', higherIsBad: false,
+    sourceTables: 'onboarding_orders + numbers (group 11)',
+    async compute(src, now, w) {
+      const rows = await q(src, `
+        SELECT count(*) FILTER (WHERE o.activated) AS done, count(*) AS total FROM onboarding_orders o
+        WHERE o.created_at >= $1::timestamptz - ($2||' hours')::interval AND o.created_at < $1::timestamptz
+          AND o.id IN (SELECT onboarding_order_id FROM numbers WHERE group_id = 11 AND reservation_id IS NOT NULL AND created_at >= $1::timestamptz - ($2||' hours')::interval - interval '1 day')`, [now, w]);
+      return [{ dim: {}, value: rate(rows[0].done, rows[0].total), sample: Number(rows[0].total) }];
+    }
+  },
+  datasim_activation_fail_rate: {
+    label: 'Data SIM activation (BSS) failure rate', unit: 'rate', higherIsBad: true,
+    sourceTables: 'activation_logs of Data SIM orders (numbers group 11)',
+    async compute(src, now, w) {
+      const rows = await q(src, `
+        SELECT count(*) FILTER (WHERE state=false) AS failed, count(*) AS total FROM activation_logs a
+        WHERE a.created_at >= $1::timestamptz - ($2||' hours')::interval AND a.created_at < $1::timestamptz
+          AND a.onboarding_order_id IN (SELECT onboarding_order_id FROM numbers WHERE group_id = 11 AND reservation_id IS NOT NULL AND created_at >= $1::timestamptz - ($2||' hours')::interval - interval '30 days')`, [now, w]);
+      return [{ dim: {}, value: rate(rows[0].failed, rows[0].total), sample: Number(rows[0].total) }];
+    }
+  },
+
   onboarding_abandoned: {
     label: 'Abandoned onboarding orders', unit: 'count', higherIsBad: true,
     sourceTables: 'onboarding_orders',

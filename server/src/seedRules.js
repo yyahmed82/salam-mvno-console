@@ -327,6 +327,24 @@ const RULES = [
     metric_key: 'onboarding_conversion', operator: 'lte', threshold: 0.02, window_hours: 24, min_sample: 50,
     description: 'Completed/created conversion near zero (baseline ~4–5%; low value partly reflects the completed-flag replica lag).',
     runbook: '1) Completed/created conversion near zero. 2) Caveat: partly reflects the completed-flag replica lag — verify against a live source before escalating. 3) If genuinely low, walk the funnel (order → eligibility → payment → activation) for the breaking step and link the matching alert. 4) Sales Ops + Digital Ops jointly.' },
+  /* DATA SIM JOURNEY (29 Sep 2026 — TKT-000069 by Sreekanth: the Data SIM journey was on App screens flow but not on the
+   * Operational dashboard, because Journey health only shows journeys backed by metrics). Baseline 29 Sep (13 weeks):
+   * 540–1,013 orders a week ≈ 80–145 a day, ≈ 20 % activated. */
+  { key: 'datasim_volume_drop', name: 'Data SIM orders — volume drop (P3)', severity: 'P3', team: 'mobile-digital-l2',
+    alert_class: 'business',
+    metric_key: 'datasim_orders', operator: 'lte', threshold: 25, window_hours: 24, min_sample: 0,
+    description: 'Fewer than 25 Data SIM orders (a group-11 number chosen at checkout) in 24 h against a baseline of 80–145 a day — the journey went quiet: the Data SIM plans disappeared from the catalog, number selection has no group-11 numbers to offer, or the app build broke the flow. A quiet journey shows up as silence, not as errors.',
+    runbook: '1) Mobile › Flow guard › Plan catalog: are the Data SIM / MBB plans still enabled? 2) Check the number pool: Apollo GET /api/apollo/numbers?vanity_id=… for the data group must return numbers. 3) App screens flow › DataSIM: walk the journey on the app once. 4) Mobile digital L2 (TCS) for the catalog / pool; Sales Ops if a plan was retired on purpose (then adjust the threshold).' },
+  { key: 'datasim_conversion_drop', name: 'Data SIM conversion drop (P3)', severity: 'P3', team: 'mobile-digital-l2',
+    alert_class: 'business',
+    metric_key: 'datasim_conversion', operator: 'lte', threshold: 0.04, window_hours: 24, min_sample: 40,
+    description: 'Activated / created Data SIM orders of the last 24 h at 4 % or below (baseline ≈ 20 % over a week; orders of the last day have had less time, so the daily figure sits lower — the threshold is set well under it). The orders keep coming but nobody gets to activation: payment, eligibility or the activation step is failing for this journey.',
+    runbook: '1) Troubleshoot for the window: payments, eligibility and activation errors of the day — a Data SIM order pays through the same checkout, so a gateway incident shows here too. 2) Customer 360 with two recent Data SIM orders (Flow guard › Findings lists group-11 orders; Journey & Orders): where does the order stop? 3) Compare with the voice onboarding conversion: both down = platform; Data SIM only = the data-SIM branch (plan, number group, has_data_sim). 4) Mobile digital L2 (TCS).' },
+  { key: 'datasim_activation_fail', name: 'Data SIM activation failures (P2)', severity: 'P2', team: 'mobile-digital-l2',
+    alert_class: 'technical',
+    metric_key: 'datasim_activation_fail_rate', operator: 'gte', threshold: 0.5, window_hours: 3, min_sample: 10,
+    description: 'Half or more of the BSS activation calls of Data SIM orders (activation_logs rows of orders whose chosen number is in group 11) failed in the last 3 hours, on at least 10 calls. The data-SIM subscriber creation (data number range, data rating profile) is failing while voice activations may still pass — a BSS or provisioning fault specific to the data group.',
+    runbook: '1) Troubleshoot › Activation: filter the window, read the dominant status_code / message of the failing calls. 2) Same failure on voice activations? If yes, it is the BSS activation incident (see Activation failure storm); if Data SIM only, the data number group or the data plan profile in BSS. 3) Mobile digital L2 (TCS) + BSS L3 (Oracle) with the failing order ids from Affected cases. 4) Hold the Data SIM plans in the catalog only if the failure is confirmed systemic.' },
   { key: 'offhours_orders', name: 'Off-hours unusual activity (P2)', severity: 'P2', team: 'Digital Ops',
     alert_class: 'business',  // activity anomaly (test/automation/fraud) — not an error class at all
     metric_key: 'offhours_orders', operator: 'gte', threshold: 700, window_hours: 3, min_sample: 0,

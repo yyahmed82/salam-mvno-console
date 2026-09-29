@@ -3732,6 +3732,8 @@ const JOURNEY_HEALTH = {
   delivery:     { label: 'Delivery',     metrics: ['delivery_fail_rate','delivery_stuck'], cats: ['delivery'] },
   change_plan:  { label: 'Change Plan',  metrics: ['change_plan_fail_rate'], cats: ['change_plan'] },
   ownership:    { label: 'Ownership',    metrics: ['ownership_fail_rate'], cats: ['change_ownership'] },
+  /* DATA SIM (29 Sep 2026, TKT-000069): the standalone Data SIM order — group-11 number — as its own monitored journey */
+  datasim:      { label: 'Data SIM',     metrics: ['datasim_orders','datasim_conversion','datasim_activation_fail_rate'], cats: [] },
 };
 app.get('/api/journey-health', async (req, res) => {
   try {
