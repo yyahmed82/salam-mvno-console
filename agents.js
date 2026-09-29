@@ -47,6 +47,12 @@
   .ag-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:8px} .ag-form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
   .ag-form input,.ag-form select{width:100%;box-sizing:border-box}
   .ag-note{font-size:12px;color:var(--muted);line-height:1.5}
+  .ag-vd{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800;border:1px solid var(--line);white-space:nowrap}
+  .ag-vd.h{color:var(--green);border-color:var(--green-line);background:var(--green-bg)} .ag-vd.n{color:#b91c1c;border-color:var(--red-line)} .ag-vd.x{color:var(--muted)} .ag-vd.u{color:#b45309;border-color:#f59e0b}
+  .ag-kpis{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+  .ag-kpi{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:120px} .ag-kpi b{display:block;font-size:20px;color:var(--ink)} .ag-kpi span{font-size:11px;color:var(--muted)}
+  .ag-bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;min-width:70px} .ag-bar i{display:block;height:100%;background:var(--green)} .ag-bar.low i{background:#dc2626}
+  .ag-lvl{font-size:11px;font-weight:800;padding:2px 8px;border-radius:6px;background:var(--card2);border:1px solid var(--line);color:var(--ink-soft)} .ag-lvl.on{color:var(--green);border-color:var(--green-line);background:var(--green-bg)}
   .ag-demo-ov{position:fixed;inset:0;background:rgba(2,6,23,.72);z-index:1400;display:none;padding:22px;overflow:auto}
   .ag-demo-ov.open{display:block}
   .ag-demo{max-width:1280px;margin:0 auto;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(2,6,23,.5)}
@@ -139,10 +145,10 @@
               + ((AL.hosts||[]).some(h=>h.lastError)?` — <span style="color:var(--red,#dc2626)">ssh: ${esc((AL.hosts||[]).map(h=>h.lastError).filter(Boolean)[0])}</span>`:"")) + `</div>`)}
         <div class="ag-card"><h3>To review</h3><div class="ag-big">${n(S.to_review)}</div><div class="ag-sub">assessed signatures awaiting a human decision · ${n(S.unassessed)} not yet assessed</div></div>
         ${agent("Agent 2 · Incident operations",A.incident||{alive:false,d1:{runs:0,ok:0}},`${n(T.d1)} triaged 24 h · ${n(T.dup24)} duplicates · ${n(T.flap24)} flapping · mode <b>${esc((OV.policy||{}).mode||"advise")}</b>`)}
-        <div class="ag-card"><h3>Triage quality</h3><div class="ag-big">${T.helpful+T.unhelpful?Math.round(100*T.helpful/(T.helpful+T.unhelpful))+"%":"—"}</div><div class="ag-sub">rated helpful (${n(T.helpful)} 👍 · ${n(T.unhelpful)} 👎) · avg confidence ${pct(T.avg_conf)} · ${n(T.applied)} policy actions · ${n(T.avg_ms)} ms avg</div></div>
+        <div class="ag-card"><h3>Triage quality</h3><div class="ag-big">${T.helpful+T.unhelpful?Math.round(100*T.helpful/(T.helpful+T.unhelpful))+"%":"—"}</div><div class="ag-sub">rated helpful (${n(T.helpful)} 👍 · ${n(T.unhelpful)} 👎 — ${n(T.by_people)} by people, ${n(T.by_outcome)} from the outcome) · <b>${n(T.awaiting)} to review</b> · avg confidence ${pct(T.avg_conf)} · ${n(T.applied)} policy actions</div></div>
       </div>
       <div class="panel" style="padding-top:10px">
-        <div class="ag-tabs">${[["signatures","Signatures"],["triage","Triage notes"],["reports","Daily reports"],["policy","Policy"],["budget","AI usage & budget"],["calls","LLM calls"]].map(t=>`<button class="ag-tab ${TAB===t[0]?"on":""}" data-t="${t[0]}">${t[1]}</button>`).join("")}
+        <div class="ag-tabs">${[["signatures","Signatures"],["triage","Triage notes"],["review","Review"],["reports","Daily reports"],["policy","Policy & promotion"],["budget","AI usage & budget"],["calls","LLM calls"]].map(t=>`<button class="ag-tab ${TAB===t[0]?"on":""}" data-t="${t[0]}">${t[1]}</button>`).join("")}
           <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;padding:6px 0"><button class="ag-btn sm o" data-run="log">Run log agent now</button><button class="ag-btn sm o" data-run="incident">Triage open incidents now</button><button class="ag-btn sm o" data-run="report">Build &amp; mail daily report</button></span></div>
         <div id="agTabBody"></div></div></div>`;
     h.querySelectorAll(".ag-tab").forEach(b=>b.addEventListener("click",()=>{ TAB=b.dataset.t; h.querySelectorAll(".ag-tab").forEach(x=>x.classList.toggle("on",x===b)); renderTab(); }));
@@ -483,7 +489,7 @@
   }
   function closeBudgetDemo(){ const ov=document.getElementById("agDemoOv"); if(ov) ov.classList.remove("open"); document.body.style.overflow=""; }
 
-  function renderTab(){ const b=$a("#agTabBody"); if(!b) return; b.innerHTML=`<div class="sub" style="padding:12px 0">Loading…</div>`; ({signatures:tabSig,triage:tabTri,reports:tabRep,policy:tabPol,budget:tabBudget,calls:tabCalls}[TAB]||tabSig)(b); }
+  function renderTab(){ const b=$a("#agTabBody"); if(!b) return; b.innerHTML=`<div class="sub" style="padding:12px 0">Loading…</div>`; ({signatures:tabSig,triage:tabTri,review:tabReview,reports:tabRep,policy:tabPol,budget:tabBudget,calls:tabCalls}[TAB]||tabSig)(b); }
   const filt=(b,defs,onchange)=>{ const d=document.createElement("div"); d.className="ag-filters"; d.innerHTML=defs; b.appendChild(d); d.querySelectorAll("select,input").forEach(el=>el.addEventListener(el.type==="search"?"input":"change",()=>onchange(d))); return d; };
   const daysSel=v=>`<select data-f="days">${[1,3,7,14,30,90].map(x=>`<option value="${x}" ${x==v?"selected":""}>${x} day${x>1?"s":""}</option>`).join("")}</select>`;
   const segSel=v=>`<select data-f="segment"><option value="all" ${v==="all"?"selected":""}>Both businesses</option><option value="mvno" ${v==="mvno"?"selected":""}>Mobile</option><option value="fixed" ${v==="fixed"?"selected":""}>Fixed</option></select>`;
@@ -534,6 +540,35 @@
     load();
   }
 
+
+  /* ------------------------------ review (alpha.117) ------------------------------
+   * every unrated note next to how the incident ended, with a suggested verdict; one click confirms them all */
+  F.rev={days:30,segment:"all",show:"all"};
+  async function tabReview(b){
+    b.innerHTML=""; const f=F.rev;
+    filt(b,`${daysSel(f.days)}${segSel(f.segment)}<select data-f="show"><option value="all">All suggestions</option>${[["helpful","Suggested helpful"],["not helpful","Suggested not helpful"],["n/a","Not applicable"],["undecided","Undecided"]].map(k=>`<option value="${k[0]}" ${f.show===k[0]?"selected":""}>${k[1]}</option>`).join("")}</select>`,d=>{ read(d,f); load(); });
+    const w=document.createElement("div"); b.appendChild(w);
+    async function load(){ w.innerHTML=`<div class="sub">Loading…</div>`; let d;
+      try{ d=await api(`/api/agents/review?days=${f.days}&segment=${f.segment}`); }catch(e){ w.innerHTML=`<div class="sub">${esc(e.message)}</div>`; return; }
+      const c=d.counts||{}; const rows=(d.rows||[]).filter(r=>f.show==="all"||r.suggested===f.show);
+      const vd=v=>`<span class="ag-vd ${v==="helpful"?"h":v==="not helpful"?"n":v==="n/a"?"x":"u"}">${esc(v)}</span>`;
+      w.innerHTML=`<div class="ag-note" style="margin:6px 0 4px">How a note is judged: <b>helpful</b> when the incident was closed by the team the note suggested and nobody re-assigned it · <b>not helpful</b> when it ended with another team or was re-assigned away · <b>n/a</b> when it cleared by itself and nobody touched it (nothing to learn, kept out of the score) · <b>undecided</b> when it is still open or has no team on either side. From now on resolving or re-assigning an incident rates its note the same way, automatically; your own 👍/👎 always wins. Rated notes are shown to the model on the next incident of the same rule.</div>
+        <div class="ag-kpis"><div class="ag-kpi"><b>${n(d.total)}</b><span>to review</span></div><div class="ag-kpi"><b style="color:var(--green)">${n(c.helpful)}</b><span>suggested helpful</span></div><div class="ag-kpi"><b style="color:#b91c1c">${n(c["not helpful"])}</b><span>suggested not helpful</span></div><div class="ag-kpi"><b>${n(c["n/a"])}</b><span>not applicable</span></div><div class="ag-kpi"><b style="color:#b45309">${n(c.undecided)}</b><span>undecided</span></div>
+          <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="ag-btn" id="agRevAll" ${d.total?"":"disabled"}>Confirm all suggested verdicts</button><button class="ag-btn o" id="agRevNA" ${c["n/a"]?"":"disabled"}>Clear the n/a only</button></span></div>
+        ${rows.length?`<div class="ag-tablew"><table class="ag-table"><thead><tr><th>Incident</th><th>The note said</th><th>How it ended</th><th>Suggested</th><th>Why</th><th>Your verdict</th></tr></thead><tbody>${rows.map(r=>`<tr>
+          <td><a href="#${r.segment==="fixed"?"fixed-alerts":"alerts"}?id=${r.alert_id}" style="color:var(--green);font-weight:700;text-decoration:none">#${r.alert_id}</a> <span class="ag-chip ${r.severity==="P1"?"tech":r.severity==="P2"?"a":""}">${esc(r.severity||"")}</span> <span class="ag-chip">${esc(r.kind)}</span><div class="ag-sub" style="max-width:220px">${esc(r.name||r.rule_key||"")}</div><div class="ag-sub">${md(r.created_at)}</div></td>
+          <td style="max-width:320px">${esc(r.probable_cause||"—")}<div class="ag-sub">team <b>${esc(r.suggested_team||"—")}</b>${r.priority_hint?` · ${esc(r.priority_hint)}`:""}${r.confidence!=null?` · ${pct(r.confidence*100)}`:""}${r.noise?" · called it noise":""}</div></td>
+          <td style="max-width:260px"><b>${esc(r.status)}</b>${r.team?` · team <b>${esc(r.team)}</b>`:" · no team"}${Number(r.reassign_count)?` · re-assigned ${r.reassign_count}×`:""}<div class="ag-sub">${r.resolved_by?`${r.resolved_by==="system"?"cleared by itself":"resolved by "+(window.PERSON?PERSON.inline(r.resolved_by):esc(String(r.resolved_by).split("@")[0]))}${r.resolve_reason?" · "+esc(r.resolve_reason):""}`:(r.ack_by?"acknowledged by "+esc(String(r.ack_by).split("@")[0]):"nobody acted yet")}${r.note?`<br>“${esc(String(r.note).slice(0,120))}”`:""}</div></td>
+          <td>${vd(r.suggested)}</td><td class="ag-sub" style="max-width:240px">${esc(r.why)}</td>
+          <td style="white-space:nowrap"><button class="ag-btn sm o" data-fb="1" data-id="${r.id}" title="Helpful">👍</button> <button class="ag-btn sm o" data-fb="0" data-id="${r.id}" title="Not helpful">👎</button></td></tr>`).join("")}</tbody></table></div>`:`<div class="sub" style="padding:14px 0">Nothing to review${f.show!=="all"?" in this filter":""} — every note of the last ${f.days} days is rated.</div>`}`;
+      w.querySelectorAll("[data-fb]").forEach(bt=>bt.addEventListener("click",async()=>{ try{ await api(`/api/agents/triage/${bt.dataset.id}/feedback`,{method:"PUT",body:JSON.stringify({helpful:bt.dataset.fb==="1"})}); load(); }catch(e){ toast(e.message); } }));
+      const run=async(only,msg)=>{ if(!confirm(msg)) return; try{ const r=await api("/api/agents/review/confirm-all",{method:"POST",body:JSON.stringify({days:f.days,segment:f.segment,only})}); toast(`Rated: ${n(r.helpful)} helpful · ${n(r["not helpful"])} not helpful · ${n(r["n/a"])} n/a · ${n(r.skipped)} left for you`); render(); }catch(e){ toast(e.message); } };
+      const all=w.querySelector("#agRevAll"); if(all) all.addEventListener("click",()=>run(undefined,`Confirm ${n(c.helpful)} helpful, ${n(c["not helpful"])} not helpful and ${n(c["n/a"])} n/a as suggested? Undecided ones stay for you. Each rating is audited under your name and shapes the next note of the same rule.`));
+      const na=w.querySelector("#agRevNA"); if(na) na.addEventListener("click",()=>run("n/a",`Mark the ${n(c["n/a"])} self-cleared, untouched incidents as not applicable? They leave the queue and never count in the score.`));
+    }
+    load();
+  }
+
   async function tabRep(b){
     let reps=[]; try{ reps=(await api("/api/agents/reports")).reports; }catch(e){ b.innerHTML=`<div class="sub">${esc(e.message)}</div>`; return; }
     if(!reps.length){ b.innerHTML=`<div class="sub" style="padding:14px 0">No daily report yet — the first one is built at the report hour (06:00 KSA) or with “Build &amp; mail daily report”.</div>`; return; }
@@ -547,16 +582,33 @@
   }
 
   async function tabPol(b){
-    let d; try{ d=await api("/api/agents/policy"); }catch(e){ b.innerHTML=`<div class="sub">${esc(e.message)}</div>`; return; }
-    const P=d.policy, rules=d.rules||[];
+    let d,S; try{ [d,S]=await Promise.all([api("/api/agents/policy"),api("/api/agents/scores")]); }catch(e){ b.innerHTML=`<div class="sub">${esc(e.message)}</div>`; return; }
+    const P=d.policy, rules=d.rules||[]; const T=S.thresholds||{};
+    const bar=(v,low)=>v==null?"<span class='ag-sub'>—</span>":`<div style="display:flex;align-items:center;gap:6px"><div class="ag-bar ${low&&v<low?"low":""}"><i style="width:${Math.round(v*100)}%"></i></div><span class="ag-sub">${Math.round(v*100)}%</span></div>`;
+    const ladder=`<div class="ag-detail" style="margin-top:10px"><b>Promotion ladder</b> <span class="ag-note">— last ${S.days} days · mode <b>${esc(P.mode)}</b> · ${S.rules.filter(r=>r.auto_team||r.auto_dup).length} rule(s) promoted</span>
+      <div class="ag-note" style="margin:4px 0 10px">A rule earns autonomy on its own numbers, one step at a time: <b>advise</b> (notes only) → <b>assist · team</b> (the agent sets the owner team when the incident has none) once ${T.minRated}+ notes are rated and the suggested team matched the closing team ${Math.round((T.teamMatch||0)*100)}%+ of the time → <b>assist · team + duplicates</b> (exact duplicates are closed with a comment) once ${T.dupConfirmed}+ duplicate calls were confirmed and none refused. Nothing is promoted by itself; a promoted rule whose helpful rate falls under ${Math.round((T.demoteBelow||0)*100)}% on ${T.minRated}+ ratings is <b>demoted automatically</b> on the next tick. Flow-guard rules are deterministic and always ready.</div>
+      ${S.rules.length?`<div class="ag-tablew"><table class="ag-table"><thead><tr><th>Rule</th><th>Level</th><th>Notes · rated</th><th>Helpful</th><th>Team match</th><th>Duplicates</th><th>Readiness</th><th></th></tr></thead><tbody>${S.rules.map(r=>`<tr>
+        <td><span class="ag-chip ${r.severity==="P1"?"tech":r.severity==="P2"?"a":""}">${esc(r.severity)}</span> ${esc(r.name)}<div class="ag-sub ag-mono">${esc(r.rule_key)}${r.rule_team?" · owner "+esc(r.rule_team):""}</div></td>
+        <td><span class="ag-lvl ${r.auto_team||r.auto_dup?"on":""}">${esc(r.level)}</span></td>
+        <td>${n(r.notes)} · <b>${n(r.rated)}</b>${r.rated<T.minRated?`<div class="ag-sub">${T.minRated-r.rated} more to rate</div>`:""}</td>
+        <td>${bar(r.helpful_rate,T.demoteBelow)}<div class="ag-sub">${n(r.helpful)} 👍 · ${n(r.unhelpful)} 👎</div></td>
+        <td>${bar(r.team_match_rate,T.teamMatch)}<div class="ag-sub">${n(r.team_match)} of ${n(r.resolved_handled)} handled</div></td>
+        <td>${n(r.dups)}<div class="ag-sub">${n(r.dup_ok)} confirmed · ${n(r.dup_bad)} refused</div></td>
+        <td>${r.at_risk?`<span class="ag-vd n">at risk — auto-demote next tick</span>`:r.ready_dup?`<span class="ag-vd h">ready · duplicates</span>`:r.ready_team?`<span class="ag-vd h">ready · team</span>`:(r.auto_team||r.auto_dup)?`<span class="ag-vd h">holding</span>`:`<span class="ag-vd u">learning</span>`}</td>
+        <td style="white-space:nowrap">${r.ready_team?`<button class="ag-btn sm" data-pro="team" data-rule="${esc(r.rule_key)}">Promote · team</button> `:""}${r.ready_dup?`<button class="ag-btn sm" data-pro="dup" data-rule="${esc(r.rule_key)}">Promote · duplicates</button> `:""}${(r.auto_team||r.auto_dup)?`<button class="ag-btn sm o" data-dem="all" data-rule="${esc(r.rule_key)}">Demote</button>`:""}</td></tr>`).join("")}</tbody></table></div>`:`<div class="sub" style="padding:10px 0">No triage notes in the last ${S.days} days yet.</div>`}
+      ${(S.history||[]).length?`<div class="ag-sub" style="margin-top:8px"><b>History</b> · ${S.history.slice(0,8).map(h=>`${md(h.at)} ${esc(h.action)} <span class="ag-mono">${esc(h.rule_key)}</span> (${esc(h.level)}) by ${esc(String(h.actor||"").split("@")[0])}${h.reason?" — "+esc(h.reason):""}`).join("<br>")}</div>`:""}</div>`;
     const chips=(id,sel)=>`<div class="ag-rules" id="${id}">${rules.map(r=>`<label class="${sel.includes(r.key)?"on":""}"><input type="checkbox" value="${esc(r.key)}" ${sel.includes(r.key)?"checked":""} hidden><span class="ag-chip ${r.severity==="P1"?"tech":r.severity==="P2"?"a":""}">${esc(r.severity)}</span>${esc(r.name)}<span class="ag-sub ag-mono">${esc(r.key)}</span></label>`).join("")}</div>`;
-    b.innerHTML=`<div class="ag-detail" style="margin-top:10px"><b>Autonomy</b><div class="ag-note" style="margin:4px 0 10px">The agent always writes a triage note. What it may <i>do</i> is decided here, rule by rule. Acknowledging, closing real incidents and escalating stay with people and the SLA ladder.</div>
+    b.innerHTML=ladder+`<div class="ag-detail" style="margin-top:10px"><b>Autonomy — the allow-lists the ladder writes to</b><div class="ag-note" style="margin:4px 0 10px">The agent always writes a triage note. What it may <i>do</i> is decided here, rule by rule. Acknowledging, closing real incidents and escalating stay with people and the SLA ladder.</div>
       <label style="display:block;margin:6px 0"><input type="radio" name="agMode" value="advise" ${P.mode!=="assist"?"checked":""}> <b>Advise</b> — notes only (default)</label>
       <label style="display:block;margin:6px 0 14px"><input type="radio" name="agMode" value="assist" ${P.mode==="assist"?"checked":""}> <b>Assist</b> — apply the allow-listed actions below, every action commented on the incident and audited</label>
       <b>Set the owner team automatically</b> <span class="ag-note">(only when the incident has no team yet)</span>${chips("agAT",P.autoTeam||[])}
       <b style="display:block;margin-top:12px">Auto-resolve exact duplicates</b> <span class="ag-note">(same rule already open and triaged within 60 min)</span>${chips("agAR",P.autoResolveDup||[])}
       <div style="margin-top:12px;display:flex;gap:8px"><button class="ag-btn" id="agPolSave">Save policy</button></div></div>`;
     b.querySelectorAll(".ag-rules label").forEach(l=>l.addEventListener("click",()=>setTimeout(()=>l.classList.toggle("on",l.querySelector("input").checked),0)));
+    b.querySelectorAll("[data-pro]").forEach(bt=>bt.addEventListener("click",async()=>{ const lvl=bt.dataset.pro; if(!confirm(`Promote ${bt.dataset.rule} to assist · ${lvl==="dup"?"team + duplicates":"team"}? The mode switches to assist; every action the agent takes is commented on the incident and audited. It is demoted by itself if its helpful rate drops.`)) return;
+      try{ await api("/api/agents/promote",{method:"POST",body:JSON.stringify({rule:bt.dataset.rule,level:lvl})}); toast("Promoted — applies on the next tick"); renderTab(); }catch(e){ toast(e.message); } }));
+    b.querySelectorAll("[data-dem]").forEach(bt=>bt.addEventListener("click",async()=>{ if(!confirm(`Demote ${bt.dataset.rule} back to advise (notes only)?`)) return;
+      try{ await api("/api/agents/demote",{method:"POST",body:JSON.stringify({rule:bt.dataset.rule,level:"all"})}); toast("Demoted"); renderTab(); }catch(e){ toast(e.message); } }));
     b.querySelector("#agPolSave").addEventListener("click",async()=>{ const pick=id=>[...b.querySelectorAll(`#${id} input:checked`)].map(i=>i.value);
       try{ await api("/api/agents/policy",{method:"PUT",body:JSON.stringify({mode:b.querySelector("[name=agMode]:checked").value,autoTeam:pick("agAT"),autoResolveDup:pick("agAR")})}); toast("Policy saved — the agent applies it on its next tick"); render(); }catch(e){ toast(e.message); } });
   }
@@ -570,6 +622,7 @@
   /* ------------------------------ open ------------------------------ */
   window.openAgents=function(){
     ensureView();
+    try{ const qs=new URLSearchParams((location.hash.split("?")[1]||"")); const t=qs.get("tab"); if(t&&["signatures","triage","review","reports","policy","budget","calls"].includes(t)) TAB=t; }catch(_){}
     document.querySelectorAll(".navtab").forEach(x=>x.classList.remove("active"));
     document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
     const gear=document.getElementById("settingsBtn"); if(gear) gear.classList.add("on");

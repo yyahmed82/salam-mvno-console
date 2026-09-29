@@ -95,7 +95,8 @@ async function mission() {
               (SELECT count(*)::int FROM alerts WHERE status = 'open') AS open_total,
               (SELECT count(*)::int FROM alert_rule_team_suggestions WHERE status = 'proposed') AS proposals_pending,
               (SELECT count(*)::int FROM alert_rules r WHERE coalesce(r.enabled, true) AND NOT EXISTS (SELECT 1 FROM alert_rule_team_suggestions s WHERE s.rule_key = r.key) AND (r.team IS NULL OR r.team = '')) AS rules_unmapped`),
-    q(`SELECT count(*) FILTER (WHERE helpful IS NULL AND created_at >= now() - interval '7 days')::int AS awaiting, count(*) FILTER (WHERE helpful)::int AS helpful, count(*) FILTER (WHERE helpful = false)::int AS unhelpful FROM agent_triage`),
+    q(`SELECT count(*) FILTER (WHERE helpful IS NULL AND feedback_source IS NULL AND created_at >= now() - interval '30 days')::int AS awaiting, count(*) FILTER (WHERE helpful)::int AS helpful, count(*) FILTER (WHERE helpful = false)::int AS unhelpful,
+              count(*) FILTER (WHERE feedback_source IN ('implicit','review') AND feedback_at >= now() - interval '24 hours')::int AS auto24 FROM agent_triage`),
     q(`SELECT count(*)::int AS calls24, count(DISTINCT actor)::int AS people24, round(avg(ms) FILTER (WHERE ok))::int AS avg_ms, max(at) AS last_at, count(*) FILTER (WHERE blocked)::int AS blocked FROM llm_calls WHERE purpose LIKE 'yusr.%' AND at >= now() - interval '24 hours'`),
     q(`SELECT count(*) FILTER (WHERE c.status IN ('open','approved') AND r.id IS NULL)::int AS to_review, count(*) FILTER (WHERE c.status IN ('open','approved'))::int AS open,
               count(*) FILTER (WHERE c.status IN ('open','approved') AND c.batch_id IS NULL AND (c.status = 'approved' OR r.verdict = 'refund'))::int AS batchable,
@@ -104,6 +105,7 @@ async function mission() {
          FROM refund_candidates c LEFT JOIN refund_reviews r ON r.candidate_id = c.id`),
   ]);
   let guardQ = { open: 0, activated_no_inc: 0, activated: 0 }; try { guardQ = await require('./flowGuard').queue(); } catch (_) {}
+  let learnQ = { ready: [], promoted: 0, at_risk: [], mode: 'advise' }; try { learnQ = await require('./agentLearn').summary(); } catch (_) {}
   const byAgent = k => runs.filter(r => r.agent === k);
   const last = k => byAgent(k)[0] || null;
   const running = r => r && r.finished_at == null && (now - new Date(r.started_at).getTime()) < 20 * 60e3;
@@ -138,7 +140,8 @@ async function mission() {
       quiet: byAgent('incident').filter(r => !n((r.stats || {}).checked) && r.ok !== false).length,
       outputs: { triage },
       queue: [{ label: 'open incidents without a note', n: n(qz.open_untriaged), hint: `of ${n(qz.open_total)} open — picked up on the next tick`, link: '#alerts' }, { label: 'flow-guard cases activated, no INC', n: n(guardQ.activated_no_inc), hint: `of ${n(guardQ.activated)} activated non-approved onboardings — the triage note names the case, the incident sits with Mobile digital L2 (TCS)`, link: '#flowguard?status=activated' }],
-      human: [{ label: 'triage notes awaiting feedback', n: n(fb.awaiting), hint: `helpful ${n(fb.helpful)} · not helpful ${n(fb.unhelpful)} — 👍 / 👎 on the incident teaches the agent`, link: '#alerts' }],
+      human: [{ label: 'triage notes to review', n: n(fb.awaiting), hint: `helpful ${n(fb.helpful)} · not helpful ${n(fb.unhelpful)} · ${n(fb.auto24)} rated from the outcome in 24 h — the Review tab suggests a verdict from how each incident ended; confirm in one click. Ratings shape the next note.`, link: '#agents?tab=review' },
+              { label: 'rules ready to promote', n: n(learnQ.ready.length), hint: learnQ.ready.length ? `${learnQ.ready.slice(0, 4).map(r => r.name).join(' · ')}${learnQ.ready.length > 4 ? ' · …' : ''} — earned assist mode on their own numbers; a person promotes` : `${n(learnQ.promoted)} rule(s) in assist mode · mode ${learnQ.mode}${learnQ.at_risk.length ? ' · at risk: ' + learnQ.at_risk.join(', ') : ''}`, link: '#agents?tab=policy' }],
       calls: callsOf('salam-agent-incident').filter(c => c.purpose !== 'agent-incident.map'), hours: hoursOf('incident'), tokens: tokOf('salam-agent-incident'), tokensHourly: callsHour.filter(c => c.caller === 'salam-agent-incident'),
       next: { tick: nextTick(last('incident') && last('incident').started_at, INTERVALS.incident) } },
     { key: 'map', name: 'Team mapping', short: 'Agent 2 · mapper', pm2: 'salam-agent-incident', role: 'Proposes which responder team owns each alert rule — keywords first, the model for the ambiguous ones — and waits for a human to approve.',

@@ -132,6 +132,7 @@ function mount(app, { audit, requireCap, requireSuper }) {
       await C.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`,
         [a.id, `Re-assigned: ${from ? from.name : (a.team || 'no team')} → ${to.name} by ${who(req.actor)} — ${note}${a.ack_by ? ` (ack released from ${who(a.ack_by)}; the ${to.name} ack clock starts now)` : ''}`]).catch(() => {});
       await audit(req, 'incident.reassign', a.id, { from: from ? from.key : a.team || null, to: to.key, note, via: can.via });
+      try { await require('./agentLearn').onIncidentEvent(a.id, 'reassign', req.actor); } catch (_) {}   // implicit rating (alpha.117)
       let mailed = null; try { mailed = await mailTeam({ ...a, team: to.key }, to, { kind: 'reassigned', by: req.actor, note, from: from ? from.name : a.team }); } catch (e) { mailed = { error: e.message }; }
       res.json({ ok: true, from: from ? from.key : a.team || null, to: to.key, team: { key: to.key, name: to.name }, mailed });
     } catch (e) { res.status(500).json({ error: e.message }); }

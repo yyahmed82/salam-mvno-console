@@ -74,6 +74,8 @@ function mount(app, { audit, requireCap, requireRoot }) {
           count(*) FILTER (WHERE segment='fixed')::int AS fixed_signatures FROM agent_signatures`))[0] || {};
       const tri = (await q(`SELECT count(*)::int AS total, count(*) FILTER (WHERE created_at >= now() - interval '24 hours')::int AS d1, count(*) FILTER (WHERE kind='duplicate' AND created_at >= now() - interval '24 hours')::int AS dup24,
           count(*) FILTER (WHERE kind='flapping' AND created_at >= now() - interval '24 hours')::int AS flap24, count(*) FILTER (WHERE helpful)::int AS helpful, count(*) FILTER (WHERE helpful=false)::int AS unhelpful,
+          count(*) FILTER (WHERE helpful IS NULL AND feedback_source IS NULL AND created_at >= now() - interval '30 days')::int AS awaiting,
+          count(*) FILTER (WHERE feedback_source='human')::int AS by_people, count(*) FILTER (WHERE feedback_source IN ('implicit','review'))::int AS by_outcome,
           count(*) FILTER (WHERE applied <> '{}'::jsonb)::int AS applied, round(avg(ms))::int AS avg_ms, round(avg(confidence)*100)::int AS avg_conf FROM agent_triage`))[0] || {};
       const reports = await q(`SELECT id, kind, period_start, period_end, mailed_to, created_at, left(narrative, 240) AS narrative FROM agent_reports ORDER BY created_at DESC LIMIT 7`);
       const state = await q(`SELECT key, value, updated_at FROM agent_state`);
@@ -137,11 +139,46 @@ function mount(app, { audit, requireCap, requireRoot }) {
   app.put('/api/agents/triage/:id/feedback', ...gate, async (req, res) => {
     try {
       const helpful = (req.body || {}).helpful; if (typeof helpful !== 'boolean') return res.status(400).json({ error: 'helpful must be boolean' });
-      const r = (await C.query(`UPDATE agent_triage SET helpful=$2, feedback_by=$3, feedback_at=now() WHERE id=$1 RETURNING id, alert_id, helpful`, [req.params.id, helpful, req.actor])).rows[0];
+      const r = (await C.query(`UPDATE agent_triage SET helpful=$2, feedback_by=$3, feedback_at=now(), feedback_source='human' WHERE id=$1 RETURNING id, alert_id, helpful`, [req.params.id, helpful, req.actor])).rows[0];
       if (!r) return res.status(404).json({ error: 'not found' });
       await audit(req, 'agent.triage.feedback', String(r.alert_id), { helpful });
       res.json(r);
     } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  /* ---- learning: review queue · confirm all · scores · promotion ladder (agentLearn.js, alpha.117) ---- */
+  const learn = require('./agentLearn');
+  app.get('/api/agents/review', ...gate, async (req, res) => {
+    try { res.json(await learn.queue({ days: days(req), segment: req.query.segment, limit: Math.min(1000, Number(req.query.limit) || 400) })); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.post('/api/agents/review/confirm-all', ...gate, async (req, res) => {
+    try {
+      const b = req.body || {}; const only = ['helpful', 'not helpful', 'n/a'].includes(b.only) ? b.only : undefined;
+      const out = await learn.confirmAll({ actor: req.actor, days: Math.min(90, Number(b.days) || 30), segment: b.segment, only });
+      await audit(req, 'agent.triage.review', null, out);
+      res.json({ ok: true, ...out });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.get('/api/agents/scores', ...gate, async (req, res) => {
+    try { const s = await learn.scores({ days: Math.min(90, Number(req.query.days) || 30) }); s.history = await learn.history(40); res.json(s); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.post('/api/agents/promote', ...gate, async (req, res) => {
+    try {
+      const b = req.body || {}; if (!b.rule) return res.status(400).json({ error: 'rule required' });
+      const pol = await learn.promote({ ruleKey: String(b.rule), level: b.level === 'dup' ? 'dup' : 'team', actor: req.actor, reason: String(b.reason || '').slice(0, 300) });
+      await audit(req, 'agent.rule.promote', String(b.rule), { level: b.level === 'dup' ? 'dup' : 'team' });
+      res.json({ ok: true, policy: pol });
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+  app.post('/api/agents/demote', ...gate, async (req, res) => {
+    try {
+      const b = req.body || {}; if (!b.rule) return res.status(400).json({ error: 'rule required' });
+      const level = ['team', 'dup', 'all'].includes(b.level) ? b.level : 'all';
+      const pol = await learn.demote({ ruleKey: String(b.rule), level, actor: req.actor, reason: String(b.reason || '').slice(0, 300) });
+      await audit(req, 'agent.rule.demote', String(b.rule), { level });
+      res.json({ ok: true, policy: pol });
+    } catch (e) { res.status(400).json({ error: e.message }); }
   });
   app.get('/api/agents/policy', ...gate, async (req, res) => {
     try { const ai = require('./agentIncident'); res.json({ policy: await ai.getPolicy(), rules: (await C.query(`SELECT key, name, severity, team, enabled FROM alert_rules ORDER BY key`)).rows }); }

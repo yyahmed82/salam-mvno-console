@@ -3859,7 +3859,9 @@ app.post('/api/alerts/:id/resolve', requireCap('ackErrors'), async (req, res) =>
       : '';
     await C.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`, [req.params.id, `Resolved by ${String(req.actor).split('@')[0]} — ${REASONS[reason]}${note ? ` — ${note}` : ''}${holdLine}`]).catch(() => {});
     await audit(req, 'incident.resolve', req.params.id, { reason, note: note || undefined, hold_hours: hours || undefined, hold_until: heldUntil || undefined });
-    res.json({ ok: true, reason, hold_hours: hours, hold_until: heldUntil });
+    /* implicit rating of the agent's triage note (alpha.117): closed by the suggested team → helpful, by another → not */
+    let rated = null; try { rated = await require('./agentLearn').onIncidentEvent(req.params.id, 'resolve', req.actor); } catch (_) {}
+    res.json({ ok: true, reason, hold_hours: hours, hold_until: heldUntil, rated });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 const ksaStamp = t => t ? new Date(new Date(t).getTime() + 3 * 3600e3).toISOString().slice(5, 16).replace('T', ' ') : '';

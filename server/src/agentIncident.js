@@ -45,6 +45,7 @@ async function ensureSchema() {
   await C().query(`ALTER TABLE agent_triage ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 1`).catch(() => {});
   await C().query(`ALTER TABLE agent_triage ADD COLUMN IF NOT EXISTS retried_at timestamptz`).catch(() => {});
   await C().query(`CREATE TABLE IF NOT EXISTS agent_runs (id bigserial PRIMARY KEY, agent text NOT NULL, started_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz, ok boolean, stats jsonb NOT NULL DEFAULT '{}', error text)`);
+  await require('./agentLearn').ensureSchema().catch(e => log('learn schema', e.message));   // feedback_source · noise · promotions (alpha.117)
 }
 async function getPolicy() {
   try { const s = (await require('./settings').getSetting('agent_incident')) || {}; return { mode: s.mode === 'assist' ? 'assist' : 'advise', autoTeam: Array.isArray(s.autoTeam) ? s.autoTeam : [], autoResolveDup: Array.isArray(s.autoResolveDup) ? s.autoResolveDup : [] }; }
@@ -67,7 +68,9 @@ async function evidence(a) {
   const sigs = (await q.query(`SELECT source, endpoint, code, last_24h, class, category, probable_cause FROM agent_signatures WHERE segment=$1 AND last_seen >= now() - interval '2 hours' ORDER BY last_24h DESC LIMIT 5`, [seg]).catch(() => ({ rows: [] }))).rows;
   const rule = (await q.query(`SELECT description, team, alert_class, params FROM alert_rules WHERE key=$1`, [a.rule_key]).catch(() => ({ rows: [] }))).rows[0] || {};
   const comments = (await q.query(`SELECT author, body FROM incident_comments WHERE alert_id=$1 ORDER BY created_at DESC LIMIT 3`, [a.id])).rows;
-  return { seg, dup, hist, lastClose: lastClose ? lastClose.body : null, corr, sigs, rule, comments };
+  /* LEARNING LOOP (alpha.117): what people rated on this rule — 2 helpful notes to imitate, 1 unhelpful to avoid */
+  let examples = { good: [], bad: [] }; try { examples = await require('./agentLearn').examplesFor(a.rule_key); } catch (_) {}
+  return { seg, dup, hist, lastClose: lastClose ? lastClose.body : null, corr, sigs, rule, comments, examples };
 }
 
 /* the team list is read from Teams management › Responder teams at every call, so a team added by an admin is offered to the model at once */
@@ -107,6 +110,7 @@ Message: ${String(a.message || '').slice(0, 300)}
 Rule doc: ${String(ev.rule.description || '-').slice(0, 300)} · class ${ev.rule.alert_class || '?'} · owner team on rule: ${ev.rule.team || a.team || '-'}
 Last 30 days, same rule: ${ev.hist.n || 0} incidents, median lifetime ${ev.hist.med_min == null ? '?' : ev.hist.med_min + ' min'}, acknowledged ${ev.hist.acked || 0}, usually handled by ${ev.hist.usual_person || 'nobody recorded'}
 Last human note on this rule: ${ev.lastClose ? String(ev.lastClose).slice(0, 200) : 'none'}
+${require('./agentLearn').examplesText(ev.examples || { good: [], bad: [] })}
 Fired within ±10 min: ${ev.corr.length ? ev.corr.map(c => `#${c.id} ${c.severity} ${c.name} (${c.status})`).join('; ') : 'nothing else'}
 Busiest backend signatures last 2 h (${ev.seg}): ${ev.sigs.length ? ev.sigs.map(s => `${s.endpoint || s.source} code ${s.code || '-'} ×${s.last_24h} ${s.class || ''}${s.probable_cause ? ' — ' + s.probable_cause : ''}`).join('; ') : 'none recorded'}
 Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${String(c.body).slice(0, 120)}`).join(' | ') : 'none'}${flapping ? '\nNOTE: this incident is FLAPPING (re-opened ' + a.reopen_count + ' times).' : ''}`;
@@ -122,9 +126,10 @@ Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${Str
   }
   catch (e) { if (e.llm) throw e; log('triage LLM failed', a.id, e.message); }
   const team = j && j.suggested_team && !/^unknown$/i.test(String(j.suggested_team)) ? await toTeamKey(String(j.suggested_team).slice(0, 60), ev.rule.team || a.team) : await toTeamKey(ev.rule.team || a.team, null);
-  await q.query(`INSERT INTO agent_triage (alert_id, segment, rule_key, severity, kind, probable_cause, impact, suggested_team, suggested_action, priority_hint, confidence, similar_30d, median_life_min, usual_close, correlated, top_signatures, model, ms)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+  await q.query(`INSERT INTO agent_triage (alert_id, segment, rule_key, severity, kind, probable_cause, impact, suggested_team, suggested_action, priority_hint, confidence, similar_30d, median_life_min, usual_close, correlated, top_signatures, model, ms, noise)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
       ON CONFLICT (alert_id) DO UPDATE SET
+        noise = COALESCE(EXCLUDED.noise, agent_triage.noise),
         probable_cause = COALESCE(EXCLUDED.probable_cause, agent_triage.probable_cause),
         impact         = COALESCE(EXCLUDED.impact, agent_triage.impact),
         suggested_team = COALESCE(EXCLUDED.suggested_team, agent_triage.suggested_team),
@@ -135,7 +140,7 @@ Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${Str
         attempts = coalesce(agent_triage.attempts,1) + 1, retried_at = now()`,
     [a.id, ev.seg, a.rule_key, a.severity, flapping ? 'flapping' : 'triage', j ? String(j.probable_cause || '').slice(0, 400) : null, j ? String(j.impact || '').slice(0, 300) : null, team, j ? String(j.suggested_action || '').slice(0, 400) : null,
       j ? String(j.priority_hint || '').slice(0, 3) : null, j ? (Number(j.confidence) || null) : null, ev.hist.n || 0, ev.hist.med_min || null, ev.lastClose ? String(ev.lastClose).slice(0, 200) : null,
-      JSON.stringify(ev.corr.map(c => ({ id: c.id, name: c.name, severity: c.severity, status: c.status }))), JSON.stringify(ev.sigs), out ? `${out.provider}:${out.model}` : (guard && j ? 'rules:flow-guard' : null), Date.now() - t0]);
+      JSON.stringify(ev.corr.map(c => ({ id: c.id, name: c.name, severity: c.severity, status: c.status }))), JSON.stringify(ev.sigs), out ? `${out.provider}:${out.model}` : (guard && j ? 'rules:flow-guard' : null), Date.now() - t0, j ? (j.is_noise === true) : null]);
   let applied = {};
   if (((policy.mode === 'assist' && policy.autoTeam.includes(a.rule_key)) || guard) && team && !a.team) {
     await q.query(`UPDATE alerts SET team=$2 WHERE id=$1 AND team IS NULL`, [a.id, team]); applied = { team };
@@ -181,8 +186,9 @@ async function mapRules({ force = false, maxModel = 15 } = {}) {
         if (!stale) { stats.unchanged++; continue; }
         const current = await teams.resolve(r.team);
         const sc = teams.scoreRule(r, list);
+        const rejected = await require('./agentLearn').rejectedTeamsFor(r.key).catch(() => []);   // a person said no to these — never again (alpha.117)
         let pick = null, confidence = 0, method = 'rule', reason = '';
-        if (sc.top && sc.confident) { pick = sc.top.key; confidence = Math.min(0.95, 0.55 + sc.top.score * 0.08); reason = `keywords: ${sc.top.hits.join(', ')}`; stats.deterministic++; }
+        if (sc.top && sc.confident && !rejected.includes(sc.top.key)) { pick = sc.top.key; confidence = Math.min(0.95, 0.55 + sc.top.score * 0.08); reason = `keywords: ${sc.top.hits.join(', ')}`; stats.deterministic++; }
         else if (modelCalls < maxModel && !stats.modelUnavailable) {
           modelCalls++;
           const cands = sc.ranked.filter(x => x.score > 0).map(x => `${x.key} (score ${x.score}${x.hits.length ? ': ' + x.hits.join(', ') : ''})`).join('; ') || 'none scored — consider every team';
@@ -190,16 +196,17 @@ async function mapRules({ force = false, maxModel = 15 } = {}) {
 Description: ${String(r.description || '-').slice(0, 300)}
 Trigger codes: ${String(r.trigger_codes || '-').slice(0, 120)}
 Current owner on the rule: ${current ? current.key : (r.team || 'none')}
-Keyword candidates: ${cands}
+Keyword candidates: ${cands}${rejected.length ? `\nREJECTED by a person for this rule — do NOT propose: ${rejected.join(', ')}` : ''}
 TEAMS: ${await teamCatalog()}`;
           try {
             const out = await llm.chat({ system: MAP_SYSTEM, user, purpose: 'agent-incident.map', caller: 'salam-agent-incident', json: true, maxTokens: 120, temperature: 0.1 });
             const j = out.json && typeof out.json === 'object' ? out.json : null;
             const t = j && j.team ? await teams.resolve(j.team) : null;
-            if (t) { pick = t.key; confidence = Math.max(0.1, Math.min(0.9, Number(j.confidence) || 0.5)); method = 'model'; reason = String(j.reason || '').slice(0, 200); stats.modelled++; }
+            if (t && rejected.includes(t.key)) log('map: model proposed a rejected team for', r.key, t.key, '— dropped');
+            else if (t) { pick = t.key; confidence = Math.max(0.1, Math.min(0.9, Number(j.confidence) || 0.5)); method = 'model'; reason = String(j.reason || '').slice(0, 200); stats.modelled++; }
           } catch (e) { if (e.llm) stats.modelUnavailable = true; log('map: model failed for', r.key, e.message); }
-          if (!pick && sc.top) { pick = sc.top.key; confidence = 0.35; method = 'rule'; reason = `weak keyword match: ${sc.top.hits.join(', ')}`; stats.lowConfidence++; }
-        } else if (sc.top) { pick = sc.top.key; confidence = 0.35; method = 'rule'; reason = `weak keyword match: ${sc.top.hits.join(', ')}`; stats.lowConfidence++; }
+          if (!pick && sc.top && !rejected.includes(sc.top.key)) { pick = sc.top.key; confidence = 0.35; method = 'rule'; reason = `weak keyword match: ${sc.top.hits.join(', ')}`; stats.lowConfidence++; }
+        } else if (sc.top && !rejected.includes(sc.top.key)) { pick = sc.top.key; confidence = 0.35; method = 'rule'; reason = `weak keyword match: ${sc.top.hits.join(', ')}`; stats.lowConfidence++; }
         if (!pick) continue;
         if (current && current.key === pick) {                       // already right — remember that so it is not re-asked
           await q.query(`INSERT INTO alert_rule_team_suggestions (rule_key, segment, current_team, suggested_team, confidence, method, reason, status, rule_updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'applied',$8)
@@ -248,6 +255,7 @@ async function tick(limit) {
       try { const r = await triageOne(a, policy); stats[r.kind === 'duplicate' ? 'duplicates' : r.kind === 'flapping' ? 'flapping' : 'triaged']++; if (r.model) stats.modelled++; if (r.applied && Object.keys(r.applied).length) stats.applied++; }
       catch (e) { stats.errors++; log('triage failed', a.id, e.message); if (e.llm) break; }
     }
+    try { const d = await require('./agentLearn').autoDemote(); if (d.length) stats.demoted = d; } catch (e) { log('auto-demote failed', e.message); }
     await q.query(`UPDATE agent_runs SET finished_at=now(), ok=true, stats=$2 WHERE id=$1`, [run, JSON.stringify(stats)]);
     if (stats.checked) log(`tick: ${stats.checked} open incident(s) → ${stats.triaged} triaged · ${stats.duplicates} duplicate(s) · ${stats.flapping} flapping · ${stats.modelled} with model · ${stats.applied} policy action(s)`);
   } catch (e) { log('tick failed:', e.message); await q.query(`UPDATE agent_runs SET finished_at=now(), ok=false, error=$2, stats=$3 WHERE id=$1`, [run, e.message, JSON.stringify(stats)]).catch(() => {}); }
