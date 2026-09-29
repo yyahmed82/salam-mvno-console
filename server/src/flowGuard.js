@@ -59,7 +59,10 @@ const CLASSES = {
   11: { key: 'datasim', label: 'Data SIM', price: 0, vanity: false, color: '#0891b2' }
 };
 const classOf = g => CLASSES[Number(g)] || { key: 'group' + g, label: 'Group ' + g, price: null, vanity: false, color: '#94a3b8' };
-const isDataPlan = p => !!(p && (p.has_data_sim || /data\s*sim|\bmbb\b/i.test(String(p.name || ''))));
+/* a DATA plan is recognised by its NAME ("Data SIM …", "MBB …", "J-MBB …") — never by plans.has_data_sim, which is true
+ * on almost every voice plan in production (it means "a data SIM can be added", not "this is a data plan"); alpha.113
+ * read it the other way and flagged 2,331 Regular-on-Solo orders as mismatches (corrected alpha.114) */
+const isDataPlan = p => !!(p && /data\s*sim|\bmbb\b/i.test(String(p.name || '')));
 
 const KINDS = {
   vanity_prepaid: { label: 'Vanity number on a prepaid plan', short: 'Vanity · prepaid', severity: 'P3',
@@ -101,6 +104,9 @@ function ensure() {
       id bigserial PRIMARY KEY, plan_id text NOT NULL, ref text, name text, plan_type int, enabled boolean, price numeric,
       has_data_sim boolean, seen_at timestamptz NOT NULL DEFAULT now(), first boolean NOT NULL DEFAULT false, changed jsonb NOT NULL DEFAULT '{}'::jsonb)`);
     await db.console.query(`CREATE INDEX IF NOT EXISTS idx_plan_state_plan ON plan_state_history (plan_id, seen_at DESC)`);
+    /* alpha.114 one-off: drop the class_mismatch rows alpha.113 produced from plans.has_data_sim (a Regular number on a plan
+     * whose name is not Data SIM / MBB is not a mismatch); the next tick re-detects the real ones */
+    await db.console.query(`DELETE FROM flow_findings WHERE kind = 'class_mismatch' AND group_id <> 11 AND plan_name !~* '(data\\s*sim|\\mmbb\\M)'`).catch(() => {});
   })().catch(e => { _ready = null; throw e; });
   return _ready;
 }
