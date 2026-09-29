@@ -103,6 +103,7 @@ async function mission() {
               (SELECT count(*)::int FROM refund_batches WHERE status = 'open') AS open_batches
          FROM refund_candidates c LEFT JOIN refund_reviews r ON r.candidate_id = c.id`),
   ]);
+  let guardQ = { open: 0, activated_no_inc: 0, activated: 0 }; try { guardQ = await require('./flowGuard').queue(); } catch (_) {}
   const byAgent = k => runs.filter(r => r.agent === k);
   const last = k => byAgent(k)[0] || null;
   const running = r => r && r.finished_at == null && (now - new Date(r.started_at).getTime()) < 20 * 60e3;
@@ -127,7 +128,7 @@ async function mission() {
       state: stateOf('log', ENABLED.log), enabled: ENABLED.log, last: last('log'), every: INTERVALS.log, next: nextTick(last('log') && last('log').started_at, INTERVALS.log),
       did: byAgent('log').slice(0, 12).map(r => ({ at: r.started_at, end: r.finished_at, ok: r.ok, text: narrate('log', r), stats: r.stats })),
       outputs: { signatures: sigNew, report: reports[0] || null },
-      queue: [{ label: 'signatures to assess', n: n(sg.unassessed), hint: 'new signatures the model has not explained yet' }, { label: 'events folded in 24 h', n: n(sg.events24), hint: 'error events counted into signatures' }],
+      queue: [{ label: 'signatures to assess', n: n(sg.unassessed), hint: 'new signatures the model has not explained yet' }, { label: 'events folded in 24 h', n: n(sg.events24), hint: 'error events counted into signatures' }, { label: 'flow-guard attempts open', n: n(guardQ.open), hint: 'non-approved onboarding attempts not activated yet — reported in the daily log intelligence', link: '#flowguard' }],
       human: [{ label: 'signatures to review', n: n(sg.to_review), hint: 'assessed by the model, waiting for a human verdict', link: '#agents' }],
       calls: callsOf('salam-agent-log'), hours: hoursOf('log'), tokens: tokOf('salam-agent-log'), tokensHourly: callsHour.filter(c => c.caller === 'salam-agent-log'),
       next: { tick: nextTick(last('log') && last('log').started_at, INTERVALS.log), report: nextReport(), reportHour: REPORT_HOUR } },
@@ -136,7 +137,7 @@ async function mission() {
       did: byAgent('incident').filter(r => n((r.stats || {}).checked) || r.ok === false).slice(0, 12).map(r => ({ at: r.started_at, end: r.finished_at, ok: r.ok, text: narrate('incident', r), stats: r.stats })),
       quiet: byAgent('incident').filter(r => !n((r.stats || {}).checked) && r.ok !== false).length,
       outputs: { triage },
-      queue: [{ label: 'open incidents without a note', n: n(qz.open_untriaged), hint: `of ${n(qz.open_total)} open — picked up on the next tick`, link: '#alerts' }],
+      queue: [{ label: 'open incidents without a note', n: n(qz.open_untriaged), hint: `of ${n(qz.open_total)} open — picked up on the next tick`, link: '#alerts' }, { label: 'flow-guard cases activated, no INC', n: n(guardQ.activated_no_inc), hint: `of ${n(guardQ.activated)} activated non-approved onboardings — the triage note names the case, the incident sits with Mobile digital L2 (TCS)`, link: '#flowguard?status=activated' }],
       human: [{ label: 'triage notes awaiting feedback', n: n(fb.awaiting), hint: `helpful ${n(fb.helpful)} · not helpful ${n(fb.unhelpful)} — 👍 / 👎 on the incident teaches the agent`, link: '#alerts' }],
       calls: callsOf('salam-agent-incident').filter(c => c.purpose !== 'agent-incident.map'), hours: hoursOf('incident'), tokens: tokOf('salam-agent-incident'), tokensHourly: callsHour.filter(c => c.caller === 'salam-agent-incident'),
       next: { tick: nextTick(last('incident') && last('incident').started_at, INTERVALS.incident) } },

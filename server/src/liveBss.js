@@ -141,14 +141,14 @@ async function linesFor(key) {
        * of another customer) — so only FRESH reservations count; ownership truth for anything
        * older is the activation ledgers / BSS, never this table. */
       const nq = await db.source.query(
-        `SELECT identifier, price_type, onboarding_order_id::text AS oid, created_at
+        `SELECT identifier, group_id, onboarding_order_id::text AS oid, created_at
            FROM numbers WHERE onboarding_order_id = ANY($1::uuid[])
             AND created_at > now() - interval '30 days' LIMIT 10`,
         [ids.length ? ids : ['00000000-0000-0000-0000-000000000000']]);
       for (const r2 of nq.rows) {
         const m = norm(r2.identifier); if (!/^9665\d{8}$/.test(m) || seen.has(m)) continue; seen.add(m);
         const o = oq.rows.find(x => x.oid === r2.oid) || {};
-        out.lines.push({ ref: r2.oid, msisdn: m, source: 'reserved' + (r2.price_type ? ' · ' + r2.price_type : '') + (o.activated ? '' : ' — not activated yet'),
+        out.lines.push({ ref: r2.oid, msisdn: m, source: 'reserved · ' + require('./flowGuard').classOf(r2.group_id).label + (o.activated ? '' : ' — not activated yet'),
           plan_id: o.plan_id || null, at: r2.created_at, activated: !!o.activated, reserved: !o.activated });
       }
     } catch (e) { out.error = out.error || ('numbers lookup: ' + e.message); }

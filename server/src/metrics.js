@@ -1017,6 +1017,34 @@ const METRICS = {
       } catch (e) { return []; }
     }
   },
+  /* ONBOARDING FLOW GUARD (29 Sep 2026, flowGuard.js — TKT-000068): orders placed through a flow the business never
+   * approved, read from the console's flow_findings. value = findings ACTIVATED in the window (a customer went through),
+   * sample = every finding incl. attempts the purchase step refused. The *_attempts variants count the attempts. */
+  onboarding_flow_vanity_prepaid: {
+    label: 'Vanity number activated on a prepaid plan', unit: 'count', higherIsBad: true,
+    sourceTables: 'flow_findings (console, from numbers + onboarding_orders + plans)',
+    async compute(src, now, w) { try { return await require('./flowGuard').metric('vanity_prepaid', now, w); } catch (e) { return []; } }
+  },
+  onboarding_flow_vanity_prepaid_attempts: {
+    label: 'Vanity number chosen with a prepaid plan (attempts, activated or not)', unit: 'count', higherIsBad: true,
+    sourceTables: 'flow_findings (console)',
+    async compute(src, now, w) { try { return await require('./flowGuard').metric('vanity_prepaid', now, w, { attempts: true }); } catch (e) { return []; } }
+  },
+  onboarding_flow_plan_disabled: {
+    label: 'Order activated on a plan disabled at order time', unit: 'count', higherIsBad: true,
+    sourceTables: 'flow_findings + plan_state_history (console)',
+    async compute(src, now, w) { try { return await require('./flowGuard').metric('plan_disabled', now, w); } catch (e) { return []; } }
+  },
+  onboarding_flow_plan_disabled_attempts: {
+    label: 'Orders placed on a plan disabled at order time (attempts, activated or not)', unit: 'count', higherIsBad: true,
+    sourceTables: 'flow_findings + plan_state_history (console)',
+    async compute(src, now, w) { try { return await require('./flowGuard').metric('plan_disabled', now, w, { attempts: true }); } catch (e) { return []; } }
+  },
+  onboarding_flow_class_mismatch: {
+    label: 'Number class ↔ plan mismatch activated (data SIM vs voice)', unit: 'count', higherIsBad: true,
+    sourceTables: 'flow_findings (console)',
+    async compute(src, now, w) { try { return await require('./flowGuard').metric('class_mismatch', now, w); } catch (e) { return []; } }
+  },
   app_crash_count: {
     label: 'App crashes (unhandled exceptions → -501)', unit: 'count', higherIsBad: true,
     sourceTables: 'api_error_events (app error log)',

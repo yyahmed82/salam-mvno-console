@@ -225,14 +225,17 @@ async function dailyReport(now) {
   const bySource = (await C.query(`SELECT segment, source, count(*)::int AS signatures, sum(last_24h)::bigint AS events
     FROM agent_signatures WHERE last_seen >= $1 GROUP BY 1,2 ORDER BY 4 DESC NULLS LAST LIMIT 12`, [start])).rows;
   const alerts = (await C.query(`SELECT severity, count(*)::int AS n, count(*) FILTER (WHERE ack_at IS NOT NULL)::int AS acked FROM alerts WHERE fired_at >= $1 AND fired_at < $2 GROUP BY 1 ORDER BY 1`, [start, end])).rows;
+  /* ONBOARDING FLOW GUARD (29 Sep 2026): the 24 h picture of non-approved flows rides in the daily report */
+  let guard = { kinds: [], plan_changes_24h: 0 }; try { guard = await require('./flowGuard').dailySummary(); } catch (_) {}
+  const guardLine = guard.kinds.length ? guard.kinds.map(k => `${k.label}: ${k.activated_24h} activated / ${k.new_24h} new in 24 h, ${k.open} open, ${k.activated_no_inc} activated without INC`).join('; ') + (guard.plan_changes_24h ? `; plan catalog changes in 24 h: ${guard.plan_changes_24h}` : '') : 'no findings';
   let narrative = '';
   try {
     const out = await llm.chat({ system: 'You write the 6-line morning note of a telecom digital-operations log report. Plain English, no bullet symbols, concrete numbers, name the top problem first, end with the one thing to do today.',
-      user: `Period: last 24 h to ${end.toISOString()}.\nError-class split: ${JSON.stringify(split)}\nAlerts by severity: ${JSON.stringify(alerts)}\nTop signatures: ${top.slice(0, 8).map(t => `${t.endpoint || t.source} code ${t.code || '-'} ×${t.last_24h} (${t.class || '?'}/${t.category || '?'}: ${t.probable_cause || 'not assessed'})`).join('; ')}\nNew signatures: ${fresh.length}`,
+      user: `Period: last 24 h to ${end.toISOString()}.\nError-class split: ${JSON.stringify(split)}\nAlerts by severity: ${JSON.stringify(alerts)}\nTop signatures: ${top.slice(0, 8).map(t => `${t.endpoint || t.source} code ${t.code || '-'} ×${t.last_24h} (${t.class || '?'}/${t.category || '?'}: ${t.probable_cause || 'not assessed'})`).join('; ')}\nNew signatures: ${fresh.length}\nOnboarding flow guard (non-approved flows — vanity on prepaid, disabled plan, class mismatch): ${guardLine}`,
       purpose: 'agent-log.report', caller: 'salam-agent-log', maxTokens: 260, temperature: 0.3 });
     narrative = out.text;
   } catch (e) { narrative = `(narrative unavailable: ${e.message})`; }
-  const summary = { top, fresh, hourly, split, bySegment, bySource, alerts, signatures_total: (await C.query(`SELECT count(*)::int n FROM agent_signatures`)).rows[0].n };
+  const summary = { top, fresh, hourly, split, bySegment, bySource, alerts, flow_guard: guard, signatures_total: (await C.query(`SELECT count(*)::int n FROM agent_signatures`)).rows[0].n };
   const rep = (await C.query(`INSERT INTO agent_reports (kind, period_start, period_end, summary, narrative) VALUES ('daily-log',$1,$2,$3,$4) RETURNING id`, [start, end, JSON.stringify(summary), narrative])).rows[0];
   let mailed = 0;
   try {
@@ -248,6 +251,9 @@ async function dailyReport(now) {
     const body = `<div style="white-space:pre-wrap;font-size:13.5px;line-height:1.6">${esc(narrative)}</div>
       <table style="border-collapse:collapse;width:100%;margin-top:14px;font-size:12px"><tr style="color:#64748b;font-size:10.5px;letter-spacing:.05em"><th align="left">TOP SIGNATURES · 24 H</th><th align="right">EVENTS</th><th align="left">CLASS</th><th align="left">PROBABLE CAUSE</th></tr>
       ${top.slice(0, 10).map(t => `<tr><td style="padding:4px 6px 4px 0;border-top:1px solid #e3e7e5"><span style="font-family:monospace;font-size:11px">${esc(t.endpoint || t.source)}</span> · ${esc(t.code || '-')}</td><td align="right" style="border-top:1px solid #e3e7e5">${t.last_24h}</td><td style="border-top:1px solid #e3e7e5;color:${t.class === 'technical' ? '#dc2626' : '#2563eb'}">${esc(t.class || '?')}</td><td style="border-top:1px solid #e3e7e5">${esc(t.probable_cause || 'not assessed yet')}</td></tr>`).join('')}</table>
+      ${guard.kinds.length ? `<table style="border-collapse:collapse;width:100%;margin-top:14px;font-size:12px"><tr style="color:#64748b;font-size:10.5px;letter-spacing:.05em"><th align="left">ONBOARDING FLOW GUARD · 24 H</th><th align="right">ACTIVATED</th><th align="right">NEW</th><th align="right">OPEN</th><th align="right">NO INC</th></tr>
+      ${guard.kinds.map(k => `<tr><td style="padding:4px 6px 4px 0;border-top:1px solid #e3e7e5">${esc(k.label)}</td><td align="right" style="border-top:1px solid #e3e7e5;color:${k.activated_24h ? '#dc2626' : '#0b3d2b'}">${k.activated_24h}</td><td align="right" style="border-top:1px solid #e3e7e5">${k.new_24h}</td><td align="right" style="border-top:1px solid #e3e7e5">${k.open}</td><td align="right" style="border-top:1px solid #e3e7e5">${k.activated_no_inc}</td></tr>`).join('')}</table>
+      <div style="font-size:11px;color:#64748b;margin-top:4px">Non-approved onboarding flows (TKT-000068) — every case with its evidence on Mobile › Flow guard; the incidents open on the Mobile digital L2 team.${guard.plan_changes_24h ? ` Plan catalog: ${guard.plan_changes_24h} change(s) in 24 h.` : ''}</div>` : ''}
       <div style="margin-top:12px;font-size:12px;color:#64748b">${fresh.length} new signature(s) in the period · ${summary.signatures_total} known in total · full detail in the attached workbook and in the console (Settings › Agents).</div>`;
     const html = notify.shell({ title: 'Daily log intelligence — Mobile', badge: 'OPERATIONS CONSOLE · AGENT', pill: 'DAILY REPORT', pillColor: '#0b3d2b', bodyHtml: body });
     const r = await notify.sendHtml(to, `[Salam Ops] Daily log intelligence — ${ksa(end)} KSA`, html, [{ filename: `log_intelligence_${end.toISOString().slice(0, 10)}.xlsx`, content: buf }]);

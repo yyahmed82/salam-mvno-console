@@ -111,7 +111,11 @@ Fired within ±10 min: ${ev.corr.length ? ev.corr.map(c => `#${c.id} ${c.severit
 Busiest backend signatures last 2 h (${ev.seg}): ${ev.sigs.length ? ev.sigs.map(s => `${s.endpoint || s.source} code ${s.code || '-'} ×${s.last_24h} ${s.class || ''}${s.probable_cause ? ' — ' + s.probable_cause : ''}`).join('; ') : 'none recorded'}
 Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${String(c.body).slice(0, 120)}`).join(' | ') : 'none'}${flapping ? '\nNOTE: this incident is FLAPPING (re-opened ' + a.reopen_count + ' times).' : ''}`;
   let out = null, j = null;
-  try {
+  /* ONBOARDING FLOW GUARD (29 Sep 2026): the finding IS the cause — a deterministic verdict, no model call, and the
+   * incident is assigned to the Mobile digital L2 team whatever the policy says (the rule owner; nothing to guess). */
+  const guard = /^onboarding_flow_/.test(String(a.rule_key || ''));
+  if (guard) { try { j = await require('./flowGuard').triageFor(a); } catch (e) { log('flow-guard triage failed', a.id, e.message); } }
+  if (!guard) try {
     out = await llm.chat({ system: SYSTEM + `\nTEAMS: ${await teamCatalog()}`, user, purpose: 'agent-incident.triage', caller: 'salam-agent-incident', json: true, maxTokens: 320, temperature: 0.1 });
     j = (out.json && typeof out.json === 'object' && (out.json.probable_cause || out.json.suggested_action)) ? out.json : null;
     if (!j) log(`triage #${a.id}: unusable model answer (${out.provider} ${out.model}, ${out.ms} ms, ${String(out.text || '').length} chars${out.jsonError ? ', ' + out.jsonError : ''}): ${String(out.text || '').slice(0, 160).replace(/\s+/g, ' ')}`);
@@ -131,9 +135,9 @@ Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${Str
         attempts = coalesce(agent_triage.attempts,1) + 1, retried_at = now()`,
     [a.id, ev.seg, a.rule_key, a.severity, flapping ? 'flapping' : 'triage', j ? String(j.probable_cause || '').slice(0, 400) : null, j ? String(j.impact || '').slice(0, 300) : null, team, j ? String(j.suggested_action || '').slice(0, 400) : null,
       j ? String(j.priority_hint || '').slice(0, 3) : null, j ? (Number(j.confidence) || null) : null, ev.hist.n || 0, ev.hist.med_min || null, ev.lastClose ? String(ev.lastClose).slice(0, 200) : null,
-      JSON.stringify(ev.corr.map(c => ({ id: c.id, name: c.name, severity: c.severity, status: c.status }))), JSON.stringify(ev.sigs), out ? `${out.provider}:${out.model}` : null, Date.now() - t0]);
+      JSON.stringify(ev.corr.map(c => ({ id: c.id, name: c.name, severity: c.severity, status: c.status }))), JSON.stringify(ev.sigs), out ? `${out.provider}:${out.model}` : (guard && j ? 'rules:flow-guard' : null), Date.now() - t0]);
   let applied = {};
-  if (policy.mode === 'assist' && policy.autoTeam.includes(a.rule_key) && team && !a.team) {
+  if (((policy.mode === 'assist' && policy.autoTeam.includes(a.rule_key)) || guard) && team && !a.team) {
     await q.query(`UPDATE alerts SET team=$2 WHERE id=$1 AND team IS NULL`, [a.id, team]); applied = { team };
     await q.query(`UPDATE agent_triage SET applied=$2 WHERE alert_id=$1`, [a.id, JSON.stringify(applied)]);
   }
@@ -141,9 +145,12 @@ Recent comments: ${ev.comments.length ? ev.comments.map(c => `${c.author}: ${Str
   const body = j
     ? `🤖 Agent triage (${(Number(j.confidence) * 100 || 0).toFixed(0)} % · ${j.priority_hint || a.severity}${j.is_noise ? ' · likely noise' : ''}${flapping ? ' · flapping' : ''})\nCause: ${j.probable_cause || '-'}\nImpact: ${j.impact || '-'}\nTeam: ${team || '-'}${applied.team ? ' (assigned by policy)' : ''}\nFirst action: ${j.suggested_action || '-'}\nHistory: ${hist}${ev.corr.length ? ` · fired with ${ev.corr.map(c => '#' + c.id).join(' ')}` : ''}`
     : `🤖 Agent triage · measured evidence (the on-prem model gave no answer — Settings › Agents › Self-test says why)\nHistory of this rule: ${hist}${ev.hist.usual_person ? ` · usually handled by ${ev.hist.usual_person}` : ''}${ev.hist.acked != null ? ` · ${ev.hist.acked} acknowledged` : ''}\nOwner team on the rule: ${ev.rule.team || a.team || '-'}${ev.lastClose ? `\nLast human note on this rule: ${String(ev.lastClose).slice(0, 160)}` : ''}${ev.corr.length ? `\nFired within ±10 min of: ${ev.corr.map(c => `#${c.id} ${c.severity} ${c.name}`).join(' · ')}` : ''}${ev.sigs.length ? `\nBusiest backend signatures (2 h): ${ev.sigs.slice(0, 3).map(sg => `${sg.endpoint || sg.source} ${sg.code || ''} ×${sg.last_24h}`).join(' · ')}` : ''}`;
+  const bodyOut = guard && j && Array.isArray(j.cases) && j.cases.length
+    ? body.replace('🤖 Agent triage (', '🤖 Agent triage · rules, no model (') + `\nCases: ${j.cases.slice(0, 5).map(c => `${c.checkout || c.order} · ${c.cls} · ${c.plan} · ${c.status}${c.inc ? ' · ' + c.inc : ''}`).join(' | ')}\nOwner: Mobile digital L2 (TCS) — assigned from the rule. Mobile › Flow guard holds every case with its evidence.`
+    : body;
   /* a retry that still has no model answer must not post the same evidence note again */
   const already = (await q.query(`SELECT count(*)::int n FROM incident_comments WHERE alert_id=$1 AND author='agent'`, [a.id])).rows[0].n;
-  if (j || !already) await comment(a.id, body);
+  if (j || !already) await comment(a.id, bodyOut);
   return { kind: flapping ? 'flapping' : 'triage', model: !!j, applied, retry: already > 0 };
 }
 

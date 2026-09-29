@@ -164,6 +164,9 @@ async function buildProfile({ key }) {
   try { const rr = require('./refundRadar'); const f9 = v => { const d = String(v || '').replace(/\D/g, ''); const l = d.slice(-9); return l.length === 9 ? ['966' + l, '0' + l, l, '+966' + l] : []; };
     identity.refund_exposure = await rr.forCustomer({ mobiles: [...f9(mobile), ...f9(id), ...(visitor && visitor.mobile ? f9(visitor.mobile) : [])], orderIds: [order && order.id, ...lines.map(l => l.id)].filter(Boolean).map(String) });
   } catch (_) { identity.refund_exposure = []; }
+  /* ONBOARDING FLOW GUARD (29 Sep 2026): the chosen number's class (Regular / Silver / Gold / Platinum / Data SIM) and any
+   * non-approved-flow finding on this order — the identity card shows the class badge next to the selected number */
+  try { identity.number_class = order ? await require('./flowGuard').forOrder(order.id) : null; } catch (_) { identity.number_class = null; }
   const found = !!order || lines.length > 0 || events.length > 0 || !!userRow;
   /* A COUNT ONLY — never the other customer's rows, never their national id. The operator learns
    * that the contact number is shared; they learn nothing about whoever else is using it. */
