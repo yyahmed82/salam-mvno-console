@@ -34,6 +34,7 @@
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="pill" data-toggle="${esc(j.key)}" style="font-size:11px;padding:4px 10px">${o?"▾ Hide flow":"▸ Flow, signature & break points"}</button>
         ${j.console?`<button class="pill" data-board="${esc(j.console)}" style="font-size:11px;padding:4px 10px" title="journeys board key ${esc(j.console)}">Journeys board · ${esc(j.console)}</button>`:famActor(j.family)==="dealer"?`<span class="rl" style="font-size:10px;color:var(--amber,#b45309);align-self:center">no ledger table — cms_logs only</span>`:`<span class="rl" style="font-size:10px;color:var(--amber,#b45309);align-self:center">no board yet — see signature for the trace it leaves</span>`}
+        <a href="#dms-journeys?j=${esc(j.key)}" class="pill" style="font-size:11px;padding:4px 10px;text-decoration:none;color:inherit" title="walk this journey step by step with the sequence diagram">Step by step ▸</a>
         <a href="#dmsdocs?j=${esc(j.key)}" class="pill" style="font-size:11px;padding:4px 10px;text-decoration:none;color:inherit" title="every endpoint of this journey in the DMS API reference">API reference ↗</a>
         <span class="rl" style="font-size:10px;color:var(--muted);align-self:center">${esc(F.doc||"")}</span>
       </div>

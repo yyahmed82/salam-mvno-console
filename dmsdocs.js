@@ -96,11 +96,12 @@
       ${eps.map(e=>epCard(e,s)).join("")||`<div class="rl" style="color:var(--muted)">no endpoint of this controller matches the filters</div>`}`;
   }
   function counts(){ const V=visible(); return V.reduce((a,x)=>a+x.eps.length,0); }
-  async function render(){
-    const host=$("#view-dmsdocs"); if(!host) return;
+  let pendingQs="";
+  async function render(qs){
+    const host=$("#view-dmsdocs"); if(!host) return; if(typeof qs==="string"&&qs) pendingQs=qs;
     await load();
     if(!D){ host.innerHTML=`<div style="padding:24px;max-width:760px;margin:0 auto"><h2>DMS API reference</h2><div class="albanner" style="margin-top:10px">dmsApiDocs.json not found — rebuild it from the decompiled release (see DMS-API-REFERENCE.md), then deploy.</div></div>`; return; }
-    const h=location.hash||""; let m;
+    const h=pendingQs?"#dmsdocs?"+pendingQs:(location.hash||""); pendingQs=""; let m;
     if(h!==lastHash){ lastHash=h;
       if((m=/[?&]s=([a-z0-9_\-]+)/i.exec(h))&&(D.sections||[]).some(x=>x.id===m[1])) sel=m[1];
       if((m=/[?&]j=([a-z0-9_\-]+)/i.exec(h))) { jkey=m[1]; caller="all"; svc="all"; }

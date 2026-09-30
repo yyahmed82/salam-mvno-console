@@ -9,7 +9,7 @@
     workbench:{workbench:true},
     // Growth was absorbed into Monitoring → Resellers. Old links keep working.
     analytics:{view:"analytics"}, growth:{view:"monitoring",monTab:"resellers"}, resellers:{view:"monitoring",monTab:"resellers"},
-    dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, dmsdocs:{view:"dmsdocs"}, "dms-api":{view:"dmsdocs"}, "alert-journey":{view:"alertjourney"}, alertjourney:{view:"alertjourney"}, sla:{sla:true}, slo:{sla:true}, "slo-settings":{sloSettings:true}, "sla-targets":{sloSettings:true}, "vendor-contracts":{vendorContracts:true}, vendors:{vendorContracts:true}, "semati-clearance":{semati:true}, semati:{semati:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
+    dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, dmsdocs:{view:"dmsdocs"}, "dms-api":{view:"dmsdocs"}, "dms-journeys":{view:"dmsflows"}, dmsflows:{view:"dmsflows"}, "alert-journey":{view:"alertjourney"}, alertjourney:{view:"alertjourney"}, sla:{sla:true}, slo:{sla:true}, "slo-settings":{sloSettings:true}, "sla-targets":{sloSettings:true}, "vendor-contracts":{vendorContracts:true}, vendors:{vendorContracts:true}, "semati-clearance":{semati:true}, semati:{semati:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
     refunds:{view:"refunds"}, "refund-exposure":{view:"refunds"},
     flowguard:{view:"flowguard"}, "flow-guard":{view:"flowguard"}, infra:{view:"infra"}, infrastructure:{view:"infra"},
     alerts:{view:"alerts"}, "fixed-alerts":{view:"alerts",seg:"fixed"}, "infra-alerts":{view:"alerts",seg:"mvno",scope:"infra"}, "fixed-infra-alerts":{view:"alerts",seg:"fixed",scope:"infra"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"}, mvnohld:{view:"topology2",t2:"hld"}, "bss-atlas":{view:"topology2",t2:"hld"}, journeys:{view:"explorer"}, integrations:{view:"integrations"},
@@ -28,7 +28,7 @@
     /* CST section (16 Sep 2026, super admin): #arqami · #cst-escalations (cstpage.js) */
     arqami:{cst:"arqami"}, "cst-escalations":{cst:"escalations"}, cst:{cst:"escalations"}
   };
-  const VIEW_HASH={landing:"home",execops:"exec",nocwall:"noc",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",dmsdocs:"dmsdocs",alertjourney:"alert-journey",errors:"troubleshoot",refunds:"refunds",flowguard:"flowguard",infra:"infra",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
+  const VIEW_HASH={landing:"home",execops:"exec",nocwall:"noc",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",dmsdocs:"dmsdocs",dmsflows:"dms-journeys",alertjourney:"alert-journey",errors:"troubleshoot",refunds:"refunds",flowguard:"flowguard",infra:"infra",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
   let _cur=null;
 
   /* ---- ROLE GUARD (2 Sep 2026) ---------------------------------------------------------------
@@ -38,7 +38,7 @@
    * The server gates the data regardless; this makes the denial clear instead of confusing. */
   const VIEW_REQ={ landing:"dashboard", execops:"exec", nocwall:"noc", monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts", flowguard:"errors", infra:"noc",
     home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", mvnohld:"explore", otodocs:"explore",
-    tapdocs:"explore", salamdocs:"explore", dmsdocs:"explore", alertjourney:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
+    tapdocs:"explore", salamdocs:"explore", dmsdocs:"explore", dmsflows:"explore", alertjourney:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
   const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed", errors:"Troubleshoot", alerts:"Alerts", fixed_alerts:"Fixed › Alerts",
     analytics:"Reports", explore:"Explore & Customer 360", workbench:"L2 Workbench", settings:"Settings",
     exec:"Executive Dashboard", noc:"NOC wall", governance:"IT Governance", cst:"CST", audit:"Audit log", tickets:"Tickets & feedback", users:"User management" };
@@ -134,7 +134,7 @@
       showDenied(need); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (denied)"); return;
     }
     // business guard (6 Sep 2026): a Mobile-only user never lands on a Fixed page and vice-versa, deep link or not
-    const bizOf=r=>{ if(r.view==="fixed"||r.seg==="fixed") return "fixed"; if(r.view==="execops") return null; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","mvnohld","otodocs","tapdocs","salamdocs","dmsdocs","alertjourney","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
+    const bizOf=r=>{ if(r.view==="fixed"||r.seg==="fixed") return "fixed"; if(r.view==="execops") return null; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","mvnohld","otodocs","tapdocs","salamdocs","dmsdocs","dmsflows","alertjourney","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
     const biz=(sess().me||{}).business||"both", rb=bizOf(r);
     if(rb && biz!=="both" && rb!==biz){ showDeniedBiz(rb,biz); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (outside business)"); return; }
     if(r.home){ window.opsGoHome && window.opsGoHome(); }
@@ -191,7 +191,7 @@
 	      /* clickNav is a no-op when the tab is already active, so any view that only renders on a
 	       * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
-      const OPENER={ refunds:"openRefunds", flowguard:"openFlowGuard", infra:"openInfra", landing:"openLanding", execops:"openExecOps", nocwall:"openNocWall", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2", alertjourney:"openAlertJourney" };
+      const OPENER={ dmsflows:"openDmsFlows", dmsdocs:"openDmsDocs", refunds:"openRefunds", flowguard:"openFlowGuard", infra:"openInfra", landing:"openLanding", execops:"openExecOps", nocwall:"openNocWall", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2", alertjourney:"openAlertJourney" };
       const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{
         if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); let t=m?m[1]:"overview";
           if(t==="exec"||t==="ops") t="overview";   // merged into the Operations Dashboard
@@ -200,6 +200,7 @@
         else if(r.view==="refunds"){ window[fn](qs?"refunds?"+qs:""); }   // #refunds?tab=ledger&from=..&to=.. — the navtab click above has already reset the hash to a bare #refunds
         else if(r.view==="flowguard"){ window[fn](qs?"flowguard?"+qs:""); }
         else if(r.view==="infra"){ window[fn](qs?"infra?"+qs:""); }   // #infra?tab=map&diagram=fixed · #infra?host=12   // #flowguard?tab=plans&status=activated&q=… (same pattern)
+        else if(r.view==="dmsflows"||r.view==="dmsdocs"){ window[fn](qs||""); }   // #dms-journeys?j=activation&s=7 · #dmsdocs?s=…|j=…|q=… — the navtab click above reset the hash
         else if(r.view==="topology2"){ const m=/(?:^|&)t=([a-z]+)/.exec(qs||""); window[fn](r.t2||(m?m[1]:"map")); }   // #mvnohld / #topology2?t=hld
         else window[fn](); }catch(e){} }
       // Subscriber 360 deep link: #subscriber?key=966...
