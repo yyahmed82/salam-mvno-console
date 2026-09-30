@@ -203,11 +203,33 @@
   async function render(){
     const h=host(); if(!h) return;
     h.innerHTML=`<div class="sub">Loading…</div>`;
-    try{ [CH,ESC,SN,CM]=await Promise.all([api("/api/chatops"),api("/api/escalation"),api("/api/servicenow/config").catch(()=>null),api("/api/comms/config").catch(()=>null)]); }
+    try{ [CH,ESC,SN,CM,IA]=await Promise.all([api("/api/chatops"),api("/api/escalation"),api("/api/servicenow/config").catch(()=>null),api("/api/comms/config").catch(()=>null),api("/api/settings/infra-alerts").catch(()=>null)]); }
     catch(e){ h.innerHTML=`<div class="albanner">${esc(e.message)}</div>`; return; }
-    h.innerHTML=chatopsPanel()+snCfgPanel()+commsCfgPanel()+escalationPanel();
-    wire(); wireSn();
+    h.innerHTML=infraPanel()+chatopsPanel()+snCfgPanel()+commsCfgPanel()+escalationPanel();
+    wire(); wireSn(); wireInfra();
   }
+  /* INFRASTRUCTURE ALERTS (1 Oct 2026): info-only or full flow, per channel — the infra rules fire and are worked in the
+   * console exactly like the others; only the outbound side (mail, chat, ACK reminders, escalation) is switchable. */
+  let IA=null;
+  function infraPanel(){ const c=IA||{mail:false,chat:false,reminders:false,escalation:false}; const info=!c.mail&&!c.chat&&!c.reminders&&!c.escalation;
+    const row=(k,l,d)=>`<label class="nc-row"><span>${l} <small class="rl">${d}</small></span><input type="checkbox" id="ia_${k}" ${c[k]?"checked":""}></label>`;
+    return `<div class="panel" id="iaPanel">
+      <h2>Infrastructure alerts <span class="rl" id="iaMode" style="font-size:11px;font-weight:700;letter-spacing:.4px;border:1px solid ${info?"#d97706":"var(--green)"};color:${info?"#d97706":"var(--green)"};border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:6px">${info?"INFO-ONLY":"FULL FLOW"}</span></h2>
+      <div class="sub">The <span class="mono">infra_*</span> / <span class="mono">fixed_infra_*</span> rules (host unreachable, port down, disk, memory, load) are new and the hosts are still being wired — keys, passerelles, real ports. While the numbers settle, keep them <b>info-only</b>: they fire, show under Infrastructure › Alerts with the hosts behind the number, can be acknowledged and resolved, but nobody is mailed, posted or paged for them. Switch each channel on when the L1 desk is ready for that side.</div>
+      <div class="nc-form" style="margin-top:14px">
+        ${row("mail","Mail on fire","the alert digest mail to the Mobile / Fixed alert recipients")}
+        ${row("chat","Teams / Slack / WhatsApp","post on open (Notifications below)")}
+        ${row("reminders","ACK reminders","the ACK-SLA reminder mails and the red “unacknowledged beyond SLA” banner")}
+        ${row("escalation","Escalation ladder","on-call tiers and management escalation")}
+        <label class="nc-row"><span>Note <small class="rl">(shown on the infra alert pages)</small></span><input id="ia_note" value="${esc(c.note||"")}" maxlength="200"></label>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:12px"><button class="pill" id="iaSave" style="border-left-color:var(--green);font-weight:800">Save</button><button class="pill" id="iaInfo">All off · info-only</button><button class="pill" id="iaFull">All on · full flow</button><span class="rl" id="iaMsg"></span></div>
+    </div>`; }
+  function wireInfra(){ const g=k=>$("#ia_"+k); const setAll=v=>["mail","chat","reminders","escalation"].forEach(k=>{ if(g(k)) g(k).checked=v; });
+    const save=async()=>{ const b=$("#iaSave"); if(b) b.disabled=true; try{ IA=await api("/api/settings/infra-alerts",{method:"PUT",body:JSON.stringify({mail:g("mail").checked,chat:g("chat").checked,reminders:g("reminders").checked,escalation:g("escalation").checked,note:$("#ia_note").value})});
+        const info=!IA.mail&&!IA.chat&&!IA.reminders&&!IA.escalation; const m=$("#iaMode"); if(m){ m.textContent=info?"INFO-ONLY":"FULL FLOW"; m.style.borderColor=m.style.color=info?"#d97706":"var(--green)"; } $("#iaMsg").textContent="saved — applies from the next tick"; }
+      catch(e){ $("#iaMsg").textContent=e.message; } finally{ if(b) b.disabled=false; } };
+    if($("#iaSave")) $("#iaSave").onclick=save; if($("#iaInfo")) $("#iaInfo").onclick=()=>{ setAll(false); save(); }; if($("#iaFull")) $("#iaFull").onclick=()=>{ setAll(true); save(); }; }
 
 
   /* ---- ServiceNow tickets (write path) + incident comms lists — Phase 1 of docs/SERVICENOW-INTEGRATION-PLAN.md ---- */

@@ -479,6 +479,8 @@ app.get('/api/me', async (req, res) => {
     views: req.views, caps: req.caps, features, fixedTabViews: roles.FIXED_TAB_VIEW || {} });
 });
 // interface feature flags — read (any signed-in user) + update (admins)
+app.get('/api/settings/infra-alerts', async (req, res) => { try { res.json(await require('./infraAlertsPolicy').get()); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.put('/api/settings/infra-alerts', requireCap('adminTools'), async (req, res) => { try { const v = await require('./infraAlertsPolicy').set(req.body || {}); await audit(req, 'settings.infra_alerts', null, v); res.json(v); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.get('/api/settings/features', async (req, res) => { res.json((await settings.getSetting('features')) || {}); });
 app.put('/api/settings/features', requireCap('adminTools'), async (req, res) => {
   const cur = (await settings.getSetting('features')) || {};

@@ -140,7 +140,8 @@ async function childKeys() {
 /* the live picture for the dashboard / banners */
 async function status(seg) {
   const cfg = await getConfig(); const now = new Date();
-  const rows = await openUnacked(now); const kids = await childKeys();
+  const IP = require('./infraAlertsPolicy'); const ipc = await IP.get();
+  const rows = (await openUnacked(now)).filter(a => ipc.reminders || !IP.isInfraKey(a.rule_key)); const kids = await childKeys();
   const out = { enabled: cfg.enabled, now: now.toISOString(), mobile: side('mobile'), fixed: side('fixed') };
   function side(b) {
     const bc = cfg[b]; const s = SEG_OF_BIZ[b];
@@ -164,7 +165,9 @@ async function tick(inject = {}) {
   const cfg = inject.cfg || await getConfig();
   if (!cfg.enabled) return { skipped: 'disabled', sent: 0 };
   const now = inject.now ? new Date(inject.now) : new Date();
-  const rows = await openUnacked(now); const kids = await childKeys();
+  const IP = require('./infraAlertsPolicy'); const ipc = await IP.get();
+  const rows = (await openUnacked(now)).filter(a => ipc.reminders || !IP.isInfraKey(a.rule_key));   // infra info-only: no reminders
+  const kids = await childKeys();
   let sent = 0; const events = [];
   for (const a of rows) {
     const seg = SEG.segOf(a); const b = seg === 'fixed' ? 'fixed' : 'mobile'; const bc = cfg[b];

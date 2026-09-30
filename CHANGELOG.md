@@ -1,3 +1,7 @@
+## 2.0.0-alpha.130 — 2026-10-01
+
+- Infrastructure alerts · info-only mode (default ON): the `infra_*` / `fixed_infra_*` incidents keep the whole console flow — fire, sections, guide, ack, resolve, hosts behind the number — but the outbound side is switchable per channel in Console Settings › Notifications & escalation › Infrastructure alerts: mail on fire, Teams / Slack / WhatsApp on open, ACK-SLA reminders (and the red beyond-SLA banner), escalation ladder. All off by default so L1 is not paged while the hosts are still being wired; a note shows on the infra alert pages. Setting `infra_alerts`, audited, `/api/settings/infra-alerts`.
+
 ## 2.0.0-alpha.129 — 2026-10-01
 
 - Infrastructure › Alerts: the infrastructure incidents move to their own two sections — **Mobile infra** (`#infra-alerts`, rules `infra_*`) and **Fixed infra** (`#fixed-infra-alerts`, rules `fixed_infra_*`) — the full incident view (guide, ack, resolve, hosts behind the number, history, rules & thresholds, noise, on-call) scoped to infrastructure, with a Section switch on the page and two entries in Infrastructure ▾. Mobile › Alerts and Fixed › Alerts no longer list the infra rules (API `scope=app` / `scope=infra`; mails, digests and agents unchanged). The Alerts tab of the Infrastructure page links to both sections.

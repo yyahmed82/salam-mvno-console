@@ -285,9 +285,10 @@ async function sendAlertDigest(simNow, evals, opts = {}) {
     r.rows.forEach(x => { idByKey[x.rule_key] = x.id; });
   } catch (e) { idByKey = {}; }
   const parts = [];
+  const IP = require('./infraAlertsPolicy'); const ipc = await IP.get();
   for (const seg of SEG.SEGMENTS) {
     if (opts.segment && opts.segment !== seg) continue;                  // test path: only the side of the simulated rule
-    const mine = evals.filter(e => SEG.segOf(e) === seg);
+    const mine = evals.filter(e => SEG.segOf(e) === seg && (ipc.mail || testTo || !IP.isInfraKey(e.key)));   // infra info-only: not in the fired mail
     if (!mine.length) continue;
     const firingN = mine.filter(e => e.fired).length;
     if (!firingN && !testTo) continue;                                   // live path: quiet side → no mail

@@ -199,6 +199,7 @@ async function postJson(url, body, headers) {
 async function notifyIncident(alert, opts = {}) {
   const cfg = opts.cfg || await getConfig();
   const kind = opts.kind || 'opened';
+  if (kind !== 'test' && !opts.force) { const IP = require('./infraAlertsPolicy'); if (await IP.quiet(alert.rule_key || alert.metric_key, 'chat')) return { skipped: 'infra alerts are info-only (Console Settings › Notifications & escalation › Infrastructure alerts)', segment: segOf(alert), channels: [] }; }
   // Which business owns this alert decides the destinations — never mixed (see header).
   const seg = segOf(alert);
   const ch = channelsFor(cfg, seg);

@@ -69,15 +69,17 @@ async function tick(inject = {}) {
   const now = inject.now ? new Date(inject.now) : new Date();
   const C = db.console;
   const open = (await C.query(
-    `SELECT id, name, severity, team, metric_key, operator, threshold, observed_value,
+    `SELECT id, rule_key, name, severity, team, metric_key, operator, threshold, observed_value,
             sample, window_hours, message, opened_wall, esc_level
        FROM alerts
       WHERE status='open' AND ack_at IS NULL
         AND (snoozed_until IS NULL OR snoozed_until <= $1)
       ORDER BY id`, [now.toISOString()])).rows;
 
+  const IP = require('./infraAlertsPolicy'); const ipc = await IP.get();
   let escalated = 0; const events = [];
   for (const a of open) {
+    if (!ipc.escalation && IP.isInfraKey(a.rule_key || a.metric_key)) continue;   // infra info-only: no ladder
     const ladder = (cfg.policies && cfg.policies[a.severity]) || [];
     if (!ladder.length) continue;
     const opened = a.opened_wall ? new Date(a.opened_wall) : now;
