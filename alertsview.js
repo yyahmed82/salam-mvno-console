@@ -646,7 +646,7 @@
       }
       h += `<tr${isChild?' style="opacity:.62"':''} class="${a.status==='open'&&!a.ack_at?'unacked':''}">
         <td style="border-left:4px solid ${sevColor(a.severity)}"><span class="sevpill" style="background:${sevColor(a.severity)}">${esc(a.severity)}</span></td>
-        <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span> ${teamChip(a.team)}${a.source==='manual'?` <span class="rl" title="opened by hand by ${esc(a.created_by||'')}">· manual ticket</span>`:a.source==='agent'?` <span class="rl" title="opened by the refund desk (Agent 2)">· 🤖 refund batch</span>`:''}${a.reassign_count?` <span class="rl" title="re-assigned ${a.reassign_count}×">· ↪${a.reassign_count}</span>`:''}${corrLine}</td>
+        <td>${isChild?'<span style="color:var(--muted)">↳ </span>':''}<b>${esc(a.name)}</b>${clsChip(a.alert_class)}<br><span class="mono" style="color:var(--muted)">${esc(a.metric_key)} ${esc(a.operator)} ${esc(a.threshold)}</span> ${teamChip(a.team)}${hostsLine(a)}${a.source==='manual'?` <span class="rl" title="opened by hand by ${esc(a.created_by||'')}">· manual ticket</span>`:a.source==='agent'?` <span class="rl" title="opened by the refund desk (Agent 2)">· 🤖 refund batch</span>`:''}${a.reassign_count?` <span class="rl" title="re-assigned ${a.reassign_count}×">· ↪${a.reassign_count}</span>`:''}${corrLine}</td>
         <td>${impact}</td>
         <td><b>${esc(a.message? (a.message.split("observed ")[1]||"").split(" · ")[0] : "")}</b><br><span class="rl">${esc(a.window_hours)}h window</span></td>
         <td>${stateTag}</td>
@@ -1038,13 +1038,14 @@
         ${K.escalation?`<div class="rl" style="margin-top:4px">Escalation ladder: ${esc(K.escalation.title)}${K.escalation.ownerGroup?` · ${esc(K.escalation.ownerGroup)}`:""} · <a href="#vendor-contracts" style="color:var(--green)">Vendors &amp; contracts ›</a></div>`:""}`
         :`<div class="rl" style="margin-top:6px">No vendor contract bound to this team${T.level==="L1"?" — Salam internal":""}. Bind one in Teams management › Responder teams to see the signed clocks here.</div>`}`
         :`<span class="rl" style="color:#d97706">No owning team${A.team?` — "${esc(A.team)}" is not in Teams management › Responder teams`:""}. Re-assign it from ⋯ › Re-assign to a team, or let Agent 2 propose the mapping on the rule.</span>`}</div>`;
-    cell.innerHTML=`<div class="incgrid" style="padding:10px 6px">
+    const infra=isInfraRule(A); const evBlock=`<div id="incev_${id}" style="padding:${infra?"10px 6px 4px":"0 6px 10px"}"><h5 style="margin:2px 0 6px">${infra?"IMPACTED HOSTS · IP · CPU · RAM · DISK · PORTS":"EVIDENCE · WHO AND WHERE"} <span class="rl" style="font-weight:400">· loading${infra?" the hosts behind the number":" the affected orders / calls"}…</span></h5></div>`;
+    cell.innerHTML=`${infra?evBlock:""}<div class="incgrid" style="padding:10px 6px">
       <div>${teamBlock}<h5 style="margin:14px 0 6px">TIMELINE <span class="rl" style="font-weight:400">· everything that happened, in order</span></h5><div id="inctl_${id}"><div class="rl">Loading…</div></div>
         <h5 style="margin:14px 0 6px">MESSAGE</h5><div class="mono" style="font-size:11.5px">${esc(A.message||'')}</div>${A.customers!=null?`<div class="rl" style="margin-top:4px">Impact at last evaluation: <b>${A.customers}</b> customer(s)${A.services!=null?`, ${A.services} service(s)`:''}${A.rule_severity&&A.rule_severity!==A.severity?` · rule severity ${esc(A.rule_severity)}, fired as ${esc(A.severity)} (customer floor)`:''}</div>`:''}</div>
       <div><h5 style="margin:0 0 6px">RUNBOOK CHECKLIST <span class="rl" style="font-weight:400" id="incck_n_${id}"></span></h5><div id="incck_${id}"><div class="rl">Loading…</div></div>
         <h5 style="margin:14px 0 6px">DISCUSSION</h5><div id="inccomm_${id}">${comments}</div>
         ${canAck()?`<div style="display:flex;gap:6px;margin-top:8px"><input id="incin_${id}" class="jsearch" placeholder="Add a comment…" style="flex:1"><button class="pill" id="incsend_${id}" style="border-left-color:var(--green)">Post</button></div>`:''}</div>
-    </div><div id="incev_${id}" style="padding:0 6px 10px"><h5 style="margin:2px 0 6px">EVIDENCE · WHO AND WHERE <span class="rl" style="font-weight:400">· loading the affected orders / calls…</span></h5></div><div id="sntix_${id}" style="padding:0 6px 12px"><div class="rl">Checking ServiceNow for related tickets…</div></div>`;
+    </div>${infra?"":evBlock}<div id="sntix_${id}" style="padding:0 6px 12px"><div class="rl">Checking ServiceNow for related tickets…</div></div>`;
     const send=$("#incsend_"+id);
     if(send) send.onclick=async()=>{ const v=$("#incin_"+id).value.trim(); if(!v)return; try{ await api(`/api/alerts/${id}/comment`,{method:"POST",body:JSON.stringify({body:v})}); row.setAttribute("hidden",""); toggleDetail(id); }catch(e){ banner(esc(e.message)); } };
     loadTimeline(id); loadChecklist(id, A.status==='open');
@@ -1054,11 +1055,15 @@
    * window — order number, customer (masked · audited unmask for unmaskPII), journey step, the last failing endpoint with its
    * status and error, dealer / channel; per attempt the request / response bodies (masked at rest) on demand. */
   const evEp=v=>esc(String(v||"—").replace(/^https?:\/\/[^/]+/,"").slice(0,80));
+  /* INFRA (30 Sep 2026): the runner writes the impacted hosts into the message (" · hosts: label ip (why), …") — shown on
+   * the row itself so nobody has to open the incident to know WHICH servers; the full table (CPU / RAM / disk) is in Details */
+  const isInfraRule=a=>/^(fixed_)?infra_/.test(String(a.rule_key||a.metric_key||""));
+  function hostsLine(a){ const m=/· hosts: (.+?)(?: · data as of .*)?$/.exec(String(a.message||"")); if(!m) return isInfraRule(a)?`<br><span class="rl">impacted hosts: none at the last tick</span>`:""; const parts=m[1].split(/, (?=[^()]*(?:\(|$))/); return `<br><span class="rl" style="color:#dc2626;font-weight:700">impacted:</span> <span class="mono" style="font-size:11px">${parts.map(x=>esc(x)).join(`<span class="rl"> · </span>`)}</span>`; }
   async function loadEvidence(id, A, unmask){
     const host=$("#incev_"+id); if(!host) return;
     let d; try{ d=await api(`/api/alerts/${id}/evidence?limit=25${unmask?"&unmask=1":""}`); }catch(e){ host.innerHTML=`<h5 style="margin:2px 0 6px">EVIDENCE · WHO AND WHERE</h5><div class="rl">${esc(e.message)}</div>`; return; }
     const w=d.window?`${ksaShort(d.window.from)} → ${ksaShort(d.window.to)} KSA`:"";
-    const head=`<h5 style="margin:2px 0 6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">EVIDENCE · WHO AND WHERE <span class="rl" style="font-weight:400">· ${esc(d.title||d.kind||"")}${d.rows&&d.rows.length?` · ${d.rows.length} row${d.rows.length===1?"":"s"}`:""}${w?` · ${w}`:""}${d.source?` · <span class="mono">${esc(d.source)}</span>`:""}</span>
+    const head=`<h5 style="margin:2px 0 6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${d.kind==="infra"?"IMPACTED HOSTS · IP · CPU · RAM · DISK · PORTS":"EVIDENCE · WHO AND WHERE"} <span class="rl" style="font-weight:400">· ${esc(d.title||d.kind||"")}${d.rows&&d.rows.length?` · ${d.rows.length} row${d.rows.length===1?"":"s"}`:""}${w?` · ${w}`:""}${d.source?` · <span class="mono">${esc(d.source)}</span>`:""}</span>
       ${d.canUnmask&&d.kind==="attempts"?`<button class="pill" id="evUnmask_${id}" style="padding:1px 8px;font-size:10.5px;border-left-color:${d.unmasked?"#dc2626":"#d97706"};margin-left:auto">${d.unmasked?"🔒 Mask again":"🔓 Show customer numbers (audited)"}</button>`:""}</h5>`;
     if(d.kind==="none"||d.kind==="error"||!d.rows||!d.rows.length){ host.innerHTML=head+`<div class="rl">${esc(d.note||d.error||"No affected rows found in the window — the evidence source may not cover this rule, or the rows were purged.")}</div>`; return; }
     let tbl="";

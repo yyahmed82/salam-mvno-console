@@ -1,3 +1,7 @@
+## 2.0.0-alpha.126 — 2026-09-30
+
+- Alerts · infrastructure: the incident row itself names the impacted servers ("impacted: label ip (port 3306), … +n more") — the infra metrics write the hosts behind the number into the alert message, so the list, the mail and the agent triage carry the IPs; the incident drawer opens with the host table (IP · CPU · RAM · disk · load · ports · failing probes) first, before team and timeline.
+
 ## 2.0.0-alpha.125 — 2026-09-30
 
 - Alerts: infrastructure incidents (`infra_*` and `fixed_infra_*`) now carry the hosts behind the number in the incident drawer › Evidence and in the notification mail — per host: label, IP, hostname, OS, role, the failing probes with their thresholds (unreachable / port closed / disk / memory / load), CPU % and count with the model, RAM used / total in GB, worst filesystem with used / size, load15 per core, ports down, connections, since / last seen / up since, and a link to the host page. Same predicates as the cases export, both segments.

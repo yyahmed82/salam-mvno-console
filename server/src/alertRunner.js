@@ -84,7 +84,7 @@ async function evaluate(simNow) {
     let severity = rule.severity, downgraded = false;
     if (fired && minC > 0 && customers != null && customers < minC) { severity = rule.single_customer_severity || 'P4'; downgraded = true; }
     /* a metric may name WHAT it found in dim.note (e.g. the worst app-log signature) — carried into the incident text */
-    const note = snap && snap.dim && typeof snap.dim.note === 'string' && snap.dim.note ? ` · ${snap.dim.note.slice(0, 220)}` : '';
+    const note = snap && snap.dim && typeof snap.dim.note === 'string' && snap.dim.note ? ` · ${snap.dim.note.slice(0, /^hosts: /.test(snap.dim.note) ? 600 : 220)}` : '';
     const who = customers != null ? ` · ${customers} customer${customers === 1 ? '' : 's'}${counted != null && cb === 'events' && customers > 0 && counted > customers ? ` (${counted} attempts)` : ''}` : '';
     let counts;
     if (paused) counts = paused;

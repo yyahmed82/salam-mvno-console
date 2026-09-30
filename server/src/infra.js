@@ -392,13 +392,18 @@ async function metric(kind, segment) {
   const r = (await q.query(`SELECT h.id, h.label, h.ip, h.status, h.reachable, h.last_metrics FROM infra_hosts h WHERE h.enabled AND h.segment = ANY($1::text[])`, [seg])).rows;
   if (!r.length) return [];
   const M = h => h.last_metrics || {};
+  /* the impacted hosts go into the alert message (" · hosts: label ip (why) …") so the incident row, the mail and the
+   * agent triage name the servers without opening anything — the full table is the incident's Evidence */
+  const th = CFG().th;
+  const hostsNote = list => { if (!list.length) return {}; const top = list.slice(0, 6).map(([h, why]) => `${h.label || h.ip} ${h.ip}${why ? ' (' + why + ')' : ''}`); return { note: `hosts: ${top.join(', ')}${list.length > 6 ? ` +${list.length - 6} more` : ''}` }; };
+  const pctList = (field, warn) => r.filter(h => M(h)[field] != null && M(h)[field] >= warn).sort((a, b) => M(b)[field] - M(a)[field]).map(h => [h, `${M(h)[field]} %${field === 'disk_pct' && (M(h).disks || []).length ? ' ' + ((M(h).disks || []).reduce((a, d) => (d.pct > (a ? a.pct : -1) ? d : a), null) || {}).mount : ''}`]);
   switch (kind) {
-    case 'hosts_down': { const n = r.filter(h => h.reachable === false).length; return [{ dim: {}, value: n, sample: r.length }]; }
-    case 'ports_down': { const n = r.reduce((a, h) => a + ((M(h).ports || []).filter(p => !p.ok).length), 0); return [{ dim: {}, value: n, sample: r.reduce((a, h) => a + ((M(h).ports || []).length), 0) }]; }
-    case 'disk_pct_max': { const v = r.map(h => M(h).disk_pct).filter(x => x != null); return v.length ? [{ dim: {}, value: Math.max(...v), sample: v.length }] : []; }
-    case 'mem_pct_max': { const v = r.map(h => M(h).mem_pct).filter(x => x != null); return v.length ? [{ dim: {}, value: Math.max(...v), sample: v.length }] : []; }
-    case 'load_per_core_max': { const v = r.map(h => M(h).load15 != null && M(h).nproc ? M(h).load15 / M(h).nproc : null).filter(x => x != null); return v.length ? [{ dim: {}, value: Math.round(100 * Math.max(...v)) / 100, sample: v.length }] : []; }
-    case 'hosts_crit': { const n = r.filter(h => h.status === 'crit').length; return [{ dim: {}, value: n, sample: r.length }]; }
+    case 'hosts_down': { const L = r.filter(h => h.reachable === false).map(h => [h, 'no answer']); return [{ dim: hostsNote(L), value: L.length, sample: r.length }]; }
+    case 'ports_down': { const L = r.map(h => [h, (M(h).ports || []).filter(p => !p.ok).map(p => p.port)]).filter(([, p]) => p.length).map(([h, p]) => [h, 'port ' + p.join('/')]); const n = L.reduce((a, [, why]) => a + why.split('/').length, 0); return [{ dim: hostsNote(L), value: n, sample: r.reduce((a, h) => a + ((M(h).ports || []).length), 0) }]; }
+    case 'disk_pct_max': { const v = r.map(h => M(h).disk_pct).filter(x => x != null); return v.length ? [{ dim: hostsNote(pctList('disk_pct', th.diskWarn)), value: Math.max(...v), sample: v.length }] : []; }
+    case 'mem_pct_max': { const v = r.map(h => M(h).mem_pct).filter(x => x != null); return v.length ? [{ dim: hostsNote(pctList('mem_pct', th.memWarn)), value: Math.max(...v), sample: v.length }] : []; }
+    case 'load_per_core_max': { const L = r.map(h => [h, M(h).load15 != null && M(h).nproc ? Math.round(100 * M(h).load15 / M(h).nproc) / 100 : null]).filter(([, x]) => x != null); return L.length ? [{ dim: hostsNote(L.filter(([, x]) => x >= th.loadWarn).sort((a, b) => b[1] - a[1]).map(([h, x]) => [h, `${x} / core`])), value: Math.max(...L.map(([, x]) => x)), sample: L.length }] : []; }
+    case 'hosts_crit': { const L = r.filter(h => h.status === 'crit').map(h => [h, ((M(h).probes || []).filter(p => /CRIT/.test(p)).map(p => p.replace(/ CRIT$/, '')).slice(0, 2).join(' ')) || 'crit']); return [{ dim: hostsNote(L), value: L.length, sample: r.length }]; }
     default: return [];
   }
 }
