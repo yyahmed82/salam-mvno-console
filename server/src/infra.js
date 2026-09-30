@@ -150,7 +150,11 @@ function sshExec(host, remoteCmd, timeout) {
   const h = typeof host === 'string' ? { ip: host } : host; const c = CFG(); const user = h.ssh_user || c.sshUser;
   const args = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new', '-p', String(c.sshPort)];
   if (c.sshKey) args.push('-i', c.sshKey);
-  if (h.ssh_via) { const via = /@/.test(h.ssh_via) ? h.ssh_via : (user ? `${user}@${h.ssh_via}` : h.ssh_via); args.push('-J', via); }   // passerelle: the same key must open the jump host too
+  if (h.ssh_via) {   // passerelle: ProxyCommand (not -J) so the jump hop gets the same key, port and BatchMode — -J would prompt for a password on the jump host
+    const via = /@/.test(h.ssh_via) ? h.ssh_via : (user ? `${user}@${h.ssh_via}` : h.ssh_via);
+    const pc = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new', '-p', String(c.sshPort), c.sshKey ? `-i ${c.sshKey}` : '', '-W', '%h:%p', via].filter(Boolean).join(' ');
+    args.push('-o', `ProxyCommand=${pc}`);
+  }
   args.push(user ? `${user}@${h.ip}` : h.ip, remoteCmd);
   return exec('ssh', args, { timeout: timeout || 12000 });
 }

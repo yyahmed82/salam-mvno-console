@@ -1,3 +1,7 @@
+## 2.0.0-alpha.124 — 2026-09-30
+
+- Infrastructure: passerelle hop now uses an explicit `ProxyCommand` carrying the console key, port and BatchMode; `-J` did not pass `-i` to the jump host, so any host behind a passerelle prompted for a password and timed out.
+
 ## 2.0.0-alpha.123 — 30 Sep 2026 — Infrastructure: hosts behind a passerelle (ProxyJump), per-host ssh user, "Add host" bound to a card, service ports learned from the host, a closed guessed port is WARN not CRIT (full deploy)
 
 - **Passerelle**: a host can carry `ssh_via` (`ip` or `user@ip`) — the console then connects with `-J` through it, the way the DMS logs were read through .17 / .18. Set on the host page ("Via passerelle") or when adding a host. The console key must open the passerelle too.
