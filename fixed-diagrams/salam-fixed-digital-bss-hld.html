@@ -221,6 +221,38 @@ $('search').addEventListener('input',e=>{const q=e.target.value.toLowerCase();do
 $('exportSvg').onclick=()=>{const clone=svg.cloneNode(true);clone.setAttribute('xmlns',NS);const blob=new Blob([`<!doctype svg>\n`+clone.outerHTML],{type:'image/svg+xml'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='salam-fixed-digital-bss-topology.svg';a.click();URL.revokeObjectURL(a.href)};
 svg.addEventListener('click',e=>{if(e.target===svg||e.target.classList.contains('layer')||e.target.classList.contains('layerBg')){selected=null;document.querySelectorAll('.node,.edge').forEach(x=>x.classList.remove('hot','dim'));showDetail();renderSideListOnly();applyFilter()}});
 renderLayers();renderEdges();renderNodes();renderSide();applyFilter();showDetail();requestAnimationFrame(fit);
+
+/* LIVE OVERLAY (Operations Console › Infrastructure, 30 Sep 2026). When this diagram is embedded by the console it
+ * receives {type:'infra-live', nodes:{id:{status,cpu,mem,disk,rx_bps,tx_bps,hosts}}, edges:[{f,t,conns,state}]} every
+ * 30 s and paints: a status dot + three mini-bars on every card that has hosts behind it, the edges by observed traffic
+ * (live = animated + width by connections · quiet = thin · unobserved = dotted grey). Stand-alone (no parent) = untouched. */
+(function(){
+  if(window.parent===window) return;
+  /* embedded by the console: the diagram only — no explorer, no inspector, no top bar — fitted to the frame */
+  if(/[?&]embed=1/.test(location.search)){ const es=document.createElement('style'); es.textContent='.side,.panel,.topbar{display:none!important}.workspace{grid-template-columns:1fr!important}.app{grid-template-rows:1fr!important}body{overflow:hidden}'; document.head.appendChild(es); setTimeout(()=>{ try{ fit(); }catch(_){} },150); window.addEventListener('resize',()=>{ try{ fit(); }catch(_){} }); }
+  const NSx='http://www.w3.org/2000/svg'; const gO=document.createElementNS(NSx,'g'); gO.setAttribute('id','liveOverlay'); document.getElementById('world').appendChild(gO);
+  const st=document.createElement('style'); st.textContent=`.lv-dot{stroke:#0b1020;stroke-width:1.5}.lv-bar{fill:rgba(255,255,255,.08)}.lv-fill{fill:#34f5c5}.lv-fill.warn{fill:#f59e0b}.lv-fill.crit{fill:#ef4444}.lv-txt{font:600 9px ui-monospace,Menlo,monospace;fill:#93a3c4}.edge.lv-live{stroke-opacity:1;filter:drop-shadow(0 0 3px currentColor)}.edge.lv-quiet{stroke-opacity:.35}.edge.lv-unobserved{stroke-opacity:.18;stroke-dasharray:2 6}.pulse.lv-off{display:none!important}.node.lv-crit .card{stroke:#ef4444;stroke-width:2}.node.lv-warn .card{stroke:#f59e0b}.node.lv-unreach .card{stroke:#ef4444;stroke-dasharray:6 4}`; document.head.appendChild(st);
+  const COL={ok:'#34f5c5',warn:'#f59e0b',crit:'#ef4444',unknown:'#64748b',external:'#8aa0c7',unreachable:'#ef4444'};
+  const fmt=b=>b==null?'—':b>=1048576?(b/1048576).toFixed(1)+' MB/s':b>=1024?(b/1024).toFixed(0)+' kB/s':Math.round(b)+' B/s';
+  function paint(d){
+    while(gO.firstChild) gO.removeChild(gO.firstChild);
+    nodes.forEach(n=>{ const v=(d.nodes||{})[n.id]; const g=document.querySelector(`.node[data-id="${n.id}"]`); if(!g) return; g.classList.remove('lv-crit','lv-warn','lv-unreach');
+      if(!v||!v.hosts||!v.hosts.length){ if(v&&v.external){ const c=document.createElementNS(NSx,'circle'); c.setAttribute('class','lv-dot'); c.setAttribute('cx',n.x+n.w-14); c.setAttribute('cy',n.y+14); c.setAttribute('r',4); c.setAttribute('fill',COL.external); gO.appendChild(c); } return; }
+      const status=v.status||'unknown'; const unreach=v.hosts.every(h=>h.reachable===false); if(status==='crit') g.classList.add('lv-crit'); else if(status==='warn') g.classList.add('lv-warn'); if(unreach) g.classList.add('lv-unreach');
+      const c=document.createElementNS(NSx,'circle'); c.setAttribute('class','lv-dot'); c.setAttribute('cx',n.x+n.w-14); c.setAttribute('cy',n.y+14); c.setAttribute('r',5); c.setAttribute('fill',COL[unreach?'unreachable':status]||COL.unknown); const t=document.createElementNS(NSx,'title'); t.textContent=`${v.hosts.length} host(s) · ${status}${unreach?' · unreachable':''}`; c.appendChild(t); gO.appendChild(c);
+      const bars=[['cpu',v.cpu],['mem',v.mem],['disk',v.disk]]; const bx=n.x+n.w-70, by=n.y+n.h-10; bars.forEach(([k,val],i)=>{ const x=bx+i*20; const bg=document.createElementNS(NSx,'rect'); bg.setAttribute('class','lv-bar'); bg.setAttribute('x',x); bg.setAttribute('y',by-16); bg.setAttribute('width',14); bg.setAttribute('height',16); bg.setAttribute('rx',2); gO.appendChild(bg);
+        if(val!=null){ const h=Math.max(1,Math.round(16*Math.min(100,val)/100)); const f=document.createElementNS(NSx,'rect'); f.setAttribute('class','lv-fill'+(val>=90?' crit':val>=75?' warn':'')); f.setAttribute('x',x); f.setAttribute('y',by-h); f.setAttribute('width',14); f.setAttribute('height',h); f.setAttribute('rx',2); const tt=document.createElementNS(NSx,'title'); tt.textContent=`${k} ${val}%`; f.appendChild(tt); gO.appendChild(f); } });
+      if(v.rx_bps!=null||v.tx_bps!=null){ const tx=document.createElementNS(NSx,'text'); tx.setAttribute('class','lv-txt'); tx.setAttribute('x',n.x+16); tx.setAttribute('y',n.y+n.h-8); tx.textContent=`↓${fmt(v.rx_bps)} ↑${fmt(v.tx_bps)}`; gO.appendChild(tx); } });
+    (d.edges||[]).forEach(e=>{ const p=document.getElementById('edge-'+e.i); if(!p) return; p.classList.remove('lv-live','lv-quiet','lv-unobserved'); p.classList.add('lv-'+e.state); p.style.strokeWidth=e.state==='live'?String(Math.min(6,1.5+Math.log2(1+e.conns))):''; const t=p.querySelector('title')||p.appendChild(document.createElementNS(NSx,'title')); t.textContent=e.state==='live'?`${e.conns} connection(s) observed in the last 5 min`:e.state==='quiet'?'no connection observed in the last 5 min':'not observable — no source on either side';
+      document.querySelectorAll(`.pulse[data-k]`).forEach(()=>{}); });
+    /* the particles: hide them on unobserved edges so the animation only runs where traffic is real */
+    const idx=Object.fromEntries((d.edges||[]).map(e=>[e.i,e.state])); document.querySelectorAll('#particles .pulse').forEach((c,i)=>{ const k=Math.floor(i/2); c.classList.toggle('lv-off',idx[k]==='unobserved'); });
+  }
+  window.addEventListener('message',ev=>{ const d=ev.data; if(!d||d.type!=='infra-live') return; try{ paint(d); }catch(e){ console.warn('live overlay',e); } });
+  try{ window.parent.postMessage({type:'infra-ready'},'*'); }catch(_){}
+  document.addEventListener('click',ev=>{ const g=ev.target.closest&&ev.target.closest('.node[data-id]'); if(g) try{ window.parent.postMessage({type:'infra-node',id:g.dataset.id},'*'); }catch(_){} });
+})();
+
 </script>
 </body>
 </html>

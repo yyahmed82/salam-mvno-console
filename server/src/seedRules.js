@@ -799,6 +799,27 @@ CH_RULES.push(
     description: 'The slowest integration host has a p95 ≥ 15 s — calls are hitting the app timeouts; journeys through this provider fail.',
     runbook: '1) Page OSS Ops + provider. 2) Expect the technical-rate rules for the same provider footprint to follow. 3) Downgrades to the P2 twin as it recovers.' }),
 );
+/* INFRASTRUCTURE rules (30 Sep 2026): one set per side, owner infra-l2 (Fixed) / mobile-digital-l2 (Mobile, until a Mobile infra responder is named) */
+const INFRA_RULES = (seg) => { const p = seg === 'fixed' ? 'fixed_' : ''; const team = seg === 'fixed' ? 'infra-l2' : 'mobile-digital-l2'; const side = seg === 'fixed' ? 'Fixed' : 'Mobile'; const extra = seg === 'fixed' ? { segment: 'fixed' } : {};
+  return [
+    { key: `${p}infra_host_unreachable`, name: `Infra · host unreachable — ${side} (P1)`, severity: 'P1', team, alert_class: 'technical', metric_key: `${p}infra_hosts_down`, operator: 'gte', threshold: 1, window_hours: 1, min_sample: 1, ...extra,
+      description: `A ${side} host of the HLD answers on NO source the console has — no ssh, no service port, no node exporter, no Instana — for a full tick. One host is enough. Sources are read-only probes from the console box; the value is the count of such hosts at the last tick.`,
+      runbook: '1) Infrastructure › Hosts → the host page: which probes failed and since when (Changes shows the status flip). 2) Check the console box can reach the host at all (ping / firewall) before calling the host down. 3) If the service VIP still answers (LB / MaxScale rows OK) the customer impact is nil — downgrade to P3 and open the change with the infra team; otherwise page the owner team.' },
+    { key: `${p}infra_port_down`, name: `Infra · service port down — ${side} (P2)`, severity: 'P2', team, alert_class: 'technical', metric_key: `${p}infra_ports_down`, operator: 'gte', threshold: 1, window_hours: 1, min_sample: 1, ...extra,
+      description: `A service port of a ${side} host (443/80 on an edge, 3306/5432 on a database, the port printed on the HLD card) does not accept a TCP connection from the console box while the host itself is reachable. Value = number of closed service ports at the last tick.`,
+      runbook: '1) Host page → Ports: which port, since when. 2) A single node of a pair (GW01/GW02, App .136-.139) behind a VIP is capacity, not outage: confirm the VIP row is OK. 3) A VIP or database port down is an outage: page the owner, check the Journey health strip for the business effect.' },
+    { key: `${p}infra_disk_full`, name: `Infra · disk ≥ 90 % — ${side} (P2)`, severity: 'P2', team, alert_class: 'technical', metric_key: `${p}infra_disk_pct_max`, operator: 'gte', threshold: 90, window_hours: 1, min_sample: 1, ...extra,
+      description: `The fullest filesystem across the ${side} hosts is at 90 % or more (df, tmpfs/overlay excluded). A full disk on an app or database host stops logging first, then the service.`,
+      runbook: '1) Host page → Disks: which mount. 2) Logs (/var/log, app log dirs, pm2 logs) are the usual cause — rotate, do not delete blindly. 3) Database mounts: involve the DBA before touching anything; a DB disk at 95 % is a P1 in practice.' },
+    { key: `${p}infra_memory_high`, name: `Infra · memory ≥ 95 % — ${side} (P2)`, severity: 'P2', team, alert_class: 'technical', metric_key: `${p}infra_mem_pct_max`, operator: 'gte', threshold: 95, window_hours: 1, min_sample: 1, ...extra,
+      description: `The worst ${side} host holds 95 % or more of its memory (MemTotal − MemAvailable, the page cache is not counted). Sustained 95 % precedes the OOM killer.`,
+      runbook: '1) Host page → memory sparkline: a slow climb is a leak (restart the process at the next window), a step is a new load. 2) The healthcheck mail names the largest processes. 3) Add RAM only after the leak is excluded.' },
+    { key: `${p}infra_load_high`, name: `Infra · load per core ≥ 2.5 — ${side} (P3)`, severity: 'P3', team, alert_class: 'technical', metric_key: `${p}infra_load_per_core_max`, operator: 'gte', threshold: 2.5, window_hours: 1, min_sample: 1, ...extra,
+      description: `The 15-minute load average of the busiest ${side} host is at least 2.5 × its cpu count — the box has been saturated for a quarter of an hour, requests queue.`,
+      runbook: '1) Host page: load vs cpu% — high load with low cpu is I/O wait (disk, NFS, a stuck mount). 2) Correlate with the API latency rules of the same side. 3) A batch / backup window that recurs at the same hour is a scheduling issue, not capacity.' }
+  ]; };
+for (const r of INFRA_RULES('mobile')) RULES.push(r);
+for (const r of INFRA_RULES('fixed')) FIXED_RULES.push(r);
 for (const r of CH_RULES) FIXED_RULES.push(r);
 for (const r of FIXED_RULES) {
   if (!r.key.startsWith('fixed_') || !r.metric_key.startsWith('fixed_')) throw new Error(`fixed rule ${r.key} must use fixed_ keys`);

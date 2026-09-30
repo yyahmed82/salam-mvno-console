@@ -1174,6 +1174,20 @@ const METRICS = {
   }
 }
 
+/* INFRASTRUCTURE (30 Sep 2026, infra.js): the hosts of the two HLDs, probed from the console box — Mobile (+ shared) keys
+ * and their fixed_ twins, so the alerts land on the right side of the segment filter. Values come from the last tick
+ * (unified_console), never from a production host at alert time. */
+{
+  const infra = require('./infra');
+  const DEF = [['hosts_down', 'Infra · hosts unreachable', 'count'], ['ports_down', 'Infra · service ports down', 'count'], ['hosts_crit', 'Infra · hosts in CRIT', 'count'],
+    ['disk_pct_max', 'Infra · worst disk fill %', 'percent'], ['mem_pct_max', 'Infra · worst memory %', 'percent'], ['load_per_core_max', 'Infra · worst load15 per core', 'ratio']];
+  for (const [kind, label, unit] of DEF) for (const seg of ['mobile', 'fixed']) {
+    const key = (seg === 'fixed' ? 'fixed_' : '') + 'infra_' + kind;
+    if (Object.prototype.hasOwnProperty.call(METRICS, key)) throw new Error(`metric key registered twice: ${key}`);
+    METRICS[key] = { label: `${label} (${seg === 'fixed' ? 'Fixed' : 'Mobile'})`, unit, higherIsBad: true, sourceTables: 'infra_hosts (console)', async compute() { try { return await infra.metric(kind, seg); } catch (e) { return []; } } };
+  }
+}
+
 /* SQL fragments shared with alertCases.js (the row-level twin of every compute) — keep them in ONE place */
 const SQL = { SEMATI_UNION, SEM_TRANSPORT, SEM_UNAVAIL, SEM_ENDPOINT, GW_CASE, NAFATH_SUCCESS, NAFATH_FAILED, DELIVERY_FAILED, DELIVERY_COMPLETED };
 module.exports = { METRICS, SQL };

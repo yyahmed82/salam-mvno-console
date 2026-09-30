@@ -4375,6 +4375,8 @@ require('./refundRadar').mount(app, { requireView, audit, roles });
 require('./refundDesk').mount(app, { requireView, requireCap, audit });   // Agent 2 · refund desk: reviews, batches, policy   // AI agents mission control — readable by incident roles
 /* ── Onboarding flow guard (flowGuard.js, 29 Sep 2026 — TKT-000068): non-approved flows (vanity on prepaid, disabled plan, class mismatch) ── */
 require('./flowGuard').mount(app, { requireView, requireCap, audit });
+/* ── Infrastructure (infra.js, 30 Sep 2026 — CIO requirement): hosts of the two HLDs, inventory, per-host health, live map ── */
+require('./infra').mount(app, { requireView, requireCap, audit });
 /* ── Responder teams, re-assignment, manual tickets, Agent 2 rule → team mapping (teamsApi.js / teams.js, 24 Sep 2026) ── */
 require('./teamsApi').mount(app, { audit, requireCap, requireSuper });
 require('./affiliation').mount(app, { requireSuper, audit });   // Salam team vs contract resource, from the e-mail (26 Sep 2026)
@@ -7019,6 +7021,7 @@ app.listen(PORT, async () => {
   try { require('./fixedErrorTrend').start(); } catch (e) { console.error('Fixed error trend rollup:', e.message); }
   try { require('./refundRadar').start(); } catch (e) { console.error('Refund radar:', e.message); }
   try { require('./flowGuard').start(); } catch (e) { console.error('Flow guard:', e.message); }
+  try { require('./infra').start(); } catch (e) { console.error('Infra:', e.message); }
   require('./customMetrics').load().catch(e => console.error('Custom metrics:', e.message));
   try { require('./smsProbe').start(); } catch (e) { console.error('SMS probe:', e.message); }
   try { require('./zipkinCollector').start(); } catch (e) { console.error('APIGW trace collector:', e.message); }
