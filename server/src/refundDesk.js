@@ -167,11 +167,14 @@ const pickReason = (txt, list) => { const s = String(txt || '').trim().toLowerCa
 const SEMATI = { '706': 'reached the maximum number of lines', '727': 'person / ID not found at Semati', '731': 'SIM / ICCID rejected by Semati', '738': 'person ID expired at Semati', '784': 'IAM token expired', '793': 'ID mismatch at Semati' };
 const codeOf = s => { const m = /\b(7\d\d)\b/.exec(String(s || '')); return m ? m[1] : null; };
 const ageH = c => c.event_at ? (Date.now() - new Date(c.event_at).getTime()) / 36e5 : 0;
-function preClassify(c) {
+function preClassify(c, elig) {
   const e = c.evidence || {}; const L = c.ledger || {}; const h = ageH(c);
   const base = { verdict: 'investigate', reason: null, category: radar.categorize(''), cause: '', action: 'check the customer timeline in Troubleshoot', confidence: 0.45, skipModel: false };
   if (L.status === 'success' || L.pay_status === 'refunded') return { ...base, verdict: 'dismiss', reason: L.reason || null, cause: 'already refunded in proxycms', action: 'nothing — the register closes it', confidence: 0.95, skipModel: true };
   if (L.status === 'pending') return { ...base, verdict: 'wait', reason: L.reason || null, cause: 'a refund is pending at the gateway in proxycms', action: 'proxycms › Refunds › Rsync Refund if it stays pending', confidence: 0.9, skipModel: true };
+  /* TKT-000072: a candidate outside the refund-eligibility policy (a recharge, a bill …) is never a refund — the desk says
+   * so deterministically, no model, and names the path (the radar sweep dismisses it on its next tick anyway) */
+  if (elig && e.paid_for) { try { const el = radar.eligibilityOf(elig, e.paid_for, e.checkout_type); if (el && el.eligible === false && el.journey !== 'checkout') return { ...base, verdict: 'dismiss', reason: null, category: 'other', cause: `${el.label} is not a refund journey (eligibility policy, TKT-000072)`, action: el.path, confidence: 0.98, skipModel: true }; } catch (_) {} }
   if (L.status === 'fail') return { ...base, verdict: 'refund', reason: L.reason || null, cause: `the refund posted in proxycms FAILED at the gateway${L.fail_reason ? ' (' + L.fail_reason + ')' : ''}`, action: 'proxycms › Refunds › Re-Request, or a manual refund through Finance', confidence: 0.9, skipModel: true };
   switch (c.kind) {
     case 'paid_not_activated': { const code = codeOf(e.last_activation);
@@ -209,7 +212,7 @@ Output ONLY a JSON object: {"verdict":"refund|wait|dismiss|investigate","reason"
 Rules: refund only when the evidence shows the service will not be delivered (a Semati/BSS error answer, a failed change plan, a duplicate capture, a returned shipment); wait when the flow can still complete (a recent payment, a courier still moving, a pending refund); dismiss when the case is already refunded or is not a platform failure; investigate when the evidence is missing. Never invent codes or amounts.`;
 
 async function reviewOne(c, policy, { allowModel = true, force = false } = {}) {
-  const t0 = Date.now(); const ev = await evidenceFor(c); const pre = preClassify(c); const reasons = await knownReasons();
+  const t0 = Date.now(); const ev = await evidenceFor(c); let elig = null; try { elig = await radar.eligibilityPolicy(); } catch (_) {} const pre = preClassify(c, elig); const reasons = await knownReasons();
   let out = null, j = null, llmDown = false;
   if (allowModel && !pre.skipModel) {
     const user = `CANDIDATE #${c.id} · kind ${c.kind} (${(radar.KINDS[c.kind] || {}).label || c.kind}) · amount ${money(c.amount)} SAR · event ${c.event_at} (${Math.round(ageH(c))} h ago) · detected ${c.detected_at} · status ${c.status}

@@ -77,6 +77,79 @@ const CATEGORIES = {
   test:        { label: 'Test (UAT)',             owner: '—',                          platform: false, color: '#64748b', fix: 'test transactions refunded after UAT — exclude from the business figures' },
   other:       { label: 'Other',                  owner: '—',                          platform: false, color: '#94a3b8', fix: 'reason text the classifier does not know — add it to REASON_RULES once it is understood' }
 };
+/* ---------------------------------------------------------------------------------------------- refund eligibility (TKT-000072, 30 Sep 2026)
+ * Business rule (Sreekanth, Sales Ops): a refund is only ever due on FOUR journeys — Onboarding (new line / port-in),
+ * Change plan, SIM / eSIM replacement, Data SIM — when the transaction failed or the customer changed his mind. A
+ * RECHARGE is never refunded: when the amount is not reflected the path is a BALANCE ADJUSTMENT raised to the BSS team
+ * (a CST-approved case is the exception and goes through the register as "outside policy", visible, never hidden).
+ * The rule is a setting (`refund_eligibility`, editable on Mobile › Refund exposure › Detectors by manageSync) so a
+ * change of policy is a click, not a deploy. It is applied in three places: the detectors (duplicate_charge no longer
+ * flags a recharge / bill / store charge), the policy sweep in every tick (an open candidate outside the policy is
+ * dismissed with the path to follow), and the register (each proxycms refund carries its journey and an
+ * "outside policy" flag so the exceptions are counted, not lost). payments.payment_on_type is matched case-insensitively
+ * ('Recharge' and 'recharge' both exist); a Checkout's journey is its checkouts.checkout_type. */
+const JOURNEYS = {
+  onboarding:      { label: 'Onboarding (new line / port-in)', on: { OnboardingOrder: true }, checkout_types: [] },
+  change_plan:     { label: 'Change plan',                     on: {}, checkout_types: [2] },
+  sim_replacement: { label: 'SIM / eSIM replacement',         on: {}, checkout_types: [3] },
+  data_sim:        { label: 'Data SIM',                         on: {}, checkout_types: [1] }
+};
+/* what is NOT a refund journey and where such a case goes instead */
+const NOT_ELIGIBLE = {
+  recharge:                  { label: 'Recharge',                 path: 'balance adjustment — raise to the BSS team (proxycms › Recharge); never a refund unless CST-approved' },
+  bill:                      { label: 'Bill payment',             path: 'billing correction — BSS billing team' },
+  invoice:                   { label: 'Invoice payment',          path: 'billing correction — BSS billing team' },
+  advanced_postpaid_payment: { label: 'Advance bill payment',     path: 'billing correction — BSS billing team' },
+  store:                     { label: 'Store purchase (device)',  path: 'store return / RMA process' },
+  ownership_transfer:        { label: 'Ownership transfer',       path: 'BSS balance adjustment' },
+  renewal:                   { label: 'Renewal',                  path: 'BSS balance adjustment' },
+  advanced_postpaid:         { label: 'Advanced postpaid',        path: 'billing correction — BSS billing team' }
+};
+const CHECKOUT_JOURNEY = { 0: 'store', 1: 'data_sim', 2: 'change_plan', 3: 'sim_replacement', 4: 'store', 5: 'ownership_transfer', 6: 'renewal', 7: 'advanced_postpaid' };
+const DEFAULT_ELIG = { journeys: ['onboarding', 'change_plan', 'sim_replacement', 'data_sim'], sweep: true, note: 'Refunds only on transaction failure or change of mind in the four journeys (TKT-000072). Recharge issues are balance adjustments by BSS.' };
+let _elig = { at: 0, v: DEFAULT_ELIG };
+async function eligibilityPolicy(force) {
+  if (!force && Date.now() - _elig.at < 60e3) return _elig.v;
+  let v = DEFAULT_ELIG;
+  try { const s = await require('./settings').getSetting('refund_eligibility'); if (s && Array.isArray(s.journeys)) v = { ...DEFAULT_ELIG, ...s, journeys: s.journeys.filter(j => JOURNEYS[j]) }; } catch (_) {}
+  _elig = { at: Date.now(), v }; return v;
+}
+async function setEligibilityPolicy(patch, actor) {
+  const cur = await eligibilityPolicy(true);
+  const next = { ...cur, ...(patch || {}) };
+  next.journeys = Array.isArray(next.journeys) ? next.journeys.filter(j => JOURNEYS[j]) : cur.journeys;
+  next.sweep = next.sweep !== false; next.note = String(next.note || '').slice(0, 300); next.updated_by = actor || null; next.updated_at = new Date().toISOString();
+  await require('./settings').setSetting('refund_eligibility', next);
+  _elig = { at: Date.now(), v: next }; return next;
+}
+/* journey key of a payment: from payment_on_type (+ checkouts.checkout_type for a Checkout) */
+function journeyOf(paymentOnType, checkoutType) {
+  const t = String(paymentOnType || '').toLowerCase();
+  if (t === 'onboardingorder') return 'onboarding';
+  if (t === 'checkout') { const j = CHECKOUT_JOURNEY[Number(checkoutType)]; return j || (checkoutType == null ? 'checkout' : 'store'); }
+  if (/recharge|topup|top_up/.test(t)) return 'recharge';
+  if (t === 'bill' || /bill/.test(t) && !/advanced/.test(t)) return 'bill';
+  if (/invoice/.test(t)) return 'invoice';
+  if (/advanced_postpaid/.test(t)) return 'advanced_postpaid_payment';
+  return t || 'unknown';
+}
+function eligibilityOf(policy, paymentOnType, checkoutType) {
+  const j = journeyOf(paymentOnType, checkoutType);
+  if (JOURNEYS[j]) return { journey: j, label: JOURNEYS[j].label, eligible: policy.journeys.includes(j), path: policy.journeys.includes(j) ? null : 'journey switched off in the eligibility policy' };
+  if (j === 'checkout') return { journey: j, label: 'Checkout (type unknown)', eligible: true, path: null };   // the checkout row is gone — never hide a possible refund on a guess
+  const ne = NOT_ELIGIBLE[j] || { label: j, path: 'not a refund journey — check with Sales Ops' };
+  return { journey: j, label: ne.label, eligible: false, path: ne.path };
+}
+/* SQL fragment: the payments that belong to an eligible journey (used by the duplicate_charge detector) */
+function eligibleSql(policy, alias) {
+  const on = []; const types = [];
+  for (const j of policy.journeys) { const J = JOURNEYS[j]; if (!J) continue; for (const k of Object.keys(J.on)) on.push(k); types.push(...J.checkout_types); }
+  const parts = [];
+  if (on.length) parts.push(`lower(${alias}.payment_on_type) IN (${on.map(x => `'${x.toLowerCase()}'`).join(',')})`);
+  if (types.length) parts.push(`(lower(${alias}.payment_on_type) = 'checkout' AND EXISTS (SELECT 1 FROM checkouts ec WHERE ec.id = ${SAFE_UUID(alias + '.payment_on_id')} AND ec.checkout_type IN (${types.join(',')})))`);
+  return parts.length ? `(${parts.join(' OR ')})` : 'FALSE';
+}
+
 function categorize(reason) {
   const s = String(reason || '');
   for (const r of REASON_RULES) if (r.rx.test(s)) return r.cat;
@@ -179,14 +252,16 @@ const DETECTORS = {
       JOIN payments p ON p.status = 'success' AND ((p.payment_on_type = 'OnboardingOrder' AND p.payment_on_id = o.id::text) OR (p.payment_on_type = 'Checkout' AND p.payment_on_id IN (SELECT c.id::text FROM checkouts c WHERE c.checkout_id = o.checkout_id)))
      WHERE d.created_at >= ${D(LOOKBACK_DAYS)} AND d.delivery_state = ANY($1::text[]) AND coalesce(o.activated, false) = false
        AND NOT EXISTS (SELECT 1 FROM delivery_requests d2 WHERE d2.delivery_on_id = d.delivery_on_id AND d2.created_at > d.created_at AND NOT (d2.delivery_state = ANY($1::text[])))` },
-  duplicate_charge: { params: () => [], sql: `
+  duplicate_charge: { params: () => [], sql: (policy) => `
     SELECT 'duplicate_charge' AS kind, g.second_id AS ukey, g.customer_mobile_number AS mobile, CASE WHEN g.payment_on_type = 'OnboardingOrder' THEN g.payment_on_id END AS order_id, g.second_id AS payment_id, g.amount,
            NULL::text AS customer_name, NULL::text AS identifier, g.second_at AS event_at,
-           jsonb_build_object('paid_for', g.payment_on_type, 'target', g.payment_on_id, 'charges', g.n, 'first_payment', g.first_id, 'first_at', g.first_at, 'seconds_apart', extract(epoch FROM g.second_at - g.first_at)::int, 'gateway', g.vendor) AS evidence
-      FROM (SELECT customer_mobile_number, amount, payment_on_type, payment_on_id, count(*) AS n, min(created_at) AS first_at, max(created_at) AS second_at,
-                   (array_agg(id::text ORDER BY created_at))[1] AS first_id, (array_agg(id::text ORDER BY created_at DESC))[1] AS second_id, max(vendor) AS vendor
-              FROM payments WHERE status = 'success' AND created_at >= ${D(LOOKBACK_DAYS)}
-             GROUP BY 1,2,3,4 HAVING count(*) > 1 AND max(created_at) - min(created_at) < interval '30 minutes') g` }
+           jsonb_build_object('paid_for', g.payment_on_type, 'target', g.payment_on_id, 'checkout_type', g.checkout_type, 'charges', g.n, 'first_payment', g.first_id, 'first_at', g.first_at, 'seconds_apart', extract(epoch FROM g.second_at - g.first_at)::int, 'gateway', g.vendor) AS evidence
+      FROM (SELECT p.customer_mobile_number, p.amount, p.payment_on_type, p.payment_on_id, count(*) AS n, min(p.created_at) AS first_at, max(p.created_at) AS second_at,
+                   (array_agg(p.id::text ORDER BY p.created_at))[1] AS first_id, (array_agg(p.id::text ORDER BY p.created_at DESC))[1] AS second_id, max(p.vendor) AS vendor,
+                   (SELECT ec.checkout_type FROM checkouts ec WHERE lower(p.payment_on_type) = 'checkout' AND ec.id = ${SAFE_UUID('p.payment_on_id')} LIMIT 1) AS checkout_type
+              FROM payments p WHERE p.status = 'success' AND p.created_at >= ${D(LOOKBACK_DAYS)}
+               AND ${eligibleSql(policy, 'p')}   -- TKT-000072: a duplicate RECHARGE / bill / store charge is not a refund case
+             GROUP BY 1,2,3,4 HAVING count(*) > 1 AND max(p.created_at) - min(p.created_at) < interval '30 minutes') g` }
 };
 
 const lastTiming = {};
@@ -207,9 +282,10 @@ async function detect() {
   let client; try { client = await db.source.connect(); } catch (e) { return { found, errors: { connect: e.message } }; }
   try {
     await client.query('SET statement_timeout = 45000').catch(() => {});
+    const policy = await eligibilityPolicy();
     for (const [kind, det] of Object.entries(DETECTORS)) {
       const t0 = Date.now();
-      try { const r = await client.query(det.sql, det.params()); for (const row of r.rows) found.push(row); errors[kind] = null; lastTiming[kind] = Date.now() - t0; }
+      try { const r = await client.query(typeof det.sql === 'function' ? det.sql(policy) : det.sql, det.params()); for (const row of r.rows) found.push(row); errors[kind] = null; lastTiming[kind] = Date.now() - t0; }
       catch (e) { errors[kind] = e.message.slice(0, 160); lastTiming[kind] = Date.now() - t0; }
     }
   } finally { try { client.release(); } catch (_) {} }
@@ -299,6 +375,9 @@ async function tick() {
     }
     /* the ledger first: a refund posted in proxycms is the real closure, not "resolved by the platform" */
     let led = { checked: 0, refunded: 0 }; try { led = await correlate(); } catch (e) { led.error = e.message; }
+    /* POLICY SWEEP (TKT-000072) — BEFORE auto-resolution, so a candidate outside the policy is closed as "dismissed by the
+     * policy, path: …" and never as "resolved by the platform"; the row and its note stay in History, nothing is deleted */
+    let swept = 0; try { swept = await policySweep(); } catch (e) { console.error('[refund-radar] policy sweep', e.message); }
     /* auto-resolution: an OPEN candidate its detector no longer returns (activation succeeded, later delivery …) — only
      * for detectors that ran without error this tick */
     const okKinds = Object.keys(DETECTORS).filter(k => !errors[k]);
@@ -309,13 +388,77 @@ async function tick() {
           WHERE status = 'open' AND kind = ANY($1::text[]) AND NOT (kind || '|' || ukey = ANY($2::text[])) AND detected_at >= ${D(LOOKBACK_DAYS + 2)}`, [okKinds, keys]);
       auto = r.rowCount;
     }
-    lastRun = { at: new Date().toISOString(), ms: Date.now() - t0, found: found.length, new_rows: newRows, auto_resolved: auto, ledger_refunded: led.refunded, ledger_checked: led.checked, ledger_error: led.error || null, errors, timing: { ...lastTiming } };
+    lastRun = { at: new Date().toISOString(), ms: Date.now() - t0, found: found.length, new_rows: newRows, auto_resolved: auto, policy_dismissed: swept, ledger_refunded: led.refunded, ledger_checked: led.checked, ledger_error: led.error || null, errors, timing: { ...lastTiming } };
     await db.console.query(`INSERT INTO refund_radar_runs (ms, found, new_rows, auto_resolved, errors, ledger_refunded, timing) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [lastRun.ms, found.length, newRows, auto, JSON.stringify(errors), led.refunded || 0, JSON.stringify(lastTiming)]).catch(() => {});
     await db.console.query(`DELETE FROM refund_radar_runs WHERE at < now() - interval '90 days'`).catch(() => {});
   } catch (e) { lastRun = { at: new Date().toISOString(), error: e.message }; console.error('[refund-radar]', e.message); }
   finally { running = false; runningSince = null; }
 }
+async function policySweep() {
+  const policy = await eligibilityPolicy();
+  if (policy.sweep === false) return 0;
+  const r = await db.console.query(`SELECT id, kind, payment_id, evidence FROM refund_candidates WHERE status IN ('open','approved') AND kind = 'duplicate_charge'`);
+  if (!r.rows.length) return 0;
+  /* a Checkout's journey needs checkouts.checkout_type — read once from the replica for the rows that lack it in their evidence */
+  const need = r.rows.filter(x => String((x.evidence || {}).paid_for || '').toLowerCase() === 'checkout' && (x.evidence || {}).checkout_type == null).map(x => (x.evidence || {}).target).filter(Boolean);
+  const types = {};
+  if (need.length) { try { const t = await db.source.query(`SELECT id::text AS id, checkout_type FROM checkouts WHERE id = ANY($1::uuid[])`, [need.filter(x => /^[0-9a-f-]{36}$/i.test(x))]); for (const x of t.rows) types[x.id] = x.checkout_type; } catch (e) { console.error('[refund-radar] sweep checkouts', e.message); } }
+  let n = 0;
+  for (const x of r.rows) {
+    const ev = x.evidence || {}; const ct = ev.checkout_type != null ? ev.checkout_type : types[ev.target];
+    const e = eligibilityOf(policy, ev.paid_for, ct);
+    if (e.eligible) continue;
+    await db.console.query(`UPDATE refund_candidates SET status = 'dismissed', note = $2, updated_by = 'policy', updated_at = now(), resolved_at = now(), decided_at = coalesce(decided_at, now()), decided_by = coalesce(decided_by, 'policy'),
+        evidence = evidence || jsonb_build_object('journey', $3::text, 'eligible', false) WHERE id = $1 AND status IN ('open','approved')`,
+      [x.id, `Not refund-eligible (policy, TKT-000072): ${e.label} — ${e.path}`, e.journey]);
+    n++;
+  }
+  return n;
+}
+
+/* ---------------------------------------------------------------------------------------------- customer lookup (TKT-000071)
+ * One number (or order / payment id / INC) → everything the console and proxycms know about it, whatever the period and
+ * the status: the candidates (open, approved, refunded, dismissed, auto-resolved, with the desk review and the batch),
+ * the proxycms refunds of that number (up to 2 years), and the successful payments of the last 365 days with their
+ * journey and eligibility. This is what the Customer 360 link and the search box open — "no records" for a number that
+ * has a refund in proxycms is not an answer. */
+async function lookup(q, { days = 365 } = {}) {
+  await ensure();
+  const raw = String(q || '').trim(); if (!raw) return { key: null, candidates: [], ledger: [], payments: [] };
+  const digits = raw.replace(/\D/g, ''); const last9 = digits.slice(-9);
+  const isNumber = last9.length === 9 && /^5/.test(last9);
+  const policy = await eligibilityPolicy();
+  const like = '%' + (isNumber ? last9 : raw) + '%';
+  const cand = await db.console.query(`SELECT c.*, c.amount::float AS amount, bt.created_at AS batch_at,
+        CASE WHEN r.id IS NULL THEN NULL ELSE jsonb_build_object('verdict', r.verdict, 'reason', r.reason, 'category', r.category, 'cause', r.cause, 'action', r.action, 'customer_note', r.customer_note, 'priority', r.priority,
+          'confidence', r.confidence, 'deterministic', r.deterministic, 'model', r.model, 'helpful', r.helpful, 'at', coalesce(r.updated_at, r.created_at)) END AS agent
+      FROM refund_candidates c LEFT JOIN refund_reviews r ON r.candidate_id = c.id LEFT JOIN refund_batches bt ON bt.id = c.batch_id
+      WHERE (c.mobile ILIKE $1 OR c.order_id ILIKE $2 OR c.payment_id ILIKE $2 OR c.identifier ILIKE $1 OR c.inc ILIKE $2 OR c.ledger->>'inc' ILIKE $2 OR c.customer_name ILIKE $2)
+      ORDER BY c.event_at DESC LIMIT 100`, [like, '%' + raw + '%']);
+  let ledger = [], payments = [], sourceError = null;
+  if (db.source) {
+    try {
+      const p = { fromTs: new Date(Date.now() - 730 * 864e5).toISOString(), toTs: new Date(Date.now() + 864e5).toISOString() };
+      ledger = (await ledgerRows(p, { q: raw, limit: 200 })).rows || [];
+      if (isNumber) {
+        const forms = [last9, '966' + last9, '0' + last9, '+966' + last9];
+        const r = await db.source.query(`SELECT p.id::text AS payment_id, p.created_at, p.status, p.amount::float AS amount, p.vendor, p.platform, p.payment_method, p.payment_on_type, p.payment_on_id, p.payment_reference_id, p.customer_mobile_number, p.target_mobile_number,
+              c.checkout_type, c.checkout_for_type, c.checkout_id AS checkout_code, o.activated, o.number_order_type,
+              EXISTS (SELECT 1 FROM refunds rf WHERE rf.payment_id = p.id::text) AS refunded_in_proxycms
+            FROM payments p LEFT JOIN checkouts c ON lower(p.payment_on_type) = 'checkout' AND c.id = ${SAFE_UUID('p.payment_on_id')}
+                            LEFT JOIN onboarding_orders o ON lower(p.payment_on_type) = 'onboardingorder' AND o.id = ${SAFE_UUID('p.payment_on_id')}
+           WHERE (p.customer_mobile_number = ANY($1::text[]) OR p.target_mobile_number = ANY($1::text[])) AND p.created_at >= now() - ($2 || ' days')::interval
+           ORDER BY p.created_at DESC LIMIT 200`, [forms, String(days)]);
+        payments = r.rows.map(x => { const e = eligibilityOf(policy, x.payment_on_type, x.checkout_type); return { ...x, journey: e.journey, journey_label: e.label, eligible: e.eligible, path: e.path }; });
+      }
+    } catch (e) { sourceError = e.message; }
+  }
+  const candIds = new Set(cand.rows.map(x => x.payment_id).filter(Boolean));
+  payments.forEach(x => { x.candidate = candIds.has(x.payment_id); });
+  return { key: isNumber ? last9 : raw, is_number: isNumber, candidates: cand.rows, ledger, payments, policy, source_error: sourceError, days };
+}
+
 function start() {
   if (!db.console || !db.source) return;
   const t = setTimeout(() => { tick(); setInterval(tick, TICK_MS); }, 40e3); if (t.unref) t.unref();
@@ -371,8 +514,9 @@ async function ledgerRows(p, { limit = 5000, reason, status, vendor, q, category
          o.customer_name, o.mobile_number AS order_mobile, o.number_order_type, o.activated
     FROM refunds r ${LEDGER_JOINS(t)}
    WHERE ${w.join(' AND ')} ORDER BY r.created_at DESC LIMIT $${params.length}`, params);
-  let rows = r.rows.map(x => { const reason = x.reason || (x.reason_raw || '—'); const cat = categorize(reason);
-    return { id: x.id, created_at: x.created_at, updated_at: x.updated_at, status: x.status, type: x.refund_type === 0 ? 'reverse' : 'refund', auto: !x.admin_user_id,
+  const policy = await eligibilityPolicy();
+  let rows = r.rows.map(x => { const reason = x.reason || (x.reason_raw || '—'); const cat = categorize(reason); const el = eligibilityOf(policy, x.payment_on_type, x.checkout_type);
+    return { id: x.id, journey: el.journey, journey_label: el.label, eligible: el.eligible, path: el.path, created_at: x.created_at, updated_at: x.updated_at, status: x.status, type: x.refund_type === 0 ? 'reverse' : 'refund', auto: !x.admin_user_id,
       refunded_by: x.admin_email ? String(x.admin_email).split('@')[0] : (x.admin_user_id ? 'admin #' + x.admin_user_id : 'Auto generated'),
       reason, category: cat, category_label: (CATEGORIES[cat] || CATEGORIES.other).label, platform: !!(CATEGORIES[cat] || {}).platform,
       notes: x.notes ? String(x.notes).slice(0, 400) : null, inc: incOf(x.notes), fail_reason: x.fail_reason || null,
@@ -419,7 +563,7 @@ async function overview(q = {}) {
   const B = buckets(p); const S = Object.fromEntries(B.map(k => [k, { bucket: k, detected_n: 0, detected_sar: 0, refunds_n: 0, refunds_sar: 0, success_n: 0, success_sar: 0, failed_n: 0, caught_first_n: 0, platform_n: 0, auto_n: 0 }]));
   for (const c of cand.rows) { const s = S[bucketKey(c.detected_at, p.g)]; if (s) { s.detected_n++; s.detected_sar += Number(c.amount || 0); } }
   const L = led.rows || [];
-  const byReason = {}, byCat = {}, byVendor = {}, byAdmin = {}, byType = { refund: 0, reverse: 0 }, byStatus = {}, byPaidFor = {};
+  const byReason = {}, byCat = {}, byVendor = {}, byAdmin = {}, byType = { refund: 0, reverse: 0 }, byStatus = {}, byPaidFor = {}; const outside = { n: 0, sar: 0, by_journey: {} };
   const leads = [], toRefundH = []; let caughtFirst = 0, platformN = 0, missed = 0, platformSar = 0, caughtSar = 0, successSar = 0, successN = 0, failN = 0, pendingN = 0, autoN = 0, autoSar = 0, autoPlatformN = 0, autoPlatformSar = 0, missedRows = [];
   for (const x of L) {
     const s = S[bucketKey(x.created_at, p.g)];
@@ -433,6 +577,7 @@ async function overview(q = {}) {
     const A = byAdmin[x.refunded_by] = byAdmin[x.refunded_by] || { by: x.refunded_by, n: 0, sar: 0, auto: x.auto }; A.n++; A.sar += amt;
     const PF = byPaidFor[x.paid_for || '—'] = byPaidFor[x.paid_for || '—'] || { paid_for: x.paid_for || '—', n: 0, sar: 0 }; PF.n++; PF.sar += amt;
     byType[x.type] = (byType[x.type] || 0) + 1; byStatus[x.status] = (byStatus[x.status] || 0) + 1;
+    if (x.eligible === false) { outside.n++; outside.sar += amt; const J = outside.by_journey[x.journey] = outside.by_journey[x.journey] || { journey: x.journey, label: x.journey_label, n: 0, sar: 0, path: x.path }; J.n++; J.sar += amt; }
     if (x.status === 'success') { successSar += amt; successN++; } if (x.status === 'fail') failN++; if (x.status === 'pending') pendingN++; if (x.auto) { autoN++; autoSar += amt; if (x.platform) { autoPlatformN++; autoPlatformSar += amt; } }
     if (x.console) { R.caught_n++; if (x.console.caught_first) { R.caught_first_n++; C.caught_first_n++; caughtFirst++; caughtSar += amt; leads.push(x.console.lead_h); toRefundH.push(x.console.lead_h); } }
     /* the impact population = platform-caused refunds POSTED BY AN ADMIN: the ones that travel through the approval mails.
@@ -451,7 +596,9 @@ async function overview(q = {}) {
       auto_n: autoN, auto_sar: autoSar, auto_platform_n: autoPlatformN, auto_platform_sar: autoPlatformSar },
     running, running_since: runningSince, process_started_at: PROCESS_STARTED_AT, source_indexes: idx,
     handling: H, detected_in_period: cand.rows.length, detected_sar_in_period: cand.rows.reduce((a, x) => a + Number(x.amount || 0), 0),
-    detectors: detectorHealth, runs: runs.rows, last_run: runs.rows[0] || lastRun, lookback_days: LOOKBACK_DAYS, tick_min: TICK_MS / 60e3, sim_checkout_types: SIM_CHECKOUT_TYPES
+    detectors: detectorHealth, runs: runs.rows, last_run: runs.rows[0] || lastRun, lookback_days: LOOKBACK_DAYS, tick_min: TICK_MS / 60e3, sim_checkout_types: SIM_CHECKOUT_TYPES,
+    eligibility: { policy: await eligibilityPolicy(), journeys: JOURNEYS, not_eligible: NOT_ELIGIBLE, outside: { ...outside, by_journey: Object.values(outside.by_journey).sort((a, b) => b.n - a.n) },
+      policy_dismissed: (await db.console.query(`SELECT count(*)::int n, coalesce(sum(amount),0)::float sar FROM refund_candidates WHERE status = 'dismissed' AND updated_by = 'policy'`).catch(() => ({ rows: [{ n: 0, sar: 0 }] }))).rows[0] }
   };
 }
 async function list({ status = 'open', kind, q, limit = 200, from, to, days, verdict, batch } = {}) {
@@ -478,9 +625,9 @@ async function list({ status = 'open', kind, q, limit = 200, from, to, days, ver
 async function forCustomer({ mobiles = [], orderIds = [] } = {}) {
   if (!db.console) return [];
   try { await ensure();
-    const r = await db.console.query(`SELECT id, kind, mobile, order_id, payment_id, amount::float AS amount, event_at, detected_at, status, inc, evidence, ledger FROM refund_candidates
-        WHERE (mobile = ANY($1::text[]) OR order_id = ANY($2::text[])) AND detected_at >= now() - interval '120 days' ORDER BY event_at DESC LIMIT 20`, [mobiles.filter(Boolean), orderIds.filter(Boolean)]);
-    return r.rows.map(x => ({ ...x, label: (KINDS[x.kind] || {}).label || x.kind }));
+    const r = await db.console.query(`SELECT id, kind, mobile, order_id, payment_id, amount::float AS amount, event_at, detected_at, status, inc, note, evidence, ledger FROM refund_candidates
+        WHERE (mobile = ANY($1::text[]) OR order_id = ANY($2::text[])) AND detected_at >= now() - interval '730 days' ORDER BY event_at DESC LIMIT 20`, [mobiles.filter(Boolean), orderIds.filter(Boolean)]);
+    return r.rows.map(x => ({ ...x, label: (KINDS[x.kind] || {}).label || x.kind, note: x.note }));
   } catch (_) { return []; }
 }
 async function setStatus(id, { status, inc, note }, actor) {
@@ -618,6 +765,20 @@ function mount(app, { requireView, audit, roles }) {
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.send(xlsx(d, req.actor || 'console', !unmask));
     } catch (e) { res.status(500).json({ error: e.message }); } });
+  /* TKT-000071: one number → everything, whatever the period or status; TKT-000072: the eligibility policy */
+  app.get('/api/refunds/lookup', gate, async (req, res) => { try {
+      const out = await lookup(req.query.q, { days: Math.min(730, Number(req.query.days) || 365) });
+      if (mayUnmask(req) && audit) audit(req, 'PII_UNMASK', '/api/refunds/lookup', { key: out.key ? '…' + String(out.key).slice(-3) : null }).catch?.(() => {});
+      res.json({ ...out, candidates: mask(req, out.candidates), ledger: mask(req, out.ledger), payments: mask(req, out.payments), kinds: KINDS });
+    } catch (e) { res.status(500).json({ error: e.message }); } });
+  app.get('/api/refunds/eligibility', gate, async (req, res) => { try { res.json({ policy: await eligibilityPolicy(true), journeys: JOURNEYS, not_eligible: NOT_ELIGIBLE }); } catch (e) { res.status(500).json({ error: e.message }); } });
+  app.put('/api/refunds/eligibility', gate, async (req, res) => { try {
+      if (!(req.caps && req.caps.manageSync)) return res.status(403).json({ error: `role ${req.roleName} lacks manageSync` });
+      const pol = await setEligibilityPolicy(req.body || {}, req.actor);
+      if (audit) audit(req, 'refund.eligibility', null, pol).catch?.(() => {});
+      let swept = 0; if (pol.sweep !== false) { try { swept = await policySweep(); } catch (_) {} }
+      res.json({ policy: pol, swept });
+    } catch (e) { res.status(400).json({ error: e.message }); } });
   app.post('/api/refunds/:id/status', gate, async (req, res) => { try {
       const row = await setStatus(Number(req.params.id), req.body || {}, req.actor);
       if (audit) audit(req, 'REFUND_CANDIDATE_STATUS', String(row.id), { status: row.status, inc: row.inc, kind: row.kind }).catch?.(() => {});
@@ -628,4 +789,4 @@ function mount(app, { requireView, audit, roles }) {
       await tick(); res.json(lastRun || { ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); } });
 }
-module.exports = { KINDS, CATEGORIES, DETECTORS, categorize, ensure, sourceIndexes, tick, start, overview, list, ledgerRows, forCustomer, setStatus, periodOf, exportData, xlsx, pdf, mount, LOOKBACK_DAYS };
+module.exports = { KINDS, CATEGORIES, DETECTORS, JOURNEYS, NOT_ELIGIBLE, categorize, eligibilityPolicy, eligibilityOf, journeyOf, lookup, policySweep, ensure, sourceIndexes, tick, start, overview, list, ledgerRows, forCustomer, setStatus, periodOf, exportData, xlsx, pdf, mount, LOOKBACK_DAYS };
