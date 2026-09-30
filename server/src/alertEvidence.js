@@ -95,6 +95,48 @@ async function mobileApi(a, rule, { limit }) {
     cols: ['When (KSA)', 'Endpoint', 'Code', 'Message', 'Transaction', 'Host'] };
 }
 
+/* INFRASTRUCTURE (30 Sep 2026): the hosts behind an infra_* / fixed_infra_* incident — the exact hosts the metric counted at
+ * the last tick, with what the L2 needs without opening another page: IP · hostname · OS · CPU (model, count, %) · RAM (GB,
+ * %) · disk (worst mount, %) · load · ports down · the failing probes with their thresholds. Same predicates as alertCases. */
+const INFRA_NUM = {
+  hosts_down: `h.reachable = false`,
+  ports_down: `EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(h.last_metrics->'ports','[]'::jsonb)) p WHERE (p->>'ok') = 'false')`,
+  hosts_crit: `h.status = 'crit'`,
+  disk_pct_max: `coalesce((h.last_metrics->>'disk_pct')::float, 0) >= 80`,
+  mem_pct_max: `coalesce((h.last_metrics->>'mem_pct')::float, 0) >= 85`,
+  load_per_core_max: `coalesce((h.last_metrics->>'nproc')::float, 0) > 0 AND coalesce((h.last_metrics->>'load15')::float, 0) / (h.last_metrics->>'nproc')::float >= 1.5`,
+};
+const isInfraKey = k => /^(fixed_)?infra_/.test(String(k || ''));
+async function infraHosts(a, { limit }) {
+  const key = String(a.rule_key || a.metric_key || ''); const fixed = /^fixed_/.test(key);
+  const kind = Object.keys(INFRA_NUM).find(k => key.includes('infra_' + k)) || 'hosts_crit';
+  const w = windowOf(a);
+  const r = await db.console.query(
+    `SELECT h.id, h.label, h.ip, h.ips, h.segment, h.role, h.status, h.reachable, coalesce(h.status_at, h.updated_at) AS status_at, h.last_seen, h.diagram, h.node_id, h.owner_team,
+            h.inventory->>'hostname' AS hostname, h.inventory->>'os' AS os, h.inventory->>'kernel' AS kernel, h.inventory->>'virt' AS virt, h.inventory->>'cpu_model' AS cpu_model,
+            coalesce((h.inventory->>'cpus')::int, (h.last_metrics->>'nproc')::int) AS cpus, (h.inventory->>'ram_mb')::int AS ram_mb, h.inventory->>'boot_at' AS boot_at,
+            (h.last_metrics->>'cpu_pct')::float AS cpu_pct, (h.last_metrics->>'mem_pct')::float AS mem_pct, (h.last_metrics->>'swap_pct')::float AS swap_pct,
+            (h.last_metrics->>'disk_pct')::float AS disk_pct, h.last_metrics->'disks' AS disks, (h.last_metrics->>'load1')::float AS load1, (h.last_metrics->>'load15')::float AS load15,
+            (h.last_metrics->>'conns')::int AS conns, h.last_metrics->'sources' AS sources, h.last_metrics->'ports' AS ports, h.last_metrics->>'at' AS metrics_at,
+            (SELECT json_agg(json_build_object('probe', p.probe, 'level', p.level, 'value', p.value, 'threshold', p.threshold, 'note', p.note) ORDER BY CASE p.level WHEN 'CRIT' THEN 0 WHEN 'WARN' THEN 1 ELSE 2 END, p.probe)
+               FROM infra_probes p WHERE p.host_id = h.id AND p.level IN ('CRIT','WARN') AND p.at >= (SELECT max(at) FROM infra_probes WHERE host_id = h.id) - interval '1 second') AS probes
+       FROM infra_hosts h
+      WHERE h.enabled AND h.segment = ANY($1::text[]) AND (${INFRA_NUM[kind]})
+      ORDER BY CASE h.status WHEN 'crit' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END, h.label LIMIT $2`, [fixed ? ['fixed'] : ['mobile', 'shared'], limit]).catch(e => ({ rows: [], error: e.message }));
+  const rows = (r.rows || []).map(h => {
+    const disks = Array.isArray(h.disks) ? h.disks : []; const worst = disks.length ? disks.reduce((a, d) => (d.pct > (a ? a.pct : -1) ? d : a), null) : null;
+    const gb = kb => kb == null ? null : Math.round(kb / 1048576 * 10) / 10;
+    const portsDown = (Array.isArray(h.ports) ? h.ports : []).filter(p => p && p.ok === false).map(p => p.port);
+    const probes = Array.isArray(h.probes) ? h.probes : [];
+    const issue = h.reachable === false ? 'host unreachable — no source answered (ssh, service ports, exporter)' : probes.length ? probes.map(p => `${p.probe} ${p.level}${p.value != null ? ' · ' + p.value : ''}${p.threshold ? ' (threshold ' + p.threshold + ')' : ''}`).join(' · ') : (h.status || 'unknown');
+    return { ...h, disks, disk_worst: worst ? { mount: worst.mount, pct: worst.pct, size_gb: gb(worst.size_kb), used_gb: gb(worst.used_kb) } : null, ports_down: portsDown, probes, issue,
+      ram_gb: h.ram_mb != null ? Math.round(h.ram_mb / 1024 * 10) / 10 : null, ram_used_gb: h.ram_mb != null && h.mem_pct != null ? Math.round(h.ram_mb * h.mem_pct / 1024 / 100 * 10) / 10 : null };
+  });
+  const TITLE = { hosts_down: 'hosts that do not answer any probe', ports_down: 'hosts with a service port closed', hosts_crit: 'hosts in CRIT', disk_pct_max: 'hosts with a filesystem ≥ 80 %', mem_pct_max: 'hosts with memory ≥ 85 %', load_per_core_max: 'hosts with load15 ≥ 1.5 per core' };
+  return { kind: 'infra', title: `${TITLE[kind]} · ${fixed ? 'Fixed' : 'Mobile / shared'} · last tick`, window: w, rows, error: r.error, source: 'infra_hosts', segment: fixed ? 'fixed' : 'mobile',
+    cols: ['Host · IP', 'Issue', 'CPU', 'RAM', 'Disk', 'Load', 'Ports', 'Since'] };
+}
+
 /* the entry point: evidence for one incident row */
 async function forAlert(a, { limit = 25, unmask = false } = {}) {
   const lim = Math.min(100, Math.max(5, Number(limit) || 25));
@@ -102,6 +144,7 @@ async function forAlert(a, { limit = 25, unmask = false } = {}) {
   if (String(a.rule_key || '').includes('manual_ticket')) return { kind: 'none', rows: [], note: 'Manual ticket — the evidence is what the reporter wrote in the message and the discussion.' };
   if (a.rule_key === 'refund_batch' || a.rule_key === 'fixed_refund_batch') return { kind: 'none', rows: [], note: 'Internal ticket opened by the refund desk (Agent 2) for an approval batch — the cases, their evidence and the register state are on Refund exposure; the ticket resolves when every case is closed. Who approves and who executes: Teams management › Refund desks.' };
   try {
+    if (isInfraKey(a.rule_key) || isInfraKey(a.metric_key)) return await infraHosts(a, { limit: lim });
     if (isAppLog(a.rule_key)) return await fixedAppLog(a, { limit: lim });
     if (isFixedKey(a.rule_key) || a.segment === 'fixed') {
       const dim = (rule && rule.dim) || {}; const channel = ['sda', 'epurchase', 'salamhome'].includes(dim.channel) ? dim.channel : null;
@@ -124,4 +167,4 @@ async function attemptCalls(attemptId, { channel } = {}) {
   return { attempt: id, calls: [], note: 'no api_calls rows for this attempt (purged or not captured)' };
 }
 
-module.exports = { forAlert, attemptCalls, windowOf, attemptPredicate, maskRow };
+module.exports = { forAlert, attemptCalls, windowOf, attemptPredicate, maskRow, infraHosts, isInfraKey };

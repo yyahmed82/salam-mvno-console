@@ -1,3 +1,7 @@
+## 2.0.0-alpha.125 — 2026-09-30
+
+- Alerts: infrastructure incidents (`infra_*` and `fixed_infra_*`) now carry the hosts behind the number in the incident drawer › Evidence and in the notification mail — per host: label, IP, hostname, OS, role, the failing probes with their thresholds (unreachable / port closed / disk / memory / load), CPU % and count with the model, RAM used / total in GB, worst filesystem with used / size, load15 per core, ports down, connections, since / last seen / up since, and a link to the host page. Same predicates as the cases export, both segments.
+
 ## 2.0.0-alpha.124 — 2026-09-30
 
 - Infrastructure: passerelle hop now uses an explicit `ProxyCommand` carrying the console key, port and BatchMode; `-J` did not pass `-i` to the jump host, so any host behind a passerelle prompted for a password and timed out.

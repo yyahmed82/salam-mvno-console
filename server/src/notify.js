@@ -198,6 +198,13 @@ function evidenceHtml(ev) {
     rows = ev.rows.map(r => [ksa(r.started_at).slice(5), [r.order_number, r.customer_id || r.msisdn].filter(Boolean).map(esc).join(' · ') || '—', [r.plan || r.workflow, r.step_reached].filter(Boolean).map(esc).join(' · ') || '—',
       r.call_endpoint ? `<span style="font-family:monospace;font-size:11px">${ep(r.call_endpoint)}</span> ${esc(r.call_status || '')}${r.call_error_msg ? ' · ' + esc(String(r.call_error_msg).slice(0, 50)) : ''}` : '—',
       [r.outcome, r.nafath_outcome && r.nafath_outcome !== 'COMPLETED' ? 'Nafath ' + r.nafath_outcome : null, r.last_error_category].filter(Boolean).map(esc).join(' · ') || '—', [r.dealer, r.channel].filter(Boolean).map(esc).join(' · ') || '—']);
+  } else if (ev.kind === 'infra') {
+    head = ['Host · IP', 'Issue', 'CPU', 'RAM', 'Disk', 'Load', 'Ports down'];
+    const pct = v => v == null ? '—' : `<b style="color:${v >= 90 ? '#dc2626' : v >= 80 ? '#d97706' : '#334155'}">${esc(v)} %</b>`;
+    rows = ev.rows.map(r => [`<b>${esc(r.label || r.hostname || r.ip)}</b><br><span style="font-family:monospace;font-size:11px">${esc(r.ip)}</span>${r.os ? `<br><span style="color:#64748b">${esc(String(r.os).slice(0, 30))}</span>` : ''}`,
+      `<b style="color:${r.reachable === false || r.status === 'crit' ? '#dc2626' : '#d97706'}">${esc(String(r.status || '').toUpperCase())}</b> · ${esc(String(r.issue || '').slice(0, 140))}`,
+      `${pct(r.cpu_pct)}${r.cpus != null ? `<br><span style="color:#64748b">${esc(r.cpus)} cpu</span>` : ''}`, `${pct(r.mem_pct)}${r.ram_gb != null ? `<br><span style="color:#64748b">${esc(r.ram_gb)} GB</span>` : ''}`,
+      `${pct(r.disk_pct)}${r.disk_worst ? `<br><span style="color:#64748b">${esc(r.disk_worst.mount)}</span>` : ''}`, r.load15 != null ? esc(r.load15) : '—', r.ports_down && r.ports_down.length ? `<b style="color:#dc2626">${r.ports_down.map(esc).join(', ')}</b>` : '—']);
   } else if (ev.kind === 'applog') {
     head = ['When', 'Endpoint', 'Status', 'Reason', 'Message', 'Request · state'];
     rows = ev.rows.map(r => [ksa(r.ts).slice(5), `<span style="font-family:monospace;font-size:11px">${ep(r.path)}</span>`, esc(r.status_code || '—'), esc(r.reason || r.reason_class || '—'), esc(String(r.message || '').slice(0, 60)) || '—', [r.request_id, r.state_id].filter(Boolean).map(x => `<span style="font-family:monospace;font-size:10.5px">${esc(String(x).slice(0, 18))}</span>`).join(' · ') || '—']);
@@ -208,7 +215,7 @@ function evidenceHtml(ev) {
   return `<div style="margin:6px 0 4px 18px;padding:6px 10px;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px">
       <div style="font-size:10.5px;font-weight:800;letter-spacing:.06em;color:#64748b;text-transform:uppercase;margin-bottom:3px">Affected · ${esc(ev.title || 'evidence')} · top ${ev.rows.length}${ev.source ? ' · ' + esc(ev.source) : ''}</div>
       <table style="border-collapse:collapse;width:100%"><tr>${head.map(h => `<th style="${th}">${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td style="${td}">${c}</td>`).join('')}</tr>`).join('')}</table>
-      <div style="font-size:10.5px;color:#94a3b8;margin-top:3px">identifiers cut to last digits — the full list, the customer numbers (audited unmask) and the request / response are in the incident drawer › Evidence</div></div>`;
+      <div style="font-size:10.5px;color:#94a3b8;margin-top:3px">${ev.kind === 'infra' ? 'physical details from the last inventory, live figures from the last probe tick — the full host report is in the incident drawer › Evidence and on Infrastructure › Hosts' : 'identifiers cut to last digits — the full list, the customer numbers (audited unmask) and the request / response are in the incident drawer › Evidence'}</div></div>`;
 }
 function buildDigest(simNow, evals, reportNames = [], idByKey = {}, seg, evidence = {}) {
   const SEG = require('./segment');
