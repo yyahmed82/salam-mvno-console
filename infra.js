@@ -49,11 +49,12 @@
     let v=document.getElementById("view-infra"); if(!v){ v=document.createElement("section"); v.id="view-infra"; v.className="view"; document.querySelector("main")?.appendChild(v); }
     v.innerHTML=`<div class="if-wrap">
       <div class="if-head"><div><h2>🖧 Infrastructure</h2><div class="sub">Every server and node of the two architecture diagrams — physical inventory, a health report per host in the same shape as the healthcheck mail, infrastructure alerts separated Mobile / Fixed, and the live map: the diagram cards painted with status, cpu · memory · disk and network throughput, the edges with the traffic observed between the hosts behind them. Read-only probes from the console box; no agent installed anywhere.</div></div>
-        <div class="sp"><span class="if-live" id="ifLive"><i></i> loading</span><button class="if-btn" id="ifRun" title="probe every host now (the scheduler does it every minute)">↻ Probe now</button><button class="if-btn" id="ifInv" title="re-read the inventory of every reachable host (daily otherwise)">⟳ Inventory</button></div></div>
+        <div class="sp"><span class="if-live" id="ifLive"><i></i> loading</span><button class="if-btn" id="ifDisc" title="try the console's read-only ssh key on every host not yet flagged; the ones that answer get inventory and metrics from the next tick">⌕ Discover SSH access</button><button class="if-btn" id="ifRun" title="probe every host now (the scheduler does it every minute)">↻ Probe now</button><button class="if-btn" id="ifInv" title="re-read the inventory of every reachable host (daily otherwise)">⟳ Inventory</button></div></div>
       <div class="if-tiles" id="ifTiles"></div>
       <div class="if-tabs" id="ifTabs"></div>
       <div id="ifPanel"></div></div>`;
     v.querySelector("#ifRun").addEventListener("click",()=>run(false)); v.querySelector("#ifInv").addEventListener("click",()=>run(true));
+    v.querySelector("#ifDisc").addEventListener("click",async()=>{ const b=v.querySelector("#ifDisc"); b.disabled=true; b.textContent="… trying every host"; try{ const r=await api("/api/infra/discover",{method:"POST",body:"{}"}); if(r.reason) toast(r.reason); else toast(`ssh: ${r.found} of ${r.tried} host(s) answer · ${r.newly} newly flagged${r.refused.length?" · refused: "+r.refused.slice(0,3).map(x=>x.ip).join(", ")+(r.refused.length>3?" …":""):""}`); if(r.newly) await run(true); else await load(); }catch(e){ toast(e.message); } finally{ b.disabled=false; b.textContent="⌕ Discover SSH access"; } });
     v.addEventListener("click",e=>{ const t=e.target.closest("[data-act]"); if(!t) return; const a=t.dataset.act;
       if(a==="tab"){ S.tab=t.dataset.tab; renderTabs(); renderPanel(); setHash(); }
       else if(a==="host"){ openHost(t.dataset.host); }

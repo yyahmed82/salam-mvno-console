@@ -1,3 +1,8 @@
+## 2.0.0-alpha.121 — 30 Sep 2026 — Infrastructure: SSH discovery — every host the console key already opens is found and flagged by itself (full deploy)
+
+- 152 already reaches every server with the log-collector key. Instead of flagging 40 hosts by hand, `discover()` tries `ssh … echo ok` (9 s, 8 at a time, read-only) on every enabled host not yet flagged, flags the ones that answer, logs a `discover` change per host, and the same inventory cycle reads them. Runs with every inventory cycle (daily) and on demand: **Discover SSH access** button in the section header (`POST /api/infra/discover`, manageSync); the toast names the hosts that refused.
+- Instana stays optional (licence not available today); with ssh on every host the map edges, inventory and metrics are complete without it.
+
 ## 2.0.0-alpha.120 — 30 Sep 2026 — INFRASTRUCTURE section (CIO requirement): every server of the two HLDs, physical inventory, per-host health report, infra alerts Mobile / Fixed, the live map (full deploy)
 
 - **Why**: the CIO asked for one place with every server / node — resources, CPUs, RAM, disks, NICs — the same healthcheck report per server, infrastructure alerts separated Mobile / Fixed, and the architecture diagrams made live with connectivity and traffic. Plan: `claude/INFRASTRUCTURE-SECTION-PLAN.md`.

@@ -204,6 +204,22 @@ async function instanaHosts() {
   return out;
 }
 
+/* ------------------------------------------------------------------------------------------------------ discovery
+ * "We have access from 152 to all servers": try the console key on every enabled host that is not flagged ssh yet —
+ * `ssh -o BatchMode=yes host true` (5 s) — and flag the ones that answer. Runs with every inventory cycle and on demand
+ * (Sources › Discover SSH access). A host that refuses stays as it is; nothing else is attempted. */
+async function discover({ all = false } = {}) {
+  const c = CFG(); if (!(c.sshUser || c.sshKey) || !C()) return { tried: 0, found: 0, hosts: [], reason: 'ssh not configured (INFRA_SSH_USER / INFRA_SSH_KEY or API_LOG_USER / API_LOG_KEY)' };
+  const self = firstLocalIp();
+  const hosts = (await C().query(`SELECT id, ip, label, ssh FROM infra_hosts WHERE enabled AND source <> 'local' AND ip <> $1 ${all ? '' : 'AND NOT ssh'} ORDER BY id`, [self || ''])).rows;
+  const found = [], refused = []; let idx = 0;
+  const worker = async () => { while (idx < hosts.length) { const h = hosts[idx++]; try { const out = await sshExec(h.ip, 'echo ok', 9000); if (/ok/.test(out)) { found.push(h); if (!h.ssh) await C().query(`UPDATE infra_hosts SET ssh = true, updated_at = now() WHERE id = $1`, [h.id]); } else refused.push({ ip: h.ip, why: 'no answer' }); } catch (e) { refused.push({ ip: h.ip, why: e.message.slice(0, 120) }); } } };
+  await Promise.all(Array.from({ length: Math.min(8, hosts.length) }, worker));
+  const newly = found.filter(h => !h.ssh);
+  if (newly.length) { for (const h of newly) await C().query(`INSERT INTO infra_host_changes (host_id, kind, field, before, after, note) VALUES ($1,'discover','ssh','false','true','the console key answered — inventory and metrics from the next tick')`, [h.id]); log(`discover: ${newly.length} host(s) now reachable by ssh: ${newly.map(h => h.ip).join(', ')}`); }
+  return { tried: hosts.length, found: found.length, newly: newly.length, hosts: found.map(h => ({ id: h.id, ip: h.ip, label: h.label })), refused };
+}
+
 /* ------------------------------------------------------------------------------------------------------ probes (the healthcheck shape) */
 function probesFor(host, m, inv, ports, reach) {
   const th = CFG().th; const P = []; const add = (probe, level, value, threshold, note) => P.push({ probe, level, value: value == null ? null : String(value), threshold: threshold == null ? null : String(threshold), note: note || null });
@@ -233,8 +249,9 @@ async function tick({ inventory = false, force = false } = {}) {
   const errors = {}; const bySource = { local: 0, ssh: 0, ports: 0, node_exporter: 0, instana: 0 }; let reachableN = 0;
   try {
     await ensureSchema();
-    const hosts = (await C().query(`SELECT * FROM infra_hosts WHERE enabled ORDER BY id`)).rows;
     const doInventory = inventory || force || Date.now() - lastInventoryAt > c.inventoryHours * 3600e3;
+    if (doInventory) { try { const d = await discover(); if (d.tried) log(`discover: tried ${d.tried} host(s), ${d.found} answer by ssh`); } catch (e) { log('discover', e.message); } }
+    const hosts = (await C().query(`SELECT * FROM infra_hosts WHERE enabled ORDER BY id`)).rows;
     const self = firstLocalIp();
     const ipToHost = new Map(); for (const h of hosts) for (const ip of h.ips || [h.ip]) ipToHost.set(ip, h.id);
     /* instana, once per inventory cycle: inventory for every host it knows (and new hosts it sees that the HLD does not) */
@@ -405,6 +422,7 @@ function mount(app, { requireView, requireCap, audit }) {
     } catch (e) { res.status(400).json({ error: e.message }); } });
   app.get('/api/infra/changes', gate, async (req, res) => { try { res.json({ rows: (await C().query(`SELECT c.*, h.label, h.ip, h.segment FROM infra_host_changes c JOIN infra_hosts h ON h.id = c.host_id WHERE c.at >= now() - ($1||' days')::interval ORDER BY c.at DESC LIMIT 500`, [String(Math.min(90, Number(req.query.days) || 7))])).rows }); } catch (e) { res.status(500).json({ error: e.message }); } });
   app.post('/api/infra/run', gate, manage, async (req, res) => { try { if (busy) return res.json({ running: true }); const out = await tick({ inventory: !!(req.body || {}).inventory, force: !!(req.body || {}).inventory }); if (audit) audit(req, 'infra.run', null, { inventory: !!(req.body || {}).inventory }).catch?.(() => {}); res.json(out); } catch (e) { res.status(500).json({ error: e.message }); } });
+  app.post('/api/infra/discover', gate, manage, async (req, res) => { try { const out = await discover({ all: !!(req.body || {}).all }); if (audit) audit(req, 'infra.discover', null, { tried: out.tried, found: out.found, newly: out.newly }).catch?.(() => {}); res.json(out); } catch (e) { res.status(500).json({ error: e.message }); } });
   app.post('/api/infra/seed', gate, manage, async (req, res) => { try { await ensureSchema(); res.json(await seedFromDiagrams()); } catch (e) { res.status(500).json({ error: e.message }); } });
 }
 function start() {
@@ -412,4 +430,4 @@ function start() {
   setTimeout(async () => { try { await ensureSchema(); await seedFromDiagrams(); await tick({ inventory: true }); } catch (e) { log('boot', e.message); } setInterval(() => tick().catch(() => {}), c.intervalSec * 1000); }, 70000);
   log(`armed: every ${c.intervalSec} s · inventory every ${c.inventoryHours} h · ssh ${c.sshUser || c.sshKey ? 'on' : 'off'} · instana ${c.instanaUrl && c.instanaToken ? 'on' : 'off'}`);
 }
-module.exports = { ensureSchema, seedFromDiagrams, tick, overview, hostDetail, mapData, metric, cases, mount, start, ipsOf, parseMetrics, parseInventory, DIAGRAMS };
+module.exports = { ensureSchema, seedFromDiagrams, discover, tick, overview, hostDetail, mapData, metric, cases, mount, start, ipsOf, parseMetrics, parseInventory, DIAGRAMS };
