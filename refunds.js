@@ -106,6 +106,8 @@
   function teamChip(r){ return r.team?`<span class="rf-team" title="responder team">${esc(r.team)}</span>`:""; }
   function consoleTag(x){ const c=x.console; if(c) return `<span class="rf-st ${c.caught_first?"first":"later"}" title="${esc(c.label)} · detected ${ksa(c.detected_at)}">${c.caught_first?"✓ flagged first · "+hrs(c.lead_h)+" ahead":"flagged later"}</span><div class="rf-note">${esc(c.label)} · ${esc(STATUS_L[c.status]||c.status)}</div>`; if(x.auto) return `<span class="rf-st na" title="reversed by the app itself — no admin, no mail">auto-refund</span>`; return x.platform?`<span class="rf-st missed" title="a platform-caused refund posted by an admin that no detector saw">missed</span>`:`<span class="rf-st na">n/a</span>`; }
   function setHash(){ if(!window.setConsoleHash) return; const p=S.period; const q=[`tab=${S.tab}`,`from=${p.from}`,`to=${p.to}`,`g=${p.g}`]; if(S.kind) q.push("kind="+S.kind); if(S.q) q.push("q="+encodeURIComponent(S.q)); if(S.led.reason) q.push("reason="+encodeURIComponent(S.led.reason)); if(S.batch) q.push("batch="+S.batch); if(S.verdict) q.push("verdict="+S.verdict); try{ window.setConsoleHash("refunds?"+q.join("&")); }catch(_){} }
+  function resetFilters(){ S.q=""; S.kind=""; S.status="open"; S.verdict=""; S.batch=""; S.openId=""; S.openPayment=""; S.lookup=null; S.hist.status="all";
+    S.led.reason=""; S.led.category=""; S.led.status=""; S.led.vendor=""; S.led.q=""; S.led.missed=false; S.led.outside=false; S.led.loaded=false; periodPreset("30"); closeDrawer(); setHash(); load(); toast("Filters reset — last 30 days, open cases"); }
   function periodPreset(k){ const t=today(); const p=S.period; p.preset=k;
     if(k==="1"){ p.from=t; p.to=t; p.g="day"; } else if(k==="7"){ p.from=addD(t,-6); p.to=t; p.g="day"; } else if(k==="30"){ p.from=addD(t,-29); p.to=t; p.g="day"; } else if(k==="90"){ p.from=addD(t,-89); p.to=t; p.g="week"; }
     else if(k==="month"){ p.from=t.slice(0,8)+"01"; p.to=t; p.g="day"; } else if(k==="lastmonth"){ const f=addD(t.slice(0,8)+"01",-1); p.from=f.slice(0,8)+"01"; p.to=f; p.g="day"; } else if(k==="year"){ p.from=t.slice(0,5)+"01-01"; p.to=t; p.g="month"; } }
@@ -122,7 +124,7 @@
           <div class="rf-menu" id="rfExpMenu" style="display:none"><button class="rf-btn" id="rfExp">⤓ Export ▾</button><div class="dd"><button data-fmt="xlsx">Excel workbook (.xlsx)<small>summary · candidates · proxycms refunds · by reason · RCA · by period</small></button><button data-fmt="pdf">PDF report<small>KPIs, root causes, per-period table, open cases</small></button></div></div>
           <button class="rf-btn" id="rfUnmask" style="display:none"></button></div></div>
       <div class="rf-period"><span class="lb">Period · KSA days</span><span id="rfPresets"></span>
-        <input type="date" id="rfFrom"><span style="color:var(--muted);font-size:12px">→</span><input type="date" id="rfTo"><button class="rf-btn p" id="rfApply">Apply</button>
+        <input type="date" id="rfFrom"><span style="color:var(--muted);font-size:12px">→</span><input type="date" id="rfTo"><button class="rf-btn p" id="rfApply">Apply</button><button class="rf-btn" id="rfReset" title="Back to the default view: last 30 days, open cases, no search, no kind, no verdict, no batch, register filters cleared">Reset filters</button>
         <div class="sp"><span class="lb">Buckets</span><div class="rf-seg" id="rfG"><button data-g="day">Daily</button><button data-g="week">Weekly</button><button data-g="month">Monthly</button></div></div></div>
       <div class="rf-tiles" id="rfTiles"></div>
       <div class="rf-card rf-chart" id="rfTrend"></div>
@@ -134,6 +136,7 @@
     try{ v.querySelector("#rfFlow").href=new URL("refund-flow.html", location.href.split("#")[0]).href; }catch(_){}
     v.querySelector("#rfRun").addEventListener("click",async()=>{ const b=v.querySelector("#rfRun"); b.disabled=true; b.textContent="running…"; try{ const r=await api("/api/refunds/run",{method:"POST",body:"{}"}); if(r.running){ toast(`A scan is already running since ${ksa(r.since)} — the page refreshes when it finishes`); setTimeout(load,30000); } else { const errs=Object.entries(r.errors||{}).filter(([,e])=>e); if(errs.length) toast(`detectors with errors: ${errs.map(([k])=>k).join(", ")} — see the Detectors tab`); } await load(); }catch(e){ toast(e.message);} b.disabled=false; b.textContent="↻ Run detectors now"; });
     v.querySelector("#rfApply").addEventListener("click",()=>{ const f=v.querySelector("#rfFrom").value, t=v.querySelector("#rfTo").value; if(!f||!t) return; S.period.from=f<=t?f:t; S.period.to=f<=t?t:f; S.period.preset=""; const d=(new Date(S.period.to)-new Date(S.period.from))/864e5; S.period.g=d>120?"month":d>45?"week":"day"; setHash(); load(); });
+    v.querySelector("#rfReset").addEventListener("click",()=>resetFilters());
     v.querySelector("#rfG").addEventListener("click",e=>{ const b=e.target.closest("[data-g]"); if(!b) return; S.period.g=b.dataset.g; setHash(); load(); });
     const um=v.querySelector("#rfUnmask"); if(canUnmask()){ um.style.display=""; um.addEventListener("click",()=>{ S.unmask=!S.unmask; S.led.loaded=false; load(); }); }
     const em=v.querySelector("#rfExpMenu"); if(canExport()){ em.style.display=""; v.querySelector("#rfExp").addEventListener("click",e=>{ e.stopPropagation(); em.classList.toggle("on"); }); em.querySelector(".dd").addEventListener("click",e=>{ const b=e.target.closest("[data-fmt]"); if(!b) return; em.classList.remove("on"); exportFile(b.dataset.fmt,b); }); document.addEventListener("click",()=>em.classList.remove("on")); }
@@ -164,7 +167,10 @@
     });
     v.addEventListener("change",e=>{ const el=e.target; if(el.id==="rfVerdict"){ S.verdict=el.value; loadRows(); return; } if(!el.dataset||!el.dataset.lf) return; S.led[el.dataset.lf]=el.value; S.led.missed=false; loadLedger(); });
     document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&document.getElementById("rfDrawer")?.classList.contains("on")) closeDrawer(); });
-    v.addEventListener("keydown",e=>{ if(e.key!=="Enter") return; const el=e.target; if(el.id==="rfQ"){ S.q=el.value.trim(); loadRows(); setHash(); } if(el.id==="rfLQ"){ S.led.q=el.value.trim(); loadLedger(); } });
+    let _qt=null; v.addEventListener("input",e=>{ const el=e.target; if(!el||el.id!=="rfQ") return; clearTimeout(_qt); const val=el.value.trim();
+      if(!val){ if(S.q){ S.q=""; S.lookup=null; S.openId=""; S.openPayment=""; renderPanel(); loadRows(); setHash(); } return; }
+      _qt=setTimeout(()=>{ if(val.length<3||val===S.q) return; S.q=val; loadRows(); setHash(); },450); });
+    v.addEventListener("keydown",e=>{ if(e.key!=="Enter") return; const el=e.target; if(el.id==="rfQ"){ clearTimeout(_qt); S.q=el.value.trim(); if(!S.q){ S.lookup=null; S.openId=""; S.openPayment=""; renderPanel(); } loadRows(); setHash(); } if(el.id==="rfLQ"){ S.led.q=el.value.trim(); loadLedger(); } });
   }
   function toast(m){ if(window.toast) return window.toast(m); const t=document.createElement("div"); t.textContent=m; t.style.cssText="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--tip-bg);color:var(--tip-fg);padding:10px 16px;border-radius:12px;font-size:12.5px;z-index:99;max-width:90vw;box-shadow:var(--shadow-lg)"; document.body.appendChild(t); setTimeout(()=>t.remove(),4200); }
   async function exportFile(fmt,btn){ const p=S.period; const url=`/api/refunds/export?format=${fmt}&from=${p.from}&to=${p.to}&g=${p.g}${S.kind?"&kind="+S.kind:""}${S.unmask?"&unmask=1":""}`;
@@ -246,6 +252,7 @@
    * with its journey and eligibility. Deep links: #refunds?q=<mobile>&id=<candidate> opens the case; &payment=<id> the register row. */
   async function loadLookup(){ const el=document.getElementById("rfTable"); if(!el) return; el.innerHTML='<div class="rf-empty">looking up every period and every status…</div>';
     try{ const j=await api(`/api/refunds/lookup?q=${encodeURIComponent(S.q)}${S.unmask?"&unmask=1":""}`); S.lookup=j; S.rows=j.candidates||[]; renderLookup(el,j);
+      const qi=document.getElementById("rfQ"); if(qi&&!qi.parentElement.querySelector('[data-act="clearq"]')){ const b=document.createElement("button"); b.className="rf-chip on open"; b.dataset.act="clearq"; b.title="Back to the period view"; b.textContent="search ✕"; qi.insertAdjacentElement("afterend",b); }
       if(S.openId){ const id=S.openId; S.openId=""; if(findRow(id,"lookup")) openTrace(id,"lookup"); else toast(`Case #${id} is not on this customer's file`); }
       else if(S.openPayment){ const pid=S.openPayment; S.openPayment=""; const x=(j.ledger||[]).find(r=>String(r.payment_id)===String(pid)); if(x) openLedgerRow(x.id); else toast("No proxycms refund for that payment in the last 2 years"); } }
     catch(e){ el.innerHTML=`<div class="rf-empty">${esc(e.message)}</div>`; } }
@@ -442,6 +449,9 @@
   window.openRefunds=function(qs){
     ensureView(); if(S.unmask===null) S.unmask=isSuper()&&canUnmask();
     const src=qs||location.hash; const P=k=>{ const m=new RegExp("(?:^|[?&])"+k+"=([^&]+)").exec(src); return m?decodeURIComponent(m[1]):""; };
+    /* FILTER STATE (30 Sep 2026): a hash WITH parameters is the whole truth — a filter it does not name is reset, so removing
+     * q= (or kind=, batch=…) from the URL really removes it. A bare #refunds (the navtab click) keeps the current state. */
+    if(/\?/.test(src)){ S.q=""; S.kind=""; S.status="open"; S.verdict=""; S.batch=""; S.openId=""; S.openPayment=""; S.lookup=null; S.led.reason=""; S.led.missed=false; S.led.outside=false; }
     if(P("q")){ S.q=P("q"); S.tab="exposure"; } if(/^\d+$/.test(P("id"))) S.openId=P("id"); if(P("payment")) S.openPayment=P("payment"); if(/^[a-z_]+$/.test(P("kind"))) S.kind=P("kind"); if(/^[a-z_]+$/.test(P("status"))) S.status=P("status"); if(/^(exposure|history|ledger|rca|desk|detectors)$/.test(P("tab"))) S.tab=P("tab"); if(/^\d+$/.test(P("batch"))){ S.batch=P("batch"); S.status="all"; S.tab="exposure"; } if(/^(refund|wait|dismiss|investigate)$/.test(P("verdict"))) S.verdict=P("verdict");
     if(/^\d{4}-\d{2}-\d{2}$/.test(P("from"))&&/^\d{4}-\d{2}-\d{2}$/.test(P("to"))){ S.period.from=P("from"); S.period.to=P("to"); S.period.preset=""; } if(/^(day|week|month)$/.test(P("g"))) S.period.g=P("g"); if(P("reason")){ S.led.reason=P("reason"); S.tab="ledger"; }
     /* the navtab click the router fires resets the hash to a bare #refunds; writing the full state back right here
