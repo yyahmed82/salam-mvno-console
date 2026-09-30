@@ -236,8 +236,8 @@
       <div class="rl" style="font-size:10px;color:var(--muted);margin-top:8px">Source: Clara <span class="mono">dms_audit_logs</span> — written by the DMS services themselves. Aggregated every 5 min; identifiers masked at ingest. Failure = code that looks 4xx/5xx/E*/FAIL (code semantics to be confirmed with the DMS team). <b>Cards, flow steps, chart bars, code chips and dealers are clickable.</b></div>`;
     box.querySelectorAll(".dmsj-card,.dmsj-flow").forEach(b=>b.addEventListener("click",()=>drill(b.dataset.j)));
     const go=()=>trace(($("#djq")||{}).value);
-    $("#djgo").onclick=go;
-    $("#djq").addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
+    const djgo=$("#djgo"); if(djgo) djgo.onclick=go;
+    const djq=$("#djq"); if(djq) djq.addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
     const tum=$("#djTUm"); if(tum) tum.onclick=()=>{
       window.PII.set(!window.PII.on);
       tum.textContent=um()?"🔓 Unmasked":"🔒 Masked";

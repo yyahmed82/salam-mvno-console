@@ -26,8 +26,10 @@ const PG_UTC = { options: '-c timezone=UTC' };
 // PG_APP_NAME tags every replica/console connection (pg_stat_activity.application_name) so the DBA can tell
 // a laptop session ('salam_unified_local') from the prod instance ('salam_unified').
 const APP_NAME = process.env.PG_APP_NAME || 'salam_unified';
-const source = new Pool({ connectionString: SOURCE_URL, max: Number(process.env.SOURCE_POOL_MAX) || 8, statement_timeout: 60000, application_name: APP_NAME, ...PG_UTC });
-const console_ = new Pool({ connectionString: CONSOLE_URL, max: 4, application_name: APP_NAME, ...PG_UTC });
+/* 30 Sep 2026: the two agent processes load this same module; ecosystem.prod.config.js gives them small pools
+ * (SOURCE_POOL_MAX / CONSOLE_POOL_MAX / OPS_POOL_MAX) so three processes do not each hold a full console-sized pool on 121. */
+const source = new Pool({ connectionString: SOURCE_URL, max: Number(process.env.SOURCE_POOL_MAX) || 8, statement_timeout: 60000, application_name: APP_NAME, idleTimeoutMillis: 30000, ...PG_UTC });
+const console_ = new Pool({ connectionString: CONSOLE_URL, max: Number(process.env.CONSOLE_POOL_MAX) || 4, application_name: APP_NAME, idleTimeoutMillis: 30000, ...PG_UTC });
 
 /* UPG payment-gateway DB — OPTIONAL third pool (read-only role `upg_console_ro`).
  * Enables end-to-end payment correlation: app payment → gateway charge → state transitions →

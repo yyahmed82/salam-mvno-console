@@ -32,7 +32,9 @@ const num = (k, d) => { const v = Number((process.env[k] || '').trim()); return 
 const E = k => !!(process.env[k] || '').trim();
 const POOL_BUDGET = 4 /* console */ + (Number(process.env.SOURCE_POOL_MAX) || 8)
   + (E('OPS_DATABASE_URL') ? (Number(process.env.OPS_POOL_MAX) || 3) : 0) + (E('OPS_BETA_DATABASE_URL') ? (Number(process.env.OPS_BETA_POOL_MAX) || 2) : 0)
-  + (E('NEXUS_DATABASE_URL') ? 2 : 0) + (E('PAYMENTS_DATABASE_URL') ? 2 : 0) + (E('UPG_DATABASE_URL') ? 2 : 0) + 2 /* prod-sync writer + probe */;
+  + (E('NEXUS_DATABASE_URL') ? 2 : 0) + (E('PAYMENTS_DATABASE_URL') ? 2 : 0) + (E('UPG_DATABASE_URL') ? 2 : 0) + 2 /* prod-sync writer + probe */
+  /* + the two agent processes (30 Sep 2026): same role on 121, small pools (source 2 + console 2 + ops 1 each) */
+  + 2 * ((Number(process.env.AGENT_SOURCE_POOL_MAX) || 2) + (Number(process.env.AGENT_CONSOLE_POOL_MAX) || 2) + (E('OPS_DATABASE_URL') ? 1 : 0));
 const T = {
   connWarn: num('HC_OPS_CONN_WARN', POOL_BUDGET + 2), connCrit: num('HC_OPS_CONN_CRIT', POOL_BUDGET + 8),
   usedWarn: num('HC_PG_USED_WARN', 80), usedCrit: num('HC_PG_USED_CRIT', 92),

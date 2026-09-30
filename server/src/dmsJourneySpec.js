@@ -374,8 +374,20 @@ const RULE_META = {
   L9: { sev: 'P4', family: 'access', title: 'Active channel without owner / attendance left open' }
 };
 
+/* Admin / CMS / system journeys (30 Sep 2026 source, git tag v20260930-appdigp01) live in
+ * dmsAdminJourneys.js and are merged here so one spec drives DMS ▸ Explore. Dealer families carry
+ * actor 'dealer'; admin families 'admin'; the batch/callback family 'system'. */
+let ADMIN = null;
+try { ADMIN = require('./dmsAdminJourneys'); } catch (e) { ADMIN = { ADMIN_SYS: {}, ADMIN_FAMILIES: {}, ADMIN_JOURNEYS: [], ADMIN_RULE_CANDIDATES: {} }; }
+
 function spec() {
-  return { generated: '2026-09-17', source: 'production JARs of 17 Sep 2026 (APP node 172.31.43.136), decompiled', doc: 'DMS-JOURNEYS-CODE.md',
-    systems: SYS, families: FAMILIES, journeys: JOURNEYS, rules: RULE_META };
+  const families = {};
+  for (const [k, f] of Object.entries(FAMILIES)) families[k] = Object.assign({ actor: 'dealer' }, f);
+  for (const [k, f] of Object.entries(ADMIN.ADMIN_FAMILIES || {})) families[k] = Object.assign({ actor: k === 'system' ? 'system' : 'admin' }, f);
+  const rules = Object.assign({}, RULE_META);
+  for (const [k, r] of Object.entries(ADMIN.ADMIN_RULE_CANDIDATES || {})) rules[k] = Object.assign({ candidate: true }, r);
+  return { generated: '2026-09-17', admin_generated: '2026-09-30', source: 'production JARs of 17 Sep 2026 (dealer) and 30 Sep 2026 (admin/system), APP node 172.31.43.136, decompiled — git tag v20260930-appdigp01', doc: 'DMS-JOURNEYS-CODE.md · DMS-CODE-G-ADMIN.md',
+    actors: { dealer: 'Dealer app', admin: 'Admin & CMS', system: 'System & batch' },
+    systems: Object.assign({}, SYS, ADMIN.ADMIN_SYS || {}), families, journeys: JOURNEYS.concat(ADMIN.ADMIN_JOURNEYS || []), rules };
 }
 module.exports = { spec, JOURNEYS, FAMILIES, RULE_META, SYS };

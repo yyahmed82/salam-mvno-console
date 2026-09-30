@@ -50,6 +50,15 @@ const guard = (maxKey, heapKey) => Object.assign({},
   env[maxKey] ? { max_memory_restart: env[maxKey] } : {},
   env[heapKey] ? { node_args: '--max-old-space-size=' + String(env[heapKey]).replace(/\D/g, '') } : {});
 
+/* Agent DB footprint (30 Sep 2026 — "Console DB — console connections 28" WARN after the reboot): the agents load db.js
+ * too and used to open the console's full pools (source 8 + console 4 + ops 3 each). They run one tick at a time — two
+ * connections per pool is plenty. Override with AGENT_SOURCE_POOL_MAX / AGENT_CONSOLE_POOL_MAX in .env. */
+const agentEnv = Object.assign({}, env, {
+  SOURCE_POOL_MAX: env.AGENT_SOURCE_POOL_MAX || '2', CONSOLE_POOL_MAX: env.AGENT_CONSOLE_POOL_MAX || '2',
+  OPS_POOL_MAX: env.AGENT_OPS_POOL_MAX || '1', OPS_BETA_POOL_MAX: '1',
+  PG_APP_NAME: (env.PG_APP_NAME || 'salam_unified') + '_agent'
+});
+
 module.exports = {
   apps: [{
     name: env.PM2_NAME || 'salam-unified',
@@ -71,7 +80,7 @@ module.exports = {
     name: (env.PM2_NAME || 'salam-unified').replace(/-unified$|$/, '') + '-agent-log',
     cwd: path.join(APP_DIR, 'server'),
     script: 'src/agentLog.js',
-    env,
+    env: agentEnv,
     ...guard('PM2_AGENT_MAX_MEM', 'AGENT_HEAP_MB'),
     max_restarts: 10,
     restart_delay: 15000,
@@ -85,7 +94,7 @@ module.exports = {
     name: (env.PM2_NAME || 'salam-unified').replace(/-unified$|$/, '') + '-agent-incident',
     cwd: path.join(APP_DIR, 'server'),
     script: 'src/agentIncident.js',
-    env,
+    env: agentEnv,
     ...guard('PM2_AGENT_MAX_MEM', 'AGENT_HEAP_MB'),
     max_restarts: 10,
     restart_delay: 15000,
