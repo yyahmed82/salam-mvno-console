@@ -671,8 +671,8 @@ const ADMIN_JOURNEYS = [
     rules: []
   },
   {
-    key: 'job_wallet', family: 'system', label: 'Wallet reconciliation jobs (30 min) & bulk payer (1 s) — unlocked ×4', sanity: [], console: null,
-    purpose: 'Expire stale PENDING initiates per transaction type, release WALLET_TRANSFER reservations, and pay bulk disbursement rows. All six jobs are plain @Scheduled on four WAS instances.',
+    key: 'job_wallet', family: 'system', label: 'Wallet reconciliation jobs (30 min) & bulk payer (1 s) — node 136 build only', sanity: [], console: null,
+    purpose: 'Expire stale PENDING initiates per transaction type, release WALLET_TRANSFER reservations, and pay bulk disbursement rows. All six jobs are plain @Scheduled with no lock — but the jar diff of 30 Sep 2026 proved the six scheduler classes exist ONLY in the trms-wallet-service-0.0.8 build on node 136; the 0.0.8 jars on 137/138/139 have no scheduler package at all (a node-specific build, same version string).',
     steps: [
       { ep: 'fixedDelay=1800000 CashReconJobs · HyperPayReconJobs · WalletRefillReconJobs · ComissionReconJobs .paymentInitialPending', svc: 'sched', note: 'wallet_payment_initiate <type> PENDING past signature_expiry → EXPIRED (no balance change)' },
       { ep: 'fixedDelay=1800000 WalletTransferReconJobs.paymentInitialPending', svc: 'sched', note: 'expired WALLET_TRANSFER → available += amount (release) + EXPIRED; RETURNS on the first account-not-found → the rest of the batch stays PENDING (rule M6)' },
@@ -682,10 +682,11 @@ const ADMIN_JOURNEYS = [
     systems: ['sched', 'wallet'],
     signature: ['trms_wallet.wallet_payment_initiate status EXPIRED; wallet_balance.available restored for WALLET_TRANSFER', 'bulk: BULK_WALLET_TRANSFER PAID pairs + payment_bulk_disbursement DONE', 'NO audit row, no scheduled_job_info (WAS has no ShedLock)'],
     breaks: [
-      'Four copies of each job with no lock and no row locking in the wallet (DMS-CODE-C §1): two nodes can release the same reservation twice (balance inflation) or pay the same bulk row twice',
+      'Single point of failure by accident: the jobs run on node 136 only because its jar is different (jar diff 30 Sep 2026: 6 scheduler classes removed on 137/138/139) — if 136 is down or its wallet jar is "aligned" with the others, no reconciliation and no bulk payment runs, with nothing in the version string to show it',
+      'Within node 136 there is still no lock, no claim step and no row locking (DMS-CODE-C §1): a second copy of the 136 build anywhere would pay bulk rows twice',
       'WalletTransferReconJobs aborts the batch on a missing account → reservations leak until the account is fixed',
       'CC / REFUND initiates are never expired',
-      'Whether the 1-second bulk job is effectively serialised by payment_scheduler_time on all nodes is not determined from code'
+      'Whether the vendor intends 136 as the only job runner is not determined from code (no configuration switch — the class files are simply absent elsewhere)'
     ],
     rules: []
   },

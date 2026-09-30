@@ -37,7 +37,7 @@ if [ "${1:-}" = "--fetch" ]; then
     echo "▸ $h → $DEST/$h"
     # one listing first (what runs, which jar each service points at), then the jars themselves
     ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=8 "$USER@$h" \
-      'for d in /opt/application/*/; do s=$(basename "$d"); for j in "$d"*.jar "$d"target/*.jar "$d"lib/*.jar; do [ -f "$j" ] && printf "%s\t%s\t%s\t%s\n" "$s" "$(stat -c %Y "$j")" "$(stat -c %s "$j")" "$j"; done; done 2>/dev/null' \
+      'for d in /opt/application/*/; do s=$(basename "$d"); for j in "$d"*.jar "$d"target/*.jar "$d"lib/*.jar; do [ -f "$j" ] && printf "%s\t%s\t%s\t%s\n" "$s" "$(stat -c %Y "$j")" "$(stat -c %s "$j")" "$j"; done; done 2>/dev/null; exit 0' \
       > "$DEST/$h/jars.tsv" || { echo "  ✗ cannot list /opt/application on $h (console_ro access?)"; continue; }
     while IFS=$'\t' read -r svc mtime size path; do
       [ -n "$path" ] || continue
@@ -54,7 +54,8 @@ OLD="$1"; NEW="$2"
 OUT="${OUT:-/apps/unified/snapshots/diffs/$STAMP}"; mkdir -p "$OUT"
 
 mask() { sed -E 's/((password|passwd|secret|token|api[-_.]?key|private[-_.]?key|credential)[^=:]*[=:][[:space:]]*)[^[:space:]]+/\1***/Ig'; }
-svcname() { basename "$1" .jar | sed -E 's/[-_.]?[0-9]+(\.[0-9]+)*(-SNAPSHOT|-RELEASE)?(\.jar)?$//'; }
+# service key = jar name without version; a flat baseline pulled as "<service-dir>__<jar>" (30 Sep 2026 pull) pairs with "<service-dir>/<jar>"
+svcname() { basename "$1" .jar | sed -E 's/^.*__//' | sed -E 's/[-_.]?[0-9]+(\.[0-9]+)*(-SNAPSHOT|-RELEASE)?(\.jar)?$//'; }
 ver() { basename "$1" .jar | grep -oE '[0-9]+(\.[0-9]+)+(-SNAPSHOT|-RELEASE)?' | tail -1; }
 
 # ---------------------------------------------------------------- one service: old.jar vs new.jar
@@ -154,6 +155,8 @@ else
   declare -A O N
   while IFS= read -r j; do O["$(svcname "$j")"]="$j"; done < <(find "$OLD" -name '*.jar' -type f ! -path '*/BOOT-INF/*' ! -path '*/lib/*')
   while IFS= read -r j; do N["$(svcname "$j")"]="$j"; done < <(find "$NEW" -name '*.jar' -type f ! -path '*/BOOT-INF/*' ! -path '*/lib/*')
+  [ ${#O[@]} -gt 0 ] || { echo "✗ no jars found under $OLD — wrong path or the fetch failed"; exit 3; }
+  [ ${#N[@]} -gt 0 ] || { echo "✗ no jars found under $NEW — the --fetch failed (see ✗ lines above); nothing compared"; exit 3; }
   { echo "# Release diff $STAMP"; echo; echo "OLD: \`$OLD\`  ·  NEW: \`$NEW\`"; echo; echo "| service | old | new | classes changed | added | removed | verdict |"; echo "|---|---|---|---|---|---|---|"; } > "$OUT/INDEX.md"
   for s in $(printf '%s\n' "${!O[@]}" "${!N[@]}" | sort -u); do
     if [ -z "${O[$s]:-}" ]; then echo "| $s | — | $(basename "${N[$s]}") | | | | **new service** |" >> "$OUT/INDEX.md"; continue; fi
