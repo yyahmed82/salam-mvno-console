@@ -10,10 +10,13 @@
   /* SEGMENT (8 Sep 2026): the same incident UI serves both businesses. 'mvno' at #alerts, 'fixed' at #fixed-alerts —
    * the server scopes /api/alerts, /api/alerts/summary, /api/incidents/stats and /api/rules to the segment asked. */
   let SEG = "mvno";
+  /* SCOPE (1 Oct 2026): 'app' = the business rules (Mobile › Alerts, Fixed › Alerts) · 'infra' = the infrastructure rules
+   * (Infrastructure › Alerts, two sections Mobile infra / Fixed infra at #infra-alerts and #fixed-infra-alerts) */
+  let SCOPE = "app";
   const SEG_PATHS = /^\/api\/(alerts(\/summary)?|incidents\/stats|rules)(\?|$)/;
-  const withSeg = path => SEG_PATHS.test(path) ? path + (path.includes("?") ? "&" : "?") + "segment=" + SEG : path;
-  const hashOf = () => SEG === "fixed" ? "fixed-alerts" : "alerts";
-  window.alertsSegment = () => SEG;
+  const withSeg = path => SEG_PATHS.test(path) ? path + (path.includes("?") ? "&" : "?") + "segment=" + SEG + "&scope=" + SCOPE : path;
+  const hashOf = () => SCOPE === "infra" ? (SEG === "fixed" ? "fixed-infra-alerts" : "infra-alerts") : (SEG === "fixed" ? "fixed-alerts" : "alerts");
+  window.alertsSegment = () => SEG; window.alertsScope = () => SCOPE;
   let atab = (window.pf && window.pf.get('alerts_tab','open')) || "open";
   /* After a mail deep link (#alerts?id=… / ?rule=…) is handled, strip the query from the URL
    * WITHOUT firing hashchange (replaceState). Two reasons: a re-click of the SAME mail link then
@@ -1857,16 +1860,22 @@
   let loaded=false;
   /* header pill + subtitle follow the segment; the anomaly / error-class tabs are Mobile-only */
   function paintSeg(){
-    const pill=$("#alSegPill"), sub=$("#alSegSub");
-    if(pill){ pill.textContent = SEG==="fixed" ? "FIXED · FTTH · 5G · APP" : "MOBILE · MVNO"; }
-    if(sub){ sub.textContent = SEG==="fixed" ? "Fixed rules only (fixed_* metrics over sda_ops) — Mobile alerts live under Mobile › Alerts" : "Mobile (MVNO) rules only — Fixed alerts live under Fixed › Alerts"; }
-    document.querySelectorAll('#alTabs [data-atab="anomaly"],#alTabs [data-atab="errclass"]').forEach(b=>b.classList.toggle("hidden", SEG==="fixed"));
-    const lg=$("#alFixedLegacy"); if(lg) lg.hidden = SEG!=="fixed";
-    if(SEG==="fixed" && (atab==="anomaly"||atab==="errclass")) atab="open";
+    const pill=$("#alSegPill"), sub=$("#alSegSub"); const infra=SCOPE==="infra";
+    if(pill){ pill.textContent = infra ? (SEG==="fixed" ? "INFRA · FIXED" : "INFRA · MOBILE") : SEG==="fixed" ? "FIXED · FTTH · 5G · APP" : "MOBILE · MVNO"; }
+    if(sub){ sub.textContent = infra ? (SEG==="fixed" ? "Fixed infrastructure rules only (fixed_infra_* over the Fixed hosts) — business alerts live under Fixed › Alerts" : "Mobile infrastructure rules only (infra_* over the Mobile / shared hosts) — business alerts live under Mobile › Alerts")
+      : SEG==="fixed" ? "Fixed rules only (fixed_* metrics over sda_ops) — infrastructure alerts live under Infrastructure › Alerts" : "Mobile (MVNO) rules only — Fixed alerts under Fixed › Alerts, infrastructure alerts under Infrastructure › Alerts"; }
+    document.querySelectorAll('#alTabs [data-atab="anomaly"],#alTabs [data-atab="errclass"]').forEach(b=>b.classList.toggle("hidden", SEG==="fixed"||infra));
+    const lg=$("#alFixedLegacy"); if(lg) lg.hidden = SEG!=="fixed"||infra;
+    if((SEG==="fixed"||infra) && (atab==="anomaly"||atab==="errclass")) atab="open";
+    /* the two sections of Infrastructure › Alerts: Mobile infra · Fixed infra (same chips as the console filters) */
+    let sw=$("#alScopeSwitch"); if(infra){ if(!sw){ sw=document.createElement("div"); sw.id="alScopeSwitch"; sw.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px"; const h2=pill&&pill.closest("h2"); (h2?h2.parentElement:$("#view-alerts")).insertBefore(sw, h2?h2.nextSibling:null); }
+      sw.innerHTML=`<span class="rl" style="font-weight:700;letter-spacing:.05em;text-transform:uppercase;font-size:10.5px">Section</span><button class="pill ${SEG!=="fixed"?"on":""}" data-alscope="mvno" style="border-left-color:var(--green)${SEG!=="fixed"?";background:var(--green-bg);font-weight:800":""}">📱 Mobile infra</button><button class="pill ${SEG==="fixed"?"on":""}" data-alscope="fixed" style="border-left-color:var(--green)${SEG==="fixed"?";background:var(--green-bg);font-weight:800":""}">🏠 Fixed infra</button><a class="rl" href="#infra?tab=hosts" style="color:var(--green);margin-left:6px">Hosts & live map ›</a>`;
+      sw.querySelectorAll("[data-alscope]").forEach(b=>b.onclick=()=>{ const h=b.dataset.alscope==="fixed"?"fixed-infra-alerts":"infra-alerts"; if(location.hash!=="#"+h) location.hash="#"+h; else open(b.dataset.alscope,"infra"); }); }
+    else if(sw) sw.remove();
   }
-  function open(seg){
-    const want = seg==="fixed" ? "fixed" : "mvno";
-    const changed = want!==SEG; SEG = want;
+  function open(seg, scope){
+    const want = seg==="fixed" ? "fixed" : "mvno"; const wantScope = scope==="infra" ? "infra" : "app";
+    const changed = want!==SEG || wantScope!==SCOPE; SEG = want; SCOPE = wantScope;
     if(!loaded){ loaded=true; bind(); }
     paintSeg();
     if(changed){ _rbPromise=null; }                      // runbooks / rules cache is per segment

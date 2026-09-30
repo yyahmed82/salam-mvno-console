@@ -1787,7 +1787,8 @@
       <button class="navtab" data-view="infra" data-iftab="hosts:mobile" data-hash="infra?tab=hosts&amp;seg=mobile"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></span><span>Mobile hosts<small>MVNO segment only</small></span></button>
       <button class="navtab" data-view="infra" data-iftab="hosts:fixed" data-hash="infra?tab=hosts&amp;seg=fixed"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></span><span>Fixed hosts<small>Fixed segment only</small></span></button>
         <div class="navgroup">OPERATE</div>
-      <button class="navtab" data-view="infra" data-iftab="alerts" data-hash="infra?tab=alerts"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg></span><span>Infra alerts<small>open infra_* / fixed_infra_* incidents · rules · thresholds</small></span></button>
+      <button class="navtab" data-view="infra" data-iftab="alerts:mvno" data-hash="infra-alerts"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg></span><span>Mobile infra alerts<small>infra_* incidents on the Mobile / shared hosts — guide, ack, resolve, rules, thresholds</small></span></button>
+      <button class="navtab" data-view="infra" data-iftab="alerts:fixed" data-hash="fixed-infra-alerts"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg></span><span>Fixed infra alerts<small>fixed_infra_* incidents on the Fixed hosts — same incident view</small></span></button>
       <button class="navtab" data-view="infra" data-iftab="changes" data-hash="infra?tab=changes"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg></span><span>Changes<small>inventory drift · reboots · new listeners · status flips</small></span></button>
       <button class="navtab" data-view="infra" data-iftab="sources" data-hash="infra?tab=sources"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg></span><span>Sources & coverage<small>ssh · ports · node exporter · Instana — who answers, who does not</small></span></button>
 </div>
@@ -2221,7 +2222,7 @@
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
 <script src="base.js?v=20260910c"></script>
 <script src="person.js?v=20260911b"></script>   <!-- ONE person card for every screen -->
-<script src="navdrop.js?v=20261001a" defer></script>
+<script src="navdrop.js?v=20261001c" defer></script>
 <script src="adaptive.js?v=20260918n" defer></script>
 <script src="ksatime.js?v=20260910c"></script>
 <script src="data.js?v=20260910c"></script>
@@ -2234,7 +2235,7 @@
 <script src="app.js?v=20260910c"></script>
 <script src="uinav.js?v=20260910c"></script>
 <script src="latencycfg.js?v=20260910c"></script>
-<script src="alertsview.js?v=20260930e"></script>
+<script src="alertsview.js?v=20261001b"></script>
 <script src="metricdefs.js?v=20260916c"></script>
 <script src="ops.js?v=20260929a"></script>
 <script src="opsbar.js?v=20260910c"></script>
@@ -2301,12 +2302,12 @@
 <script src="agents.js?v=20260929b"></script>
 <script src="agents-live.js?v=20260926a"></script>
 <script src="refunds.js?v=20260930b"></script>
-<script src="infra.js?v=20261001a"></script>
+<script src="infra.js?v=20261001b"></script>
 <script src="flowguard.js?v=20260929a"></script>
 <script src="navcfg.js?v=20260910c"></script>
 <script src="tickets.js?v=20260911p"></script>
 <script src="theme.js?v=20260911v"></script>
-<script src="router.js?v=20261001a"></script>
+<script src="router.js?v=20261001b"></script>
 <script src="live.js?v=20260910c"></script>
 <script src="oncall.js?v=20260910c"></script>
 </body>

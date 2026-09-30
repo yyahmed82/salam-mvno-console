@@ -1,3 +1,7 @@
+## 2.0.0-alpha.129 — 2026-10-01
+
+- Infrastructure › Alerts: the infrastructure incidents move to their own two sections — **Mobile infra** (`#infra-alerts`, rules `infra_*`) and **Fixed infra** (`#fixed-infra-alerts`, rules `fixed_infra_*`) — the full incident view (guide, ack, resolve, hosts behind the number, history, rules & thresholds, noise, on-call) scoped to infrastructure, with a Section switch on the page and two entries in Infrastructure ▾. Mobile › Alerts and Fixed › Alerts no longer list the infra rules (API `scope=app` / `scope=infra`; mails, digests and agents unchanged). The Alerts tab of the Infrastructure page links to both sections.
+
 ## 2.0.0-alpha.128 — 2026-10-01
 
 - Navigation: **Infrastructure ▾** is a dropdown group like Mobile ▾ and Fixed ▾ — LIVE MAP (Mobile map · Fixed map), HOSTS (All · Mobile · Fixed), OPERATE (Infra alerts · Changes · Sources & coverage). The current page shows as the green chip on the button, deep links and back/forward keep the right item active, the phone drawer gets the same sections. Same role gate as before (view `noc`).

@@ -12,7 +12,7 @@
     dms:{view:"dms"}, fixed:{view:"fixed"}, "fixed-map":{view:"fixed"}, b2c:{view:"fixed"}, otodocs:{view:"otodocs"}, tapdocs:{view:"tapdocs"}, salamdocs:{view:"salamdocs"}, "alert-journey":{view:"alertjourney"}, alertjourney:{view:"alertjourney"}, sla:{sla:true}, slo:{sla:true}, "slo-settings":{sloSettings:true}, "sla-targets":{sloSettings:true}, "vendor-contracts":{vendorContracts:true}, vendors:{vendorContracts:true}, "semati-clearance":{semati:true}, semati:{semati:true}, troubleshoot:{view:"errors"}, errors:{view:"errors"},
     refunds:{view:"refunds"}, "refund-exposure":{view:"refunds"},
     flowguard:{view:"flowguard"}, "flow-guard":{view:"flowguard"}, infra:{view:"infra"}, infrastructure:{view:"infra"},
-    alerts:{view:"alerts"}, "fixed-alerts":{view:"alerts",seg:"fixed"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"}, mvnohld:{view:"topology2",t2:"hld"}, "bss-atlas":{view:"topology2",t2:"hld"}, journeys:{view:"explorer"}, integrations:{view:"integrations"},
+    alerts:{view:"alerts"}, "fixed-alerts":{view:"alerts",seg:"fixed"}, "infra-alerts":{view:"alerts",seg:"mvno",scope:"infra"}, "fixed-infra-alerts":{view:"alerts",seg:"fixed",scope:"infra"}, topology:{view:"topology"}, topology2:{view:"topology2"}, apigw:{view:"apigw"}, dmshld:{view:"apigw"}, mvnohld:{view:"topology2",t2:"hld"}, "bss-atlas":{view:"topology2",t2:"hld"}, journeys:{view:"explorer"}, integrations:{view:"integrations"},
     subscriber:{view:"sub360"}, sub360:{view:"sub360"}, oncall:{oncall:true}, "fixed-oncall":{oncall:true,seg:"fixed"},
     settings:{settings:"users"}, "settings-users":{settings:"users"}, "settings-sync":{settings:"sync"},
     "settings-notify":{notifyClone:true}, "settings-notify-clone":{notifyClone:true},
@@ -166,6 +166,14 @@
       }
       /* Fixed incident view (#fixed-alerts): the SAME #view-alerts section, but activated by hand — clickNav('alerts')
        * would click the Mobile Alerts tab, whose click listener rewrites the hash to #alerts (the bug seen 8 Sep). */
+      if(r.scope==="infra"){   // Infrastructure › Alerts (Mobile infra / Fixed infra): same #view-alerts, activated by hand like #fixed-alerts
+        document.querySelectorAll(".navtab").forEach(x=>x.classList.remove("active"));
+        document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active", x.id==="view-"+r.view));
+        const gear=document.getElementById("settingsBtn"); if(gear) gear.classList.remove("on");
+        if(window.navdropSync) window.navdropSync();
+        if(typeof window.openAlerts==="function") { try{ window.openAlerts(r.seg, "infra"); }catch(e){} }
+        window.audit && window.audit("VIEW_PAGE", "#"+base); return;
+	      }
       if(r.seg==="fixed"){
         document.querySelectorAll(".navtab").forEach(x=>x.classList.remove("active"));
         document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active", x.id==="view-"+r.view));

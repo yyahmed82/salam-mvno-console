@@ -3419,8 +3419,8 @@ require('./cst').mount(app, { requireSuper, audit });                   // CST s
 app.get('/api/rules', async (req, res) => {
   const seg = segment.forRequest(req, req.query.segment);
   const rules = (await C.query(`SELECT r.*, mc.unit, mc.higher_is_bad FROM alert_rules r
-     LEFT JOIN metric_catalog mc ON mc.key=r.metric_key WHERE ${segment.sqlWhere('r', 'key', seg)} ORDER BY severity, name`)).rows;
-  const catalog = (await C.query(`SELECT * FROM metric_catalog WHERE ${seg === 'all' ? 'TRUE' : seg === 'fixed' ? "key LIKE 'fixed\\_%'" : "key NOT LIKE 'fixed\\_%'"} ORDER BY key`)).rows;
+     LEFT JOIN metric_catalog mc ON mc.key=r.metric_key WHERE ${segment.sqlWhere('r', 'key', seg)}${segment.scopeSql('r', 'key', req.query.scope)} ORDER BY severity, name`)).rows;
+  const catalog = (await C.query(`SELECT * FROM metric_catalog WHERE ${seg === 'all' ? 'TRUE' : seg === 'fixed' ? "key LIKE 'fixed\\_%'" : "key NOT LIKE 'fixed\\_%'"}${req.query.scope === 'infra' ? " AND key LIKE '%infra\\_%'" : req.query.scope === 'app' ? " AND key NOT LIKE '%infra\\_%'" : ''} ORDER BY key`)).rows;
   for (const r of rules) { try { r.paused = await gateways.pausedReason(r); } catch (e) { r.paused = null; } }   // per-gateway rules of a disabled gateway
   /* 11 Sep 2026: which metrics can count distinct customers / services (editor greys the option out otherwise), and a
    * 7-day scorecard per rule (fires · acked · single-customer · false positives) for the list badges and filters */
@@ -3451,7 +3451,7 @@ app.put('/api/gateways', requireCap('manageSync'), async (req, res) => {
 app.get('/api/alerts', async (req, res) => {
   const status = req.query.status || 'open';
   const seg = segment.forRequest(req, req.query.segment);
-  const where = `WHERE ${segment.sqlWhere('a', 'rule_key', seg)}` + (status === 'all' ? '' : ` AND a.status=$1`);
+  const where = `WHERE ${segment.sqlWhere('a', 'rule_key', seg)}${segment.scopeSql('a', 'rule_key', req.query.scope)}` + (status === 'all' ? '' : ` AND a.status=$1`);
   // alerts rows don't carry the class — join it live from alert_rules (errclass.js split)
   const rows = (await C.query(
     `SELECT a.*, r.alert_class FROM alerts a LEFT JOIN alert_rules r ON r.key = a.rule_key
@@ -3489,21 +3489,21 @@ require('./alertHistory').mount(app, { audit });    // must precede /api/alerts/
 require('./alertActivity').mount(app, { audit });   // WHO DID WHAT on alerts/rules/config (11 Sep 2026) — same ordering rule
 require('./alertJourney').mount(app, { audit, requireCap, boardNow });   // L1/L2 journey: noise, timeline, checklist, identity, Test now (11 Sep 2026)
 app.get('/api/alerts/summary', async (req, res) => {
-  const seg = segment.forRequest(req, req.query.segment); const W = segment.sqlWhere('a', 'rule_key', seg);
+  const seg = segment.forRequest(req, req.query.segment); const W = segment.sqlWhere('a', 'rule_key', seg) + segment.scopeSql('a', 'rule_key', req.query.scope);
   const bySev = (await C.query(
     `SELECT severity, count(*) FILTER (WHERE status='open')::int AS open,
             count(*)::int AS total FROM alerts a WHERE ${W} GROUP BY severity`)).rows;
   const byTeam = (await C.query(
     `SELECT team, count(*) FILTER (WHERE status='open')::int AS open FROM alerts a WHERE ${W} GROUP BY team`)).rows;
   const latest = (await C.query(`SELECT max(sim_now) AS sim_now FROM sync_runs`)).rows[0];
-  const rules = (await C.query(`SELECT count(*)::int c FROM alert_rules r WHERE enabled AND ${segment.sqlWhere('r', 'key', seg)}`)).rows[0].c;
+  const rules = (await C.query(`SELECT count(*)::int c FROM alert_rules r WHERE enabled AND ${segment.sqlWhere('r', 'key', seg)}${segment.scopeSql('r', 'key', req.query.scope)}`)).rows[0].c;
   res.json({ bySeverity: bySev, byTeam, latest_sim_now: latest && latest.sim_now, segment: seg, rules });
 });
 
 /* ---- incident lifecycle (ack / assign / snooze / resolve / comment) ---- */
 app.get('/api/incidents/stats', async (req, res) => {
   try {
-    const seg = segment.forRequest(req, req.query.segment); const W = segment.sqlWhere('a', 'rule_key', seg);
+    const seg = segment.forRequest(req, req.query.segment); const W = segment.sqlWhere('a', 'rule_key', seg) + segment.scopeSql('a', 'rule_key', req.query.scope);
     const bySeverity = (await C.query(
       `SELECT severity, count(*)::int c, count(*) FILTER (WHERE ack_at IS NOT NULL)::int acked,
               count(*) FILTER (WHERE snoozed_until > now())::int snoozed

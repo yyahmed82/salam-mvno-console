@@ -28,6 +28,14 @@ function sqlWhere(alias, keyCol, seg) {
   return seg === 'fixed' ? `(${alias}.segment = 'fixed' OR ${alias}.${keyCol} LIKE 'fixed\\_%')`
                          : `(${alias}.segment <> 'fixed' AND ${alias}.${keyCol} NOT LIKE 'fixed\\_%')`;
 }
+/* SCOPE (1 Oct 2026): the infrastructure rules (infra_* / fixed_infra_*) live under Infrastructure › Alerts, the business
+ * rules under Mobile / Fixed › Alerts. 'infra' keeps only infra keys, 'app' drops them, anything else = no filter
+ * (mails, digests, agents and every other caller keep seeing everything). */
+function scopeSql(alias, keyCol, scope) {
+  if (scope === 'infra') return ` AND ${alias}.${keyCol} LIKE '%infra\\_%'`;
+  if (scope === 'app') return ` AND ${alias}.${keyCol} NOT LIKE '%infra\\_%'`;
+  return '';
+}
 /* can a user with this console_users.business receive / see this segment? */
 const userSees = (business, seg) => business === 'both' || business === BUSINESS_OF[seg];
-module.exports = { SEGMENTS, LABEL, SHORT, BUSINESS_OF, segOf, forRequest, sqlWhere, userSees };
+module.exports = { SEGMENTS, LABEL, SHORT, BUSINESS_OF, segOf, forRequest, sqlWhere, scopeSql, userSees };
