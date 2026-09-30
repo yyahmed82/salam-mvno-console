@@ -1,3 +1,8 @@
+## 2.0.0-alpha.127 — 2026-10-01
+
+- Infrastructure › Map: the zoom is fixed at the root — the diagrams carried a `viewBox`, so screen pixels were not user units and every zoom-around-cursor and Fit drifted (tiny diagram on narrow frames). Pixels are the units now; **Fit** uses the real extent of the drawing and fills the frame on desktop, iPad and phone; wheel and pinch zoom stay under the cursor; drag pans; double-click, key 0 and Fit re-fit; keys + / −; a zoom % badge. Export SVG writes a clean full-extent file.
+- Infrastructure › Map: CPU / RAM / disk are now readable — a live strip under every card bound to hosts ("● OK · CPU 12 % · MEM 41 % · DISK 63 % · 2 hosts", or "ports only · no ssh yet", or "UNREACHABLE · 2 ports down"), coloured by threshold; hover it for each host's IP and figures, click the card for the host page. Replaces the 14-px mini-bars nobody could read. Both diagrams (MVNO, Fixed); phone hides the edge legend and export buttons inside the frame.
+
 ## 2.0.0-alpha.126 — 2026-09-30
 
 - Alerts · infrastructure: the incident row itself names the impacted servers ("impacted: label ip (port 3306), … +n more") — the infra metrics write the hosts behind the number into the alert message, so the list, the mail and the agent triage carry the IPs; the incident drawer opens with the host table (IP · CPU · RAM · disk · load · ports · failing probes) first, before team and timeline.
