@@ -54,6 +54,9 @@ async function ensureSchema() {
       enabled boolean NOT NULL DEFAULT true, source text NOT NULL DEFAULT 'hld',
       inventory jsonb NOT NULL DEFAULT '{}', inventory_hash text, inventory_at timestamptz, last_seen timestamptz, last_metrics jsonb NOT NULL DEFAULT '{}',
       status text NOT NULL DEFAULT 'unknown', status_at timestamptz, reachable boolean, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`);
+  await q.query(`ALTER TABLE infra_hosts ADD COLUMN IF NOT EXISTS ssh_via text`);      // jump host (passerelle) "user@ip" or "ip" — ProxyJump
+  await q.query(`ALTER TABLE infra_hosts ADD COLUMN IF NOT EXISTS ssh_user text`);     // per-host user when it differs from INFRA_SSH_USER
+  await q.query(`ALTER TABLE infra_hosts ADD COLUMN IF NOT EXISTS ports_learned boolean NOT NULL DEFAULT false`);
   await q.query(`CREATE TABLE IF NOT EXISTS infra_host_changes (id bigserial PRIMARY KEY, host_id int NOT NULL, at timestamptz NOT NULL DEFAULT now(), kind text NOT NULL, field text, before jsonb, after jsonb, note text)`);
   await q.query(`CREATE INDEX IF NOT EXISTS infra_host_changes_at ON infra_host_changes (at DESC)`);
   await q.query(`CREATE TABLE IF NOT EXISTS infra_host_metrics (host_id int NOT NULL, at timestamptz NOT NULL, cpu_pct real, load1 real, load5 real, load15 real, mem_pct real, swap_pct real,
@@ -143,9 +146,12 @@ function firstLocalIp() { for (const [, ifs] of Object.entries(os.networkInterfa
 /* ------------------------------------------------------------------------------------------------------ collectors */
 const exec = (cmd, args, opts = {}) => new Promise((resolve, reject) => execFile(cmd, args, { timeout: opts.timeout || 12000, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' }, (err, out, errS) => err ? reject(new Error((String(errS || '') || err.message).trim().slice(0, 300))) : resolve(out)));
 const shq = s => `'` + String(s).replace(/'/g, `'\\''`) + `'`;
-function sshExec(ip, remoteCmd, timeout) {
-  const c = CFG(); const args = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new', '-p', String(c.sshPort)];
-  if (c.sshKey) args.push('-i', c.sshKey); args.push(c.sshUser ? `${c.sshUser}@${ip}` : ip, remoteCmd);
+function sshExec(host, remoteCmd, timeout) {
+  const h = typeof host === 'string' ? { ip: host } : host; const c = CFG(); const user = h.ssh_user || c.sshUser;
+  const args = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=accept-new', '-p', String(c.sshPort)];
+  if (c.sshKey) args.push('-i', c.sshKey);
+  if (h.ssh_via) { const via = /@/.test(h.ssh_via) ? h.ssh_via : (user ? `${user}@${h.ssh_via}` : h.ssh_via); args.push('-J', via); }   // passerelle: the same key must open the jump host too
+  args.push(user ? `${user}@${h.ip}` : h.ip, remoteCmd);
   return exec('ssh', args, { timeout: timeout || 12000 });
 }
 /* one script for the metrics of a host — a few /proc reads, df, ss; the same text is parsed for local and ssh */
@@ -213,9 +219,9 @@ async function instanaHosts() {
 async function discover({ all = false } = {}) {
   const c = CFG(); if (!(c.sshUser || c.sshKey) || !C()) return { tried: 0, found: 0, hosts: [], reason: 'ssh not configured (INFRA_SSH_USER / INFRA_SSH_KEY or API_LOG_USER / API_LOG_KEY)' };
   const self = firstLocalIp();
-  const hosts = (await C().query(`SELECT id, ip, label, ssh FROM infra_hosts WHERE enabled AND source <> 'local' AND ip <> $1 ${all ? '' : 'AND NOT ssh'} ORDER BY id`, [self || ''])).rows;
+  const hosts = (await C().query(`SELECT id, ip, label, ssh, ssh_via, ssh_user FROM infra_hosts WHERE enabled AND source <> 'local' AND ip <> $1 ${all ? '' : 'AND NOT ssh'} ORDER BY id`, [self || ''])).rows;
   const found = [], refused = []; let idx = 0;
-  const worker = async () => { while (idx < hosts.length) { const h = hosts[idx++]; try { const out = await sshExec(h.ip, 'echo ok', 9000); if (/ok/.test(out)) { found.push(h); if (!h.ssh) await C().query(`UPDATE infra_hosts SET ssh = true, updated_at = now() WHERE id = $1`, [h.id]); } else refused.push({ ip: h.ip, why: 'no answer' }); } catch (e) { refused.push({ ip: h.ip, why: e.message.slice(0, 120) }); } } };
+  const worker = async () => { while (idx < hosts.length) { const h = hosts[idx++]; try { const out = await sshExec(h, 'echo ok', 9000); if (/ok/.test(out)) { found.push(h); if (!h.ssh) await C().query(`UPDATE infra_hosts SET ssh = true, updated_at = now() WHERE id = $1`, [h.id]); } else refused.push({ ip: h.ip, why: 'no answer' }); } catch (e) { refused.push({ ip: h.ip, why: e.message.slice(0, 120) }); } } };
   await Promise.all(Array.from({ length: Math.min(8, hosts.length) }, worker));
   const newly = found.filter(h => !h.ssh);
   if (newly.length) { for (const h of newly) await C().query(`INSERT INTO infra_host_changes (host_id, kind, field, before, after, note) VALUES ($1,'discover','ssh','false','true','the console key answered — inventory and metrics from the next tick')`, [h.id]); log(`discover: ${newly.length} host(s) now reachable by ssh: ${newly.map(h => h.ip).join(', ')}`); }
@@ -227,7 +233,8 @@ function probesFor(host, m, inv, ports, reach) {
   const th = CFG().th; const P = []; const add = (probe, level, value, threshold, note) => P.push({ probe, level, value: value == null ? null : String(value), threshold: threshold == null ? null : String(threshold), note: note || null });
   if (!reach.observable) { add('reachable', 'UNKNOWN', 'not probed', 'any source', 'no service port, no ssh, no exporter, no Instana for this host — set a service port or the ssh flag on the host page'); return P; }
   add('reachable', reach.any ? 'OK' : 'CRIT', reach.any ? 'yes' : 'no', 'any source', reach.any ? `via ${reach.sources.join(', ')}` : 'no source answered — ssh, ports, node exporter, instana');
-  for (const p of ports) add(`port:${p.port}`, p.ok ? 'OK' : (host.role === 'edge' || host.role === 'db' ? 'CRIT' : 'WARN'), p.ok ? `open · ${p.ms} ms` : 'closed / filtered', 'open', p.ok ? null : `service port ${p.port} does not answer from the console box`);
+  const shellOk = reach.sources.includes('ssh') || reach.sources.includes('local');
+  for (const p of ports) add(`port:${p.port}`, p.ok ? 'OK' : (!shellOk && (host.role === 'edge' || host.role === 'db') ? 'CRIT' : 'WARN'), p.ok ? `open · ${p.ms} ms` : 'closed / filtered', 'open', p.ok ? null : (shellOk ? `port ${p.port} closed from the console box while the host answers by ssh — a guessed port, or a service listening on another one (Host settings)` : `service port ${p.port} does not answer from the console box`));
   if (m) {
     const cores = m.nproc || (inv && inv.cpus) || null;
     if (m.load15 != null && cores) { const pc = Math.round(100 * m.load15 / cores) / 100; add('load15_per_core', pc >= th.loadCrit ? 'CRIT' : pc >= th.loadWarn ? 'WARN' : 'OK', pc, `${th.loadWarn} / ${th.loadCrit}`, `load15 ${m.load15} on ${cores} cpu`); }
@@ -265,7 +272,7 @@ async function tick({ inventory = false, force = false } = {}) {
       const sources = []; let m = null, inv = null; const isLocal = h.ip === self || h.source === 'local';
       /* 1) metrics: local / ssh / node exporter */
       if (isLocal) { try { m = parseMetrics(await exec('bash', ['-c', METRICS_SH]), prevMetrics.get(h.id)); m.source = 'local'; sources.push('local'); bySource.local++; } catch (e) { errors[h.ip] = 'local: ' + e.message; } }
-      else if (h.ssh && (c.sshUser || c.sshKey)) { try { m = parseMetrics(await sshExec(h.ip, METRICS_SH), prevMetrics.get(h.id)); m.source = 'ssh'; sources.push('ssh'); bySource.ssh++; } catch (e) { errors[h.ip] = 'ssh: ' + e.message; } }
+      else if (h.ssh && (c.sshUser || c.sshKey)) { try { m = parseMetrics(await sshExec(h, METRICS_SH), prevMetrics.get(h.id)); m.source = 'ssh'; sources.push('ssh'); bySource.ssh++; } catch (e) { errors[h.ip] = 'ssh: ' + e.message; } }
       if (!m) { const ne = await nodeExporter(h.ip); if (ne) { m = ne; sources.push('node_exporter'); bySource.node_exporter++; if (!h.node_exporter) await C().query(`UPDATE infra_hosts SET node_exporter = true WHERE id = $1`, [h.id]); } }
       if (m) prevMetrics.set(h.id, m);
       /* 2) ports — always, the cheapest truth */
@@ -273,13 +280,16 @@ async function tick({ inventory = false, force = false } = {}) {
       const ports = await Promise.all(portList.map(p => tcpProbe(h.ip, p, c.portTimeout))); if (ports.some(p => p.ok)) { sources.push('ports'); bySource.ports++; }
       /* 3) inventory: ssh/local daily, instana when it knows the host */
       if (doInventory) {
-        try { if (isLocal) inv = parseInventory(await exec('bash', ['-c', INVENTORY_SH], { timeout: 20000 })); else if (h.ssh && (c.sshUser || c.sshKey) && sources.includes('ssh')) inv = parseInventory(await sshExec(h.ip, INVENTORY_SH, 25000)); } catch (e) { errors[h.ip + ':inv'] = e.message.slice(0, 160); }
+        try { if (isLocal) inv = parseInventory(await exec('bash', ['-c', INVENTORY_SH], { timeout: 20000 })); else if (h.ssh && (c.sshUser || c.sshKey) && sources.includes('ssh')) inv = parseInventory(await sshExec(h, INVENTORY_SH, 25000)); } catch (e) { errors[h.ip + ':inv'] = e.message.slice(0, 160); }
         const ih = instanaByIp.get(h.ip); if (ih) { inv = { ...(ih.inventory || {}), ...(inv || {}), agents: [...new Set([...(inv && inv.agents || []), 'instana'])] }; sources.push('instana'); if (!h.instana_id) await C().query(`UPDATE infra_hosts SET instana_id = $2 WHERE id = $1`, [h.id, ih.snapshotId]); }
         if (inv) { const hash = hashOf({ ...inv, listening: undefined, pm2: undefined, units: undefined, ntp: undefined, boot_at: undefined }); const before = h.inventory || {};
           if (h.inventory_hash && h.inventory_hash !== hash) { for (const k of ['os', 'kernel', 'cpus', 'cpu_model', 'ram_mb', 'swap_mb', 'disks', 'filesystems', 'nics', 'virt']) if (JSON.stringify(before[k]) !== JSON.stringify(inv[k])) await C().query(`INSERT INTO infra_host_changes (host_id, kind, field, before, after) VALUES ($1,'inventory',$2,$3,$4)`, [h.id, k, JSON.stringify(before[k] ?? null), JSON.stringify(inv[k] ?? null)]); }
           if (before.boot_at && inv.boot_at && before.boot_at !== inv.boot_at) await C().query(`INSERT INTO infra_host_changes (host_id, kind, field, before, after, note) VALUES ($1,'reboot','boot_at',$2,$3,'the host rebooted')`, [h.id, JSON.stringify(before.boot_at), JSON.stringify(inv.boot_at)]);
           if (before.listening && inv.listening) { const was = new Set(before.listening.map(x => x.port)), now = new Set(inv.listening.map(x => x.port)); const added = [...now].filter(p => !was.has(p)), gone = [...was].filter(p => !now.has(p)); if (added.length || gone.length) await C().query(`INSERT INTO infra_host_changes (host_id, kind, field, before, after) VALUES ($1,'listeners','ports',$2,$3)`, [h.id, JSON.stringify(gone), JSON.stringify(added)]); }
-          await C().query(`UPDATE infra_hosts SET inventory = $2, inventory_hash = $3, inventory_at = now(), hostname = coalesce($4, hostname), updated_at = now() WHERE id = $1`, [h.id, JSON.stringify(inv), hash, inv.hostname || null]); }
+          await C().query(`UPDATE infra_hosts SET inventory = $2, inventory_hash = $3, inventory_at = now(), hostname = coalesce($4, hostname), updated_at = now() WHERE id = $1`, [h.id, JSON.stringify(inv), hash, inv.hostname || null]);
+          /* the ports printed on the card are a guess; a host we can read tells us what it really serves — once, unless a person edited the ports */
+          if (!h.ports_learned && inv.listening && inv.listening.length) { const KNOWN = [80, 443, 8080, 8443, 3000, 3306, 5432, 6379, 9340, 4700, 4701, 27017, 9100, 1521, 8000, 8081, 9000]; const real = inv.listening.map(x => x.port).filter(p => KNOWN.includes(p) || (p >= 3000 && p < 10000 && !/sshd|chronyd|dhclient|rpcbind|systemd/.test(String(inv.listening.find(x => x.port === p).proc || ''))));
+            const learned = [...new Set(real)].slice(0, 8); if (learned.length) { await C().query(`UPDATE infra_hosts SET service_ports = $2, ports_learned = true WHERE id = $1`, [h.id, learned]); await C().query(`INSERT INTO infra_host_changes (host_id, kind, field, before, after, note) VALUES ($1,'ports','service_ports',$2,$3,'learned from the listening ports of the host')`, [h.id, JSON.stringify(h.service_ports), JSON.stringify(learned)]); h.service_ports = learned; } } }
       } else inv = h.inventory && Object.keys(h.inventory).length ? h.inventory : null;
       /* 4) flows from the peers seen by ss (ssh/local) */
       if (m && m.peers) for (const [k, n] of Object.entries(m.peers)) { const [dip, dport] = k.split(':'); if (dip === h.ip || dip === '127.0.0.1') continue; flowsRows.push([h.id, ipToHost.get(dip) || null, h.ip, dip, Number(dport), n, m.source]); }
@@ -331,13 +341,14 @@ async function mailDigest() {
 /* ------------------------------------------------------------------------------------------------------ reads */
 async function overview() {
   const q = C(); await ensureSchema();
-  const hosts = (await q.query(`SELECT id, hostname, ip, ips, segment, role, label, diagram, node_id, ssh, node_exporter, instana_id, service_ports, enabled, source, status, status_at, reachable, last_seen, inventory_at, last_metrics,
+  const nodes = (await q.query(`SELECT diagram, node_id, label FROM infra_map_nodes ORDER BY diagram, label`)).rows;
+  const hosts = (await q.query(`SELECT id, hostname, ip, ips, segment, role, label, diagram, node_id, ssh, ssh_via, ssh_user, node_exporter, instana_id, service_ports, enabled, source, status, status_at, reachable, last_seen, inventory_at, last_metrics,
       inventory->>'os' AS os, (inventory->>'cpus')::int AS cpus, (inventory->>'ram_mb')::int AS ram_mb, inventory->>'cpu_model' AS cpu_model, inventory->>'virt' AS virt, inventory->'agents' AS agents FROM infra_hosts ORDER BY segment, role, label`)).rows;
   const bySeg = {}; for (const h of hosts) { const s = bySeg[h.segment] = bySeg[h.segment] || { segment: h.segment, hosts: 0, ok: 0, warn: 0, crit: 0, unknown: 0, unreachable: 0, cpus: 0, ram_mb: 0 }; s.hosts++; s[h.status] = (s[h.status] || 0) + 1; if (h.reachable === false) s.unreachable++; s.cpus += h.cpus || 0; s.ram_mb += h.ram_mb || 0; }
   const runs = (await q.query(`SELECT at, ms, hosts, reachable, by_source, errors, kind FROM infra_runs ORDER BY at DESC LIMIT 10`)).rows;
   const changes = (await q.query(`SELECT c.*, h.label, h.ip, h.segment FROM infra_host_changes c JOIN infra_hosts h ON h.id = c.host_id ORDER BY c.at DESC LIMIT 30`)).rows;
   const c = CFG();
-  return { hosts, by_segment: Object.values(bySeg), runs, last_run: runs[0] || lastRun, changes, running: busy, diagrams: DIAGRAMS.map(d => ({ key: d.key, title: d.title, segment: d.segment })),
+  return { hosts, nodes, by_segment: Object.values(bySeg), runs, last_run: runs[0] || lastRun, changes, running: busy, diagrams: DIAGRAMS.map(d => ({ key: d.key, title: d.title, segment: d.segment })),
     sources: { local: true, ssh: !!(c.sshUser || c.sshKey), ssh_user: c.sshUser || null, instana: !!(c.instanaUrl && c.instanaToken), instana_url: c.instanaUrl || null, mails: c.mails.length, interval_sec: c.intervalSec, inventory_hours: c.inventoryHours, thresholds: c.th } };
 }
 async function hostDetail(id) {
@@ -404,15 +415,19 @@ function mount(app, { requireView, requireCap, audit }) {
   app.put('/api/infra/hosts/:id', gate, manage, async (req, res) => { try {
       const b = req.body || {}; const id = Number(req.params.id); const before = (await C().query(`SELECT * FROM infra_hosts WHERE id=$1`, [id])).rows[0]; if (!before) return res.status(404).json({ error: 'no such host' });
       const seg = ['mobile', 'fixed', 'shared'].includes(b.segment) ? b.segment : before.segment; const ports = Array.isArray(b.service_ports) ? b.service_ports.map(Number).filter(p => p > 0 && p < 65536).slice(0, 12) : before.service_ports;
-      const r = await C().query(`UPDATE infra_hosts SET segment=$2, role=coalesce($3, role), label=coalesce($4, label), owner_team=coalesce($5, owner_team), notes=coalesce($6, notes), ssh=coalesce($7, ssh), service_ports=$8, enabled=coalesce($9, enabled), ips=CASE WHEN $10::text[] IS NULL THEN ips ELSE $10 END, updated_at=now() WHERE id=$1 RETURNING *`,
-        [id, seg, b.role || null, b.label || null, b.owner_team || null, b.notes != null ? String(b.notes).slice(0, 500) : null, typeof b.ssh === 'boolean' ? b.ssh : null, ports, typeof b.enabled === 'boolean' ? b.enabled : null, Array.isArray(b.ips) ? b.ips.filter(x => /^\d+\.\d+\.\d+\.\d+$/.test(x)) : null]);
+      const portsEdited = Array.isArray(b.service_ports) && JSON.stringify(ports) !== JSON.stringify(before.service_ports);
+      const r = await C().query(`UPDATE infra_hosts SET segment=$2, role=coalesce($3, role), label=coalesce($4, label), owner_team=coalesce($5, owner_team), notes=coalesce($6, notes), ssh=coalesce($7, ssh), service_ports=$8, enabled=coalesce($9, enabled), ips=CASE WHEN $10::text[] IS NULL THEN ips ELSE $10 END,
+          ssh_via = CASE WHEN $11::text IS NULL THEN ssh_via ELSE nullif($11, '') END, ssh_user = CASE WHEN $12::text IS NULL THEN ssh_user ELSE nullif($12, '') END, ports_learned = ports_learned OR $13, updated_at=now() WHERE id=$1 RETURNING *`,
+        [id, seg, b.role || null, b.label || null, b.owner_team || null, b.notes != null ? String(b.notes).slice(0, 500) : null, typeof b.ssh === 'boolean' ? b.ssh : null, ports, typeof b.enabled === 'boolean' ? b.enabled : null, Array.isArray(b.ips) ? b.ips.filter(x => /^\d+\.\d+\.\d+\.\d+$/.test(x)) : null,
+          b.ssh_via != null ? String(b.ssh_via).trim().slice(0, 80) : null, b.ssh_user != null ? String(b.ssh_user).trim().slice(0, 40) : null, portsEdited]);
       await C().query(`INSERT INTO infra_host_changes (host_id, kind, field, before, after, note) VALUES ($1,'edit','host',$2,$3,$4)`, [id, JSON.stringify({ segment: before.segment, role: before.role, ports: before.service_ports, ssh: before.ssh, enabled: before.enabled }), JSON.stringify({ segment: seg, role: r.rows[0].role, ports, ssh: r.rows[0].ssh, enabled: r.rows[0].enabled }), 'by ' + req.actor]);
       if (audit) audit(req, 'infra.host.edit', String(id), b).catch?.(() => {}); res.json(r.rows[0]);
     } catch (e) { res.status(400).json({ error: e.message }); } });
   app.post('/api/infra/hosts', gate, manage, async (req, res) => { try {
       const b = req.body || {}; if (!/^\d+\.\d+\.\d+\.\d+$/.test(String(b.ip || ''))) return res.status(400).json({ error: 'ip required' });
-      const r = await C().query(`INSERT INTO infra_hosts (ip, ips, segment, role, label, source, service_ports, ssh) VALUES ($1, ARRAY[$1], $2, $3, $4, 'manual', $5, $6) ON CONFLICT (ip) DO UPDATE SET label = EXCLUDED.label RETURNING *`,
-        [b.ip, ['mobile', 'fixed', 'shared'].includes(b.segment) ? b.segment : 'shared', b.role || 'other', b.label || b.ip, Array.isArray(b.service_ports) ? b.service_ports.map(Number).filter(p => p > 0) : [], !!b.ssh]);
+      const r = await C().query(`INSERT INTO infra_hosts (ip, ips, segment, role, label, source, service_ports, ssh, ssh_via, diagram, node_id) VALUES ($1, ARRAY[$1], $2, $3, $4, 'manual', $5, $6, $7, $8, $9) ON CONFLICT (ip) DO UPDATE SET label = EXCLUDED.label, ssh = EXCLUDED.ssh, ssh_via = coalesce(EXCLUDED.ssh_via, infra_hosts.ssh_via), enabled = true RETURNING *`,
+        [b.ip, ['mobile', 'fixed', 'shared'].includes(b.segment) ? b.segment : 'shared', b.role || 'other', b.label || b.ip, Array.isArray(b.service_ports) ? b.service_ports.map(Number).filter(p => p > 0) : [], !!b.ssh, b.ssh_via ? String(b.ssh_via).trim().slice(0, 80) : null, b.diagram || null, b.node_id || null]);
+      if (b.diagram && b.node_id) await C().query(`UPDATE infra_map_nodes SET host_ips = array_append(array_remove(host_ips, $3), $3), updated_at = now() WHERE diagram = $1 AND node_id = $2`, [b.diagram, b.node_id, b.ip]);
       if (audit) audit(req, 'infra.host.add', b.ip, b).catch?.(() => {}); res.json(r.rows[0]);
     } catch (e) { res.status(400).json({ error: e.message }); } });
   app.get('/api/infra/map', gate, async (req, res) => { try { res.json(await mapData(String(req.query.diagram || 'mvno'))); } catch (e) { res.status(500).json({ error: e.message }); } });

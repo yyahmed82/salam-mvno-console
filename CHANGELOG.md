@@ -1,3 +1,11 @@
+## 2.0.0-alpha.123 — 30 Sep 2026 — Infrastructure: hosts behind a passerelle (ProxyJump), per-host ssh user, "Add host" bound to a card, service ports learned from the host, a closed guessed port is WARN not CRIT (full deploy)
+
+- **Passerelle**: a host can carry `ssh_via` (`ip` or `user@ip`) — the console then connects with `-J` through it, the way the DMS logs were read through .17 / .18. Set on the host page ("Via passerelle") or when adding a host. The console key must open the passerelle too.
+- **Per-host ssh user** (`ssh_user`) when a server does not have the default `console_ro`.
+- **Add host** (Hosts tab, manageSync): IP, label, segment, role, ports, ssh, passerelle, and the diagram card it belongs to — the card then counts it in its status, bars and edges (e.g. the DIGAPI nodes .17 / .18 behind the "MVNO API Gateway" card, the UPG servers .35 / .36 / .37 behind "App / API Env").
+- **Learned ports**: once a host answers by ssh, its service ports are replaced by what it really listens on (known service ports, or 3000–9999 app ports), recorded as a `ports` change; a person's edit wins afterwards.
+- **Probe severity**: a closed port on a host that ssh does reach is WARN with the explanation, CRIT only when nothing reaches an edge / db host — the CRIT count now means "really down", not "wrong guess from the card".
+
 ## 2.0.0-alpha.122 — 30 Sep 2026 — Infrastructure hotfix: the HLD files are read from STATIC_DIR (/apps/unified/web) — on 152 the seed found 0 nodes; node exporter / Instana over http.get instead of fetch (server deploy)
 
 - On 152 the web files live in `/apps/unified/web`, not two levels above `server/src`: `readNodes()` opened a path that does not exist, logged nothing, and the seed created only the console box. Now `STATIC_DIR` (the app already uses it), then `../../web`, then `../..`; a missing file is logged with its path.
