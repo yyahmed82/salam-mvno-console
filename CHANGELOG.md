@@ -1,3 +1,7 @@
+## 2.0.0-alpha.128 — 2026-10-01
+
+- Navigation: **Infrastructure ▾** is a dropdown group like Mobile ▾ and Fixed ▾ — LIVE MAP (Mobile map · Fixed map), HOSTS (All · Mobile · Fixed), OPERATE (Infra alerts · Changes · Sources & coverage). The current page shows as the green chip on the button, deep links and back/forward keep the right item active, the phone drawer gets the same sections. Same role gate as before (view `noc`).
+
 ## 2.0.0-alpha.127 — 2026-10-01
 
 - Infrastructure › Map: the zoom is fixed at the root — the diagrams carried a `viewBox`, so screen pixels were not user units and every zoom-around-cursor and Fit drifted (tiny diagram on narrow frames). Pixels are the units now; **Fit** uses the real extent of the drawing and fills the frame on desktop, iPad and phone; wheel and pinch zoom stay under the cursor; drag pans; double-click, key 0 and Fit re-fit; keys + / −; a zoom % badge. Export SVG writes a clean full-extent file.

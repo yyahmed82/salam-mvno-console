@@ -174,6 +174,7 @@
         if(typeof window.openAlerts==="function") { try{ window.openAlerts("fixed"); }catch(e){} }
         window.audit && window.audit("VIEW_PAGE", "#fixed-alerts"); return;
 	      }
+	      if(r.view==="infra"&&window.navdropSync) window.navdropSync();   // the Infrastructure ▾ child matching the hash goes active first, so clickNav no-ops instead of clicking the first child
 	      clickNav(r.view);
 	      // A Fixed deep link can make navdrop mark a Fixed child active before clickNav runs; in that
 	      // case clickNav intentionally no-ops, so make the destination view visible here as well.
@@ -210,7 +211,7 @@
   function setHash(h){ if(_cur===h) return; _cur=h; if(location.hash!=="#"+h) location.hash="#"+h; }
 
   // reflect user navigation into the URL (activation is handled by the existing modules)
-  document.querySelectorAll(".navtab").forEach(b=>b.addEventListener("click",()=>{ if(b.dataset.fxtab) return;   // Home sub-tabs set their own hash (navdrop.js)
+  document.querySelectorAll(".navtab").forEach(b=>b.addEventListener("click",()=>{ if(b.dataset.fxtab||b.dataset.iftab) return;   // Home sub-tabs set their own hash (navdrop.js)
     const v=b.dataset.view; setHash(b.dataset.hash||VIEW_HASH[v]||v); }));   // data-hash: one view, several entries (Executive / Operations)
   const logo=document.querySelector(".logo"); if(logo) logo.addEventListener("click",()=>setHash("dashboard"));
   document.querySelectorAll("#settingsMenu [data-seg]").forEach(b=>b.addEventListener("click",()=>setHash("settings-"+b.dataset.seg)));

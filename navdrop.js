@@ -23,6 +23,13 @@
     if(m){ const cur=m[2]||m[1]||"overview"; document.querySelectorAll('.navtab[data-fxtab]').forEach(b=>b.classList.toggle("active", b.dataset.fxtab===cur));
       document.querySelectorAll('.navtab:not([data-fxtab]).active').forEach(b=>b.classList.remove("active")); }   // one current page: never Mobile + Fixed together
     else document.querySelectorAll('.navtab[data-fxtab].active').forEach(b=>b.classList.remove("active"));         // left the Fixed hub → its group button goes off
+    /* Infrastructure ▾ (1 Oct 2026): children carry data-iftab = "tab" or "tab:diagram|seg"; the one matching the
+     * current #infra hash is the active page (default tab map · diagram mvno · seg all; the host page counts as Hosts) */
+    { const h=(location.hash||"").replace(/^#/,""); const infra=/^infra(\?|$)/.test(h); const q=new URLSearchParams(h.split("?")[1]||"");
+      let tab=q.get("tab")||"map"; if(tab==="host") tab="hosts"; const sub=tab==="map"?(q.get("diagram")||"mvno"):tab==="hosts"?(q.get("seg")||"all"):"";
+      let best=null, score=-1; document.querySelectorAll('.navtab[data-iftab]').forEach(b=>{ const [t,x]=b.dataset.iftab.split(":"); const ok=infra&&t===tab&&(!x||x===sub); const n=x?2:1; if(ok&&n>score){ score=n; best=b; } });
+      document.querySelectorAll('.navtab[data-iftab]').forEach(b=>b.classList.toggle("active", b===best));
+      if(best) document.querySelectorAll('.navtab:not([data-iftab]).active').forEach(b=>b.classList.remove("active")); }   // one current page: never Home + Infrastructure together
     drops().forEach(d=>{
       const tabs=Array.from(d.querySelectorAll(".navtab"));
       const visible=tabs.filter(t=>!t.classList.contains("hidden")&&t.style.display!=="none");
@@ -82,6 +89,12 @@
       document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active", v.id==="view-fixed"));
       document.querySelectorAll(".navtab").forEach(x=>x.classList.toggle("active", x===b));
       if(location.hash!=="#"+h) location.hash="#"+h; else if(window.openFixed) window.openFixed(k);
+    }));
+    document.querySelectorAll('.navtab[data-iftab]').forEach(b=>b.addEventListener("click", e=>{
+      if(!e.isTrusted) return;                                   // synthetic click from router.clickNav → ignore
+      const h=b.dataset.hash; document.querySelectorAll(".navtab").forEach(x=>x.classList.toggle("active", x===b));
+      document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active", v.id==="view-infra"));
+      if(location.hash!=="#"+h) location.hash="#"+h; else if(window.openInfra) window.openInfra(h);
     }));
     window.addEventListener("hashchange", sync);
     document.addEventListener("click", ()=>setTimeout(sync,0), true);

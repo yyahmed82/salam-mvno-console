@@ -1776,7 +1776,22 @@
       <button class="navtab" data-view="fixed" data-fxtab="report"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></span><span>KPI digest<small>branded e-mail report</small></span></button>
 </div>
     </div>
-    <button class="navtab" data-view="infra"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg></span><span>Infrastructure<small>Servers · nodes · live map</small></span></button>
+    <div class="navdrop" data-drop="infra">
+      <button class="navdrop-btn" type="button"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg></span><span>Infrastructure<small>Servers · nodes · live map · Mobile + Fixed</small></span><i class="chev">▾</i></button>
+      <div class="navdrop-panel">
+        <div class="navgroup">LIVE MAP</div>
+      <button class="navtab" data-view="infra" data-iftab="map:mvno" data-hash="infra?tab=map&amp;diagram=mvno"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4z"/><path d="M8 2v16M16 6v16"/></svg></span><span>Mobile map<small>MVNO · DMS + RODOD — cards painted with status · CPU · MEM · DISK</small></span></button>
+      <button class="navtab" data-view="infra" data-iftab="map:fixed" data-hash="infra?tab=map&amp;diagram=fixed"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4z"/><path d="M8 2v16M16 6v16"/></svg></span><span>Fixed map<small>Fixed · Digital + BSS — same live overlay</small></span></button>
+        <div class="navgroup">HOSTS</div>
+      <button class="navtab" data-view="infra" data-iftab="hosts" data-hash="infra?tab=hosts"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg></span><span>All hosts<small>every server · status · CPU · RAM · disk · ports · add host</small></span></button>
+      <button class="navtab" data-view="infra" data-iftab="hosts:mobile" data-hash="infra?tab=hosts&amp;seg=mobile"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></span><span>Mobile hosts<small>MVNO segment only</small></span></button>
+      <button class="navtab" data-view="infra" data-iftab="hosts:fixed" data-hash="infra?tab=hosts&amp;seg=fixed"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></span><span>Fixed hosts<small>Fixed segment only</small></span></button>
+        <div class="navgroup">OPERATE</div>
+      <button class="navtab" data-view="infra" data-iftab="alerts" data-hash="infra?tab=alerts"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg></span><span>Infra alerts<small>open infra_* / fixed_infra_* incidents · rules · thresholds</small></span></button>
+      <button class="navtab" data-view="infra" data-iftab="changes" data-hash="infra?tab=changes"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg></span><span>Changes<small>inventory drift · reboots · new listeners · status flips</small></span></button>
+      <button class="navtab" data-view="infra" data-iftab="sources" data-hash="infra?tab=sources"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg></span><span>Sources & coverage<small>ssh · ports · node exporter · Instana — who answers, who does not</small></span></button>
+</div>
+    </div>
     <button class="navtab" data-view="sub360"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span data-i18n-html="nav.sub360">Customer 360<small>One customer · mobile &amp; fixed</small></span></button>
   </nav>
   <div class="setwrap">
@@ -2206,7 +2221,7 @@
 <div id="tourOverlay"><div id="tourSpot"></div><div id="tourPop"></div></div>
 <script src="base.js?v=20260910c"></script>
 <script src="person.js?v=20260911b"></script>   <!-- ONE person card for every screen -->
-<script src="navdrop.js?v=20260918n" defer></script>
+<script src="navdrop.js?v=20261001a" defer></script>
 <script src="adaptive.js?v=20260918n" defer></script>
 <script src="ksatime.js?v=20260910c"></script>
 <script src="data.js?v=20260910c"></script>
@@ -2291,7 +2306,7 @@
 <script src="navcfg.js?v=20260910c"></script>
 <script src="tickets.js?v=20260911p"></script>
 <script src="theme.js?v=20260911v"></script>
-<script src="router.js?v=20260929a"></script>
+<script src="router.js?v=20261001a"></script>
 <script src="live.js?v=20260910c"></script>
 <script src="oncall.js?v=20260910c"></script>
 </body>
