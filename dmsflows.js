@@ -13,7 +13,7 @@
   const base=()=>(window.API_BASE||window.CONSOLE_BASE||"");
   const hdr=()=>({ "X-Console-Role":localStorage.getItem("cons_role")||"report_manager","X-Console-User":localStorage.getItem("cons_email")||"" });
   let SPEC=null, DOCS=null, EPX=null;                       // spec, api docs, path → endpoint index
-  const st={ j:0, s:0, mode:"success", actor:"all", fam:"all", q:"", timer:null };
+  const st={ j:0, s:0, mode:"success", actor:"dealer", fam:"all", q:"", timer:null };
   const ACTORC={dealer:"#0e9f5a",admin:"#b45309",system:"#7c3aed"};
   const FAMC={access:"#0d9488",activation:"#0e9f5a",lifecycle:"#2563eb",money:"#d97706",inventory:"#7c3aed",admin_users:"#b45309",admin_channels:"#ea580c",admin_money:"#d97706",admin_config:"#0d9488",admin_reports:"#64748b",system:"#7c3aed"};
 
@@ -40,22 +40,25 @@
 
   /* ---------- picker ---------- */
   function journeys(){ return (SPEC.journeys||[]).filter(j=>(st.actor==="all"||actorOf(j)===st.actor)&&(st.fam==="all"||j.family===st.fam)&&(!st.q||(j.label+" "+j.purpose+" "+j.steps.map(x=>x.ep).join(" ")).toLowerCase().includes(st.q))); }
+  /* ---------- navigator: actor tabs + search on top, family-grouped list on the left ---------- */
+  const collapsed=new Set();
   function renderPicker(){
-    const F=$("#dfFilter"), P=$("#dfPills"); if(!F||!P) return;
+    const T=$("#dfTop"), N=$("#dfNav"); if(!T||!N) return;
     const acts=[["all","All"]].concat(Object.entries(SPEC.actors||{}));
-    const fams=Object.entries(SPEC.families).filter(([k,f])=>st.actor==="all"||(f.actor||"dealer")===st.actor);
-    F.innerHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
-        ${acts.map(([k,l])=>`<button class="jcat ${st.actor===k?"active":""}" data-actor="${esc(k)}" style="--cc:${ACTORC[k]||"#334155"}"><span class="cdot"></span>${esc(l)} <span class="cnt">${(SPEC.journeys||[]).filter(j=>k==="all"||actorOf(j)===k).length}</span></button>`).join("")}
-        <input id="dfQ" placeholder="search journeys, endpoints…" value="${esc(st.q)}" style="margin-left:auto;font:inherit;font-size:11.5px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:inherit;min-width:200px"></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        <button class="jcat ${st.fam==="all"?"active":""}" data-fam="all" style="--cc:#334155"><span class="cdot"></span>All families</button>
-        ${fams.map(([k,f])=>`<button class="jcat ${st.fam===k?"active":""}" data-fam="${esc(k)}" style="--cc:${FAMC[k]||"#64748b"}"><span class="cdot"></span>${esc(f.icon||"")} ${esc(f.label)} <span class="cnt">${(SPEC.journeys||[]).filter(j=>j.family===k).length}</span></button>`).join("")}</div>`;
-    F.querySelectorAll("[data-actor]").forEach(b=>b.addEventListener("click",()=>{ st.actor=b.dataset.actor; st.fam="all"; pick(0); }));
-    F.querySelectorAll("[data-fam]").forEach(b=>b.addEventListener("click",()=>{ st.fam=st.fam===b.dataset.fam?"all":b.dataset.fam; pick(0); }));
-    const q=$("#dfQ"); q.addEventListener("input",()=>{ st.q=q.value.trim().toLowerCase(); const pos=q.selectionStart; pick(0); const q2=$("#dfQ"); q2.focus(); q2.setSelectionRange(pos,pos); });
     const J=journeys(); const cur=J[st.j];
-    P.innerHTML=J.map((j,i)=>`<button class="pill ${i===st.j?"active":""}" data-i="${i}" style="--pc:${FAMC[j.family]||"#64748b"}">${esc(j.label)}<span class="tag" style="background:${ACTORC[actorOf(j)]}22;color:${ACTORC[actorOf(j)]}">${esc(actorOf(j).toUpperCase())}</span><span class="tag">${esc((SPEC.families[j.family]||{}).label||j.family)}</span></button>`).join("")||`<div class="jempty">No DMS journey matches — clear the search or pick another family.</div>`;
-    P.querySelectorAll("[data-i]").forEach(b=>b.addEventListener("click",()=>pick(+b.dataset.i)));
+    T.innerHTML=`<div class="dfseg">${acts.map(([k,l])=>`<button class="${st.actor===k?"on":""}" data-actor="${esc(k)}" style="--ac:${ACTORC[k]||"#0e9f5a"}">${esc(l)} <b>${(SPEC.journeys||[]).filter(j=>k==="all"||actorOf(j)===k).length}</b></button>`).join("")}</div>
+      <input id="dfQ" placeholder="search journeys, endpoints, tables…" value="${esc(st.q)}" class="dfq">
+      <span class="rl" style="font-size:10.5px;color:var(--muted)">${J.length} journey${J.length===1?"":"s"}</span>`;
+    T.querySelectorAll("[data-actor]").forEach(b=>b.addEventListener("click",()=>{ st.actor=b.dataset.actor; st.fam="all"; pick(0); }));
+    const q=$("#dfQ"); q.addEventListener("input",()=>{ st.q=q.value.trim().toLowerCase(); const pos=q.selectionStart; pick(0); const q2=$("#dfQ"); q2.focus(); q2.setSelectionRange(pos,pos); });
+    const fams=Object.entries(SPEC.families).filter(([k,f])=>(st.actor==="all"||(f.actor||"dealer")===st.actor)&&J.some(j=>j.family===k));
+    N.innerHTML=fams.map(([k,f])=>{ const items=J.map((j,i)=>[j,i]).filter(([j])=>j.family===k); const col=collapsed.has(k)&&!(cur&&cur.family===k);
+      return `<div class="dfgrp"><div class="dfgh" data-grp="${esc(k)}"><span class="cdot" style="background:${FAMC[k]||"#64748b"}"></span><span>${esc(f.icon||"")} ${esc(f.label)}</span><span class="cnt">${items.length}</span><span class="car">${col?"▸":"▾"}</span></div>
+        ${col?"":`<div class="dfgi">${items.map(([j,i])=>`<button class="dfit ${i===st.j?"on":""}" data-i="${i}" title="${esc(j.purpose||"")}"><span>${esc(j.label)}</span><span class="mono" style="font-size:9.5px;color:var(--muted)">${(j.steps||[]).length}</span></button>`).join("")}</div>`}</div>`; }).join("")||`<div class="jempty">No DMS journey matches — clear the search or pick another scope.</div>`;
+    N.querySelectorAll("[data-i]").forEach(b=>b.addEventListener("click",()=>pick(+b.dataset.i)));
+    N.querySelectorAll("[data-grp]").forEach(h=>h.addEventListener("click",()=>{ const g=h.dataset.grp; if(collapsed.has(g)) collapsed.delete(g); else collapsed.add(g); renderPicker(); }));
+    /* phone: the same list as a select */
+    const S=$("#dfSel"); if(S){ S.innerHTML=fams.map(([k,f])=>`<optgroup label="${esc(f.label)}">${J.map((j,i)=>[j,i]).filter(([j])=>j.family===k).map(([j,i])=>`<option value="${i}" ${i===st.j?"selected":""}>${esc(j.label)}</option>`).join("")}</optgroup>`).join(""); S.onchange=()=>pick(+S.value); }
     return cur;
   }
   function pick(i){ stop(); st.j=i; st.s=0; render(); }
@@ -146,16 +149,38 @@
   /* ---------- render ---------- */
   function render(){
     const host=$("#view-dmsflows"); if(!host||!SPEC) return;
-    if(!host.querySelector("#dfPills")) host.innerHTML=`<div class="panel">
-        <h2>DMS journeys — step by step</h2>
-        <div class="sub">Every dealer-app, CMS back-office and system journey of the DMS platform as a live data flow across services — from the decompiled production code (${esc(SPEC.source||"")}). Toggle Failure to see the codes and break points, or press Play to auto-advance. Endpoints open the API reference.</div>
-        <div class="jfilter" id="dfFilter"></div><div class="pills" id="dfPills"></div>
-        <div class="modebar"><div class="toggle" id="dfMode"><button data-mode="success" class="on-success">✓ Success path</button><button data-mode="failure">✕ Failure mode</button></div>
-          <div class="stepnav"><button id="dfPrev">‹ Prev</button><span class="counter" id="dfCounter">1 / 1</span><button id="dfNext">Next ›</button><button class="play" id="dfPlay">▶ Play</button></div></div>
-        <div class="desc" id="dfDesc"></div>
-        <div class="journey-grid"><div class="steplist" id="dfSteps"></div><div class="stage" id="dfStage"></div></div>
-        <div id="dfFoot"></div></div>`+
-      `<style>@media (max-width:820px){#view-dmsflows .journey-grid{grid-template-columns:1fr}#view-dmsflows .infocols{grid-template-columns:1fr}#view-dmsflows .stepnav{margin-left:0}}</style>`;
+    if(!host.querySelector("#dfNav")) host.innerHTML=`<div class="panel">
+        <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap"><h2 style="margin:0">DMS journeys — step by step</h2>
+          <div class="sub" style="margin:0">dealer app · CMS back-office · system — every journey as a data flow across services, from the decompiled production code (git tag v20260930-appdigp01). Endpoints open the API reference.</div></div>
+        <div id="dfTop" class="dftop"></div>
+        <div class="dfwrap">
+          <aside id="dfNav" class="dfnav"></aside>
+          <select id="dfSel" class="dfsel"></select>
+          <div class="dfmain">
+            <div class="modebar" style="margin:0 0 10px"><div class="toggle" id="dfMode"><button data-mode="success" class="on-success">✓ Success path</button><button data-mode="failure">✕ Failure mode</button></div>
+              <div class="stepnav"><button id="dfPrev">‹ Prev</button><span class="counter" id="dfCounter">1 / 1</span><button id="dfNext">Next ›</button><button class="play" id="dfPlay">▶ Play</button></div></div>
+            <div class="desc" id="dfDesc"></div>
+            <div class="journey-grid"><div class="steplist" id="dfSteps"></div><div class="stage" id="dfStage"></div></div>
+            <div id="dfFoot"></div></div></div></div>`+
+      `<style>
+        #view-dmsflows .dftop{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
+        #view-dmsflows .dfseg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+        #view-dmsflows .dfseg button{border:0;background:transparent;padding:7px 14px;font:inherit;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;display:flex;gap:6px;align-items:center}
+        #view-dmsflows .dfseg button b{font-size:10px;background:var(--bg);border-radius:9px;padding:1px 6px;color:var(--muted)}
+        #view-dmsflows .dfseg button.on{background:var(--ac);color:#fff}#view-dmsflows .dfseg button.on b{background:rgba(255,255,255,.25);color:#fff}
+        #view-dmsflows .dfq{flex:1;min-width:200px;font:inherit;font-size:11.5px;padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:inherit}
+        #view-dmsflows .dfwrap{display:grid;grid-template-columns:270px minmax(0,1fr);gap:16px;align-items:start}
+        #view-dmsflows .dfnav{position:sticky;top:70px;max-height:calc(100vh - 90px);overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:6px}
+        #view-dmsflows .dfsel{display:none;width:100%;font:inherit;font-size:12.5px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:inherit;margin-bottom:10px}
+        #view-dmsflows .dfgh{display:flex;gap:7px;align-items:center;padding:8px 8px 5px;font-size:10.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);cursor:pointer;user-select:none}
+        #view-dmsflows .dfgh .cdot{width:8px;height:8px;border-radius:50%}#view-dmsflows .dfgh .cnt{margin-left:auto;font-size:9.5px;background:var(--bg);border-radius:9px;padding:1px 6px}#view-dmsflows .dfgh .car{font-size:10px}
+        #view-dmsflows .dfit{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;background:transparent;color:inherit;font:inherit;font-size:12px;font-weight:600;padding:6px 9px 6px 22px;border-radius:8px;cursor:pointer;line-height:1.3}
+        #view-dmsflows .dfit:hover{background:var(--card2,rgba(148,163,184,.12))}
+        #view-dmsflows .dfit.on{background:var(--green);color:#fff}#view-dmsflows .dfit.on .mono{color:rgba(255,255,255,.8)!important}
+        #view-dmsflows .dfmain{min-width:0}
+        @media (max-width:1100px){#view-dmsflows .dfwrap{grid-template-columns:230px minmax(0,1fr)}}
+        @media (max-width:820px){#view-dmsflows .dfwrap{grid-template-columns:1fr}#view-dmsflows .dfnav{display:none}#view-dmsflows .dfsel{display:block}#view-dmsflows .journey-grid{grid-template-columns:1fr}#view-dmsflows .infocols{grid-template-columns:1fr}#view-dmsflows .stepnav{margin-left:0}#view-dmsflows .dfseg{width:100%}#view-dmsflows .dfseg button{flex:1;justify-content:center;padding:7px 6px}}
+      </style>`;
     const J=journeys(); if(st.j>=J.length) st.j=0; const j=J[st.j];
     renderPicker();
     if(!j){ $("#dfDesc").innerHTML=""; $("#dfSteps").innerHTML=""; $("#dfStage").innerHTML=`<div class="rl">No journey selected.</div>`; $("#dfFoot").innerHTML=""; return; }
@@ -183,7 +208,7 @@
     if(!SPEC) host.innerHTML=`<div class="panel"><h2>DMS journeys — step by step</h2><div class="rl">Loading the journey spec…</div></div>`;
     await load();
     if(!SPEC){ host.innerHTML=`<div class="panel"><h2>DMS journeys</h2><div class="rl" style="color:var(--red,#dc2626)">The server does not expose /api/dms/journeys/spec (deploy pending?)</div></div>`; return; }
-    const src=qs||(location.hash.split("?")[1]||""); const m=/(?:^|&)j=([a-z0-9_\-]+)/i.exec(src); if(m){ st.actor="all"; st.fam="all"; st.q=""; const i=(SPEC.journeys||[]).findIndex(x=>x.key===m[1]); if(i>=0){ st.j=i; const ms=/(?:^|&)s=(\d+)/.exec(src); st.s=ms?Math.max(0,+ms[1]-1):0; } }
+    const src=qs||(location.hash.split("?")[1]||""); const m=/(?:^|&)j=([a-z0-9_\-]+)/i.exec(src); if(m){ st.fam=""; st.q=""; const jj=(SPEC.journeys||[]).find(x=>x.key===m[1]); if(jj){ st.actor=actorOf(jj); st.fam="all"; const i=journeys().findIndex(x=>x.key===m[1]); st.j=i; const ms=/(?:^|&)s=(\d+)/.exec(src); st.s=ms?Math.max(0,+ms[1]-1):0; } }
     render();
   }
   document.querySelectorAll(".navtab").forEach(b=>{ if(b.dataset.view==="dmsflows") b.addEventListener("click", open); });
