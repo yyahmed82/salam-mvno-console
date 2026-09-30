@@ -1,3 +1,8 @@
+## 2.0.0-alpha.122 — 30 Sep 2026 — Infrastructure hotfix: the HLD files are read from STATIC_DIR (/apps/unified/web) — on 152 the seed found 0 nodes; node exporter / Instana over http.get instead of fetch (server deploy)
+
+- On 152 the web files live in `/apps/unified/web`, not two levels above `server/src`: `readNodes()` opened a path that does not exist, logged nothing, and the seed created only the console box. Now `STATIC_DIR` (the app already uses it), then `../../web`, then `../..`; a missing file is logged with its path.
+- `fetch` + `AbortController` replaced by `http.get` with a socket timeout for the node-exporter scrape and the Instana calls (Node 18 on 152; undici aborts have crashed processes before — nothing in this module may take the app down).
+
 ## 2.0.0-alpha.121 — 30 Sep 2026 — Infrastructure: SSH discovery — every host the console key already opens is found and flagged by itself (full deploy)
 
 - 152 already reaches every server with the log-collector key. Instead of flagging 40 hosts by hand, `discover()` tries `ssh … echo ok` (9 s, 8 at a time, read-only) on every enabled host not yet flagged, flags the ones that answer, logs a `discover` change per host, and the same inventory cycle reads them. Runs with every inventory cycle (daily) and on demand: **Discover SSH access** button in the section header (`POST /api/infra/discover`, manageSync); the toast names the hosts that refused.

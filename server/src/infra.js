@@ -70,13 +70,16 @@ async function ensureSchema() {
 }
 
 /* ------------------------------------------------------------------------------------------------------ seed from the HLDs */
+/* the HLD files live in STATIC_DIR (= /apps/unified/web on 152, the repo root locally) — never assume ../../ */
+const STATIC_DIRS = [process.env.STATIC_DIR, path.join(__dirname, '..', '..', 'web'), path.join(__dirname, '..', '..')].filter(Boolean);
+const findStatic = rel => { for (const d of STATIC_DIRS) { const f = path.join(d, rel); if (fs.existsSync(f)) return f; } return path.join(STATIC_DIRS[STATIC_DIRS.length - 1], rel); };
 const DIAGRAMS = [
-  { key: 'mvno', segment: 'mobile', file: path.join(__dirname, '..', '..', 'mvno-rodod-hld.html'), title: 'MVNO · DMS + RODOD' },
-  { key: 'fixed', segment: 'fixed', file: path.join(__dirname, '..', '..', 'fixed-diagrams', 'salam-fixed-digital-bss-hld.html'), title: 'Fixed · Digital + BSS' }
+  { key: 'mvno', segment: 'mobile', get file() { return findStatic('mvno-rodod-hld.html'); }, title: 'MVNO · DMS + RODOD' },
+  { key: 'fixed', segment: 'fixed', get file() { return findStatic(path.join('fixed-diagrams', 'salam-fixed-digital-bss-hld.html')); }, title: 'Fixed · Digital + BSS' }
 ];
 const IPV4 = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 function readNodes(file) {
-  let html; try { html = fs.readFileSync(file, 'utf8'); } catch (_) { return { nodes: [], edges: [] }; }
+  let html; try { html = fs.readFileSync(file, 'utf8'); } catch (e) { log('HLD file not found:', file, '— set STATIC_DIR'); return { nodes: [], edges: [] }; }
   const grab = name => { const m = new RegExp(`const ${name}=(\\[[\\s\\S]*?\\n\\]);`).exec(html); if (!m) return []; try { return vm.runInNewContext('(' + m[1] + ')', {}, { timeout: 500 }); } catch (e) { log('seed parse', name, e.message); return []; } };
   return { nodes: grab('nodes'), edges: grab('edges') };
 }
@@ -186,17 +189,16 @@ function tcpProbe(ip, port, timeout) {
   return new Promise(resolve => { const t0 = Date.now(); const s = new net.Socket(); let done = false; const fin = ok => { if (done) return; done = true; try { s.destroy(); } catch (_) {} resolve({ port, ok, ms: Date.now() - t0 }); };
     s.setTimeout(timeout); s.once('connect', () => fin(true)); s.once('timeout', () => fin(false)); s.once('error', () => fin(false)); try { s.connect(port, ip); } catch (_) { fin(false); } });
 }
+const httpGet = (url, headers, timeout) => new Promise((resolve, reject) => { const mod = url.startsWith('https') ? require('https') : require('http'); const req = mod.get(url, { headers: headers || {}, timeout }, res => { let body = ''; res.setEncoding('utf8'); res.on('data', d => { if (body.length < 4 * 1024 * 1024) body += d; }); res.on('end', () => resolve({ status: res.statusCode, body })); res.on('error', reject); }); req.on('timeout', () => { req.destroy(new Error('timeout')); }); req.on('error', reject); });
 async function nodeExporter(ip) {
-  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 4000);
-  try { const r = await fetch(`http://${ip}:9100/metrics`, { signal: ctrl.signal }); if (!r.ok) return null; const txt = await r.text(); clearTimeout(t);
+  try { const r = await httpGet(`http://${ip}:9100/metrics`, {}, 4000); if (r.status !== 200) return null; const txt = r.body;
     const g = name => { const m = new RegExp(`^${name}(?:\\{[^}]*\\})? (\\S+)`, 'm').exec(txt); return m ? Number(m[1]) : null; };
     const total = g('node_memory_MemTotal_bytes'), avail = g('node_memory_MemAvailable_bytes'); const swT = g('node_memory_SwapTotal_bytes'), swF = g('node_memory_SwapFree_bytes');
     const disks = []; for (const m of txt.matchAll(/^node_filesystem_size_bytes\{([^}]*)\} (\S+)$/gm)) { const mount = /mountpoint="([^"]+)"/.exec(m[1]); const fst = /fstype="([^"]+)"/.exec(m[1]); if (!mount || /tmpfs|overlay|squashfs/.test(fst ? fst[1] : '')) continue; const av = new RegExp(`^node_filesystem_avail_bytes\\{[^}]*mountpoint="${mount[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^}]*\\} (\\S+)$`, 'm').exec(txt); const size = Number(m[2]); if (av && size) disks.push({ mount: mount[1], pct: Math.round(1000 * (1 - Number(av[1]) / size)) / 10 }); }
     return { load1: g('node_load1'), load5: g('node_load5'), load15: g('node_load15'), mem_pct: total ? Math.round(1000 * (total - avail) / total) / 10 : null, swap_pct: swT ? Math.round(1000 * (swT - swF) / swT) / 10 : 0, disks, disk_pct: disks.length ? Math.max(...disks.map(d => d.pct)) : null, source: 'node_exporter' };
-  } catch (_) { return null; } finally { clearTimeout(t); }
+  } catch (_) { return null; }
 }
-async function instanaGet(p) { const c = CFG(); if (!c.instanaUrl || !c.instanaToken) return null; const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 15000);
-  try { const r = await fetch(c.instanaUrl + p, { headers: { authorization: 'apiToken ' + c.instanaToken, accept: 'application/json' }, signal: ctrl.signal }); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); } finally { clearTimeout(t); } }
+async function instanaGet(p) { const c = CFG(); if (!c.instanaUrl || !c.instanaToken) return null; const r = await httpGet(c.instanaUrl + p, { authorization: 'apiToken ' + c.instanaToken, accept: 'application/json' }, 15000); if (r.status !== 200) throw new Error('HTTP ' + r.status); return JSON.parse(r.body); }
 async function instanaHosts() {
   const list = await instanaGet('/api/infrastructure-monitoring/snapshots?plugin=host&size=500&windowSize=600000'); const items = (list && list.items) || []; const out = [];
   for (const it of items.slice(0, 300)) { try { const s = await instanaGet(`/api/infrastructure-monitoring/snapshots/${encodeURIComponent(it.snapshotId)}`); const d = (s && s.data) || {}; const ips = [].concat(d.ipAddresses || d.ips || [], d.ipAddress ? [d.ipAddress] : []).filter(x => /^\d+\.\d+\.\d+\.\d+$/.test(x));
