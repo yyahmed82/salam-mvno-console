@@ -38,4 +38,7 @@ function scopeSql(alias, keyCol, scope) {
 }
 /* can a user with this console_users.business receive / see this segment? */
 const userSees = (business, seg) => business === 'both' || business === BUSINESS_OF[seg];
-module.exports = { SEGMENTS, LABEL, SHORT, BUSINESS_OF, segOf, forRequest, sqlWhere, scopeSql, userSees };
+/* APP-only filter for the business-facing boards (Executive Dashboard, NOC wall, Home / dashboards): infrastructure
+ * incidents (infra_* / fixed_infra_*) belong to the Infrastructure section only (1 Oct 2026). */
+const appOnly = (alias, keyCol = 'rule_key') => ` AND ${alias}.${keyCol} NOT LIKE '%infra\\_%'`;
+module.exports = { SEGMENTS, LABEL, SHORT, BUSINESS_OF, segOf, forRequest, sqlWhere, scopeSql, appOnly, userSees };

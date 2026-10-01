@@ -78,7 +78,7 @@ async function execRaw(q, { homeKpis, boardNow, segment }) {
     safe(C().query(ROLLUP, [from, to]), []), safe(C().query(ERR_DAY, [from, to]), []), safe(C().query(ERR_CAT, [from, to]), []),
     safe(C().query(ERR_CAT_DAY, [from, to]), []), safe(C().query(ERR_24, [from24]), [{ n: 0 }]), budget(),
     safe(C().query(`SELECT a.severity, a.name, a.rule_key, a.team, a.status, a.message, a.observed_value, a.threshold, a.fired_at, a.last_seen_at
-                      FROM alerts a WHERE ${segWhere} AND (a.status='open' OR a.fired_at >= $1) ORDER BY a.status='open' DESC, a.fired_at DESC LIMIT 50`, [from]), []),
+                      FROM alerts a WHERE ${segWhere} AND a.rule_key NOT LIKE '%infra\\_%' AND (a.status='open' OR a.fired_at >= $1) ORDER BY a.status='open' DESC, a.fired_at DESC LIMIT 50`, [from]), []),
     /* radar: the 12-hour clock face, shared query with Fixed (execRadar.radarRows) */
     execRadar.radarRows('mvno'),
     safe(C().query(SNAP, [['eligibility_deny_rate', 'semati_provider_error_rate', 'otp_verify_rate', 'api_technical_fail_rate']]), []),

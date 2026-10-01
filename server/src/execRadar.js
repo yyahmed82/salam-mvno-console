@@ -59,7 +59,7 @@ const slotAxis = hours => { const h0 = hourFloor(Date.now()), out = []; for (let
 const CLS = cls => cls === 'technical' ? `AND coalesce(r.alert_class, 'technical') <> 'business'` : cls === 'business' ? `AND r.alert_class = 'business'` : '';
 const clsOf = v => v === 'technical' || v === 'business' ? v : 'all';
 async function radarRows(seg, hours = RADAR_HOURS, cls = 'all') {
-  const from = windowFrom(hours), W = SEG.sqlWhere('a', 'rule_key', seg) + ' ' + CLS(clsOf(cls));
+  const from = windowFrom(hours), W = SEG.sqlWhere('a', 'rule_key', seg) + SEG.appOnly('a') + ' ' + CLS(clsOf(cls));
   const q = (sql, p) => db.console.query(sql, p).then(r => r.rows, e => { console.error('[execRadar] radar query failed:', e.message); return []; });
   const [rows, totals] = await Promise.all([
     q(`SELECT ${SLOT('GREATEST(a.fired_at, $1::timestamptz)')} AS slot, a.severity,
@@ -85,7 +85,7 @@ const M_COLS = `a.id, a.rule_key, a.name, a.severity, a.team, a.status, a.messag
 
 async function consoleCell(seg, { day, sev, days, slot, older, openOnly, cls }) {
   const C = db.console;
-  const segWhere = SEG.sqlWhere('a', 'rule_key', seg) + ' ' + CLS(clsOf(cls));
+  const segWhere = SEG.sqlWhere('a', 'rule_key', seg) + SEG.appOnly('a') + ' ' + CLS(clsOf(cls));
   const biz = seg === 'fixed' ? 'fixed' : 'mobile';
   const w = [segWhere], pp = [];
   if (sev) { pp.push(sev); w.push(`a.severity = $${pp.length}`); }

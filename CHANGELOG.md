@@ -1,3 +1,7 @@
+## 2.0.0-alpha.134 — 2026-10-01
+
+- Infrastructure incidents (`infra_*` / `fixed_infra_*`) no longer drive the business boards: Executive Dashboard "Are we OK right now?" / outage register / radar (`execBrief.js`, `execRadar.js`), Mobile and Fixed executive strips (`mvnoExec.js`, `fixedExec.js`), the NOC wall open counts and headline (`/api/noc`) and the Home "needs attention" list (`/api/alerts?scope=app`) all filter with `segment.appOnly()`. Infra alerts stay exactly where they are under Infrastructure › Alerts (Mobile infra / Fixed infra), in mails, ChatOps and the agents.
+
 ## 2.0.0-alpha.133 — 2026-10-01
 
 - DMS release diff: `--fetch` no longer reports "cannot list" when the remote glob is empty (remote listing exits 0); a flat baseline pulled as `<service-dir>__<jar>` pairs with `<service-dir>/<jar>` snapshots; an empty snapshot aborts instead of marking every service "retired". First real run (30 Sep baseline vs 1 Oct): UIL rebuilt on 136/137 (FreelanceCertificate on the Optiva AccountDetail, price-plan option value fix, version still 1.3.6, seven copies per node); wallet 0.0.8 scheduler classes exist only in the node-136 jar; callback service is three different builds across four nodes — `DMS-RELEASE-2026-10-01-UIL.md`.

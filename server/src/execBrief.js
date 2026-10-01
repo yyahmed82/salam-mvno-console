@@ -66,7 +66,7 @@ function vendorFor(cfg, biz) {
 
 /* ---------------------------------------------------------------- alerts of one business in a window */
 async function alertsIn(seg, from, to) {
-  const W = SEG.sqlWhere('a', 'rule_key', seg);
+  const W = SEG.sqlWhere('a', 'rule_key', seg) + SEG.appOnly('a');   // infra incidents never drive the executive status
   const r = await db.console.query(
     `SELECT a.id, a.rule_key, a.name, a.severity, a.team, a.status, a.customers, a.services, a.observed_value, a.peak_value,
             a.fired_at, COALESCE(a.opened_wall, a.fired_at) AS opened, a.resolved_at, a.ack_at, a.ack_by, a.assignee, a.sn_number, a.resolve_reason,

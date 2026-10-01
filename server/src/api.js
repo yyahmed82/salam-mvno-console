@@ -6218,7 +6218,7 @@ app.get('/api/noc', async (req, res) => {
     const nISO = now && now.toISOString ? now.toISOString() : (now || new Date().toISOString());
     // open incidents by severity
     const inc = { open: 0, p1: 0, p2: 0 };
-    try { (await C.query(`SELECT severity, count(*)::int c FROM alerts WHERE status='open' GROUP BY severity`)).rows
+    try { (await C.query(`SELECT severity, count(*)::int c FROM alerts WHERE status='open' AND rule_key NOT LIKE '%infra\\_%' GROUP BY severity`)).rows
       .forEach(x => { inc.open += x.c; if (x.severity === 'P1') inc.p1 += x.c; else if (x.severity === 'P2') inc.p2 += x.c; }); } catch (e) {}
     // SLO breached / at-risk
     let breached = [], atRisk = [];
@@ -6279,7 +6279,7 @@ app.get('/api/noc', async (req, res) => {
     // name the most-impacting open incident, preferring a provider ROOT cause over a symptom
     let topOpen = null;
     try { topOpen = (await C.query(
-      `SELECT name FROM alerts WHERE status='open'
+      `SELECT name FROM alerts WHERE status='open' AND rule_key NOT LIKE '%infra\\_%'
         ORDER BY (rule_key = ANY($1)) DESC,
                  CASE severity WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END, fired_at ASC LIMIT 1`,
       [correlation.ROOTS])).rows[0]; } catch (e) {}

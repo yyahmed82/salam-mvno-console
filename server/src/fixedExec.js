@@ -109,7 +109,7 @@ const cq = (sql, params) => db.console.query(sql, params).then(r => r.rows, e =>
 async function firedAlerts(fromIso) {
   return cq(`SELECT a.rule_key, a.name AS rule_name, a.team, a.severity, a.status, a.observed_value AS metric_value,
                     a.threshold, a.message AS metric_text, a.fired_at
-               FROM alerts a WHERE ${SEG_WHERE()} AND (a.status='open' OR a.fired_at >= $1)
+               FROM alerts a WHERE ${SEG_WHERE()} AND a.rule_key NOT LIKE '%infra\\_%' AND (a.status='open' OR a.fired_at >= $1)
               ORDER BY a.status='open' DESC, a.fired_at DESC LIMIT 50`, [fromIso]);
 }
 

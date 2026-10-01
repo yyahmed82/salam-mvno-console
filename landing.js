@@ -80,7 +80,7 @@
     const P=(p,fb)=>api(p).catch(()=>fb);
     const now=Date.now(), d7=7*864e5;
     const [m24,m7,noc,anoms,al,f24,f7,f7p,f30,merr]=await Promise.all([
-      canM?P("/api/home?hours=24",null):null, canM?P("/api/home?hours=168",null):null, canM?P("/api/noc",{}):{}, canM?P("/api/anomalies",{}):{}, canM?P("/api/alerts?status=open",[]):[],
+      canM?P("/api/home?hours=24",null):null, canM?P("/api/home?hours=168",null):null, canM?P("/api/noc",{}):{}, canM?P("/api/anomalies",{}):{}, canM?P("/api/alerts?status=open&scope=app",[]):[],
       canF?P("/api/fixed/summary?range=24h",null):null, canF?P("/api/fixed/summary?range=7d",null):null,
       canF?P(`/api/fixed/summary?from=${encodeURIComponent(new Date(now-2*d7).toISOString())}&to=${encodeURIComponent(new Date(now-d7).toISOString())}`,null):null,
       canF?P("/api/fixed/summary?range=30d",null):null,
