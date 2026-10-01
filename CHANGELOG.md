@@ -1,3 +1,7 @@
+## 2.0.0-alpha.135 — 2026-10-02
+
+- "trace ›" now opens **Fixed › Troubleshoot with the app-log grep run on the workflow id** instead of the SDA map: one shared builder `window.fixedTraceHash(id)` → `#fixed?tab=errors&openOnly=0&workflowId=<wf_st_…>&grep=<id>`. The board's Workflow ID field is prefilled, open-only is off, the grep panel opens with the id and runs once for that link (never on the 60 s refresh; still audited server-side). Applied everywhere a trace link exists: alert evidence rows (Fixed › Alerts — state id, or request id when there is none), the SDA map order-trace modal (new "🔎 Grep app log ›" action), Customer 360 Fixed attempts and the QR page (fallbacks no longer go to the map / an alert box), and the app-log evidence table in alert mails (ids are links). `fixed-errors.js` accepts `grep=` in deep links.
+
 ## 2.0.0-alpha.134 — 2026-10-01
 
 - Infrastructure incidents (`infra_*` / `fixed_infra_*`) no longer drive the business boards: Executive Dashboard "Are we OK right now?" / outage register / radar (`execBrief.js`, `execRadar.js`), Mobile and Fixed executive strips (`mvnoExec.js`, `fixedExec.js`), the NOC wall open counts and headline (`/api/noc`) and the Home "needs attention" list (`/api/alerts?scope=app`) all filter with `segment.appOnly()`. Infra alerts stay exactly where they are under Infrastructure › Alerts (Mobile infra / Fixed infra), in mails, ChatOps and the agents.

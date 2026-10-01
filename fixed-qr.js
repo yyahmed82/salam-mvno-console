@@ -261,7 +261,7 @@
     el.querySelector("#fxqBack").onclick=clearCode;
     el.querySelectorAll("[data-att]").forEach(tr=>tr.onclick=()=>openTrace(tr.dataset.att));
   }
-  function openTrace(id){ if(window.fixedMapOpenTrace) return window.fixedMapOpenTrace(id); alert("Trace modal lives in the SDA map page (fixed-map.js) — load it to open attempt "+id); }
+  function openTrace(id){ if(window.fixedMapOpenTrace) return window.fixedMapOpenTrace(id); location.hash=window.fixedTraceHash?window.fixedTraceHash(id):"fixed?tab=errors&openOnly=0&grep="+encodeURIComponent(id); }
 
   window.FIXED_PAGES=window.FIXED_PAGES||{};
   window.FIXED_PAGES.qr={ label:"QR codes", sub:"referral orders · consent", render };

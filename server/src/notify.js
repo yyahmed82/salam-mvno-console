@@ -155,6 +155,8 @@ async function sendText(to, subject, text, opts = {}) {
 }
 
 const CONSOLE_URL = process.env.CONSOLE_PUBLIC_URL || process.env.CONSOLE_BASE_URL || 'https://salam.sa/unified-console/';
+/* a workflow / request id in an app-log evidence row → Fixed › Troubleshoot with the app-log grep run on it (1 Oct 2026) */
+const traceUrl = id => { const v = String(id || '').trim(); return CONSOLE_URL.replace(/#.*$/, '').replace(/\/?$/, '/') + '#fixed?tab=errors&openOnly=0' + (/^wf_/i.test(v) ? '&workflowId=' + encodeURIComponent(v) : '') + '&grep=' + encodeURIComponent(v); };
 
 const FL = require('./fixedLinks');
 /* per-row destinations: Mobile rows → #alerts (incident or rule), Fixed rows → Fixed › Alerts plus the
@@ -207,7 +209,7 @@ function evidenceHtml(ev) {
       `${pct(r.disk_pct)}${r.disk_worst ? `<br><span style="color:#64748b">${esc(r.disk_worst.mount)}</span>` : ''}`, r.load15 != null ? esc(r.load15) : '—', r.ports_down && r.ports_down.length ? `<b style="color:#dc2626">${r.ports_down.map(esc).join(', ')}</b>` : '—']);
   } else if (ev.kind === 'applog') {
     head = ['When', 'Endpoint', 'Status', 'Reason', 'Message', 'Request · state'];
-    rows = ev.rows.map(r => [ksa(r.ts).slice(5), `<span style="font-family:monospace;font-size:11px">${ep(r.path)}</span>`, esc(r.status_code || '—'), esc(r.reason || r.reason_class || '—'), esc(String(r.message || '').slice(0, 60)) || '—', [r.request_id, r.state_id].filter(Boolean).map(x => `<span style="font-family:monospace;font-size:10.5px">${esc(String(x).slice(0, 18))}</span>`).join(' · ') || '—']);
+    rows = ev.rows.map(r => [ksa(r.ts).slice(5), `<span style="font-family:monospace;font-size:11px">${ep(r.path)}</span>`, esc(r.status_code || '—'), esc(r.reason || r.reason_class || '—'), esc(String(r.message || '').slice(0, 60)) || '—', [r.request_id, r.state_id].filter(Boolean).map(x => `<a href="${esc(traceUrl(x))}" style="font-family:monospace;font-size:10.5px;color:#0d9488">${esc(String(x).slice(0, 18))}</a>`).join(' · ') || '—']);
   } else {
     head = ['When', 'Endpoint', 'Code', 'Message', 'Transaction'];
     rows = ev.rows.map(r => [ksa(r.ts).slice(5), `<span style="font-family:monospace;font-size:11px">${ep(r.path)}</span>`, esc(r.code || '—'), esc(String(r.msg || '').slice(0, 60)), `<span style="font-family:monospace;font-size:10.5px">${esc(String(r.transaction_id || '—').slice(0, 20))}</span>`]);

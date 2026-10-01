@@ -373,7 +373,7 @@
         ${UI?UI.outcomePill(a.outcome,oc):esc(a.outcome)}
         <span class="fxtag" style="font-size:10.5px">${esc(a.label||a.workflow)}</span>${a.outsideKsa?`<span class="fxtag err">⚠ pin outside KSA</span>`:""}
         ${t.unmasked?`<span class="fxtag err">🔓 UNMASKED · audited</span>`:""}
-        <span style="margin-left:auto;display:flex;gap:8px;align-items:center">${canUnmask&&!t.unmasked?`<button class="fxbtn warn" id="fxmUnmask" title="Fetch the live workflow context from nexus — every use is written to the audit log">🔓 Unmask <small style="font-weight:600;opacity:.8">audited</small></button>`:""}<button class="fxbtn icon" id="fxmClose" title="Close (Esc)">✕</button></span></div>
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center"><a class="fxbtn" id="fxmGrep" href="#${window.fixedTraceHash?window.fixedTraceHash(a.id):"fixed?tab=errors&openOnly=0&grep="+encodeURIComponent(a.id)}" title="Fixed › Troubleshoot — grep the raw app log for this workflow id: every step, success and failure, with request / response" style="text-decoration:none">🔎 Grep app log ›</a>${canUnmask&&!t.unmasked?`<button class="fxbtn warn" id="fxmUnmask" title="Fetch the live workflow context from nexus — every use is written to the audit log">🔓 Unmask <small style="font-weight:600;opacity:.8">audited</small></button>`:""}<button class="fxbtn icon" id="fxmClose" title="Close (Esc)">✕</button></span></div>
       <div class="fxt-body">
       ${t.unmaskNote?`<div class="fxt-note">${esc(t.unmaskNote)}</div>`:""}
       <div class="fxt-facts">
@@ -393,6 +393,7 @@
             <div class="fxt-io"><div><span>Request</span><pre class="mono">${esc(j(c.req_body)||"—")}</pre></div><div><span>Response</span><pre class="mono">${esc(j(c.res_body)||"—")}</pre></div></div></details>`; }).join("")||`<div class="fxt-empty">no api_calls captured for this attempt</div>`}</div>
           ${t.unmasked?`<h4 style="margin-top:12px;color:#dc2626">Raw workflow context · live from nexus · not stored</h4><pre class="mono fxt-raw">${esc(j(t.rawContext))}</pre>`:""}</div></div></div>`;
     ov.querySelector("#fxmClose").onclick=close;
+    const gr=ov.querySelector("#fxmGrep"); if(gr) gr.addEventListener("click",()=>close());
     const um=ov.querySelector("#fxmUnmask"); if(um) um.onclick=()=>{ if(confirm("Fetch the raw (unmasked) workflow context for this attempt? This access is written to the audit log with your name.")) openTrace(id,true); };
   }
 

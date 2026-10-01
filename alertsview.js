@@ -1095,7 +1095,7 @@
       tbl=`<table class="alerts"><tr><th>WHEN</th><th>ENDPOINT</th><th>STATUS</th><th>REASON</th><th>MESSAGE</th><th>REQUEST · STATE</th><th>PLATFORM</th></tr>`+d.rows.map(r=>`<tr>
         <td class="mono" style="color:var(--muted);white-space:nowrap">${esc(ksaShort(r.ts))}</td><td class="mono" style="font-size:11px">${evEp(r.path)}</td><td style="color:${Number(r.status_code)>=500?"#dc2626":"#d97706"}"><b>${esc(r.status_code||"—")}</b></td>
         <td>${esc(r.reason||r.reason_class||"—")}</td><td style="max-width:320px">${esc(String(r.message||"").slice(0,160))||"—"}</td>
-        <td class="mono" style="font-size:10.5px">${[r.request_id,r.state_id].filter(Boolean).map(esc).join("<br>")||"—"}${r.state_id?` <a href="#fixed?tab=map&find=${encodeURIComponent(r.state_id)}" style="color:var(--green)">trace ›</a>`:""}</td>
+        <td class="mono" style="font-size:10.5px">${[r.request_id,r.state_id].filter(Boolean).map(esc).join("<br>")||"—"}${(r.state_id||r.request_id)?` <a href="#${(window.fixedTraceHash?window.fixedTraceHash(r.state_id||r.request_id):"fixed?tab=errors&openOnly=0&grep="+encodeURIComponent(r.state_id||r.request_id))}" style="color:var(--green)" title="Fixed › Troubleshoot — grep the app log for ${esc(r.state_id||r.request_id)} (every step of the journey, request / response)">trace ›</a>`:""}</td>
         <td class="rl">${[r.platform,r.app_version,r.channel].filter(Boolean).map(esc).join(" · ")||"—"}</td></tr>`).join("")+`</table>`;
     } else {
       tbl=`<table class="alerts"><tr><th>WHEN</th><th>ENDPOINT</th><th>CODE</th><th>MESSAGE</th><th>TRANSACTION</th><th>HOST</th></tr>`+d.rows.map(r=>`<tr>

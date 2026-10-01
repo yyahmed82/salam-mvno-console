@@ -245,5 +245,10 @@
 
   document.querySelectorAll(".navtab").forEach(b=>{ if(b.dataset.view==="fixed") b.addEventListener("click", ()=>render(curTab)); });
   window.openFixed=render;   // openFixed("map") deep-links a sub-tab
+  /* "trace ›" for a workflow / request id → Fixed › Troubleshoot with the raw app-log grep run on that id
+     (successes + failures, request/response, the whole journey per requestId) — better than the SDA map,
+     which only shows the order pin (1 Oct 2026). wf_st_… ids also prefill the board's Workflow ID field. */
+  window.fixedTraceHash=function(id){ const v=String(id||"").trim(); if(!v) return "fixed?tab=errors";
+    return "fixed?tab=errors&openOnly=0"+(/^wf_/i.test(v)?"&workflowId="+encodeURIComponent(v):"")+"&grep="+encodeURIComponent(v); };
   window.FX={ api, esc, ts, fmt, tbl, card, chip, bar, state, qs, rangeQs, windowOf, windowLabel, RANGE_MIN, OUT_COLOR, KSA, rangeChips, bindRange, rerender:()=>render(curTab) };
 })();

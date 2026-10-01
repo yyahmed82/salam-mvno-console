@@ -98,7 +98,7 @@
   function applyRouteQuery(){
     try{
       const raw=(location.hash.split("?")[1]||"");
-      if(!raw||raw===window.__fxErrLastQs||!/(?:^|&)(range|window|category|team|priority|provider|msg|resp|cls|channel|type|tech|find|openOnly|serviceNo|odb|iccid|cpe|msisdn|custCode|customerId|workflowId)=/.test(raw)) return;
+      if(!raw||raw===window.__fxErrLastQs||!/(?:^|&)(range|window|category|team|priority|provider|msg|resp|cls|channel|type|tech|find|openOnly|serviceNo|odb|iccid|cpe|msisdn|custCode|customerId|workflowId|grep)=/.test(raw)) return;
       window.__fxErrLastQs=raw; const P=new URLSearchParams(raw);
       Object.assign(S,{channel:"",type:"",team:"",prio:"",provider:"",category:"",tech:"all",find:"",ids:{},openOnly:true});
       const win=P.get("range")||P.get("window"); if(win&&WINDOWS.some(([k])=>k===win)){ S.win=win; try{ localStorage.setItem("fixed_err_win",win); }catch(e){} }
@@ -115,6 +115,9 @@
       if(P.has("find")) S.find=P.get("find")||"";
       if(P.has("openOnly")) S.openOnly=P.get("openOnly")!=="0";
       for(const [k] of ID_FIELDS) if(P.has(k)) S.ids[k]=P.get(k)||"";
+      /* grep=<term>: a "trace ›" link (alert evidence, Customer 360, QR / SDA attempts) asks for the raw app-log
+         grep of a workflow / request id — run ONCE for this link, never again on the 60 s refresh (1 Oct 2026) */
+      S.pendingGrep=(P.get("grep")||"").trim();
       S.expanded.clear();
     }catch(e){}
   }
@@ -173,7 +176,8 @@
     host.querySelector("#feFind").focus();
     /* the grep panel: additive, explicit-action only. Prefilled with whatever the operator is already looking
        for, so "no result on the board" → one click to see what the raw app log actually holds. */
-    if(window.fixedGrep) try{ window.fixedGrep.render(host.querySelector("#feGrep"),fx,S.find||S.ids.customerId||S.ids.msisdn||S.ids.iccid||S.ids.custCode||S.ids.serviceNo||""); }catch(e){}
+    if(window.fixedGrep) try{ window.fixedGrep.render(host.querySelector("#feGrep"),fx,S.pendingGrep||S.find||S.ids.customerId||S.ids.msisdn||S.ids.iccid||S.ids.custCode||S.ids.serviceNo||""); }catch(e){}
+    if(S.pendingGrep&&window.fixedGrep){ const t=S.pendingGrep; S.pendingGrep=""; setTimeout(()=>{ try{ window.fixedGrep.searchFor(t); }catch(e){} },120); }
     await load(host,fx,true);
     S.timer=setInterval(()=>{ if(!host.isConnected||!document.body.contains(host)){ clearInterval(S.timer); S.timer=null; return; }
       if(document.visibilityState!=="visible") return; load(host,fx,true); },60000);

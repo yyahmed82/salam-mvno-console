@@ -1167,7 +1167,7 @@
         ${ftbl(["STARTED (KSA)","JOURNEY","CHANNEL","OUTCOME","STEP","LAST ERROR","ORDER","SERVICE","NAFATH","⏱"],att,"no attempts")}</div>`;
   }
   function wireFixed(box){
-    box.querySelectorAll(".sb-fxtrace").forEach(a=>a.addEventListener("click",e=>{ e.preventDefault(); if(window.fixedMapOpenTrace) window.fixedMapOpenTrace(a.dataset.id); else location.hash="fixed?tab=map"; }));
+    box.querySelectorAll(".sb-fxtrace").forEach(a=>a.addEventListener("click",e=>{ e.preventDefault(); if(window.fixedMapOpenTrace) window.fixedMapOpenTrace(a.dataset.id); else location.hash=window.fixedTraceHash?window.fixedTraceHash(a.dataset.id):"fixed?tab=errors&openOnly=0&grep="+encodeURIComponent(a.dataset.id); }));
     box.querySelectorAll(".sb-xmob").forEach(b=>b.addEventListener("click",()=>{ curKey=b.dataset.m; unmasked=defaultUnmask(); curTab='overview'; $("#sbKey").value=curKey; load(); }));
   }
   window.openSub360=function(key,tab){ if(key){ curKey=String(key); unmasked=defaultUnmask(); curTab=tab||'overview'; } shell(); };
