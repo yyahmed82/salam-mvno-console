@@ -661,7 +661,17 @@
       <tr class="incdetail" id="incdet_${a.id}" hidden><td colspan="8"></td></tr>`;
     });
     h += `</table></div>`;
+    /* REFRESH-SAFE (2 Oct 2026): the live refresh (opsdatarefresh, every few minutes) used to rebuild the list and
+       throw away whatever the reader had open — the Details / Guide rows closed and the page jumped to the top. Keep
+       the open rows' DOM nodes (moved, not copied, so their listeners and loaded evidence survive), re-attach them
+       under the fresh rows, and put the scroll back where it was. A row whose incident left the list (resolved and
+       filtered out) is the only thing that can disappear. */
+    const _keep=[]; const _prev=$("#alBody");
+    _prev.querySelectorAll("tr.incdetail:not([hidden]),tr.grrow:not([hidden])").forEach(tr=>{ if(tr.id&&tr.firstElementChild) _keep.push({ id:tr.id, td:tr.firstElementChild }); });
+    const _scrollY=window.scrollY, _focus=document.activeElement&&document.activeElement.id;
     $("#alBody").innerHTML = h;
+    _keep.forEach(k=>{ const tr=document.getElementById(k.id); if(!tr) return; tr.replaceChild(k.td, tr.firstElementChild); tr.removeAttribute("hidden"); });
+    if(_keep.length){ requestAnimationFrame(()=>{ window.scrollTo(0,_scrollY); const f=_focus&&document.getElementById(_focus); if(f&&f.focus) try{ f.focus({preventScroll:true}); }catch(e){} }); }
     const body=$("#alBody");
     if(window.ackSlaNotice) window.ackSlaNotice(SEG, $("#alAckSla"));   // "N unacknowledged beyond SLA" notice for this side
     renderHolds($("#alHolds"));                                         // rules held quiet by a resolve, with Release

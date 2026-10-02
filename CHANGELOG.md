@@ -1,3 +1,7 @@
+## 2.0.0-alpha.136 — 2026-10-02
+
+- Alerts (Mobile, Fixed, Infrastructure): the live refresh no longer closes what you are reading. The open Details / Guide rows keep their DOM (moved under the fresh list, listeners and loaded evidence intact) and the scroll position is restored, so an incident drawer survives the periodic re-render; only an incident that left the list (resolved and filtered out) disappears.
+
 ## 2.0.0-alpha.135 — 2026-10-02
 
 - "trace ›" now opens **Fixed › Troubleshoot with the app-log grep run on the workflow id** instead of the SDA map: one shared builder `window.fixedTraceHash(id)` → `#fixed?tab=errors&openOnly=0&workflowId=<wf_st_…>&grep=<id>`. The board's Workflow ID field is prefilled, open-only is off, the grep panel opens with the id and runs once for that link (never on the 60 s refresh; still audited server-side). Applied everywhere a trace link exists: alert evidence rows (Fixed › Alerts — state id, or request id when there is none), the SDA map order-trace modal (new "🔎 Grep app log ›" action), Customer 360 Fixed attempts and the QR page (fallbacks no longer go to the map / an alert box), and the app-log evidence table in alert mails (ids are links). `fixed-errors.js` accepts `grep=` in deep links.
