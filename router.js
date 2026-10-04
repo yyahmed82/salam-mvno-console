@@ -191,7 +191,7 @@
 	      /* clickNav is a no-op when the tab is already active, so any view that only renders on a
 	       * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
-      const OPENER={ dmsflows:"openDmsFlows", dmsdocs:"openDmsDocs", refunds:"openRefunds", flowguard:"openFlowGuard", infra:"openInfra", landing:"openLanding", execops:"openExecOps", nocwall:"openNocWall", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2", alertjourney:"openAlertJourney" };
+      const OPENER={ explorer:"openJourneys", dmsflows:"openDmsFlows", dmsdocs:"openDmsDocs", refunds:"openRefunds", flowguard:"openFlowGuard", infra:"openInfra", landing:"openLanding", execops:"openExecOps", nocwall:"openNocWall", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2", alertjourney:"openAlertJourney" };
       const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{
         if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); let t=m?m[1]:"overview";
           if(t==="exec"||t==="ops") t="overview";   // merged into the Operations Dashboard
@@ -200,7 +200,8 @@
         else if(r.view==="refunds"){ window[fn](qs?"refunds?"+qs:""); }   // #refunds?tab=ledger&from=..&to=.. — the navtab click above has already reset the hash to a bare #refunds
         else if(r.view==="flowguard"){ window[fn](qs?"flowguard?"+qs:""); }
         else if(r.view==="infra"){ window[fn](qs?"infra?"+qs:""); }   // #infra?tab=map&diagram=fixed · #infra?host=12   // #flowguard?tab=plans&status=activated&q=… (same pattern)
-        else if(r.view==="dmsflows"||r.view==="dmsdocs"){ window[fn](qs||""); }   // #dms-journeys?j=activation&s=7 · #dmsdocs?s=…|j=…|q=… — the navtab click above reset the hash
+        else if(r.view==="dmsflows"||r.view==="dmsdocs"){ window[fn](qs||""); }
+        else if(r.view==="explorer"){ window[fn](qs||""); }   // #journeys?q=/orders · #journeys?j=onb-esim&s=3 — Mobile › Journeys search by endpoint / deep link   // #dms-journeys?j=activation&s=7 · #dmsdocs?s=…|j=…|q=… — the navtab click above reset the hash
         else if(r.view==="topology2"){ const m=/(?:^|&)t=([a-z]+)/.exec(qs||""); window[fn](r.t2||(m?m[1]:"map")); }   // #mvnohld / #topology2?t=hld
         else window[fn](); }catch(e){} }
       // Subscriber 360 deep link: #subscriber?key=966...

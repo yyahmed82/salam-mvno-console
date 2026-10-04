@@ -1,3 +1,7 @@
+## 2.0.0-alpha.137 — 2026-10-04
+
+- Mobile › **Journeys** (`#journeys`): the search now matches **endpoints** as well as names — every step's endpoint, controller, services, integrations and tables (`/orders`, `sim_type`, `OrdersController`, `Semati`, `onboarding_orders`). Matching journeys show a "⌕ N steps" badge (hover lists the steps), the category chip counts use the same matching as the list, a result line says how many journeys / steps match, and picking a journey opens its **first matching step**. Inside the journey the matching steps are marked (amber), the matched fragment is highlighted in the step list, the endpoint and the "Calls this step makes" card, and a ‹ › hit bar jumps between the matching steps. Deep links: `#journeys?q=/orders` (first matching journey + step), `#journeys?j=onb-esim&s=3`, `#journeys?q=otp&j=mnp` (`window.openJourneys`, wired in `router.js`).
+
 ## 2.0.0-alpha.136 — 2026-10-02
 
 - Fixed › Alerts evidence (attempts with an error · sda_ops): the "trace ›" pill of each order now opens Fixed › Troubleshoot with the app-log grep on the attempt's workflow id (it was the only remaining link to the SDA map).

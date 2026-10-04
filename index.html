@@ -293,6 +293,25 @@
   .pill .tag{font-size:8.5px;color:var(--muted);font-weight:700;margin-left:6px;letter-spacing:.5px;background:var(--bg);padding:2px 5px;border-radius:5px}
   .pill.active{background:var(--pc,var(--green));border-color:var(--pc,var(--green));color:#fff}
   .pill.active .tag{color:#fff;background:rgba(255,255,255,.22)}
+  /* journeys search by endpoint (2 Oct 2026): hit badge on pills, matching steps, in-journey hit navigation */
+  .pill .tag.ephit{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+  .pill.active .tag.ephit{background:rgba(255,255,255,.28);color:#fff;border-color:transparent}
+  .pill mark,.stepitem mark,.exhits mark,.stage code.apilink mark{background:#fde68a;color:#78350f;border-radius:3px;padding:0 1px}
+  .pill.active mark{background:rgba(255,255,255,.35);color:#fff}
+  .jhits{flex:1 1 100%;font-size:11.5px;color:var(--muted);padding:4px 2px 0}
+  .exhits{margin-top:8px;font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:5px 10px;display:flex;width:fit-content;max-width:100%;align-items:center;gap:6px;flex-wrap:wrap}
+  .exhbtn{border:1px solid #fcd34d;background:#fff;color:#92400e;border-radius:6px;padding:1px 8px;font-size:12px;font-weight:700;cursor:pointer;line-height:1.5}
+  .exhbtn:hover{background:#fde68a}
+  .stepitem.hit{border-left-color:#f59e0b}
+  .stepitem.hit .idx{border-color:#f59e0b;color:#b45309}
+  .stepitem.hit.active{border-left-color:var(--green)}
+  .stepitem.hit .id{color:#b45309}
+  [data-theme="dark"] .pill .tag.ephit{background:rgba(245,158,11,.18);color:#fcd34d;border-color:rgba(245,158,11,.45)}
+  [data-theme="dark"] .pill mark,[data-theme="dark"] .stepitem mark,[data-theme="dark"] .exhits mark,[data-theme="dark"] .stage code.apilink mark{background:rgba(245,158,11,.35);color:#fde68a}
+  [data-theme="dark"] .exhits{background:rgba(245,158,11,.10);border-color:rgba(245,158,11,.35);color:#fcd34d}
+  [data-theme="dark"] .exhbtn{background:transparent;color:#fcd34d;border-color:rgba(245,158,11,.5)}
+  [data-theme="dark"] .exhbtn:hover{background:rgba(245,158,11,.25)}
+  [data-theme="dark"] .stepitem.hit .idx{color:#fcd34d} [data-theme="dark"] .stepitem.hit .id{color:#fcd34d}
   /* responder teams (24 Sep 2026): team tag on incidents / rules, contract clocks in the incident drawer, Agent 2 mapping review */
   .teamtag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:var(--tc,#64748b);border:1px solid var(--tc,#64748b);border-radius:999px;padding:1px 8px 1px 7px;background:color-mix(in srgb,var(--tc,#64748b) 10%,transparent);white-space:nowrap;max-width:100%}
   .teamtag i{font-style:normal;font-size:9.5px;font-weight:900;opacity:.85;letter-spacing:.04em}
@@ -343,7 +362,7 @@
   .stepitem{position:relative;border-left:2px solid var(--line);padding:9px 12px 9px 34px;cursor:pointer}
   .stepitem .idx{position:absolute;left:-13px;top:9px;width:24px;height:24px;border-radius:50%;background:var(--card);border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--muted)}
   .stepitem .nm{font-weight:700;font-size:12.5px}
-  .stepitem .id{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .stepitem .id{font-family:var(--mono);font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stepitem.active{background:var(--green-bg);border-left-color:var(--green);border-radius:0 10px 10px 0}
   .stepitem.active .idx{background:var(--green);border-color:var(--green);color:#fff}
   .stage{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
@@ -2011,7 +2030,7 @@
   <section id="view-explorer" class="view">
     <div class="panel">
       <h2>Journeys</h2>
-      <div class="sub">Every app, web, dealer (SDA), POSA &amp; partner journey — step by step as a live data flow across systems. Toggle Failure to see where &amp; why it breaks, or press Play to auto-advance.</div>
+      <div class="sub">Every app, web, dealer (SDA), POSA &amp; partner journey — step by step as a live data flow across systems. Toggle Failure to see where &amp; why it breaks, or press Play to auto-advance. The search also matches endpoints, controllers, tables and integrations — type a path fragment (<code>/orders</code>, <code>sim_type</code>) to find every journey and step that calls it.</div>
       <div class="jfilter" id="explorerFilter"></div>
       <div class="pills" id="explorerPills"></div>
       <div class="modebar">
@@ -2236,7 +2255,7 @@
 <script src="apidocs.js?v=20260910c"></script>
 <script src="xlsxout.js?v=20260910c"></script>
 <script src="persist.js?v=20260910c"></script>
-<script src="app.js?v=20260910c"></script>
+<script src="app.js?v=20261002a"></script>
 <script src="uinav.js?v=20260910c"></script>
 <script src="latencycfg.js?v=20260910c"></script>
 <script src="alertsview.js?v=20261002c"></script>
@@ -2313,7 +2332,7 @@
 <script src="navcfg.js?v=20260910c"></script>
 <script src="tickets.js?v=20260911p"></script>
 <script src="theme.js?v=20260911v"></script>
-<script src="router.js?v=20261001b"></script>
+<script src="router.js?v=20261002a"></script>
 <script src="live.js?v=20260910c"></script>
 <script src="oncall.js?v=20260910c"></script>
 </body>

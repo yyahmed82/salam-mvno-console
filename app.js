@@ -352,9 +352,19 @@ const billingBadge = id => { const b=billingOf(id); return b.length===2?"HYB":b[
 function billingMatch(id, sel){ const b=billingOf(id); return sel==="all" || (sel==="hybrid"? b.length===2 : b.includes(sel)); }
 function authMatch(id, sel){ const a=authOf(id); return sel==="all" || a.includes(sel); }
 
+/* ---- journey search: name / tag / channel + every step's endpoint, controller, services, integrations, tables.
+ * "sim_type", "/orders", "OrdersController", "Semati", "onboarding_orders" all find the journeys (and the steps) that use them. */
+const _jt = v => Array.isArray(v) ? v.join(" ") : (v==null ? "" : String(v));
+function stepText(s){ return s._t || (s._t = [s.ep, s.ctl, s.svc, s.intg, s.tbl, s.async&&s.async.w].map(_jt).join(" \n ").toLowerCase()); }
+function journeyText(j){ return j._t || (j._t = [j.name, j.tag, j.channel].map(_jt).join(" ").toLowerCase()); }
+function hitSteps(j, q){ if(!q) return []; const out=[]; j.steps.forEach((s,i)=>{ if(stepText(s).includes(q)) out.push(i); }); return out; }
+function qMatch(j, q){ return !q || journeyText(j).includes(q) || hitSteps(j,q).length>0; }
+// mark the query inside an endpoint / name (used by the pills and the step list)
+function hl(text, q){ const t=String(text||""); if(!q) return esc(t); const i=t.toLowerCase().indexOf(q); if(i<0) return esc(t); return esc(t.slice(0,i))+"<mark>"+esc(t.slice(i,i+q.length))+"</mark>"+esc(t.slice(i+q.length)); }
+
 // picker state per view
 function buildPicker(cfg){
-  // cfg: {filterEl, pillsEl, state:{cat,q}, getActive:()=>index, onPick:(index)=>void}
+  // cfg: {filterEl, pillsEl, state:{cat,q}, getActive:()=>index, onPick:(index, firstMatchingStep|undefined)=>void}
   const {filterEl, pillsEl, state, getActive, onPick} = cfg;
   // filter bar (built once)
   if(!filterEl.dataset.built){
@@ -363,8 +373,10 @@ function buildPicker(cfg){
     if(state.auth===undefined) state.auth="all";
     // row 1: search + category chips
     const row1 = el("div","jrow");
-    const search = el("input","jsearch"); search.type="text"; search.placeholder="Search journeys…";
-    search.addEventListener("input", ()=>{ state.q = search.value.trim().toLowerCase(); renderCats(); renderPills(); });
+    const search = el("input","jsearch"); search.type="search"; search.placeholder="Search journeys or endpoints… e.g. /orders, sim_type, Semati";
+    search.title="Matches the journey name and every step's endpoint, controller, service, integration and table";
+    search.addEventListener("input", ()=>{ state.q = search.value.trim().toLowerCase(); renderCats(); renderPills(); if(cfg.onQuery) cfg.onQuery(state.q); });
+    filterEl._search = search;
     const cats = el("div","jcats");
     row1.appendChild(search); row1.appendChild(cats);
     // row 2: billing + access segmented controls
@@ -391,11 +403,11 @@ function buildPicker(cfg){
   const cats = filterEl._cats;
   function matches(j){
     const inCat = state.cat==="all" || (CAT_OF[j.id]&&CAT_OF[j.id].id===state.cat);
-    const inQ = !state.q || j.name.toLowerCase().includes(state.q) || (j.tag||"").toLowerCase().includes(state.q) || (j.channel||"").toLowerCase().includes(state.q);
-    return inCat && inQ && billingMatch(j.id, state.billing) && authMatch(j.id, state.auth);
+    return inCat && qMatch(j, state.q) && billingMatch(j.id, state.billing) && authMatch(j.id, state.auth);
   }
   function renderCats(){
-    const qcount = id => JOURNEYS.filter(j=> (id==="all"|| (CAT_OF[j.id]&&CAT_OF[j.id].id===id)) && (!state.q || j.name.toLowerCase().includes(state.q)) && billingMatch(j.id,state.billing) && authMatch(j.id,state.auth)).length;
+    // same matching as the pills (name/tag/channel + step endpoints), so the chip counts equal what is listed
+    const qcount = id => JOURNEYS.filter(j=> (id==="all"|| (CAT_OF[j.id]&&CAT_OF[j.id].id===id)) && qMatch(j, state.q) && billingMatch(j.id,state.billing) && authMatch(j.id,state.auth)).length;
     cats.innerHTML = "";
     const allC = el("button","jcat"+(state.cat==="all"?" active":""), `<span class="cdot" style="--cc:#334155"></span>All <span class="cnt">${qcount("all")}</span>`);
     allC.style.setProperty("--cc","#334155");
@@ -411,20 +423,25 @@ function buildPicker(cfg){
   }
   function renderPills(){
     pillsEl.innerHTML = "";
-    const active = getActive();
-    let shown = 0;
+    const active = getActive(), q = state.q;
+    let shown = 0, stepHits = 0;
     JOURNEYS.forEach((j,i)=>{
       if(!matches(j)) return;
       shown++;
       const bb = billingBadge(j.id);
-      const p = el("button","pill"+(i===active?" active":""), `${esc(j.name)}<span class="tag bt-${bb.toLowerCase()}">${bb}</span><span class="tag">${esc(j.tag)}</span>`);
+      const hits = hitSteps(j, q); stepHits += hits.length;
+      // when the query hit an endpoint (not only the name), say which step and how many
+      const hitTag = hits.length ? `<span class="tag ephit" title="${esc(hits.map(k=>(k+1)+". "+j.steps[k].n+" — "+(j.steps[k].ep||"")).join("\n"))}">⌕ ${hits.length} step${hits.length>1?"s":""}</span>` : "";
+      const p = el("button","pill"+(i===active?" active":""), `${hl(j.name,q)}<span class="tag bt-${bb.toLowerCase()}">${bb}</span><span class="tag">${esc(j.tag)}</span>${hitTag}`);
       p.style.setProperty("--pc", catColor(j.id));
-      p.addEventListener("click",()=> onPick(i));
+      p.addEventListener("click",()=> onPick(i, hits.length ? hits[0] : undefined));
       pillsEl.appendChild(p);
     });
-    if(shown===0) pillsEl.appendChild(el("div","jempty","No journeys match — try another category or clear the search."));
+    if(shown===0) pillsEl.appendChild(el("div","jempty", q ? `No journey, endpoint, controller or table contains “${esc(q)}” — try a path fragment like /orders or a table like onboarding_orders.` : "No journeys match — try another category or clear the search."));
+    else if(q) pillsEl.appendChild(el("div","jhits", `${shown} journey${shown>1?"s":""} · ${stepHits} step${stepHits===1?"":"s"} match “${esc(q)}” — pick a journey to open its first matching step`));
   }
   cfg._refresh = ()=>{ renderCats(); renderPills(); };
+  cfg.setQuery = (q)=>{ q=String(q||"").trim().toLowerCase(); state.q=q; if(filterEl._search) filterEl._search.value=q; renderCats(); renderPills(); if(cfg.onQuery) cfg.onQuery(q); };
   renderCats(); renderPills();
   return cfg;
 }
@@ -444,15 +461,33 @@ function exStop(){ if(ex.timer){ clearInterval(ex.timer); ex.timer=null; const b
 function exRender(){
   const j = JOURNEYS[ex.j];
   if(exPicker) exPicker._refresh();
-  $("#explorerDesc").innerHTML = j.desc + ` &nbsp;·&nbsp; <b>Channel:</b> ${esc(j.channel)}`;
+  const q = ex.filter.q, hits = hitSteps(j, q);
+  let desc = j.desc + ` &nbsp;·&nbsp; <b>Channel:</b> ${esc(j.channel)}`;
+  if(q){
+    // in-journey hit navigation: which steps use the searched endpoint, jump between them
+    const pos = hits.indexOf(ex.s);
+    desc += `<div class="exhits">⌕ ${hits.length ? `<b>${hits.length}</b> step${hits.length>1?"s":""} of this journey ${hits.length>1?"match":"matches"} “${esc(q)}”${pos>=0&&hits.length>1?` — on match ${pos+1}/${hits.length}`:""}` : `no step of this journey matches “${esc(q)}” (matched on the journey name)`}`
+          + (hits.length>1 ? ` <button class="exhbtn" id="exHitPrev" title="Previous matching step">‹</button><button class="exhbtn" id="exHitNext" title="Next matching step">›</button>` : hits.length===1 && pos<0 ? ` <button class="exhbtn" id="exHitNext">go to step ${hits[0]+1} ›</button>` : "")
+          + `</div>`;
+  }
+  $("#explorerDesc").innerHTML = desc;
+  const jump = dir => { exStop(); if(!hits.length) return; const pos=hits.indexOf(ex.s); let k; if(pos<0) k = dir>0 ? (hits.find(h=>h>ex.s) ?? hits[0]) : ([...hits].reverse().find(h=>h<ex.s) ?? hits[hits.length-1]); else k = hits[(pos+dir+hits.length)%hits.length]; ex.s=k; exRender(); };
+  const bp=$("#exHitPrev"), bn=$("#exHitNext"); if(bp) bp.addEventListener("click",()=>jump(-1)); if(bn) bn.addEventListener("click",()=>jump(1));
   const list = $("#explorerSteps"); list.innerHTML = "";
   j.steps.forEach((s,i)=>{
-    const it = el("div","stepitem"+(i===ex.s?" active":""), `<div class="idx">${i+1}</div><div class="nm">${esc(s.n)}</div><div class="id">${esc((s.ep||"").split(" ").pop().split("?")[0].slice(0,34))}</div>`);
+    const hit = hits.includes(i);
+    const short = (s.ep||"").split(" ").pop().split("?")[0];
+    // when the query sits inside the endpoint, show the matching part instead of the truncated head
+    let idTxt = short.slice(0,34);
+    if(hit && q){ const p=(s.ep||"").toLowerCase().indexOf(q); if(p>=0){ const from=Math.max(0, p-10); idTxt=(from>0?"…":"")+(s.ep||"").slice(from, from+(from>0?32:34)); } }
+    const it = el("div","stepitem"+(i===ex.s?" active":"")+(hit?" hit":""), `<div class="idx">${i+1}</div><div class="nm">${hl(s.n,q)}</div><div class="id">${hl(idTxt,q)}</div>`);
+    if(hit) it.title = "matches “"+q+"”";
     it.addEventListener("click",()=>{ex.s=i;exRender();});
     list.appendChild(it);
   });
   $("#explorerStage").innerHTML = renderStepDetail(j, ex.s, ex.mode);
   bindSampleClicks($("#explorerStage"));
+  if(q){ try{ $("#explorerStage").querySelectorAll("code.apilink").forEach(c=>{ const t=c.textContent; if(t.toLowerCase().includes(q)) c.innerHTML = hl(t, q); }); }catch(e){} }
   $("#eCounter").textContent = (ex.s+1)+" / "+j.steps.length;
   const tg = $("#explorerMode");
   tg.querySelector('[data-mode="success"]').className = ex.mode==="success"?"on-success":"";
@@ -460,8 +495,20 @@ function exRender(){
 }
 exPicker = buildPicker({
   filterEl: $("#explorerFilter"), pillsEl: $("#explorerPills"), state: ex.filter,
-  getActive: ()=>ex.j, onPick:(i)=>{ exStop(); ex.j=i; ex.s=0; exRender(); }
+  getActive: ()=>ex.j, onPick:(i, step)=>{ exStop(); ex.j=i; ex.s=(typeof step==="number"&&step>=0&&step<JOURNEYS[i].steps.length)?step:0; exRender(); },
+  // typing a query re-paints the step list so the matching steps light up on the open journey too
+  onQuery:()=>{ const j=JOURNEYS[ex.j]; if(!j) return; const h=hitSteps(j, ex.filter.q); if(h.length && !h.includes(ex.s)) ex.s=h[0]; exRender(); }
 });
+/* Deep link / opener: #journeys?q=/orders · #journeys?j=onb-physical&s=3 · #journeys?q=sim_type&j=onb-esim
+ * Called by router.js after the navtab click reset the hash; with no query it leaves the current state alone. */
+window.openJourneys = function(qs){
+  const P = new URLSearchParams(String(qs||"").replace(/^[^?]*\?/,""));
+  const q = (P.get("q")||"").trim(), jid=(P.get("j")||"").trim(), sN=parseInt(P.get("s")||"",10);
+  if(q && exPicker) exPicker.setQuery(q);
+  if((q||jid) && window.setConsoleHash){ const h="journeys?"+String(qs||"").replace(/^[^?]*\?/,""); setTimeout(()=>{ try{ window.setConsoleHash(h); }catch(e){} },0); }   // keep the shareable link (the navtab click reset it to a bare #journeys)
+  if(jid){ const i=JOURNEYS.findIndex(x=>x.id===jid); if(i>=0){ exStop(); ex.j=i; const h=hitSteps(JOURNEYS[i], ex.filter.q); ex.s = Number.isFinite(sN)&&sN>0&&sN<=JOURNEYS[i].steps.length ? sN-1 : (h.length?h[0]:0); exRender(); } }
+  else if(q){ const first=JOURNEYS.findIndex(j=>hitSteps(j, ex.filter.q).length || journeyText(j).includes(ex.filter.q)); if(first>=0){ exStop(); ex.j=first; const h=hitSteps(JOURNEYS[first], ex.filter.q); ex.s=h.length?h[0]:0; exRender(); } }
+};
 $("#ePrev").addEventListener("click",()=>{exStop();if(ex.s>0){ex.s--;exRender();}});
 $("#eNext").addEventListener("click",()=>{exStop();if(ex.s<JOURNEYS[ex.j].steps.length-1){ex.s++;exRender();}});
 $("#ePlay").addEventListener("click",()=>{
