@@ -251,7 +251,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   window.opsSession = () => SES;   // { email, role, me:{name,mobile,dashboard,...} }
   /* 2 Sep 2026 view split: home→'dashboard', dms→'dms' (own view), every Explore-menu entry
    * (topology/apigw/docs/journeys/integrations/sub360) → the single 'explore' view. */
-  const NAV_VIEW = { landing:"dashboard", execops:"exec", nocwall:"noc", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
+  const NAV_VIEW = { landing:"dashboard", execops:"exec", nocwall:"noc", salesops:"salesops", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
     explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", dmsdocs:"explore", dmsflows:"explore", tapdocs:"explore", alertjourney:"explore", alerts:"alerts", errors:"errors", refunds:"errors", flowguard:"errors", infra:"noc", analytics:"analytics", sub360:"explore", settings:"settings" };
 
   /* VIEW AS USER — the persistent "you are not yourself" bar. Fixed to the bottom so it can never
@@ -343,6 +343,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     show("sematiMenuItem", has("cst") && !!((SES.me&&SES.me.caps)||{}).sematiClear);
     // NOC WALL — the 'noc' view. Its two entries are .navtab buttons, so they also answer to the nav scoping above.
     document.querySelectorAll('#settingsMenu .navtab[data-view="nocwall"]').forEach(b=>b.classList.toggle("hidden", !has("noc")));
+    document.querySelectorAll('#settingsMenu .navtab[data-view="salesops"]').forEach(b=>b.classList.toggle("hidden", !has("salesops")));   // Sales Operations wall (5 Oct 2026)
     // Agents & LLM stays a root-tier surface: it configures the models, not a business page.
     show("agentsMenuItem", !!(SES.me && SES.me.root!==false && isSuper));
     show("missionMenuItem", isSuper || has("alerts") || has("fixed_alerts") || has("monitoring"));   // AI agents mission control (24 Sep 2026)

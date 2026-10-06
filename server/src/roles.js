@@ -27,9 +27,9 @@ const FIXED_TAB_VIEW = { overview:'fixed', epurchase:'fixed_epurchase', salamhom
  * They survive both business scopes (scopeViews) because none of them belongs to Mobile or Fixed alone.
  * The remaining gear entries (Notifications, Navigation & tabs, Demo, Yusr, Agents) stay under 'settings':
  * they are settings panels, not destinations of their own. */
-const CROSS_VIEWS = ['exec','noc','governance','cst','audit','tickets'];
+const CROSS_VIEWS = ['exec','noc','salesops','governance','cst','audit','tickets'];
 const ALL_VIEWS = ['dashboard','monitoring','dms','alerts','errors','analytics','workbench', ...FIXED_VIEWS,
-  'exec','noc','governance','cst','audit','tickets', 'explore','settings','users'];   // grouped: mobile · fixed · cross · shared
+  'exec','noc','salesops','governance','cst','audit','tickets', 'explore','settings','users'];   // salesops (5 Oct 2026): the Sales Operations wall — four sales channels, full screen   // grouped: mobile · fixed · cross · shared
 /* ---- Business scope (6 Sep 2026) ----------------------------------------------------------------
  * Every console user belongs to a BUSINESS: 'mobile' (MVNO team), 'fixed' (Fixed team) or 'both'. It is a
  * second axis next to ROLES: the role says WHAT a person may do (views + caps), the business says on WHICH
@@ -58,27 +58,28 @@ function scopeViews(views, business) {
  * over — Admin has neither the 'governance' nor the 'cst' view, so the tick box did nothing, and it would have
  * switched registry writes on silently the day anyone granted Admin 'cst' for Arqami. The page needs the view AND
  * this capability; the matrix grants both deliberately, never as a side effect. */
-const CAPS = ['editRules','manageSync','manageUsers','adminTools','unmaskPII','export','ackErrors','useYusr','customizeDashboard','sematiClear'];
+const CAPS = ['editRules','manageSync','manageUsers','adminTools','unmaskPII','export','ackErrors','useYusr','customizeDashboard','sematiClear','postNotices'];
 // human labels for the permissions matrix UI
 const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS', workbench:'L2 Workbench', alerts:'Alerts',
   errors:'Troubleshoot', analytics:'Reports', explore:'Explore & Customer 360', settings:'Settings', users:'User management',
   fixed:'Fixed · Overview', fixed_epurchase:'Fixed · Epurchase', fixed_salamhome:'Fixed · Salam Home app', fixed_maps:'Fixed · SDA map & QR codes',
   fixed_reports:'Fixed · Reports', fixed_errors:'Fixed · Troubleshoot', fixed_alerts:'Fixed · Alerts', fixed_explore:'Fixed · Playbook & Diagrams',
-  exec:'Executive Dashboard', noc:'NOC wall', governance:'IT Governance (SLA · vendors · SLO)', cst:'CST (Arqami · escalations)',
+  exec:'Executive Dashboard', noc:'NOC wall', salesops:'Sales Operations wall', governance:'IT Governance (SLA · vendors · SLO)', cst:'CST (Arqami · escalations)',
   audit:'Audit log', tickets:'Tickets & feedback' };
 /* which nav family each page belongs to — the matrix UI groups by this instead of guessing from the key */
 const VIEW_GROUP = Object.fromEntries(ALL_VIEWS.map(v => [v,
   FIXED_VIEWS.includes(v) ? 'fixed' : CROSS_VIEWS.includes(v) ? 'cross' : ['explore','settings','users'].includes(v) ? 'shared' : 'mobile']));
 const CAP_LABELS = { editRules:'Edit rules', manageSync:'Manage sync', manageUsers:'Manage users & roles',
   adminTools:'Admin tools', unmaskPII:'Unmask PII', export:'Export data', ackErrors:'Ack incidents',
-  useYusr:'Use Yusr AI', customizeDashboard:'Customize dashboards', sematiClear:'Semati clearance' };
+  useYusr:'Use Yusr AI', customizeDashboard:'Customize dashboards', sematiClear:'Semati clearance', postNotices:'Post wall notices' };
 const CAP_NOTES = { editRules:'Create and tune alert rules.', manageSync:'Control the sync engine.',
   manageUsers:'Create users and edit the role matrix. Super Admin only — the endpoints are pinned in code, so this box cannot open them for anyone else.',
   adminTools:'The ticket board, the error log, rule reseed and the health self-check.',
   unmaskPII:'Reveal a masked value on demand. Never a mode: every reveal is audited as pii.unmask.',
   export:'Download XLSX / PDF exports.', ackErrors:'Acknowledge and resolve incidents.',
   useYusr:'Ask Yusr, the AI assistant.', customizeDashboard:'Add and rearrange dashboard cards.',
-  sematiClear:'Release MSISDN + ID pairs on Semati (TCC) so the number can be sold again. Writes to a national registry — every run, cancel and export is audited; identifiers are never stored.' };
+  sematiClear:'Release MSISDN + ID pairs on Semati (TCC) so the number can be sold again. Writes to a national registry — every run, cancel and export is audited; identifiers are never stored.',
+  postNotices:'Post, update and clear the outage / maintenance notices shown on the Sales Operations wall (IT Operations).' };
 /* 2 Sep 2026 view-model change: 'dashboard' and 'dms' became real gated views (dashboard used to be
  * hardcoded-visible, dms rode on 'monitoring'); topology/journeys/integrations collapsed into one
  * 'explore' view = the whole Explore menu (topology, API GW, docs, journeys, integrations, Sub360).
@@ -89,28 +90,28 @@ const ROLES = {
   super_admin: {
     label: 'Super Admin', team: 'Digital Ops', rank: 1,
     views: ALL_VIEWS,
-    caps: { editRules:true, manageSync:true, manageUsers:true, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:true },
+    caps: { editRules:true, manageSync:true, manageUsers:true, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:true, postNotices:true },
     note: 'Full control. Can unmask PII (live-fetched, never stored) and manage users.'
   },
   admin: {
     label: 'Admin', team: 'Digital Ops', rank: 2,
-    views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','exec','noc','explore','tickets','settings'],
+    views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','exec','noc','salesops','explore','tickets','settings'],
     /* unmaskPII granted to admin on 21 Aug 2026 at the owner's request — per-request ACT, never a
      * mode: caller must pass unmask=1, value fetched live, every reveal audited as pii.unmask. */
-    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false },
+    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false, postNotices:true },
     note: 'Manages rules, sync mode, dashboards and the admin tools (tickets · error log · reseed). Can unmask PII on demand (audited). Cannot manage users or roles — that is Super Admin only.'
   },
   report_manager: {
     label: 'Sales Ops', team: 'Sales Ops', rank: 3,
-    views: ['dashboard','monitoring','dms','exec','explore', ...(FIXED_ENABLED ? ['fixed','fixed_maps','fixed_reports'] : [])],
+    views: ['dashboard','monitoring','dms','exec','salesops','explore', ...(FIXED_ENABLED ? ['fixed','fixed_maps','fixed_reports'] : [])],
     caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Sales Operations — Dashboard, Monitoring, DMS (dealers), Fixed dealer maps & reports and the Explore pages, with export. PII masked.'
   },
   ...(FIXED_ENABLED ? {
   fixed_ops: {
     label: 'Fixed Ops', team: 'Fixed Ops', rank: 3,
-    views: ['dashboard', ...FIXED_VIEWS, 'exec','noc','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false },
+    views: ['dashboard', ...FIXED_VIEWS, 'exec','noc','salesops','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false, postNotices:true },
     note: 'Owns the Fixed side (FTTH · FTTB · 5G home): every Fixed page, Fixed alert rules, Customer 360. No Mobile operate pages. PII masked.'
   },
   b2c_admin: {
@@ -119,16 +120,25 @@ const ROLES = {
     caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:true, sematiClear:false },
     note: 'Salam Home app & e-purchase owners — the two channel dashboards, Reports, Errors and Customer 360. PII masked.'
   } } : {}),
+  /* SALES OPERATIONS WALL (5 Oct 2026): the shared TV sign-in. One view, nothing else — a screen in a sales office must not
+   * open dashboards, dealers or customers if someone picks up its keyboard. Sessions renew while the wall refreshes, so a
+   * TV that stays on stays signed in; a rebooted TV signs in once with the e-mail OTP. PII masked. */
+  sales_wall: {
+    label: 'Sales Ops wall (TV)', team: 'Sales Ops', rank: 6,
+    views: ['salesops'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:false, ackErrors:false, useYusr:false, customizeDashboard:false, sematiClear:false, postNotices:false },
+    note: 'Shared sign-in for the Sales Operations TV: the four channel pages (DMS · Self-activation · QR code · SDA), full screen, read-only, PII masked. Nothing else.'
+  },
   errors_manager: {
     label: 'Errors Manager', team: 'OSS Ops', rank: 3,
-    views: ['dashboard','monitoring','errors','alerts','noc','explore'],
-    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false },
+    views: ['dashboard','monitoring','errors','alerts','noc','salesops','explore'],
+    caps: { editRules:true, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:true, useYusr:true, customizeDashboard:false, sematiClear:false, postNotices:true },
     note: 'Owns the Error Control Board & troubleshooting; can tune error-related alerts. PII masked.'
   },
   events_manager: {
     label: 'Events Manager', team: 'Digital Ops', rank: 3,
-    views: ['dashboard','monitoring','alerts','noc','explore'],
-    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:false, unmaskPII:false, export:false, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false },
+    views: ['dashboard','monitoring','alerts','noc','salesops','explore'],
+    caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:false, unmaskPII:false, export:false, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false, postNotices:true },
     note: 'Owns alerts/events: defines rules and controls the sync engine. PII masked.'
   },
 

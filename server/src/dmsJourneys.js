@@ -1007,4 +1007,4 @@ async function dealerActivity(opts) {
     hits, flows, scanned, skipped, truncated, limitPer };
 }
 
-module.exports = { start, status, board, drill, trace, home, browse, rowDetail, dealerTimeline, dealerActs, dealerActivity, JOURNEYS };
+module.exports = { start, status, board, drill, trace, home, browse, rowDetail, dealerTimeline, dealerActs, dealerActivity, JOURNEYS, resolve, isFail, atFix, SCHEMA };   // resolve/isFail/atFix/SCHEMA: salesOps.js reads the activation ledger with the same column resolution and success set

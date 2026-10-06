@@ -781,3 +781,21 @@ ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reassign_count integer NOT NULL DEFA
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reassigned_at  timestamptz;
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS first_ack_at   timestamptz;                    -- kept when a re-assignment releases the ack
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS priority_note  text;
+
+-- SALES OPERATIONS WALL (5 Oct 2026, salesOps.js): outage / maintenance notices IT Operations posts for the
+-- Sales Ops TV — per channel (dms · selfact · qr · sda) or all; a notice ends by ends_at or when cleared. Also
+-- created at runtime by salesOps.ensure() so a deploy without db-init still works.
+CREATE TABLE IF NOT EXISTS salesops_notices (
+  id          bigserial PRIMARY KEY,
+  channel     text NOT NULL DEFAULT 'all',          -- all | dms | selfact | qr | sda
+  level       text NOT NULL DEFAULT 'info',         -- outage | degraded | maintenance | info
+  title       text NOT NULL,
+  body        text,
+  starts_at   timestamptz NOT NULL DEFAULT now(),
+  ends_at     timestamptz,
+  created_by  text,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  cleared_at  timestamptz,
+  cleared_by  text
+);
+CREATE INDEX IF NOT EXISTS idx_salesops_notices_live ON salesops_notices (cleared_at, ends_at);

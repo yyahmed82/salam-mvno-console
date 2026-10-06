@@ -191,7 +191,7 @@ app.use('/api/', (req, res, next) => {
 // (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
 // through the stripped views (every Fixed route is requireView-gated). Kept as an allow-list so a new
 // Mobile endpoint is closed for the Fixed team by default.
-const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents|semati)/;   // alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
+const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents|semati|salesops)/;   // salesops: the Sales Operations wall (its own view) · alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
 app.use('/api/', (req, res, next) => {
   if (req.business === 'fixed' && !FIXED_TEAM_ALLOW.test(req.originalUrl.split('?')[0]))
     return res.status(403).json({ error: 'Not available for the Fixed team — this endpoint belongs to the Mobile side.', business: 'fixed' });
@@ -268,6 +268,8 @@ app.use('/api/osb',        requireView('monitoring'));   // OSB / uil_logs panel
 app.use('/api/analytics',  requireView('analytics'));
 app.use('/api/errors',     requireView('errors'));       // Troubleshoot board (Sub360 uses /api/subscriber + /api/transaction, not this)
 app.use('/api/rules',      requireView('alerts'));       // rule list/editor — the Alerts page
+/* SALES OPERATIONS WALL (5 Oct 2026) — server/src/salesOps.js: four channel pages for the Sales Ops TV, view 'salesops' */
+try { require('./salesOps').mount(app, { requireView, requireCap, audit }); } catch (e) { console.error('[salesops] mount failed:', e.message); }
 
 function clientIp(req) { try { return (req.headers && (req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.ip || null; } catch (e) { return null; } }
 function clientUa(req) { try { return (req.get && req.get('user-agent')) || null; } catch (e) { return null; } }

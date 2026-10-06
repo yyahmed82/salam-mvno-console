@@ -25,7 +25,7 @@ const COLORS = {
  * the response never carried a real answer. Sources: BSS 1500 & OSB-382000 (INC0016809),
  * Semati 715/5002/408 (#28713), gateway/webhook timeouts, CRM exceptions, generic 5xx. */
 const TECH_CODE = new Set(['1500', '5002', '408', '500', '502', '503', '504', '715']);
-const TECH_TEXT = /\b(timeout|timed[\s-]?out|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EHOSTUNREACH|connection (reset|refused|closed)|SSLException|SSLHandshake|I\/O error|read timed out|broken pipe|service (is )?not available|temporarily unavailable|unavailable|OSB-382000|CRMException|SOAPFault|soap:Fault|internal server error|gateway timeout|bad gateway|no response|empty response|null response|unreachable|circuit.?breaker|too many requests|exhausted)\b/i;
+const TECH_TEXT = /\b(timeout|timed[\s-]?out|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EHOSTUNREACH|connection (reset|refused|closed)|SSLException|SSLHandshake|I\/O error|read timed out|broken pipe|service (is )?not available|temporarily unavailable|unavailable|OSB-382000|CRMException|SOAPFault|soap:Fault|SOAP fault|internal server error|gateway timeout|bad gateway|no response|empty response|null response|unreachable|circuit.?breaker|too many requests|exhausted|errors communicating between)\b/i;   // 'errors communicating between' = Redknee SOAP fault 21 (31 Aug recharge incident) — the BSS never answered
 
 /* BUSINESS signatures — a well-formed "no". Semati/CITC app codes, OTP, payment declines,
  * eligibility, inventory. (Payment declines: ANY gateway decline code/message = business —
@@ -103,7 +103,7 @@ function classifyClass({ ok, status_code, response, detail } = {}) {
  * colExpr = SQL expression yielding the searchable text (e.g. "coalesce(status_code,'')||' '||response::text").
  * Returns a CASE yielding 'technical' | 'business' — keep IN SYNC with the regexes above. */
 function classCaseSql(codeCol, textExpr) {
-  const tech = "(timeout|timed[ -]?out|ETIMEDOUT|ECONNREFUSED|ECONNRESET|connection (reset|refused|closed)|SSLException|I/O error|service (is )?not available|OSB-382000|CRMException|SOAPFault|soap:Fault|internal server error|gateway timeout|bad gateway|unreachable)";
+  const tech = "(timeout|timed[ -]?out|ETIMEDOUT|ECONNREFUSED|ECONNRESET|connection (reset|refused|closed)|SSLException|I/O error|service (is )?not available|OSB-382000|CRMException|SOAPFault|soap:Fault|SOAP fault|internal server error|gateway timeout|bad gateway|unreachable|errors communicating between)";
   const safe = a => a.filter(c => /^[\w.-]{1,12}$/.test(c));
   const techList = [...new Set([...TECH_CODE, ..._OV.tech_add])].filter(c => !_OV.tech_remove.includes(c) && !_OV.biz_add.includes(c));
   const bizAdd = safe(_OV.biz_add);
