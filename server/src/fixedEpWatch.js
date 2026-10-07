@@ -88,7 +88,7 @@ function classify5g(r) {
   const nq = objOf(r.nq_order);
   const nqFail = !!(nq && (nq.errorMessage || nq.IsSuccess === false));
   const real = r.order_nbr && r.order_nbr !== PLACEHOLDER;
-  const charged = ['CAPTURED', 'PAID'].includes(r.inv);
+  const charged = ['CAPTURED', 'PAID'].includes(r.inv) && r.real_inv !== false;   // PAID_BY_ZERO journeys have no invoice id
   const ageH = (Date.now() - new Date(r.updated_at).getTime()) / 3600e3;
   if (r.refunded) return 'refunded';
   if (r.nq_hook) return 'rto_no_refund';
@@ -117,7 +117,7 @@ async function snapshot(days) {
       FROM workflow_states WHERE workflow_id = $1 AND created_at > now() - $2::interval GROUP BY 1 ORDER BY 1`, [W5, iv]);
     const paidRows = await Q('paid5g', `SELECT id, channel::text AS ch, plan_id, created_at, updated_at, current_step,
         context->'invoice'->>'status' AS inv, context->'order'->>'orderNbr' AS order_nbr,
-        jsonb_typeof(context->'order') = 'object' AS order_obj,
+        jsonb_typeof(context->'order') = 'object' AS order_obj, (context->'invoice' ? 'id') AS real_inv,
         coalesce(context->'order'->>'errorMessage', context->'order'->>'resultDesc', context->'order'->>'message') AS order_err,
         context->'naqeel'->'order' AS nq_order, context->'naqeel'->'webhook' AS nq_hook,
         (context->'invoice'->'refund') IS NOT NULL AS refunded,
@@ -154,13 +154,14 @@ async function snapshot(days) {
       FROM epurchase_payments p JOIN workflow_states w ON w.id = p.workflow_state_id WHERE p.updated_at > now() - $1::interval GROUP BY 1,2 ORDER BY 1,3 DESC`, [iv]);
     const ftthRows = await Q('ftthpaid', `WITH paid AS (
           SELECT id, channel::text AS ch, created_at, expires_at, current_step, context->'invoice'->>'status' AS inv,
-                 coalesce(context->'invoice'->>'amount', context->'queryFee'->>'totalCharge', context->>'totalCharge') AS amount, context->'customer'->>'id' AS cid
+                 coalesce(context->'invoice'->>'amount', context->'queryFee'->>'totalCharge', context->>'totalCharge') AS amount, context->'customer'->>'id' AS cid,
+                 (context->'invoice' ? 'id') AS real_inv, context->'queryFee'->>'totalCharge' AS quoted
           FROM workflow_states WHERE workflow_id = $1 AND created_at > now() - $2::interval AND expires_at < now()
             AND current_step IN ('ePurchaseCustomerProfileVerification', 'ePurchaseConfirmOtp')
             AND context->'invoice'->>'status' IN ('PAID', 'CAPTURED', 'AUTHORIZED')),
         done AS (SELECT context->'customer'->>'id' AS cid, max(created_at) AS last_done FROM workflow_states
           WHERE workflow_id = $1 AND created_at > now() - $2::interval AND current_step = 'ePurchaseReviewOrder' GROUP BY 1)
-      SELECT p.id, p.ch, p.created_at, p.expires_at, p.current_step, p.inv, p.amount, p.cid,
+      SELECT p.id, p.ch, p.created_at, p.expires_at, p.current_step, p.inv, p.amount, p.cid, p.real_inv, p.quoted,
              (d.last_done IS NOT NULL AND d.last_done >= p.created_at) AS later
       FROM paid p LEFT JOIN done d ON d.cid = p.cid ORDER BY p.expires_at DESC`, [FTTH, iv]);
     const hooks = await Q('webhooks', `SELECT source, count(*) FILTER (WHERE is_success)::int AS ok, count(*) FILTER (WHERE is_success = false)::int AS failed,
@@ -194,19 +195,23 @@ async function snapshot(days) {
     });
     const byCls = {}; for (const p of paid) byCls[p.cls] = (byCls[p.cls] || 0) + 1;
     const ftth = (() => {
-      const sum = { total: ftthRows.length, charged: 0, held: 0, retried: 0, no_later_order: 0, no_later_charged: 0, sar_no_later: 0 };
+      /* 7 Oct probe: 967 of 967 sampled journeys carried invoice {status, payments} only — the backend's PAID_BY_ZERO shape
+       * (quoted fee 0 → no payments-v2 invoice, status forced to PAID). No money was taken on those: they are counted apart
+       * as zero-fee abandonments and never as "charged". A real invoice has an id. */
+      const zeroOf = r => !r.real_inv || r.quoted === '0';
+      const sum = { total: ftthRows.length, zero_fee: 0, zero_fee_no_later: 0, charged: 0, held: 0, retried: 0, no_later_order: 0, no_later_charged: 0, sar_no_later: 0 };
       const weekly = {};
       for (const r of ftthRows) {
-        const charged = r.inv === 'PAID' || r.inv === 'CAPTURED';
-        if (charged) sum.charged++; else sum.held++;
+        const zero = zeroOf(r), charged = !zero && (r.inv === 'PAID' || r.inv === 'CAPTURED');
+        if (zero) { sum.zero_fee++; if (!r.later) sum.zero_fee_no_later++; } else if (charged) sum.charged++; else sum.held++;
         if (r.later) sum.retried++; else { sum.no_later_order++; if (charged) { sum.no_later_charged++; sum.sar_no_later += sar(r.amount) || 0; } }
         const wk = new Date(new Date(r.expires_at).getTime() + 3 * 3600e3); wk.setUTCDate(wk.getUTCDate() - ((wk.getUTCDay() + 1) % 7));
         const k = wk.toISOString().slice(0, 10);
         const w = weekly[k] = weekly[k] || { week: k, total: 0, no_later_charged: 0, retried: 0 };
-        w.total++; if (r.later) w.retried++; else if (charged) w.no_later_charged++;
+        w.total++; if (zero) w.zero = (w.zero || 0) + 1; if (r.later) w.retried++; else if (charged) w.no_later_charged++;
       }
       sum.sar_no_later = Math.round(sum.sar_no_later);
-      const list = ftthRows.filter(r => !r.later && (r.inv === 'PAID' || r.inv === 'CAPTURED')).slice(0, 200).map(r => ({ id: r.id, ch: r.ch, chLabel: CH_LABEL[r.ch] || r.ch,
+      const list = ftthRows.filter(r => !r.later && !zeroOf(r) && (r.inv === 'PAID' || r.inv === 'CAPTURED')).slice(0, 200).map(r => ({ id: r.id, ch: r.ch, chLabel: CH_LABEL[r.ch] || r.ch,
         created_at: iso(r.created_at), expired_at: iso(r.expires_at), step: r.current_step, stepLabel: STEP_LABEL[r.current_step] || r.current_step, inv: r.inv,
         amount_sar: sar(r.amount), customer: tail(r.cid) }));
       return { summary: sum, weekly: Object.values(weekly).sort((a, b) => a.week < b.week ? -1 : 1), list };
