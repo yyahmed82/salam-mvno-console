@@ -50,6 +50,11 @@ const { METRICS } = require('./metrics');
 const app = express();
 app.set('trust proxy', true);   // read client IP from X-Forwarded-For when behind a proxy
 app.use(reliability.securityHeaders);
+/* PERF (7 Oct 2026) — request timing, event-loop lag, pool pressure, query time; GET /api/perf (adminTools) below.
+ * First middleware on /api so the measured time is the whole server side (auth lookups included). */
+const PERF = require('./perf');
+app.use('/api/', PERF.middleware);
+['source', 'console', 'ops', 'opsBeta', 'upg', 'nexus', 'payments'].forEach(k => PERF.watchPool(k, db[k]));
 // Ticket creation carries base64 screenshots (up to 4 × 5MB) — allow a larger JSON body on that ONE
 // route only. Mounted BEFORE the global 1mb parser so it consumes the body first; once parsed the
 // global express.json below sees req._body and skips it, so every other endpoint keeps the 1mb cap.
@@ -80,7 +85,12 @@ app.use('/api/', reliability.rateLimit({
 const authLimiter = reliability.rateLimit({ windowMs: 60_000, max: Number(process.env.AUTH_RATE_LIMIT_RPM) || 10, key: 'auth' });
 app.use(['/api/auth/request-otp', '/api/auth/verify-otp'], authLimiter);
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', '..');
-app.use(express.static(STATIC_DIR)); // serve the console (index.html etc.)
+/* STATIC (7 Oct 2026, performance): the console is 95 scripts / 3.6 MB of plain JS and the proxy does not compress
+ * upstream answers, so every cold load moved 3.6 MB uncompressed and every warm load re-validated 95 files
+ * (max-age=0). Now: gzip from an in-memory cache (zlib, no dependency) for text assets, index.html always
+ * re-validated (no-cache → 304 in one round trip), everything else cached 10 min, `?v=`-versioned files a day. */
+app.use(require('./staticFast').middleware(STATIC_DIR));
+app.use(express.static(STATIC_DIR, { maxAge: '10m', setHeaders: (res, p) => { if (/[\\/]index\.html$/.test(p)) res.setHeader('Cache-Control', 'no-cache'); } })); // serve the console (index.html etc.)
 
 const C = db.console;
 
@@ -4580,6 +4590,8 @@ function sseBroadcast(event, payload) {
 
 /* ---- reliability ops ---- */
 app.get('/api/ready', async (req, res) => { const r = await reliability.ready(); res.status(r.ok ? 200 : 503).json(r); });
+/* where the time goes — see perf.js; ?reset=1 clears the counters (admin tools) */
+app.get('/api/perf', requireCap('adminTools'), (req, res) => { try { res.json(PERF.report(req.query)); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.get('/api/version', (req, res) => res.json({ ...reliability.version(),
   console: 'unified', publicUrl: process.env.CONSOLE_PUBLIC_URL || null,
   fixedEnabled: roles.FIXED_ENABLED, fixedViews: roles.FIXED_VIEWS,
@@ -6256,14 +6268,20 @@ app.get('/api/vendors', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 // NOC summary — one call powering the home status banner (health + incidents + worst signal + data freshness)
+/* NOC summary: measured 5.9 s on 152 (7 Oct 2026 — slo.evaluate + vendorHealth + freshness over the replica) and asked on
+ * every Home / NOC open. The HEAVY part (SLO attainment, vendor health, source freshness, sync lag) goes through
+ * respCache like /api/home — first viewer computes, everyone else gets the last answer at once while it refreshes
+ * behind, keep-warm keeps it fresh. The open-incident counts and the headline stay LIVE (two cheap queries on the
+ * console db): a P1 shows on the wall at the next poll, never a cache TTL later. Role-independent → keyed by URL. */
 app.get('/api/noc', async (req, res) => {
   try {
-    const now = await boardNow(req.query.sim);
+    const heavy = await respCache.wrap({ originalUrl: '/api/noc/_heavy' + (req.query.sim ? '?sim=' + encodeURIComponent(req.query.sim) : ''), get: h => req.get(h) }, () => nocHeavy(req.query.sim));
+    res.json(await nocSummary(heavy));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+async function nocHeavy(sim) {
+    const now = await boardNow(sim);
     const nISO = now && now.toISOString ? now.toISOString() : (now || new Date().toISOString());
-    // open incidents by severity
-    const inc = { open: 0, p1: 0, p2: 0 };
-    try { (await C.query(`SELECT severity, count(*)::int c FROM alerts WHERE status='open' AND rule_key NOT LIKE '%infra\\_%' GROUP BY severity`)).rows
-      .forEach(x => { inc.open += x.c; if (x.severity === 'P1') inc.p1 += x.c; else if (x.severity === 'P2') inc.p2 += x.c; }); } catch (e) {}
     // SLO breached / at-risk
     let breached = [], atRisk = [];
     try { const s = await slo.evaluate(nISO);
@@ -6300,6 +6318,18 @@ app.get('/api/noc', async (req, res) => {
       const r = await C.query(`SELECT max(last_run_at) AS t FROM prod_sync_state`);
       if (r.rows[0] && r.rows[0].t) syncLagMin = Math.max(0, Math.round((Date.now() - new Date(r.rows[0].t).getTime()) / 60000));
     } catch (e) {}
+    return { nISO, breached, atRisk, worstVendor, sources, syncLagMin, computedAt: Date.now() };
+}
+async function nocSummary(H) {
+    const { nISO, breached, atRisk, worstVendor } = H;
+    /* the cached freshness figures age with the cache: add the time since they were computed so "lag" stays honest */
+    const ageMin = Math.max(0, Math.round((Date.now() - (H.computedAt || Date.now())) / 60000));
+    const sources = (H.sources || []).map(x => ({ ...x, lagMin: x.lagMin == null ? null : x.lagMin + ageMin }));
+    const syncLagMin = H.syncLagMin == null ? null : H.syncLagMin + ageMin;
+    // open incidents by severity — LIVE
+    const inc = { open: 0, p1: 0, p2: 0 };
+    try { (await C.query(`SELECT severity, count(*)::int c FROM alerts WHERE status='open' AND rule_key NOT LIKE '%infra\\_%' GROUP BY severity`)).rows
+      .forEach(x => { inc.open += x.c; if (x.severity === 'P1') inc.p1 += x.c; else if (x.severity === 'P2') inc.p2 += x.c; }); } catch (e) {}
     /* Second failure mode: our sync is healthy but the UPSTREAM prod reporting replica is stale,
      * so we faithfully copy old data. Row-age can't be trusted on low-volume tables (delivery
      * ≈4/hour) — but payments/orders run continuously, so if THOSE are far behind, the pipeline
@@ -6345,9 +6375,8 @@ app.get('/api/noc', async (req, res) => {
         : oldest.bySync ? `Data lag — last successful prod-sync ${oldest.lagMin}m ago`
         : `Data lag — ${oldest.name} is ${oldest.lagMin}m behind`;
     }
-    res.json({ now: nISO, status, headline, incidents: inc, slo: { breached, atRisk }, worstVendor, freshness: { sources, oldest } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    return { now: nISO, status, headline, incidents: inc, slo: { breached, atRisk }, worstVendor, freshness: { sources, oldest } };
+}
 
 // Operator health self-check — one call that tells you whether the tooling itself is healthy:
 // replica freshness, prod-sync, console DB, alert engine, and each notification channel + integration key.

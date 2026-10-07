@@ -38,7 +38,14 @@ const IDX = [
    * 4-second budget — the replica then reported DOWN while it was in fact merely busy. */
   ['users', 'idx_src_users_current_sign_in', '(current_sign_in_at DESC NULLS LAST)'],
   ['users', 'idx_src_users_mobile', '(mobile_number)'],
-  ['users', 'idx_src_users_nid', '(nationality_id_number)']
+  ['users', 'idx_src_users_nid', '(nationality_id_number)'],
+  /* 7 Oct 2026 — the console-slowness review (pg_stat_user_tables on 121): otps had 358k sequential scans (11.8 M rows,
+   * 2.7 GB — the OTP funnel windows on created_at and the timeline lookups on otp_for had no index at all) and checkouts
+   * 570k (the recharge / refund / errors joins are `c.id::text = p.payment_on_id`, which the uuid PK index cannot serve —
+   * an index on the same expression can). Each of those scans read gigabytes on a server shared with production. */
+  ['otps', 'idx_src_otps_created', '(created_at)'],
+  ['otps', 'idx_src_otps_for', '(otp_for)'],
+  ['checkouts', 'idx_src_checkouts_id_text', '((id::text))']
 ];
 
 async function indexSource() {

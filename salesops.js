@@ -3,13 +3,16 @@
  *   #salesops                    the wall inside the console (channel tabs on top)
  *   #salesops?ch=qr              one channel: dms · selfact · qr · sda
  *   #salesops?kiosk=1&rotate=30  TV mode: no console chrome, full screen, rotates the four pages every 30 s
+ *   #salesops?alerts=1           also show the alert engine's banners (off by default since 7 Oct 2026 — the
+ *                                Sales Ops team sees IT Operations' notices only, not the alerts)
  *   permission: salesops — the shared TV sign-in (role "Sales Ops wall (TV)") holds only this view
  *
  * One template for the four channels (the Grafana "Dealer Performance" board the team uses today, done for every
  * channel from the console's own sources): activations 1 h / today / yesterday · today vs yesterday same time ·
  * success / business / technical outcomes in a window · who faces errors · the live activity feed (masked) · the
- * failure reasons. Above it, the BANNER: an outage / degraded notice when the channel's alert families have a
- * P1 / P2 open, when the source has gone quiet, or when IT Operations posted a notice (for one channel or all).
+ * failure reasons. DMS and SDA rows carry the dealer STAFF ID and DEALER CODE (7 Oct 2026). Above it, the BANNER:
+ * the notices IT Operations posted (one channel or all) and NO DATA when a source cannot be read; the alert-driven
+ * outage / degraded / quiet banners only with ?alerts=1.
  * Keys in TV mode: ← → change page · 1-4 jump · Space pause / resume the rotation · F fullscreen · W window · Esc exit.
  * Data: /api/salesops/overview (the strip, every 30 s) and /api/salesops/channel/:ch (the page). */
 (function () {
@@ -31,7 +34,7 @@
   };
   const LEVEL = { outage: { l: 'OUTAGE', c: 'red' }, degraded: { l: 'DEGRADED', c: 'amber' }, minor: { l: 'MINOR ISSUES', c: 'blue' }, maintenance: { l: 'MAINTENANCE', c: 'blue' }, info: { l: 'NOTICE', c: 'green' }, ok: { l: 'OPERATIONAL', c: 'green' }, nodata: { l: 'NO DATA', c: 'amber' } };
   const REFRESH_MS = 30e3, QUIET_MIN = 30;
-  const S = { ch: 'dms', win: 60, kiosk: false, rotate: 30, paused: false, over: null, data: {}, tick: null, clock: null, rot: null, rotAt: 0, canPost: false, open: false, seq: 0 };
+  const S = { ch: 'dms', win: 60, alerts: false, kiosk: false, rotate: 30, paused: false, over: null, data: {}, tick: null, clock: null, rot: null, rotAt: 0, canPost: false, open: false, seq: 0 };
   const st = { get(k, d) { try { const v = localStorage.getItem('so_' + k); return v == null ? d : v; } catch (_) { return d; } }, set(k, v) { try { localStorage.setItem('so_' + k, String(v)); } catch (_) {} } };
 
   /* ---- frame ---- */
@@ -77,8 +80,8 @@
     const o = S.over; const host = $('#soTabs'); if (!host) return;
     host.innerHTML = ORDER.map(k => {
       const c = o && o.channels && o.channels[k]; const m = META[k];
-      const h = c && c.health ? c.health.status : 'ok';
-      const lvl = c && c.error ? 'nodata' : (quiet(c) ? 'nodata' : h);
+      const h = S.alerts && c && c.health ? c.health.status : 'ok';
+      const lvl = c && c.error ? 'nodata' : (S.alerts && quiet(c) ? 'nodata' : h);
       const L = LEVEL[lvl] || LEVEL.ok;
       const act = c && c.activations ? c.activations : null;
       const notice = o && o.notices && o.notices.find(n => (n.channel === k || n.channel === 'all') && (n.level === 'outage' || n.level === 'degraded'));
@@ -98,7 +101,7 @@
     const nts = (d && d.notices) || (S.over && S.over.notices && S.over.notices.filter(n => n.channel === 'all' || n.channel === S.ch)) || [];
     nts.forEach(n => { const L = LEVEL[n.level] || LEVEL.info;
       out.push(`<div class="so-ban ${L.c}"><span class="so-ban-l">${esc(L.l)}${n.channel === 'all' ? ' · ALL CHANNELS' : ''}</span><b>${esc(n.title)}</b>${n.body ? `<span class="so-ban-b">${esc(n.body)}</span>` : ''}<small>posted ${esc(KT ? KT.t(n.created_at) : '')}${n.ends_at ? ` · until ${esc(KT ? KT.t(n.ends_at) : '')}` : ''}${n.created_by ? ` · ${esc(String(n.created_by).split('@')[0])}` : ''}${S.canPost ? ` <button type="button" class="so-ban-x" data-clear="${n.id}" title="Clear this notice">clear</button>` : ''}</small></div>`); });
-    const h = d && d.health;
+    const h = S.alerts && d && d.health;
     if (h && (h.status === 'outage' || h.status === 'degraded') && h.open && h.open[0]) {
       const a = h.open[0]; const L = LEVEL[h.status];
       out.push(`<div class="so-ban ${L.c} auto"><span class="so-ban-l">${esc(L.l)} · ${esc(a.sev)}</span><b>${esc(a.name)}</b><small>open since ${esc(KT ? KT.dts(a.since) : '')}${h.count > 1 ? ` · ${h.count} open alerts on this channel` : ''}${a.acked ? ' · acknowledged by IT Operations' : ' · not yet acknowledged'}</small></div>`);
@@ -106,7 +109,7 @@
       out.push(`<div class="so-ban blue soft"><span class="so-ban-l">MINOR · ${esc(h.open[0].sev)}</span><b>${esc(h.open[0].name)}</b><small>since ${esc(KT ? KT.t(h.open[0].since) : '')}${h.count > 1 ? ` · +${h.count - 1} more` : ''}</small></div>`);
     }
     if (d && d.error) out.push(`<div class="so-ban amber soft"><span class="so-ban-l">NO DATA</span><b>${esc(META[S.ch].short)} source not available</b><small>${esc(d.error)}</small></div>`);
-    else if (d && d.source && d.source.latest && quiet({ latest: d.source.latest })) out.push(`<div class="so-ban amber soft"><span class="so-ban-l">QUIET</span><b>No new ${esc(META[S.ch].short)} activity since ${esc(KT ? KT.dts(d.source.latest) : '')}</b><small>the source stopped writing — a feed or platform problem until proven otherwise</small></div>`);
+    else if (S.alerts && d && d.source && d.source.latest && quiet({ latest: d.source.latest })) out.push(`<div class="so-ban amber soft"><span class="so-ban-l">QUIET</span><b>No new ${esc(META[S.ch].short)} activity since ${esc(KT ? KT.dts(d.source.latest) : '')}</b><small>the source stopped writing — a feed or platform problem until proven otherwise</small></div>`);
     host.innerHTML = out.join('');
     host.querySelectorAll('[data-clear]').forEach(b => b.onclick = () => clearNotice(b.dataset.clear));
   }
@@ -131,6 +134,7 @@
     const tone = vs == null ? 'flat' : vs >= 95 ? 'up' : vs >= 80 ? 'flat' : 'down';   // ≥95% of yesterday's pace = on track · 80–94 = watch · <80 = behind
     const winLbl = { 15: 'last 15 min', 60: 'last hour', 360: 'last 6 h', 1440: 'last 24 h' }[S.win] || 'window';
     const unit = d.unit || 'activations';
+    const dealerCols = S.ch === 'dms' || S.ch === 'sda';   // who sold: dealer staff ID + dealer code
     let h = `<div class="so-row1">
       <div class="so-card so-act"><div class="so-ch">${esc(unit.toUpperCase())}${d.degraded ? ' <span class="so-chip amber" title="live ledger not reachable — hourly rollups">hourly rollups</span>' : ''}</div>
         <div class="so-gs">${gauge(a.h1 || 0, Math.max(1, Math.ceil(maxA / 8)), '1-hour', C.ok)}${gauge(a.today || 0, maxA, 'Today till now', C.ok)}${gauge(a.yesterday || 0, maxA, 'Yesterday', C.ok, { cls: 'dim' })}</div>
@@ -145,8 +149,10 @@
     </div>
     <div class="so-row2">
       <div class="so-card so-feed"><div class="so-ch">${esc(m.short.toUpperCase())} ACTIVITY PANEL <small>${d.degraded ? 'latest failures (live ledger not reachable)' : 'latest ' + (d.activity ? d.activity.length : 0)} · identifiers masked</small></div>
-        <table class="so-tbl"><thead><tr><th>${esc(d.whoOne || 'who')}</th><th>${S.ch === 'selfact' ? 'number' : 'location'}</th><th>time</th><th>transaction</th><th>result</th></tr></thead><tbody>
-        ${(d.activity || []).map(r => `<tr class="c-${r.cls || 'business'}"><td class="mono">${esc(r.who || '—')}</td><td>${esc(r.where || '—')}</td><td class="mono">${esc(KT ? KT.t(r.at) : '')}</td><td class="mono so-tx" title="${esc(r.tx)}">${esc(r.tx)}${r.ord ? ` <small>${esc(r.ord)}</small>` : ''}</td><td class="so-res"><i class="so-res-dot"></i>${esc(r.cls === 'success' ? (r.msg && /^(success|completed|ok)$/i.test(r.msg) ? r.msg : 'Success') : (r.msg || r.code || r.cls || ''))}${r.code && r.cls !== 'success' && r.msg && r.msg !== r.code ? ` <small>${esc(r.code)}</small>` : ''}</td></tr>`).join('') || `<tr><td colspan="5" class="so-empty">no activity in the source yet</td></tr>`}
+        <table class="so-tbl${dealerCols ? ' so-dlr' : ''}"><thead><tr>${dealerCols ? '<th class="so-c-st">staff ID</th><th class="so-c-dc">dealer code</th>' : `<th>${esc(d.whoOne || 'who')}</th>`}<th class="so-c-loc">${S.ch === 'selfact' ? 'number' : 'location'}</th><th>time</th><th class="so-c-tx">transaction</th><th>result</th></tr></thead><tbody>
+        ${(d.activity || []).map(r => `<tr class="c-${r.cls || 'business'}">${dealerCols
+          ? `<td class="mono so-c-st" title="dealer staff ID${r.staff ? ': ' + esc(r.staff) : ''}">${esc(r.staff || r.who || '—')}${r.dcode ? `<small class="so-dc-sub">${esc(r.dcode)}</small>` : ''}</td><td class="mono so-c-dc" title="${esc(r.dname ? 'dealer: ' + r.dname : 'dealer code')}">${esc(r.dcode || '—')}</td>`
+          : `<td class="mono">${esc(r.who || '—')}</td>`}<td class="so-c-loc">${esc(r.where || '—')}</td><td class="mono so-c-t">${esc(KT ? KT.t(r.at) : '')}</td><td class="mono so-tx so-c-tx" title="${esc(r.tx)}">${esc(r.tx)}${r.ord ? ` <small>${esc(r.ord)}</small>` : ''}</td><td class="so-res"><i class="so-res-dot"></i>${esc(r.cls === 'success' ? (r.msg && /^(success|completed|ok)$/i.test(r.msg) ? r.msg : 'Success') : (r.msg || r.code || r.cls || ''))}${r.code && r.cls !== 'success' && r.msg && r.msg !== r.code ? ` <small>${esc(r.code)}</small>` : ''}<small class="so-tx-sub">${esc(r.tx)}</small></td></tr>`).join('') || `<tr><td colspan="${dealerCols ? 6 : 5}" class="so-empty">no activity in the source yet</td></tr>`}
         </tbody></table></div>
       <div class="so-col">
         <div class="so-card"><div class="so-ch">ERROR FACING ${esc((d.who || 'dealers').toUpperCase())} <small>${esc(winLbl)}</small></div>${bars(d.errorFacing || [], 'who')}</div>
@@ -173,14 +179,14 @@
 
   /* ---- data ---- */
   async function loadOverview() {
-    try { S.over = await api('/api/salesops/overview'); } catch (e) { S.over = S.over || null; }
+    try { S.over = await api('/api/salesops/overview' + (S.alerts ? '?alerts=1' : '')); } catch (e) { S.over = S.over || null; }
     tabs();
   }
   async function load(force) {
     const ch = S.ch, seq = ++S.seq;
     if (force) page(null);
     try {
-      const d = await api(`/api/salesops/channel/${ch}?window=${S.win}`);
+      const d = await api(`/api/salesops/channel/${ch}?window=${S.win}${S.alerts ? '&alerts=1' : ''}`);
       if (seq !== S.seq || ch !== S.ch) return;
       S.data[ch] = d; banners(d); page(d);
     } catch (e) { if (seq !== S.seq) return; banners({ error: e.message, health: null, notices: [] }); page({ error: e.message, activity: [], errorFacing: [], failures: [], source: {} }); }
@@ -189,7 +195,7 @@
 
   /* ---- navigation / rotation / kiosk ---- */
   function syncHash() {
-    const q = []; if (S.ch !== 'dms') q.push('ch=' + S.ch); if (S.win !== 60) q.push('window=' + S.win); if (S.kiosk) q.push('kiosk=1'); if (S.kiosk && S.rotate !== 30) q.push('rotate=' + S.rotate);
+    const q = []; if (S.ch !== 'dms') q.push('ch=' + S.ch); if (S.win !== 60) q.push('window=' + S.win); if (S.kiosk) q.push('kiosk=1'); if (S.kiosk && S.rotate !== 30) q.push('rotate=' + S.rotate); if (S.alerts) q.push('alerts=1');
     const h = 'salesops' + (q.length ? '?' + q.join('&') : '');
     if (location.hash !== '#' + h) { try { history.replaceState({ ...(history.state || {}) }, '', '#' + h); } catch (_) { location.hash = '#' + h; } }
   }
@@ -273,6 +279,7 @@
     const ch = P.get('ch'); if (ch && ORDER.includes(ch)) S.ch = ch; else if (!qs) S.ch = st.get('ch', 'dms');
     const w = Number(P.get('window')); if ([15, 60, 360, 1440].includes(w)) S.win = w; else S.win = Number(st.get('win', 60)) || 60;
     if (P.get('kiosk') === '1' || P.get('tv') === '1') S.kiosk = true;
+    const al = P.get('alerts') === '1'; if (al !== S.alerts) { S.alerts = al; S.data = {}; }
     const r = P.get('rotate'); if (r != null && r !== '') S.rotate = Math.max(0, Math.min(600, Number(r) || 0));
   }
   window.openSalesOps = function (qs) {

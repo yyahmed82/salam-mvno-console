@@ -12,8 +12,11 @@
  *
  * Every channel answers the SAME shape (the page is one template): activations 1 h / today / yesterday /
  * yesterday-same-time, outcomes success · business · technical in a window (15 m … 24 h), who is facing
- * errors (dealers / QR codes / platforms), the live activity feed (masked), the failure reasons, the
- * channel HEALTH from the open alerts of its rule families, and the NOTICES IT Operations posted for it.
+ * errors (dealers / QR codes / platforms), the live activity feed (masked), the failure reasons and the
+ * NOTICES IT Operations posted for it. The activity feed of the two dealer channels (DMS, SDA) carries the
+ * dealer's STAFF ID and DEALER CODE so the Sales Ops team knows who sold (7 Oct 2026).
+ * The channel HEALTH from the open alerts of its rule families is NOT sent by default (7 Oct 2026: the Sales
+ * Ops team does not want IT alerts on the wall) — `?alerts=1` on /overview and /channel brings it back.
  *
  * Classification is the console-wide SSOT (errclass.js): success = the step succeeded, business = the API
  * answered "no", technical = the platform failed to answer. No customer identifier leaves this module:
@@ -107,6 +110,33 @@ async function notices(channel) {
 
 /* ---------------------------------------------------------------- Mobile › DMS (dealer app) */
 let DMSJ = null; try { DMSJ = require('./dmsJourneys'); } catch (e) { DMSJ = null; }
+/* DMS DEALER CODE of a dealer staff user — dms_v1.dms_users.dealer_code (the code DMS shows for the user's
+ * wallet: <type prefix>_<account number>). The activation ledger carries only the user (channel_user_id =
+ * dms_users.id, channel_username = dms_users.username), so the code is looked up by PK / username for the
+ * handful of users on screen, cached 30 min. Read-only; a failed lookup leaves the column empty. */
+const DLR = new Map(); const DLR_TTL = 30 * 60e3;
+const dlrKey = (uid, user) => uid != null && uid !== '' ? 'i' + uid : (user ? 'u' + String(user).toLowerCase() : null);
+async function dmsDealerCodes(keys) {
+  const dms = require('./dmsDb'); const now = Date.now();
+  const stale = k => { const c = DLR.get(dlrKey(k.uid, k.user)); return !c || now - c.t > DLR_TTL; };
+  const need = keys.filter(k => dlrKey(k.uid, k.user) && stale(k));
+  const ids = [...new Set(need.map(k => k.uid).filter(v => v != null && v !== '' && /^\d+$/.test(String(v))).map(String))].slice(0, 200);
+  const users = [...new Set(need.filter(k => !(k.uid != null && /^\d+$/.test(String(k.uid))) && k.user).map(k => String(k.user)))].slice(0, 200);
+  if (ids.length || users.length) {
+    const have = await dms.columnsOf('dms_v1', 'dms_users');
+    if (!have.has('dealer_code')) throw new Error('dms_v1.dms_users.dealer_code not visible');
+    const sel = ['id', 'username', 'dealer_code'].map(c => have.has(c) ? `\`${c}\`` : `NULL AS \`${c}\``).join(', ');
+    const rows = [];
+    if (ids.length && have.has('id')) rows.push(...await dms.q(`SELECT ${sel} FROM \`dms_v1\`.\`dms_users\` WHERE \`id\` IN (?)`, [ids]));
+    if (users.length && have.has('username')) rows.push(...await dms.q(`SELECT ${sel} FROM \`dms_v1\`.\`dms_users\` WHERE \`username\` IN (?)`, [users]));
+    const t = Date.now();
+    for (const r of rows) { const v = { code: r.dealer_code == null ? null : String(r.dealer_code), t };
+      if (r.id != null) DLR.set('i' + r.id, v); if (r.username) DLR.set('u' + String(r.username).toLowerCase(), v); }
+    for (const k of need) { const key = dlrKey(k.uid, k.user); if (!DLR.has(key) || DLR.get(key).t < t) DLR.set(key, { code: null, t }); }   // not found: remember the miss too
+    if (DLR.size > 5000) DLR.clear();
+  }
+  return (uid, user) => { const a = DLR.get(dlrKey(uid, user)); if (a && a.code) return a.code; const u = user ? DLR.get(dlrKey(null, user)) : null; return u ? u.code : null; };
+}
 async function dmsLive(win, D) {
   if (!DMSJ || !DMSJ.resolve) throw new Error('DMS ledger module unavailable');
   const dms = require('./dmsDb');
@@ -118,11 +148,18 @@ async function dmsLive(win, D) {
   const T = `\`${DMSJ.SCHEMA || 'dms_audit_logs'}\`.\`${DMSJ.JOURNEYS.activation.table}\``;
   const mx = await dms.q(`SELECT max(id) m FROM ${T}`);
   const lo = Math.max(0, N((mx[0] || {}).m) - 80000);            // ≈ months of activations — a cheap PK range (same bound as /api/dms/journeys/home)
+  /* who sold and where: the staff user id (→ dealer code), the shop (channel) name, region / city — when the ledger has them */
+  const have = await dms.columnsOf(DMSJ.SCHEMA || 'dms_audit_logs', DMSJ.JOURNEYS.activation.table);
+  const opt = c => have.has(c) ? c : null;
+  const X = { uid: C.dealer === 'channel_user_id' ? null : opt('channel_user_id'), shop: opt('channel_name'), region: opt('region_name'), city: opt('city_name') };
   const sel = [`id`, `\`${C.at}\` AS ts`, `\`${C.code}\` AS code`, `\`${C.dealer}\` AS dealer`]
-    .concat(C.message ? [`\`${C.message}\` AS message`] : []).concat(C.api ? [`\`${C.api}\` AS api`] : []).join(', ');
+    .concat(C.message ? [`\`${C.message}\` AS message`] : []).concat(C.api ? [`\`${C.api}\` AS api`] : [])
+    .concat(Object.entries(X).filter(([, c]) => c).map(([k, c]) => `\`${c}\` AS x_${k}`)).join(', ');
   const rows = await dms.qSlow(`SELECT ${sel} FROM ${T} WHERE id > ? AND \`${C.at}\` >= ? ORDER BY id DESC`, [lo, f(D.y0)], 30000);
+  const str = v => v == null || v === '' ? null : String(v);
   const items = rows.map(x => { const at = new Date(new Date(x.ts).getTime() - shift); const ok = !DMSJ.isFail(x.code, x.message);
-    return { at, ok, code: x.code == null ? null : String(x.code), message: x.message == null ? null : String(x.message), dealer: x.dealer == null ? null : String(x.dealer), api: x.api == null ? null : String(x.api) }; });
+    return { at, ok, code: x.code == null ? null : String(x.code), message: x.message == null ? null : String(x.message), dealer: x.dealer == null ? null : String(x.dealer), api: x.api == null ? null : String(x.api),
+      uid: C.dealer === 'channel_user_id' ? str(x.dealer) : str(x.x_uid), shop: str(x.x_shop), region: str(x.x_region), city: str(x.x_city) }; });
   return { items, source: `${r.table} (live, last ${rows.length} rows since yesterday 00:00 KSA)`, latest: items[0] ? items[0].at : null };
 }
 async function dmsRollup(D) {
@@ -139,6 +176,15 @@ async function dmsRollup(D) {
   const fails = ev.rows.map(x => ({ at: x.at, ok: false, code: x.code, message: x.message, dealer: x.dealer, api: x.api }));
   return { rollup: true, okIn, attemptsIn, H, fails, updated: st.rows[0] ? st.rows[0].updated_at : null, note: st.rows[0] ? st.rows[0].note : null };
 }
+/* the DMS activity rows: STAFF ID = the DMS username of the dealer staff who sold (channel_username),
+ * DEALER CODE = that user's dms_users.dealer_code, location = region · city of the ledger row */
+async function dmsActivity(rows) {
+  let codeOf = () => null;
+  try { codeOf = await dmsDealerCodes(rows.map(x => ({ uid: x.uid, user: x.dealer }))); } catch (e) { /* lookup unavailable — the column stays empty */ }
+  return rows.map(x => ({ at: x.at, who: clip(x.dealer, 40), staff: clip(x.dealer, 40), dcode: clip(codeOf(x.uid, x.dealer), 40), dname: clip(x.shop, 60),
+    where: clip([x.region, x.city].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' · ') || null, 40),
+    tx: clip(x.api || 'sim activation', 60), code: clip(x.code, 24), msg: maskNum(clip(x.message, 140)), cls: cls(x.ok, x.code, x.message) }));
+}
 async function dmsChannel(win) {
   const D = days(); const w0 = new Date(D.now.getTime() - win * 60e3);
   const base = { key: 'dms', ...CHANNELS.dms };
@@ -152,7 +198,7 @@ async function dmsChannel(win) {
         attemptsToday: it.filter(x => x.at >= D.day0).length },
       outcomes, errorFacing: facing(inW, x => x.dealer, x => cls(x.ok, x.code, x.message)),
       failures: reasons(inW.filter(x => !x.ok), x => (x.message || x.code || 'unknown'), x => cls(false, x.code, x.message)),
-      activity: it.slice(0, 14).map(x => ({ at: x.at, who: clip(x.dealer, 40), where: null, tx: clip(x.api || 'sim activation', 60), code: clip(x.code, 24), msg: maskNum(clip(x.message, 140)), cls: cls(x.ok, x.code, x.message) })),
+      activity: await dmsActivity(it.slice(0, 14)),
       source: { label: L.source, latest: L.latest, live: true } };
   } catch (e) {
     const R = await dmsRollup(D);
@@ -164,7 +210,7 @@ async function dmsChannel(win) {
       outcomes: { ...tally(inW.map(x => cls(false, x.code, x.message))), success: Math.max(0, attW - failW), total: Math.max(attW, failW) },
       errorFacing: facing(inW, x => x.dealer, x => cls(false, x.code, x.message)),
       failures: reasons(inW, x => (x.message || x.code || 'unknown'), x => cls(false, x.code, x.message)),
-      activity: R.fails.slice(0, 14).map(x => ({ at: x.at, who: clip(x.dealer, 40), where: null, tx: clip(x.api || 'sim activation', 60), code: clip(x.code, 24), msg: maskNum(clip(x.message, 140)), cls: cls(false, x.code, x.message) })),
+      activity: await dmsActivity(R.fails.slice(0, 14)),
       source: { label: 'console rollups of the DMS ledger (hourly) + failure events — live ledger not reachable: ' + clip(e.message, 160), latest: R.updated, live: false, note: R.note } };
   }
 }
@@ -241,7 +287,7 @@ async function fixedChannel(ch, win) {
     pool.query(`SELECT category, max(code) code, max(message) msg, count(*)::int n FROM error_events
                  WHERE occurred_at >= $1 AND channel = $2 GROUP BY 1 ORDER BY 4 DESC LIMIT 10`, [w0, evCh]),
     pool.query(`SELECT oa.started_at at, ${whoCol} who, coalesce(oa.region, d.region) region, oa.workflow::text wf, oa.outcome::text o, oa.step_reached step,
-                       oa.last_error_category cat, oa.order_number ord
+                       oa.last_error_category cat, oa.order_number ord, coalesce(d.staff_code, oa.dealer_id::text) staff, d.dealer_code dcode, d.dealer_name dname
                   ${FROM} WHERE ${scope} ORDER BY oa.started_at DESC LIMIT 14`),
     pool.query(`SELECT count(*)::int n, count(*) FILTER (WHERE client_side)::int client FROM error_events WHERE occurred_at >= $1 AND channel = $2`, [w0, evCh]),
     pool.query(`SELECT max(oa.started_at) t ${FROM} WHERE ${scope}`)
@@ -257,7 +303,7 @@ async function fixedChannel(ch, win) {
       note: 'orders started in the window: completed · stalled / cancelled / expired · technical = platform-side error events' },
     errorFacing: facingR.rows.map(x => ({ who: clip(x.who, 30), label: clip(x.nm, 40), where: clip(x.region, 24), ok: N(x.ok), biz: N(x.biz), tech: 0, pend: N(x.pend), total: N(x.total), cat: x.cat })),
     failures: fails.rows.map(x => ({ reason: clip(String(x.category || 'unknown').replace(/_/g, ' '), 60) + (x.msg ? ' — ' + maskNum(clip(x.msg, 70)) : ''), n: N(x.n), cls: errCat(x.category, x.code, x.msg) })),
-    activity: feed.rows.map(x => ({ at: x.at, who: clip(x.who, 30), where: clip(x.region, 24), tx: wfLabel(x.wf) + (x.step ? ' · ' + x.step : ''), code: x.o,
+    activity: feed.rows.map(x => ({ at: x.at, who: clip(x.who, 30), staff: isQr ? null : clip(x.staff, 30), dcode: isQr ? null : clip(x.dcode, 30), dname: isQr ? null : clip(x.dname, 60), where: clip(x.region, 24), tx: wfLabel(x.wf) + (x.step ? ' · ' + x.step : ''), code: x.o,
       msg: x.cat ? String(x.cat).replace(/_/g, ' ') : (x.o === 'COMPLETED' ? 'Completed' : x.o === 'IN_PROGRESS' ? 'In progress' : ''), cls: OUTCOME_CLS[x.o] || 'business', ord: x.ord ? '…' + String(x.ord).slice(-5) : null })),
     source: { label: isQr ? 'sda_ops order_attempts · e-purchase orders opened from a dealer QR code' : 'sda_ops order_attempts · SDA dealer orders · error_events', latest: latest.rows[0] ? latest.rows[0].t : null, live: true } };
 }
@@ -301,20 +347,22 @@ async function channel(ch, win) {
 function mount(app, { requireView, requireCap, audit }) {
   app.use('/api/salesops', requireView('salesops'));
   /* the strip: the four channels at a glance (health + the day's numbers) — one call, 20 s cache */
+  /* alerts are opt-in (?alerts=1): the Sales Ops wall shows IT Operations' notices, not the alert engine */
+  const wantAlerts = req => req.query.alerts === '1';
   app.get('/api/salesops/overview', async (req, res) => {
     try {
-      const [health, nts, ...chs] = await Promise.all([openAlerts(), notices(null), ...ORDER.map(k => channel(k, 60))]);
-      res.json({ at: new Date().toISOString(), order: ORDER, notices: nts,
+      const [health, nts, ...chs] = await Promise.all([wantAlerts(req) ? openAlerts() : null, notices(null), ...ORDER.map(k => channel(k, 60))]);
+      res.json({ at: new Date().toISOString(), order: ORDER, notices: nts, alerts: !!health,
         channels: Object.fromEntries(chs.map(c => [c.key, { key: c.key, label: c.label, short: c.short, biz: c.biz, unit: c.unit, error: c.error || null, degraded: !!c.degraded,
-          health: health[c.key], activations: c.activations, outcomes: c.outcomes, latest: c.source && c.source.latest || null }])) });
+          health: health ? health[c.key] : null, activations: c.activations, outcomes: c.outcomes, latest: c.source && c.source.latest || null }])) });
     } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
   });
   app.get('/api/salesops/channel/:ch', async (req, res) => {
     try {
       const ch = String(req.params.ch || '').toLowerCase(); if (!CHANNELS[ch]) return res.status(404).json({ error: 'unknown channel' });
       const win = WINDOWS[Number(req.query.window)] || 60;
-      const [d, health, nts] = await Promise.all([channel(ch, win), openAlerts(), notices(ch)]);
-      res.json({ ...d, health: health[ch], notices: nts, windows: Object.keys(WINDOWS).map(Number) });
+      const [d, health, nts] = await Promise.all([channel(ch, win), wantAlerts(req) ? openAlerts() : null, notices(ch)]);
+      res.json({ ...d, health: health ? health[ch] : null, alerts: !!health, notices: nts, windows: Object.keys(WINDOWS).map(Number) });
     } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
   });
   app.get('/api/salesops/notices', async (req, res) => {

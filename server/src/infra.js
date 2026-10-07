@@ -31,6 +31,7 @@ const N = (v, d) => { const x = Number(v); return Number.isFinite(x) ? x : d; };
 const CFG = () => ({
   enabled: process.env.INFRA_ENABLED !== '0',
   intervalSec: Math.max(30, N(process.env.INFRA_INTERVAL_SEC, 60)),
+  flowsRetentionDays: Math.max(1, N(process.env.INFRA_FLOWS_RETENTION_DAYS, 2)),   // every read of infra_flows is ≤ 15 min
   inventoryHours: Math.max(1, N(process.env.INFRA_INVENTORY_HOURS, 24)),
   sshUser: process.env.INFRA_SSH_USER || process.env.API_LOG_USER || '',
   sshKey: process.env.INFRA_SSH_KEY || process.env.API_LOG_KEY || '',
@@ -69,6 +70,7 @@ async function ensureSchema() {
       updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (diagram, node_id))`);
   await q.query(`CREATE TABLE IF NOT EXISTS infra_probes (id bigserial PRIMARY KEY, host_id int NOT NULL, at timestamptz NOT NULL DEFAULT now(), probe text NOT NULL, level text NOT NULL, value text, threshold text, note text)`);
   await q.query(`CREATE INDEX IF NOT EXISTS infra_probes_host_at ON infra_probes (host_id, at DESC)`);
+  await q.query(`CREATE INDEX IF NOT EXISTS infra_probes_at ON infra_probes (at DESC)`);   // the retention DELETE was a full scan every tick (7 Oct 2026)
   await q.query(`CREATE TABLE IF NOT EXISTS infra_runs (id bigserial PRIMARY KEY, at timestamptz NOT NULL DEFAULT now(), ms int, hosts int, reachable int, by_source jsonb, errors jsonb, kind text)`);
 }
 
@@ -256,7 +258,7 @@ function probesFor(host, m, inv, ports, reach) {
 const worst = levels => levels.includes('CRIT') ? 'CRIT' : levels.includes('WARN') ? 'WARN' : levels.includes('OK') ? 'OK' : 'UNKNOWN';
 
 /* ------------------------------------------------------------------------------------------------------ the tick */
-let busy = false; let lastRun = null; const prevMetrics = new Map(); let lastInventoryAt = 0; let lastInstanaAt = 0;
+let busy = false; let lastRun = null; const prevMetrics = new Map(); let lastInventoryAt = 0; let lastInstanaAt = 0; let lastPurgeAt = 0;
 async function tick({ inventory = false, force = false } = {}) {
   if (busy || !C()) return { skipped: true }; busy = true; const t0 = Date.now(); const c = CFG();
   const errors = {}; const bySource = { local: 0, ssh: 0, ports: 0, node_exporter: 0, instana: 0 }; let reachableN = 0;
@@ -313,7 +315,11 @@ async function tick({ inventory = false, force = false } = {}) {
     /* instana hosts the HLD does not know → new rows (segment shared, a person classifies) */
     if (instana) for (const ih of instana) { const ip = ih.ips.find(x => PRIVATE(x)) || ih.ips[0]; if (!ip || ipToHost.has(ip)) continue; await C().query(`INSERT INTO infra_hosts (ip, ips, segment, role, label, hostname, source, instana_id, inventory, inventory_hash, inventory_at) VALUES ($1,$2,'shared','other',$3,$3,'instana',$4,$5,$6,now()) ON CONFLICT (ip) DO NOTHING`, [ip, ih.ips, ih.hostname || ip, ih.snapshotId, JSON.stringify(ih.inventory), hashOf(ih.inventory)]); }
     if (doInventory) lastInventoryAt = Date.now();
-    await C().query(`DELETE FROM infra_host_metrics WHERE at < now() - interval '30 days'`); await C().query(`DELETE FROM infra_flows WHERE at < now() - interval '7 days'`); await C().query(`DELETE FROM infra_probes WHERE at < now() - interval '30 days'`); await C().query(`DELETE FROM infra_runs WHERE at < now() - interval '30 days'`);
+    /* retention (7 Oct 2026): once an hour, not every tick — and flows for INFRA_FLOWS_RETENTION_DAYS (2): every read of
+     * infra_flows is a 5–15 min window, while 7 days of per-minute connection samples had grown to 29 M rows / 3.7 GB on
+     * the Postgres the console shares with production (the single biggest write load the console put there). */
+    if (!lastPurgeAt || Date.now() - lastPurgeAt > 3600e3) { lastPurgeAt = Date.now();
+      await C().query(`DELETE FROM infra_host_metrics WHERE at < now() - interval '30 days'`); await C().query(`DELETE FROM infra_flows WHERE at < now() - ($1||' days')::interval`, [c.flowsRetentionDays]); await C().query(`DELETE FROM infra_probes WHERE at < now() - interval '30 days'`); await C().query(`DELETE FROM infra_runs WHERE at < now() - interval '30 days'`); }
     lastRun = { at: new Date().toISOString(), ms: Date.now() - t0, hosts: hosts.length, reachable: reachableN, by_source: bySource, errors, inventory: doInventory };
     await C().query(`INSERT INTO infra_runs (ms, hosts, reachable, by_source, errors, kind) VALUES ($1,$2,$3,$4,$5,$6)`, [lastRun.ms, hosts.length, reachableN, JSON.stringify(bySource), JSON.stringify(errors), doInventory ? 'inventory' : 'metrics']);
     try { await mailDigest(); } catch (e) { log('digest', e.message); }

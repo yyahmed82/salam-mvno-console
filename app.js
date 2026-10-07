@@ -374,7 +374,7 @@ function ensureGw(){
 function gwPathsFor(q){ if(!GW||!q||q.length<3) return []; const out=[]; GW.P.forEach((p,i)=>{ if(p.toLowerCase().includes(q)) out.push(i); }); return out; }
 // 7-day traffic per gateway path (/api/journeys/gw-traffic). The first render runs before ops.js installs the
 // authenticated fetch wrapper → a 401 there only schedules a retry; a 403 (no Explore access) stops asking.
-const gwT = {data:null, at:0, loading:null, denied:false, retryAt:0};
+const gwT = {data:null, at:0, loading:null, denied:false, retryAt:0, wanted:null};
 function gwTraffic(){
   if(gwT.denied) return Promise.resolve(null);
   if(gwT.data && Date.now()-gwT.at < 15*60e3) return Promise.resolve(gwT.data);
@@ -397,8 +397,15 @@ function gwTrafHtml(p, d){
   const pct = x.n ? Math.round(1000*x.ok/x.n)/10 : 0;
   return `<span class="gwt ${pct<95?"warn":""}" title="api_traffic_events · last 7 days: ${fmtN(x.n)} calls · ${fmtN(x.ok)} success · ${fmtN(x.biz)} business · ${fmtN(x.tech)} technical · avg ${x.avg_ms} ms">${fmtN(x.n)} calls · ${pct}% ok · ${fmtN(x.avg_ms)} ms</span>`;
 }
+/* 7 Oct 2026 (performance): the 7-day aggregate is asked only while Mobile › Journeys is on screen — the explorer stage is
+ * rendered at start-up for every page, and that used to fire /api/journeys/gw-traffic on every console load. */
+const journeysOpen = ()=>{ const v=document.getElementById("view-explorer"); return !!(v && v.classList.contains("active")); };
+const gwWake = ()=>{ if(journeysOpen() && !gwT.data && gwT.wanted && !gwT.loading) gwFillTraffic(gwT.wanted); };
+window.addEventListener("load", ()=>setTimeout(gwWake, 0));
+try{ const v=document.getElementById("view-explorer"); if(v) new MutationObserver(()=>setTimeout(gwWake,0)).observe(v, {attributes:true, attributeFilter:["class"]}); }catch(e){}
 function gwFillTraffic(root, tries){
   if(!GW || !root || !root.querySelector("[data-gwt]")) return;
+  if(!journeysOpen()){ gwT.wanted = root; return; }
   gwTraffic().then(d=>{
     if(!d){ if(!gwT.denied && (tries||0) < 3) setTimeout(()=>gwFillTraffic(root, (tries||0)+1), 4500); return; }
     root.querySelectorAll("[data-gwt]").forEach(n=>{ n.innerHTML = gwTrafHtml(n.getAttribute("data-gwt"), d); });
