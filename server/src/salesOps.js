@@ -4,9 +4,9 @@
  *   Mobile › DMS (dealer app)          — the DMS ledger sim_activation_logs (MariaDB, live, PK-bounded)
  *                                        with the console's hourly rollups + masked failure events as the
  *                                        fallback when the ledger is not reachable
- *   Mobile › Self-activation (app/web) — selfcare activation_logs on the prod replica (db.source):
- *                                        /bss/account/create-individual-subscriber state=true = a customer
- *                                        activated; every other row is a step of the activation
+ *   Mobile › Self-activation (web)     — the hybrid DEALER web portal mobile.salammobile.sa: the selfcare
+ *                                        activation_logs (prod replica) of dealer orders (seller_id → sellers);
+ *                                        create-individual-subscriber state=true = an activation (alpha.147)
  *   Fixed  › QR code (e-purchase)      — sda_ops order_attempts, channel epurchase + referral_code
  *   Fixed  › SDA (fixed dealer app)    — sda_ops order_attempts channel sda · error_events
  *
@@ -15,7 +15,7 @@
  * errors (dealers / QR codes / platforms), the live activity feed (masked), the failure reasons and the
  * NOTICES IT Operations posted for it. The activity feed of the two dealer channels (DMS, SDA) carries the
  * dealer's STAFF ID and DEALER CODE so the Sales Ops team knows who sold (7 Oct 2026); the self-activation feed
- * carries the DEALER ID of the order behind the call instead of the platform and the number (alpha.145).
+ * carries the same pair — DEALER ID (the DMS username the portal signs in with) and DEALER CODE (alpha.147).
  * The channel HEALTH from the open alerts of its rule families is NOT sent by default (7 Oct 2026: the Sales
  * Ops team does not want IT alerts on the wall) — `?alerts=1` on /overview and /channel brings it back.
  *
@@ -32,7 +32,7 @@ const { classifyClass, classCaseSql } = require('./errclass');
 
 const CHANNELS = {
   dms:     { key: 'dms',     biz: 'mobile', label: 'DMS · dealer app',            short: 'DMS',             who: 'Dealers',   whoOne: 'dealer',   unit: 'activations' },
-  selfact: { key: 'selfact', biz: 'mobile', label: 'Self-activation · app & web', short: 'Self-activation', who: 'Platforms', whoOne: 'platform', unit: 'activations' },
+  selfact: { key: 'selfact', biz: 'mobile', label: 'Self-activation · dealer web portal', short: 'Self-activation', who: 'Dealers', whoOne: 'dealer', unit: 'activations' },
   qr:      { key: 'qr',      biz: 'fixed',  label: 'QR code · e-purchase',        short: 'QR Code',         who: 'QR codes',  whoOne: 'QR code',  unit: 'completed orders' },
   sda:     { key: 'sda',     biz: 'fixed',  label: 'SDA · fixed dealer app',      short: 'SDA',             who: 'Dealers',   whoOne: 'dealer',   unit: 'completed orders' }
 };
@@ -216,95 +216,75 @@ async function dmsChannel(win) {
   }
 }
 
-/* ---------------------------------------------------------------- Mobile › Self-activation (customer app / web) */
+/* ---------------------------------------------------------------- Mobile › Self-activation = the dealer WEB portal */
+/* SELF-ACTIVATION IS THE HYBRID DEALER WEB PORTAL mobile.salammobile.sa — "like DMS, but a web app" (Sales Ops, 7 Oct 2026).
+ * Until alpha.145 this page counted every selfcare activation call, i.e. the customer app and web, the resellers (tygo)
+ * and the portal mixed together. Now it is the portal only:
+ *   - The portal is the selfcare backend in SELLER mode. An indirect seller signs in with sellers.username, which is the
+ *     dealer's DMS username (pos_016740, mtl_010765, dis_011149 …): the backend asks DMS
+ *     /self-activation-portal/getmsisdnbyusername with it at login and debits that DMS wallet. The order carries the
+ *     dealer as onboarding_orders.seller_id (flow indirect; flow partner for the dealer's QR).
+ *   - The Semati / BSS calls land in activation_logs like the app's, with neither the order nor the dealer
+ *     (ExternalRequests::ActivationLog.create is never given the order; the BSS request has the constant dealerCode 1).
+ *     A call is the portal's when its number is the number of a seller order placed since 2 days before yesterday:
+ *     numbers.identifier through numbers.onboarding_order_id (indexed by indexSource), or the port-in number
+ *     (onboarding_orders.mnp_number). That is exactly the order's reserved_number the backend sends.
+ *   - Dealer ID = sellers.username (the DMS username, as on the DMS page) · dealer code = dms_v1.dms_users.dealer_code
+ *     of that username (the DMS page's own lookup, cached 30 min).
+ * One query per refresh (cached 20 s with the page): the seller orders since 2 days before yesterday (partial index on the
+ * replica, seller orders only) → their numbers (index on numbers.onboarding_order_id) → the activation_logs rows since
+ * yesterday 00:00 KSA with those numbers (created_at index); everything on the page is aggregated from them. */
 const ACT_API = '/bss/account/create-individual-subscriber';
-
-/* WHO SOLD a self-activation (alpha.145, Sales Ops ask: no platform, no number, the DEALER ID instead).
- * activation_logs knows neither the dealer nor the order: the selfcare backend logs every Optiva / Semati call through
- * ExternalRequests::ActivationLog.create without the order (onboarding_order_id stays NULL) and the BSS request carries
- * the constant dealerCode 1. The dealer lives on the ORDER: onboarding_orders.seller_id → sellers, set when a dealer
- * sells from the seller app (flow indirect) or the customer orders from a dealer's QR (flow partner); sellers.username is
- * the dealerUsername of that dealer's wallet in Optiva's self-activation portal. A log row reaches its order through the
- * number it carries: the new number (numbers.identifier, indexed on the replica) or the ported one
- * (onboarding_orders.mnp_number, indexed), and the order is the latest one placed in the 7 days before the call.
- * No such order (a SIM replacement on an old line, or a row the replica has not synced yet) = no dealer shown, never a guess.
- * The number is only used for the lookup here; it never leaves this function. */
-const DEALER_DAYS = 7;
-const FLOW = { 1: 'seller app (indirect)', 2: 'retail POSA', 5: 'dealer QR (partner)', 7: 'retail QR POSA' };
-const last9 = v => { const d = String(v == null ? '' : v).replace(/\D/g, ''); return d.length >= 9 ? d.slice(-9) : null; };
-const dealerId = v => { const s = String(v).trim(); return /^\+?\d{9,}$/.test(s) ? maskNum(s) : clip(s, 64); };   // a username that is a phone / ID number stays masked
-async function selfactDealers(rows) {
-  const keys = [...new Set(rows.map(r => last9(r.msisdn)).filter(Boolean))];
-  if (!keys.length) return new Map();
-  const forms = keys.flatMap(k => ['966' + k, '0' + k, k]);
-  const oldest = new Date(Math.min(...rows.map(r => new Date(r.at).getTime())) - DEALER_DAYS * 864e5);
-  const r = await db.source.query(`
-    SELECT x.num, o.created_at, o.flow_type::text AS flow, nullif(o.external_service_name, '') AS ext, o.store_id::text AS store,
-           s.id::text AS sid, s.username, nullif(trim(concat_ws(' ', s.first_name, s.last_name)), '') AS sname
-      FROM (SELECT n.identifier::text AS num, n.onboarding_order_id AS oid FROM numbers n
-             WHERE n.identifier::text = ANY($1::text[]) AND n.onboarding_order_id IS NOT NULL
-            UNION ALL
-            SELECT m.mnp_number::text, m.id FROM onboarding_orders m WHERE m.mnp_number = ANY($1::text[])) x
-      JOIN onboarding_orders o ON o.id = x.oid
-      LEFT JOIN sellers s ON s.id = o.seller_id
-     WHERE o.created_at >= $2
-     ORDER BY o.created_at DESC`, [forms, oldest]);
-  const by = new Map();
-  for (const x of r.rows) { const k = last9(x.num); if (!k) continue; if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
-  return by;
-}
-/* the order behind one log row: the latest order with that number placed in the 7 days before the call (10 min of slack
- * for the replica's clocks) → dealer (seller username) · reseller (external_service_name) · retail store · direct */
-function dealerOf(row, by) {
-  const k = last9(row.msisdn); const cands = k && by.get(k); if (!cands) return { dkind: 'none' };
-  const t = new Date(row.at).getTime();
-  const o = cands.find(x => { const c = new Date(x.created_at).getTime(); return c <= t + 10 * 60e3 && c >= t - DEALER_DAYS * 864e5; });
-  if (!o) return { dkind: 'none' };
-  const via = FLOW[o.flow] || null;
-  if (o.username || o.sid) return { dealer: dealerId(o.username || 'seller ' + o.sid), dname: clip(o.sname, 60), dkind: 'dealer', dvia: via || 'dealer order' };
-  if (o.ext) return { dealer: clip(o.ext, 40), dkind: 'reseller', dvia: 'reseller channel' };
-  if (o.flow === '2' || o.flow === '7') return { dealer: o.store ? 'store ' + clip(o.store, 20) : null, dkind: 'retail', dvia: via };
-  return { dkind: 'direct' };
-}
+const PORTAL_ORDER_DAYS = 2;   // a portal order is activated within minutes to a day; 2 days before yesterday 00:00 covers it
 async function selfactChannel(win) {
   const D = days(); const w0 = new Date(D.now.getTime() - win * 60e3);
-  const S = db.source;
-  const CLS = classCaseSql('status_code', `coalesce(response::text,'')`);
-  const [act, byPl, outc, facingR, fails, feed, latest] = await Promise.all([
-    S.query(`SELECT count(*) FILTER (WHERE state = true AND created_at >= $1)::int h1, count(*) FILTER (WHERE state = true AND created_at >= $2)::int today,
-                    count(*) FILTER (WHERE state = true AND created_at >= $3 AND created_at < $2)::int yesterday,
-                    count(*) FILTER (WHERE state = true AND created_at >= $3 AND created_at < $4)::int ysame,
-                    count(*) FILTER (WHERE created_at >= $2 AND state IS DISTINCT FROM true)::int fail_today
-               FROM activation_logs WHERE api = $5 AND created_at >= $3`, [D.h1, D.day0, D.y0, D.ySame, ACT_API]),
-    S.query(`SELECT coalesce(nullif(platform,''),'unknown') k, count(*)::int n FROM activation_logs WHERE api = $1 AND state = true AND created_at >= $2 GROUP BY 1 ORDER BY 2 DESC`, [ACT_API, D.day0]),
-    S.query(`SELECT count(*)::int total, count(*) FILTER (WHERE state = true)::int success,
-                    count(*) FILTER (WHERE state IS DISTINCT FROM true AND (${CLS}) = 'business')::int business,
-                    count(*) FILTER (WHERE state IS DISTINCT FROM true AND (${CLS}) = 'technical')::int technical
-               FROM activation_logs WHERE created_at >= $1`, [w0]),
-    S.query(`SELECT coalesce(nullif(platform,''),'unknown') who, count(*) FILTER (WHERE state = true)::int ok,
-                    count(*) FILTER (WHERE state IS DISTINCT FROM true AND (${CLS}) = 'business')::int biz,
-                    count(*) FILTER (WHERE state IS DISTINCT FROM true AND (${CLS}) = 'technical')::int tech, count(*)::int total
-               FROM activation_logs WHERE created_at >= $1 GROUP BY 1 ORDER BY (count(*) FILTER (WHERE state IS DISTINCT FROM true)) DESC LIMIT 12`, [w0]),
-    S.query(`SELECT left(coalesce(nullif(response->>'responseMessage',''), nullif(response->>'message',''), nullif(status_code,''), 'no response'), 90) reason,
-                    (${CLS}) c, count(*)::int n
-               FROM activation_logs WHERE created_at >= $1 AND state IS DISTINCT FROM true GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 10`, [w0]),
-    S.query(`SELECT created_at at, platform, api, status_code, state, msisdn, left(coalesce(response->>'responseMessage', response->>'message', ''), 140) msg, (${CLS}) c
-               FROM activation_logs ORDER BY created_at DESC LIMIT 14`),
-    S.query(`SELECT max(created_at) t FROM activation_logs`)
-  ]);
-  const a = act.rows[0] || {};
+  const CLS = classCaseSql('a.status_code', `coalesce(a.response::text,'')`);
+  const r = await db.source.query(`
+    WITH so AS (SELECT o.id, o.seller_id, o.created_at, nullif(o.mnp_number::text, '') AS mnp FROM onboarding_orders o
+                 WHERE o.seller_id IS NOT NULL AND o.created_at >= $1),
+         nk AS (SELECT DISTINCT ON (k) k, seller_id FROM (
+                  SELECT right(regexp_replace(n.identifier::text, '[^0-9]', '', 'g'), 9) AS k, so.seller_id, so.created_at FROM so JOIN numbers n ON n.onboarding_order_id = so.id
+                  UNION ALL
+                  SELECT right(regexp_replace(so.mnp, '[^0-9]', '', 'g'), 9), so.seller_id, so.created_at FROM so WHERE so.mnp IS NOT NULL) z
+                WHERE length(k) = 9 ORDER BY k, created_at DESC)
+    SELECT a.created_at AS at, a.api, a.status_code, a.state, a.platform,
+           left(coalesce(nullif(a.response->>'responseMessage', ''), nullif(a.response->>'message', ''), ''), 140) AS msg, (${CLS}) AS c,
+           s.id::text AS sid, s.username, nullif(trim(concat_ws(' ', s.first_name, s.last_name)), '') AS sname
+      FROM activation_logs a
+      JOIN nk ON nk.k = right(regexp_replace(coalesce(a.msisdn, ''), '[^0-9]', '', 'g'), 9)
+      JOIN sellers s ON s.id = nk.seller_id
+     WHERE a.created_at >= $2
+     ORDER BY a.created_at DESC`, [new Date(D.y0.getTime() - PORTAL_ORDER_DAYS * 864e5), D.y0]);
+  const did = v => { const s = String(v).trim(); return /^\+?\d{9,}$/.test(s) ? maskNum(s) : s; };   // a username that is a phone / ID number stays masked
+  const P = r.rows.map(x => ({ ...x, t: new Date(x.at).getTime(), dealer: x.username ? did(x.username) : (x.sid ? 'seller ' + x.sid : null) }));
+  const act = x => x.api === ACT_API;
+  const bad = x => x.state !== true;
+  const day0 = D.day0.getTime(), y0 = D.y0.getTime(), ySame = D.ySame.getTime(), h1 = D.h1.getTime(), wt = w0.getTime();
+  const okAct = P.filter(x => act(x) && x.state === true);
+  const today = okAct.filter(x => x.t >= day0).length;
+  const inW = P.filter(x => x.t >= wt);
+  const biz = inW.filter(x => bad(x) && x.c === 'business').length, tech = inW.filter(x => bad(x) && x.c === 'technical').length;
+  /* who faces errors = dealers (as on the DMS page) */
+  const fm = new Map();
+  for (const x of inW) { const k = x.dealer || '—'; const e = fm.get(k) || { who: k, label: x.sname ? `${k} — ${x.sname}` : k, ok: 0, biz: 0, tech: 0, total: 0 };
+    e.total++; if (!bad(x)) e.ok++; else if (x.c === 'technical') e.tech++; else e.biz++; fm.set(k, e); }
+  const facing = [...fm.values()].sort((a, b) => (b.biz + b.tech) - (a.biz + a.tech) || b.total - a.total).slice(0, 12);
+  const rm = new Map();
+  for (const x of inW.filter(bad)) { const k = maskNum(clip(x.msg || x.status_code || 'no response', 90)); const e = rm.get(k + '|' + x.c) || { reason: k, n: 0, cls: x.c }; e.n++; rm.set(k + '|' + x.c, e); }
+  const feed = P.slice(0, 14);
+  let codeOf = () => null;
+  try { codeOf = await dmsDealerCodes(feed.map(x => ({ uid: null, user: x.username }))); } catch (e) { /* DMS unreachable — the dealer code column stays empty */ }
   const apiShort = s => String(s || '').replace(/^\/(bss|semati)\//, '$1 · ').replace(/^.*\//, '');
-  let dealers = new Map(), dealerErr = null;
-  try { dealers = await selfactDealers(feed.rows); } catch (e) { dealerErr = clip(e.message, 160); }   // lookup down → the column says so, the page still answers
   return { key: 'selfact', ...CHANNELS.selfact,
-    activations: { h1: N(a.h1), today: N(a.today), yesterday: N(a.yesterday), ySame: N(a.ysame), attemptsToday: N(a.today) + N(a.fail_today), byPlatform: byPl.rows },
-    outcomes: { success: N(outc.rows[0].success), business: N(outc.rows[0].business), technical: N(outc.rows[0].technical), total: N(outc.rows[0].total) },
-    errorFacing: facingR.rows.map(x => ({ who: x.who, ok: N(x.ok), biz: N(x.biz), tech: N(x.tech), total: N(x.total) })),
-    failures: fails.rows.map(x => ({ reason: maskNum(x.reason), n: N(x.n), cls: x.c })),
-    activity: feed.rows.map(x => ({ at: x.at, who: clip(x.platform || '—', 20), ...(dealerErr ? { dkind: 'unavailable' } : dealerOf(x, dealers)),
+    activations: { h1: okAct.filter(x => x.t >= h1).length, today, yesterday: okAct.filter(x => x.t >= y0 && x.t < day0).length, ySame: okAct.filter(x => x.t >= y0 && x.t < ySame).length,
+      attemptsToday: P.filter(x => act(x) && x.t >= day0).length, dealersToday: new Set(okAct.filter(x => x.t >= day0).map(x => x.dealer)).size },
+    outcomes: { success: inW.filter(x => x.state === true).length, business: biz, technical: tech, total: inW.length },
+    errorFacing: facing,
+    failures: [...rm.values()].sort((a, b) => b.n - a.n).slice(0, 10),
+    activity: feed.map(x => ({ at: x.at, who: clip(x.platform || '—', 20), staff: clip(x.dealer, 64), dcode: clip(codeOf(null, x.username), 40), dname: clip(x.sname, 60),
       tx: apiShort(x.api), code: clip(x.status_code, 24), msg: maskNum(clip(x.msg, 140)), cls: x.state === true ? 'success' : x.c })),
-    dealerLookup: dealerErr ? { ok: false, error: dealerErr } : { ok: true, days: DEALER_DAYS },
-    source: { label: 'selfcare activation_logs (prod replica) · activation = create-individual-subscriber succeeded', latest: latest.rows[0] ? latest.rows[0].t : null, live: true } };
+    source: { label: 'dealer web portal mobile.salammobile.sa · selfcare activation_logs (prod replica) of dealer orders (onboarding_orders.seller_id → sellers) · activation = create-individual-subscriber succeeded',
+      latest: P[0] ? P[0].at : null, live: true } };
 }
 
 /* ---------------------------------------------------------------- Fixed › QR code & SDA (sda_ops) */

@@ -56,7 +56,15 @@ const IDX = [
   ['onboarding_orders', 'idx_src_onb_nid_upper', '((upper(nationality_id_number)))'],
   ['users', 'idx_src_users_created', '(created_at)'],
   ['service_logs', 'idx_src_svclog_mobile', '(mobile_number)'],
-  ['service_logs', 'idx_src_svclog_msisdn', '(msisdn)']
+  ['service_logs', 'idx_src_svclog_msisdn', '(msisdn)'],
+  /* 7 Oct 2026 (alpha.147): the Sales Ops wall's self-activation page = the dealer web portal. Its calls are found through
+   * the numbers of the dealers' orders (numbers.onboarding_order_id = the order — the backend's `order.number`), every
+   * 20 s while the wall is open; prodSync only indexes numbers.identifier. Also serves the flow guard, live BSS and
+   * refund radar lookups by order. */
+  ['numbers', 'idx_src_numbers_order', '(onboarding_order_id)'],
+  /* …and the dealers' orders themselves: a partial index holding only the seller orders (a few hundred a day out of
+   * ~7 000), so finding the portal's recent orders never walks the whole day's funnel. */
+  ['onboarding_orders', 'idx_src_onb_seller_created', '(created_at) WHERE seller_id IS NOT NULL']
 ];
 
 /* a plain single-column index is only attempted when that column exists on this replica (service_logs' mobile

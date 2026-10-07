@@ -1,3 +1,11 @@
+## 2.0.0-alpha.147 — 2026-10-07
+
+- **Sales Operations wall · Self-activation = the dealer web portal `mobile.salammobile.sa`, like DMS** (Sales Ops: "the dealer ID should be exactly like DMS — dis_011149, mtl_010765, pos_016740 …"). alpha.145 read every selfcare activation call, i.e. the customer app and web, the resellers (tygo) and the portal mixed together, so the dealer column mostly said `direct` or `—`. The page now holds only the portal's traffic. The portal is the selfcare backend in seller mode: an indirect seller signs in with `sellers.username`, which is the dealer's DMS username (at login the backend asks DMS `/self-activation-portal/getmsisdnbyusername` with it, and debits that DMS wallet), and the order carries `onboarding_orders.seller_id`. A call in `activation_logs` belongs to the portal when its number is the number of a seller order placed since 2 days before yesterday: `numbers.identifier` through `numbers.onboarding_order_id`, or the port-in `mnp_number`.
+  - Activity panel like DMS: **dealer ID** (the DMS username) and **dealer code** (`dms_v1.dms_users.dealer_code`, the DMS page's own lookup), then time, transaction, result. The dealer's name shows on hover; a username that is a phone or ID number stays masked.
+  - Gauges, today vs yesterday, outcomes and failure reasons count the portal only. "Error facing" lists **dealers** (as on DMS), not platforms. Under the gauges: attempts today · dealers today · converted.
+  - Replica indexes (built in the background at boot): `numbers(onboarding_order_id)`, and a partial index `onboarding_orders(created_at) WHERE seller_id IS NOT NULL`. One query per refresh, cached 20 s with the page.
+  - The customer app / web activations are no longer on the wall (they stay in Mobile › Monitoring). `salesops.js?v=20261007c` — reload the TV once.
+
 ## 2.0.0-alpha.146 — 2026-10-07
 
 - **Payments watch — fixes from the first live read on 152** (`/tmp/epw-check` of 7 Oct, 13:1x KSA; doc `claude/FIXED-NEXUS-REVIEW-2026-10-07.md` §7):

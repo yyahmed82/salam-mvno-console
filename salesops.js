@@ -10,7 +10,8 @@
  * One template for the four channels (the Grafana "Dealer Performance" board the team uses today, done for every
  * channel from the console's own sources): activations 1 h / today / yesterday · today vs yesterday same time ·
  * success / business / technical outcomes in a window · who faces errors · the live activity feed (masked) · the
- * failure reasons. DMS and SDA rows carry the dealer STAFF ID and DEALER CODE (7 Oct 2026). Above it, the BANNER:
+ * failure reasons. DMS and SDA rows carry the dealer STAFF ID and DEALER CODE (7 Oct 2026); self-activation = the dealer
+ * web portal mobile.salammobile.sa, rows carry the DEALER ID (DMS username) and DEALER CODE (alpha.147). Above it, the BANNER:
  * the notices IT Operations posted (one channel or all) and NO DATA when a source cannot be read; the alert-driven
  * outage / degraded / quiet banners only with ?alerts=1.
  * Keys in TV mode: ← → change page · 1-4 jump · Space pause / resume the rotation · F fullscreen · W window · Esc exit.
@@ -136,12 +137,12 @@
     const winLbl = { 15: 'last 15 min', 60: 'last hour', 360: 'last 6 h', 1440: 'last 24 h' }[S.win] || 'window';
     const unit = d.unit || 'activations';
     const dealerCols = S.ch === 'dms' || S.ch === 'sda';   // who sold: dealer staff ID + dealer code
-    const dealerId = S.ch === 'selfact';                    // who sold: the dealer ID of the order behind the call (no platform, no number — alpha.145)
-    const nCols = dealerCols ? 6 : dealerId ? 4 : 5;
+    const portal = S.ch === 'selfact';                      // dealer web portal: dealer ID (DMS username) + dealer code, like DMS without the location (alpha.147)
+    const nCols = dealerCols ? 6 : 5;
     let h = `<div class="so-row1">
       <div class="so-card so-act"><div class="so-ch">${esc(unit.toUpperCase())}${d.degraded ? ' <span class="so-chip amber" title="live ledger not reachable — hourly rollups">hourly rollups</span>' : ''}</div>
         <div class="so-gs">${gauge(a.h1 || 0, Math.max(1, Math.ceil(maxA / 8)), '1-hour', C.ok)}${gauge(a.today || 0, maxA, 'Today till now', C.ok)}${gauge(a.yesterday || 0, maxA, 'Yesterday', C.ok, { cls: 'dim' })}</div>
-        ${a.byPlatform && a.byPlatform.length ? `<div class="so-pl">${a.byPlatform.map(p => `<span><b>${fmtN(p.n)}</b> ${esc(p.k)}</span>`).join('')}</div>` : (a.attemptsToday != null ? `<div class="so-pl"><span><b>${fmtN(a.attemptsToday)}</b> attempts today</span>${a.today != null && a.attemptsToday ? `<span><b>${pct(a.today, a.attemptsToday)}%</b> converted</span>` : ''}</div>` : '')}
+        ${a.byPlatform && a.byPlatform.length ? `<div class="so-pl">${a.byPlatform.map(p => `<span><b>${fmtN(p.n)}</b> ${esc(p.k)}</span>`).join('')}</div>` : (a.attemptsToday != null ? `<div class="so-pl"><span><b>${fmtN(a.attemptsToday)}</b> attempts today</span>${a.dealersToday != null ? `<span><b>${fmtN(a.dealersToday)}</b> dealers today</span>` : ''}${a.today != null && a.attemptsToday ? `<span><b>${pct(a.today, a.attemptsToday)}%</b> converted</span>` : ''}</div>` : '')}
       </div>
       <div class="so-card so-vs ${tone}"><div class="so-ch">TODAY vs YESTERDAY <small>same time</small></div>
         <div class="so-big">${vs == null ? '—' : vs + '<i>%</i>'}</div>
@@ -152,12 +153,12 @@
     </div>
     <div class="so-row2">
       <div class="so-card so-feed"><div class="so-ch">${esc(m.short.toUpperCase())} ACTIVITY PANEL <small>${d.degraded ? 'latest failures (live ledger not reachable)' : 'latest ' + (d.activity ? d.activity.length : 0)} · identifiers masked</small></div>
-        <table class="so-tbl${dealerCols ? ' so-dlr' : dealerId ? ' so-dlr so-did' : ''}"><thead><tr>${dealerCols ? '<th class="so-c-st">staff ID</th><th class="so-c-dc">dealer code</th><th class="so-c-loc">location</th>'
-          : dealerId ? `<th class="so-c-st" title="${esc(d.dealerLookup && d.dealerLookup.ok === false ? 'dealer lookup unavailable: ' + (d.dealerLookup.error || '') : 'the dealer of the order behind the call — seller app or dealer QR: the dealer username · direct: the customer\'s own order (app / web) · — : no order with this number in the last ' + ((d.dealerLookup && d.dealerLookup.days) || 7) + ' days')}">dealer ID</th>`
+        <table class="so-tbl${dealerCols ? ' so-dlr' : portal ? ' so-dlr so-did' : ''}"><thead><tr>${dealerCols ? '<th class="so-c-st">staff ID</th><th class="so-c-dc">dealer code</th><th class="so-c-loc">location</th>'
+          : portal ? '<th class="so-c-st" title="the dealer who sold on the web portal — the DMS username the dealer signs in with (as STAFF ID on the DMS page)">dealer ID</th><th class="so-c-dc" title="DMS dealer code of that dealer (dms_users.dealer_code)">dealer code</th>'
           : `<th>${esc(d.whoOne || 'who')}</th><th class="so-c-loc">location</th>`}<th class="so-c-t">time</th><th class="so-c-tx">transaction</th><th class="so-c-res">result</th></tr></thead><tbody>
         ${(d.activity || []).map(r => `<tr class="c-${r.cls || 'business'}">${dealerCols
           ? `<td class="mono so-c-st" title="dealer staff ID${r.staff ? ': ' + esc(r.staff) : ''}">${brk(r.staff || r.who || '—')}${r.dcode ? `<small class="so-dc-sub">${brk(r.dcode)}</small>` : ''}</td><td class="mono so-c-dc" title="${esc(r.dname ? 'dealer: ' + r.dname : 'dealer code')}">${brk(r.dcode || '—')}</td><td class="so-c-loc">${esc(r.where || '—')}</td>`
-          : dealerId ? dealerCell(r)
+          : portal ? `<td class="mono so-c-st" title="dealer ID${r.staff ? ': ' + esc(r.staff) : ''}${r.dname ? ' — ' + esc(r.dname) : ''}">${brk(r.staff || '—')}${r.dcode ? `<small class="so-dc-sub">${brk(r.dcode)}</small>` : ''}</td><td class="mono so-c-dc" title="${esc(r.dname ? 'dealer: ' + r.dname : 'dealer code')}">${brk(r.dcode || '—')}</td>`
           : `<td class="mono">${esc(r.who || '—')}</td><td class="so-c-loc">${esc(r.where || '—')}</td>`}<td class="mono so-c-t">${esc(KT ? KT.t(r.at) : '')}</td><td class="mono so-tx so-c-tx" title="${esc(r.tx)}">${esc(r.tx)}${r.ord ? ` <small>${esc(r.ord)}</small>` : ''}</td><td class="so-res"><i class="so-res-dot"></i>${esc(r.cls === 'success' ? (r.msg && /^(success|completed|ok)$/i.test(r.msg) ? r.msg : 'Success') : (r.msg || r.code || r.cls || ''))}${r.code && r.cls !== 'success' && r.msg && r.msg !== r.code ? ` <small>${esc(r.code)}</small>` : ''}<small class="so-tx-sub">${esc(r.tx)}</small></td></tr>`).join('') || `<tr><td colspan="${nCols}" class="so-empty">no activity in the source yet</td></tr>`}
         </tbody></table></div>
       <div class="so-col">
@@ -176,20 +177,6 @@
     return `<div class="so-bars">${rows.map(r => { const t = (r.ok || 0) + (r.biz || 0) + (r.tech || 0); const w = x => (100 * x / max).toFixed(1) + '%';
       return `<div class="so-bar" title="${esc(r.label || r.who)}${r.where ? ' · ' + esc(r.where) : ''}: ${fmtN(r.ok || 0)} ok · ${fmtN(r.biz || 0)} business · ${fmtN(r.tech || 0)} technical${r.cat ? ' · last: ' + esc(String(r.cat).replace(/_/g, ' ')) : ''}"><span class="so-bar-l mono">${esc(r[key] || '—')}</span><span class="so-bar-t"><i class="ok" style="width:${w(r.ok || 0)}"></i><i class="biz" style="width:${w(r.biz || 0)}"></i><i class="tech" style="width:${w(r.tech || 0)}"></i></span><span class="so-bar-n">${fmtN(r.biz + r.tech)}<small>/${fmtN(t)}</small></span></div>`; }).join('')}
       <div class="so-legend"><span><i style="background:${C.ok}"></i>success</span><span><i style="background:${C.biz}"></i>business error</span><span><i style="background:${C.tech}"></i>technical error</span></div></div>`;
-  }
-  /* self-activation: the dealer of the order behind the call (server: salesOps.js dealerOf). dealer = seller username ·
-   * reseller = the partner channel · retail = POSA store · direct = the customer's own order · none = no order found */
-  function dealerCell(r) {
-    const pf = r.who && r.who !== '—' ? ' · platform ' + r.who : '';
-    if (r.dealer) {
-      const tip = r.dkind === 'reseller' ? `reseller channel ${r.dealer}` : r.dkind === 'retail' ? `retail POSA ${r.dealer}` : `dealer ${r.dealer}${r.dname ? ' — ' + r.dname : ''}${r.dvia ? ' · ' + r.dvia : ''}`;
-      return `<td class="mono so-c-st" title="${esc(tip + pf)}">${brk(r.dealer)}${r.dkind === 'reseller' || r.dkind === 'retail' ? ` <small>${r.dkind === 'reseller' ? 'reseller' : 'POSA'}</small>` : ''}</td>`;
-    }
-    const [lbl, tip] = r.dkind === 'direct' ? ['direct', "no dealer — the customer's own order (app / web)"]
-      : r.dkind === 'retail' ? ['POSA', 'retail POSA order — no store on the order']
-      : r.dkind === 'unavailable' ? ['—', 'dealer lookup unavailable right now']
-      : ['—', 'no order with this number in the last 7 days (SIM replacement on an existing line, or not synced yet)'];
-    return `<td class="so-c-st so-none" title="${esc(tip + pf)}">${esc(lbl)}</td>`;
   }
   function reasons(rows) {
     if (!rows.length) return '<div class="so-empty">no failures in the window</div>';
