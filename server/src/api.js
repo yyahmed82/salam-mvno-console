@@ -6850,6 +6850,68 @@ app.get('/api/audit/events', requireSuper, requireRoot('audit'), async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* CONSOLE USAGE (7 Oct 2026 — the charts at the top of the Audit page): WHO opens the console. Distinct people — never
+ * events, a reload is not a second user — per KSA day since the first navigation row and per hour over the last 72 h,
+ * split by the person's business scope (console_users.business: fixed | mobile | both; an unknown actor counts as both),
+ * optionally for ONE page (the VIEW_PAGE target with its query string and the "(denied)" suffix stripped). Activity =
+ * VIEW_PAGE rows, which only a signed-in browser writes, so the schedulers' loopback calls never count as a person.
+ * `notuser` is the page's "hide my own activity" switch, applied here the same way. Super admin + root tier like the
+ * rest of the audit log; cached 5 min in memory only. */
+const USAGE_PAGE = `split_part(split_part(coalesce(a.target, ''), '?', 1), ' ', 1)`;
+const USAGE_BIZ = `CASE WHEN u.business IN ('fixed', 'mobile') THEN u.business ELSE 'both' END`;
+app.get('/api/audit/usage', requireSuper, requireRoot('audit'), async (req, res) => {
+  try {
+    const page = String(req.query.page || '').trim().slice(0, 80);
+    const notuser = String(req.query.notuser || '').trim().toLowerCase().slice(0, 160);
+    res.json(await respCache.wrap(req, () => auditUsage({ page, notuser }), { persist: false }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+async function auditUsage({ page, notuser }) {
+  const p = []; const w = [`a.action = 'VIEW_PAGE'`, `a.actor IS NOT NULL`, `a.actor <> 'anonymous'`];
+  if (page) { p.push(page); w.push(`${USAGE_PAGE} = $${p.length}`); }
+  if (notuser) { p.push(notuser); w.push(`lower(a.actor) <> $${p.length}`); }
+  const FROM = `FROM audit_log a LEFT JOIN console_users u ON lower(u.email) = lower(a.actor) WHERE ${w.join(' AND ')}`;
+  const KSA_DAY = `to_char((a.at AT TIME ZONE 'Asia/Riyadh')::date, 'YYYY-MM-DD')`;
+  const [daily, hourly, today, h72, all, first, pages] = await Promise.all([
+    C.query(`SELECT ${KSA_DAY} AS d, ${USAGE_BIZ} AS biz, count(DISTINCT lower(a.actor))::int AS n ${FROM} GROUP BY 1, 2 ORDER BY 1`, p),
+    C.query(`SELECT date_trunc('hour', a.at) AS h, ${USAGE_BIZ} AS biz, count(DISTINCT lower(a.actor))::int AS n ${FROM}
+               AND a.at >= date_trunc('hour', now()) - interval '71 hours' GROUP BY 1, 2 ORDER BY 1`, p),
+    C.query(`SELECT ${USAGE_BIZ} AS biz, count(DISTINCT lower(a.actor))::int AS n ${FROM} AND (a.at AT TIME ZONE 'Asia/Riyadh')::date = (now() AT TIME ZONE 'Asia/Riyadh')::date GROUP BY 1`, p),
+    C.query(`SELECT ${USAGE_BIZ} AS biz, count(DISTINCT lower(a.actor))::int AS n ${FROM} AND a.at >= now() - interval '72 hours' GROUP BY 1`, p),
+    C.query(`SELECT ${USAGE_BIZ} AS biz, count(DISTINCT lower(a.actor))::int AS n ${FROM} GROUP BY 1`, p),
+    C.query(`SELECT min(at) AS t FROM audit_log WHERE action = 'VIEW_PAGE'`),
+    /* the page list is independent of the page filter (it feeds the dropdown) but respects "hide my own activity" */
+    C.query(`SELECT ${USAGE_PAGE} AS page, count(DISTINCT lower(a.actor)) FILTER (WHERE a.at >= now() - interval '72 hours')::int AS users72h,
+                    count(DISTINCT lower(a.actor))::int AS users_all, count(*) FILTER (WHERE a.at >= now() - interval '72 hours')::int AS events72h
+               FROM audit_log a WHERE a.action = 'VIEW_PAGE' AND a.actor IS NOT NULL AND a.actor <> 'anonymous'${notuser ? ` AND lower(a.actor) <> $1` : ''}
+              GROUP BY 1 HAVING ${USAGE_PAGE} <> '' ORDER BY users72h DESC, users_all DESC, events72h DESC LIMIT 80`, notuser ? [notuser] : [])
+  ]);
+  const KEYS = ['fixed', 'mobile', 'both'];
+  const empty = () => ({ fixed: 0, mobile: 0, both: 0 });
+  /* KSA day ticks from the first navigation row to today, zero-filled */
+  const ksaDay = d => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
+  const firstDay = first.rows[0].t ? ksaDay(first.rows[0].t) : ksaDay(new Date());
+  const todayDay = ksaDay(new Date());
+  const dayTicks = []; for (let t = Date.parse(firstDay + 'T00:00:00Z'); ; t += 86400e3) { const d = new Date(t).toISOString().slice(0, 10); dayTicks.push(d); if (d >= todayDay || dayTicks.length > 1500) break; }
+  const byDay = {}; for (const r of daily.rows) (byDay[r.d] = byDay[r.d] || empty())[r.biz] = r.n;
+  const dailySeries = Object.fromEntries(KEYS.map(k => [k, dayTicks.map(d => (byDay[d] || empty())[k])]));
+  /* hour ticks: the last 72 clock hours up to the current one, zero-filled */
+  const h0 = Math.floor(Date.now() / 3600e3) * 3600e3 - 71 * 3600e3;
+  const hourTicks = Array.from({ length: 72 }, (_, i) => new Date(h0 + i * 3600e3).toISOString());
+  const byHour = {}; for (const r of hourly.rows) { const k = new Date(r.h).toISOString(); (byHour[k] = byHour[k] || empty())[r.biz] = r.n; }
+  const hourlySeries = Object.fromEntries(KEYS.map(k => [k, hourTicks.map(h => (byHour[h] || empty())[k])]));
+  const sum = s => s.fixed.map((_, i) => s.fixed[i] + s.mobile[i] + s.both[i]);
+  dailySeries.total = sum(dailySeries); hourlySeries.total = sum(hourlySeries);
+  const kpi = rows => { const o = empty(); for (const r of rows) o[r.biz] = r.n; o.total = o.fixed + o.mobile + o.both; return o; };
+  return {
+    now: new Date().toISOString(), page: page || null, notuser: notuser || null, firstDay,
+    kpis: { today: kpi(today.rows), h72: kpi(h72.rows), all: kpi(all.rows) },
+    daily: { ticks: dayTicks, series: dailySeries },
+    hourly: { ticks: hourTicks, series: hourlySeries },
+    pages: pages.rows
+  };
+}
+
 // sync health — computed status (for an in-app view) + manual send/preview of the twice-daily report
 app.get('/api/sync-health', async (req, res) => {
   try { res.json(await syncHealth.compute(req.query.sim)); }

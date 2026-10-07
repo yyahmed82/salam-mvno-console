@@ -56,6 +56,7 @@
     host.innerHTML=`<div class="panel">
       <h2>Audit log</h2>
       <div class="sub">Security-relevant events — sign-ins, failed sign-ins, page/filter navigation, and customer-data (trace) access. Drill down: year ▸ month ▸ day ▸ events.</div>
+      <div id="audUsage"></div>
       <div class="aud-filters">
         <div><label>USER</label><input id="audUser" class="jsearch" placeholder="email contains…" value="${esc(state.user)}"></div>
         <div><label>ACTION</label><select id="audAction" class="jsearch">
@@ -75,10 +76,13 @@
     $("#audFrom").addEventListener("change",()=>{ state.from=$("#audFrom").value; loadTree(); });
     $("#audTo").addEventListener("change",()=>{ state.to=$("#audTo").value; loadTree(); });
     $("#audNav").addEventListener("change",()=>{ state.nav=$("#audNav").checked; loadTree(); });
-    $("#audHideSelf").addEventListener("change",()=>{ state.hideSelf=$("#audHideSelf").checked; localStorage.setItem(HIDE_KEY,state.hideSelf?"1":"0"); loadTree(); });
+    $("#audHideSelf").addEventListener("change",()=>{ state.hideSelf=$("#audHideSelf").checked; localStorage.setItem(HIDE_KEY,state.hideSelf?"1":"0"); loadTree(); usage(); });
     $("#audExport").addEventListener("click",exportAll);
+    usage();   // the usage charts at the top (auditusage.js) — follow the same "hide my own activity" switch
     loadTree();
   }
+
+  function usage(){ try{ if(window.auditUsage) window.auditUsage.render($("#audUsage"), { notuser: state.hideSelf ? myEmail() : "" }); }catch(e){} }
 
   function qs(extra,opts){ const p=new URLSearchParams(); if(state.user)p.set("user",state.user); if(state.action&&state.action!=="all")p.set("action",state.action); if(state.from)p.set("from",state.from); if(state.to)p.set("to",state.to); if(!state.nav)p.set("nav","0");
     // the export deliberately ignores hideSelf: a partial audit CSV would be worse than a noisy one

@@ -41,6 +41,7 @@ cp deploy152/healthcheck.cjs  "$STAGE/server/healthcheck.cjs" 2>/dev/null || tru
 cp deploy152/postdeploy-check.cjs "$STAGE/server/postdeploy-check.cjs" 2>/dev/null || true  # needs pg + src/
 cp deploy152/find-osb-log-table.cjs "$STAGE/server/find-osb-log-table.cjs" 2>/dev/null || true
 cp deploy152/sql.cjs           "$STAGE/server/sql.cjs" 2>/dev/null || true   # csql read-only query tool
+cp deploy152/perfmail.cjs      "$STAGE/server/perfmail.cjs" 2>/dev/null || true   # performance report by mail (cron 12:00 on 152)
 cp deploy152/purge-user-secrets.cjs "$STAGE/server/purge-user-secrets.cjs" 2>/dev/null || true  # one-shot replica credential purge
 cp deploy152/dms-discover.cjs  "$STAGE/server/dms-discover.cjs" 2>/dev/null || true      # DMS data-tier discovery (read-only)
 cp deploy152/dms-business-discover.cjs "$STAGE/server/dms-business-discover.cjs" 2>/dev/null || true  # dealer-domain + dms_audit_logs census (read-only)
