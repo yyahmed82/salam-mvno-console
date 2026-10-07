@@ -6879,7 +6879,12 @@ async function auditUsage({ page, notuser }) {
     C.query(`SELECT ${USAGE_BIZ} AS biz, count(DISTINCT lower(a.actor))::int AS n ${FROM} AND (a.at AT TIME ZONE 'Asia/Riyadh')::date = (now() AT TIME ZONE 'Asia/Riyadh')::date GROUP BY 1`, p),
     C.query(`SELECT ${USAGE_BIZ} AS biz, count(DISTINCT lower(a.actor))::int AS n ${FROM} AND a.at >= now() - interval '72 hours' GROUP BY 1`, p),
     C.query(`SELECT ${USAGE_BIZ} AS biz, count(DISTINCT lower(a.actor))::int AS n ${FROM} GROUP BY 1`, p),
-    C.query(`SELECT min(at) AS t FROM audit_log WHERE action = 'VIEW_PAGE'`),
+    /* KSA days straight from Postgres as YYYY-MM-DD — never toLocaleDateString('en-CA') in node: the node on 152 has
+     * English-only ICU data and formats 'en-CA' as 10/7/2026 (see ksaDay in the home KPIs) — parsing that made the day
+     * arithmetic below NaN and the first alpha.142 answered "Invalid time value" */
+    C.query(`SELECT to_char((min(at) AT TIME ZONE 'Asia/Riyadh')::date, 'YYYY-MM-DD') AS first_day,
+                    to_char((now() AT TIME ZONE 'Asia/Riyadh')::date, 'YYYY-MM-DD') AS today_day
+               FROM audit_log WHERE action = 'VIEW_PAGE'`),
     /* the page list is independent of the page filter (it feeds the dropdown) but respects "hide my own activity" */
     C.query(`SELECT ${USAGE_PAGE} AS page, count(DISTINCT lower(a.actor)) FILTER (WHERE a.at >= now() - interval '72 hours')::int AS users72h,
                     count(DISTINCT lower(a.actor))::int AS users_all, count(*) FILTER (WHERE a.at >= now() - interval '72 hours')::int AS events72h
@@ -6888,11 +6893,13 @@ async function auditUsage({ page, notuser }) {
   ]);
   const KEYS = ['fixed', 'mobile', 'both'];
   const empty = () => ({ fixed: 0, mobile: 0, both: 0 });
-  /* KSA day ticks from the first navigation row to today, zero-filled */
-  const ksaDay = d => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
-  const firstDay = first.rows[0].t ? ksaDay(first.rows[0].t) : ksaDay(new Date());
-  const todayDay = ksaDay(new Date());
-  const dayTicks = []; for (let t = Date.parse(firstDay + 'T00:00:00Z'); ; t += 86400e3) { const d = new Date(t).toISOString().slice(0, 10); dayTicks.push(d); if (d >= todayDay || dayTicks.length > 1500) break; }
+  /* KSA day ticks from the first navigation row to today, zero-filled (plain date strings, UTC arithmetic only) */
+  const todayDay = first.rows[0].today_day;
+  const firstDay = first.rows[0].first_day || todayDay;
+  const t0 = Date.parse(firstDay + 'T00:00:00Z'), tEnd = Date.parse(todayDay + 'T00:00:00Z');
+  const dayTicks = [];
+  for (let t = isNaN(t0) ? tEnd : t0; !isNaN(t) && t <= tEnd && dayTicks.length < 1500; t += 86400e3) dayTicks.push(new Date(t).toISOString().slice(0, 10));
+  if (!dayTicks.length) dayTicks.push(todayDay);
   const byDay = {}; for (const r of daily.rows) (byDay[r.d] = byDay[r.d] || empty())[r.biz] = r.n;
   const dailySeries = Object.fromEntries(KEYS.map(k => [k, dayTicks.map(d => (byDay[d] || empty())[k])]));
   /* hour ticks: the last 72 clock hours up to the current one, zero-filled */

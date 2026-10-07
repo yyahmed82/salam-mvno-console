@@ -48,8 +48,11 @@ const STATE = path.join(PERF_DIR, 'perfmail-state.json');
 const ERRLOG = process.env.PERFMAIL_ERRLOG || path.join(ROOT, 'logs', 'console.err.log');
 const TO = opt('--to', ADMIN);
 const KSA = 'Asia/Riyadh';
-const ksa = (d, withSec) => { try { return new Intl.DateTimeFormat('en-GB', { timeZone: KSA, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: withSec ? '2-digit' : undefined, hour12: false }).format(new Date(d)).replace(',', '') ; } catch (_) { return String(d); } };
-const ksaIso = d => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: KSA, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date(d)).map(x => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`; };
+/* KSA time from the formatter's typed PARTS, never its formatted string: the node on 152 has English-only ICU data, so
+ * 'en-GB' / 'en-CA' silently format as US month/day (the first mail said 10/07/2026 for 7 Oct). Parts are order-free. */
+const ksaParts = d => Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: KSA, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(d)).map(x => [x.type, x.value]));
+const ksaIso = d => { const p = ksaParts(d); return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}:${p.second}`; };
+const ksa = (d, withSec) => { try { const t = ksaIso(d); return t.slice(0, withSec ? 19 : 16).replace('T', ' '); } catch (_) { return String(d); } };   // 2026-10-07 09:44
 const num = n => (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-US');
 const msf = n => n == null ? '—' : (n >= 1000 ? (n / 1000).toFixed(1) + ' s' : Math.round(n) + ' ms');
 const pad = (s, w) => String(s == null ? '' : s).padEnd(w);
