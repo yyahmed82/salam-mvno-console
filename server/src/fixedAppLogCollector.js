@@ -71,7 +71,10 @@ const PROVIDER_RE = [
   [/nafath/i, 'nafath'], [/semati|IssueNewMobileIndividual/i, 'semati'], [/dealerValidation|manafith/i, 'manafith'],
   /* 7 Oct 2026 (salam-nexus 30 Sep): MANUAL_CAPTURE settlement lines and the 5G e-purchase stock / delivery provider.
    * payment first so "[NAQEEL Webhook] refundInvoice call failed" counts as a payment (refund) failure. */
-  [/captured successfully|voided successfully|capturing invoice|voiding invoice|failed to process payment|refundInvoice call failed/i, 'payment'],
+  /* the backend's 10-min hold-settlement loop re-logs the SAME stuck AUTHORIZED invoices every pass (×3 PM2 processes) —
+   * its own kind, so a backlog never reads as a capture outage (fixed_ep_auth_stuck alerts on the backlog itself) */
+  [/failed to process payment|failed to process expired workflows/i, 'payment_loop'],
+  [/captured successfully|voided successfully|capturing invoice|voiding invoice|refundInvoice call failed/i, 'payment'],
   [/naqeel|^lockDevices:/i, 'naqeel'],
 ];
 const MUT_RE = /^mutation\s+(\S+)\s+(success|succeeded|fail|failed|error)\b(?:.*?(\d+)\s*ms)?/i;
@@ -125,7 +128,7 @@ function parseLine(line) {
   const resp = o.response && typeof o.response === 'object' ? o.response : null;
   let kind = null, ok = null, status = null, reason = null, duration = null, path = o.path || null, dflt = 'technical';
   for (const [re, k] of PROVIDER_RE) if (re.test(msg) || re.test(String(o.service || '')) || re.test(path || '')) { kind = k; break; }
-  const m = kind === 'naqeel' || kind === 'payment' ? null : MUT_RE.exec(msg);
+  const m = kind === 'naqeel' || kind === 'payment' || kind === 'payment_loop' ? null : MUT_RE.exec(msg);
   if (kind === 'naqeel') {
     /* naqeel.ts logs EVERY search / order response at level error (success included) — judge by the body, not the level.
      * Only outcome lines count; request / progress lines ("lockDevices called", "createNaqeelOrder body") are skipped. */
@@ -135,6 +138,9 @@ function parseLine(line) {
     else if (level === 'error') { ok = false; status = (err && (err.statusCode || err.httpStatus)) || null; reason = short((err && err.message) || msg, 300);
       if (/sim not available|sim card is not available|no skus|not available|no coverage/i.test(msg + ' ' + (reason || ''))) dflt = 'business'; }
     else return null;
+  } else if (kind === 'payment_loop') {
+    if (level !== 'error') return null;
+    ok = false; reason = short((err && err.message) || (o.error && o.error.message) || msg, 300);
   } else if (kind === 'payment') {
     if (/captured successfully|voided successfully/i.test(msg)) ok = true;
     else if (level === 'error') { ok = false; reason = short((err && err.message) || msg, 300); }

@@ -130,7 +130,8 @@ async function snapshot(days) {
       ORDER BY created_at DESC LIMIT 500`, [W5, iv]);
     const simRows = await Q('simcheck', `SELECT CASE WHEN a.endpoint LIKE '%querySimCard%' THEN 'querySimCard' ELSE 'lockOrUnlockResource' END AS call,
         CASE WHEN a.endpoint LIKE '%querySimCard%' THEN
-               CASE WHEN jsonb_typeof(a.response->'simCardDtoList') IS DISTINCT FROM 'array' THEN 'no list returned'
+               CASE WHEN jsonb_typeof(a.response->'simCardDtoList') IS DISTINCT FROM 'array' THEN 'no SIM list · ' || coalesce(a.response->>'resultCode', a.response->>'code', jsonb_typeof(a.response), 'empty')
+                      || coalesce(' · ' || regexp_replace(left(coalesce(a.response->>'resultDesc', a.response->>'resultMsg', a.response->>'message'), 80), '[0-9]{5,}', '…', 'g'), '')
                     WHEN jsonb_array_length(a.response->'simCardDtoList') = 0 THEN 'SIM not found in BSS'
                     ELSE 'simState ' || coalesce(a.response->'simCardDtoList'->0->>'simState', '?') END
              ELSE (CASE WHEN a.payload->>'operationType' = 'L' THEN 'lock' ELSE 'release' END) || ' · resultCode ' || coalesce(a.response->>'resultCode', '?') END AS outcome,
@@ -140,7 +141,7 @@ async function snapshot(days) {
     const lockCounts = await Q('lockcounts', `SELECT l.goods_type::text AS goods, l.status::text AS status, count(*)::int AS n,
         count(*) FILTER (WHERE l.status::text = 'LOCKED' AND w.expires_at < now() - interval '2 hours')::int AS leaked
       FROM epurchase_5g_locks l JOIN workflow_states w ON w.id = l.workflow_state_id GROUP BY 1,2 ORDER BY 1,2`);
-    const lockRows = await Q('locks', `SELECT l.goods_type::text AS goods, l.goods_sn AS sn, l.created_at, w.id AS wf, w.channel::text AS ch,
+    const lockRows = await Q('locks', `SELECT l.goods_type::text AS goods, l.goodssn AS sn, l.created_at, w.id AS wf, w.channel::text AS ch,
         w.current_step, w.expires_at
       FROM epurchase_5g_locks l JOIN workflow_states w ON w.id = l.workflow_state_id
       WHERE l.status::text = 'LOCKED' AND w.expires_at < now() - interval '2 hours' ORDER BY l.created_at DESC LIMIT 300`);
@@ -153,7 +154,7 @@ async function snapshot(days) {
       FROM epurchase_payments p JOIN workflow_states w ON w.id = p.workflow_state_id WHERE p.updated_at > now() - $1::interval GROUP BY 1,2 ORDER BY 1,3 DESC`, [iv]);
     const ftthRows = await Q('ftthpaid', `WITH paid AS (
           SELECT id, channel::text AS ch, created_at, expires_at, current_step, context->'invoice'->>'status' AS inv,
-                 context->'invoice'->>'amount' AS amount, context->'customer'->>'id' AS cid
+                 coalesce(context->'invoice'->>'amount', context->'queryFee'->>'totalCharge', context->>'totalCharge') AS amount, context->'customer'->>'id' AS cid
           FROM workflow_states WHERE workflow_id = $1 AND created_at > now() - $2::interval AND expires_at < now()
             AND current_step IN ('ePurchaseCustomerProfileVerification', 'ePurchaseConfirmOtp')
             AND context->'invoice'->>'status' IN ('PAID', 'CAPTURED', 'AUTHORIZED')),
@@ -187,7 +188,7 @@ async function snapshot(days) {
       const cls = classify5g(r);
       return { id: r.id, ch: r.ch, chLabel: CH_LABEL[r.ch] || r.ch, plan: r.plan_id, created_at: iso(r.created_at), updated_at: iso(r.updated_at), step: r.current_step,
         inv: r.inv, cls, clsLabel: CLS[cls].label, tone: CLS[cls].tone, money: CLS[cls].money,
-        amount_sar: sar(r.charge), order_nbr: r.order_nbr && r.order_nbr !== PLACEHOLDER ? r.order_nbr : null, placeholder: r.order_nbr === PLACEHOLDER,
+        amount_sar: sar(r.charge), test: sar(r.charge) != null && sar(r.charge) <= 1, order_nbr: r.order_nbr && r.order_nbr !== PLACEHOLDER ? r.order_nbr : null, placeholder: r.order_nbr === PLACEHOLDER,
         order_err: maskDigits(r.order_err), naqeel: naqeelRef(r.nq_order), naqeel_event: naqeelRef(r.nq_hook),
         customer: r.first_name ? String(r.first_name).split(/\s+/)[0] : null, mobile: tail(r.mobile), iccid: tail(r.iccid, 6), landline: tail(r.landline) };
     });
@@ -258,7 +259,8 @@ async function alertSnap() {
   if (Date.now() - last.at > 10 * 60e3) kick().catch(e => console.error('[fixedEpWatch] refresh:', e.message));
   return last.s;
 }
-const countCls = async (cls) => { const s = await alertSnap(); return s.fiveG.paid.filter(p => p.cls === cls); };
+/* 1-SAR journeys are internal test orders (launch tests of 17 Sep / 30 Sep) — shown on the page, never alerted */
+const countCls = async (cls) => { const s = await alertSnap(); return s.fiveG.paid.filter(p => p.cls === cls && !p.test); };
 const one = (rows, what) => [{ dim: { note: rows.length ? `${rows.length} ${what} · newest ${rows[0].id}` : `0 ${what}` }, value: rows.length, sample: rows.length }];
 const METRICS = {
   fixed_ep5g_paid_no_bss_order: {

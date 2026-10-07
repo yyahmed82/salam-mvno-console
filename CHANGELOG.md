@@ -1,3 +1,12 @@
+## 2.0.0-alpha.146 — 2026-10-07
+
+- **Payments watch — fixes from the first live read on 152** (`/tmp/epw-check` of 7 Oct, 13:1x KSA; doc `claude/FIXED-NEXUS-REVIEW-2026-10-07.md` §7):
+  - **Stock locks list was empty**: the serial column is `goodssn` (Prisma `@map("goodssn")`), not `goods_sn` — the counts (74 leaked) were right, the per-serial list failed.
+  - **SIM check**: 341 of 374 `querySimCard` answers in 7 days carry **no SIM list** — the outcome now says what BSS answered instead (result code + description, digit runs masked), so the location-step drop has a name.
+  - **FTTH charged before the order**: the amount is read from the invoice, else the quoted fee (`queryFee.totalCharge`) — the SAR total was 0.
+  - **1-SAR journeys are test orders** (launch tests): flagged "test · 1 SAR" on the page and left out of the 5G money alerts.
+- **App-log collector — hold-settlement loop split out.** The backend's 10-minute loop logs "Failed to process payment" for the same stuck AUTHORIZED invoices on every pass (three PM2 processes run it): 186 lines in 3 h were counted as card-capture failures, which would hold `fixed_provider_down_payment` (P1) open. They are now kind `payment_loop` (own row in the Troubleshoot lane, no provider rule); the backlog itself is alerted by `fixed_ep_auth_stuck`.
+
 ## 2.0.0-alpha.145 — 2026-10-07
 
 - **Sales Operations wall · the full staff ID (SDA, also DMS)** — the staff ID and dealer code columns no longer cut the value with "…" (they were 13 % / 15 % columns with an ellipsis since alpha.140). The dealer tables now use fixed column widths: an ID that does not fit wraps at its separators (`.` `_` `-` `@`), and the transaction column gives way (full text on hover). On a phone the staff ID gets 38 % of the row with the dealer code under it. The server keeps up to 64 characters (was 30).

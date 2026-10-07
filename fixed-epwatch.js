@@ -114,7 +114,7 @@
     const paidRows=g.paid.filter(p=>!S.cls||p.cls===S.cls);
     const paid=`<div class="epw-chips"><button type="button" class="epw-btn${!S.cls?" on":""}" data-cls="">All ${fmt(g.paid.length)}</button>${clsKeys.map(k=>`<button type="button" class="epw-btn${S.cls===k?" on":""}" data-cls="${k}">${esc((g.classes[k]||{}).label||k)} · ${g.byCls[k]}</button>`).join("")}</div>`+
       table(["State","Journey","Channel","Created","Last change","Invoice","SAR","BSS order","Naqeel","Customer"], paidRows.map(p=>[
-        td(pill(esc(p.clsLabel),p.tone)), td(esc(p.id),"mono"), td(esc(p.chLabel)), td(ksa(p.created_at)), td(`${ksa(p.updated_at)}<br><small style="color:var(--muted)">${ago(p.updated_at)} ago</small>`),
+        td(pill(esc(p.clsLabel),p.tone)+(p.test?" "+pill("test · 1 SAR","grey"):"")), td(esc(p.id),"mono"), td(esc(p.chLabel)), td(ksa(p.created_at)), td(`${ksa(p.updated_at)}<br><small style="color:var(--muted)">${ago(p.updated_at)} ago</small>`),
         td(esc(p.inv||"—")), td(p.amount_sar!=null?fmt(p.amount_sar):"","num"),
         td(p.order_nbr?`<span class="mono">${esc(p.order_nbr)}</span>`:(p.order_err?`<small style="color:#dc2626">${esc(p.order_err)}</small>`:(p.placeholder?`<small style="color:var(--muted)">placeholder 11223344</small>`:""))),
         td(p.naqeel?`<small class="mono">${Object.entries(p.naqeel).map(([k,v])=>esc(k)+": "+esc(v)).join("<br>")}</small>`:"")+"",
@@ -151,7 +151,7 @@
       <div class="epw-tiles">${tileHtml}</div>
       <div class="epw-grid" style="margin-top:14px">
         <div class="epw-card"><h3>5G e-purchase · journeys</h3><div class="cs">ePurchase5GWhiteLabel — live since 17 Sep · web and Salam Home app · last ${d.days} days. The location step reserves stock at Naqeel, checks the SIM in BSS and locks SIM + landline.</div>${funnel}${days}</div>
-        <div class="epw-card"><h3>Location step · SIM check (7 days)</h3><div class="cs">BSS answers for the SIM Naqeel reserved. <b>simState I</b> = sellable; anything else stops the journey with "Sim card is not available" — Naqeel stock and BSS inventory out of step.</div>${sim}</div>
+        <div class="epw-card"><h3>Location step · SIM check (7 days)</h3><div class="cs">BSS answers for the SIM Naqeel reserved. <b>simState I</b> = sellable; anything else — another state, or no SIM list at all (BSS does not know the serial) — stops the journey with "Sim card is not available" — Naqeel stock and BSS inventory out of step.</div>${sim}</div>
         <div class="epw-card epw-wide" id="epw-paid"><h3>5G e-purchase · every paid journey</h3><div class="cs">Order number 11223344 is a placeholder written at payment; the real BSS order is created when Naqeel reports the delivery (event 7). Returned shipments (events 9 / 113) are refunded and the stock released.</div>${paid}</div>
         <div class="epw-card" id="epw-locks"><h3>Stock locks never released</h3><div class="cs">SIM (ICCID) and landline (MSISDN) locked at the location step on journeys that expired more than 2 h ago. Cancelling a journey does not release them and no scheduler runs the release — ask the inventory team to release these serials.</div>${locks}</div>
         <div class="epw-card" id="epw-holds"><h3>Card holds not settled</h3><div class="cs">epurchase_payments rows still AUTHORIZED on journeys expired more than 60 min ago. The backend's 10-minute loop should capture (order exists) or void them. The row can be stale — confirm the invoice in payments before acting.</div>${holds}${mix}</div>

@@ -30,6 +30,7 @@ const PROV = [
   { kind: 'manafith', label: 'Manafith', desc: 'DRM dealerValidation — dealer eligibility' },
   { kind: 'naqeel', label: 'Naqeel · 5G stock & delivery', desc: '5G e-purchase — warehouse search / SIM lock at the location step, delivery order, return-to-origin' },
   { kind: 'payment', label: 'Card capture / void / refund', desc: 'payments v2 MANUAL_CAPTURE settlement and refunds (e-purchase)' },
+  { kind: 'payment_loop', label: 'Hold-settlement loop (10 min)', desc: 'backend loop that captures / voids AUTHORIZED holds on expired journeys — repeats the same stuck invoices every pass' },
 ];
 const stepOf = p => String(p || '').replace(/^(sda|ePurchase|salamApp|paymentOptimization)\.(actions\.)?/, '');
 
@@ -56,9 +57,9 @@ async function lane(q = {}) {
     Q(`SELECT kind, coalesce(channel,'other') AS channel, count(*)::int AS calls, count(*) FILTER (WHERE ok)::int AS ok,
               count(*) FILTER (WHERE ok IS NOT TRUE)::int AS failed, count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class='technical')::int AS technical,
               count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class='business')::int AS business
-         FROM fixed_app_events WHERE ts >= $1 AND ts < $2 AND kind IN ('yakeen','yakeen_address','absher','nafath','semati','manafith','naqeel','payment') GROUP BY 1,2`, P),
+         FROM fixed_app_events WHERE ts >= $1 AND ts < $2 AND kind IN ('yakeen','yakeen_address','absher','nafath','semati','manafith','naqeel','payment','payment_loop') GROUP BY 1,2`, P),
     Q(`SELECT DISTINCT ON (kind) kind, ts, reason_class, status_code, left(reason,140) AS reason
-         FROM fixed_app_events WHERE ts >= $1 AND ts < $2 AND ok IS NOT TRUE AND kind IN ('yakeen','yakeen_address','absher','nafath','semati','manafith','naqeel','payment')
+         FROM fixed_app_events WHERE ts >= $1 AND ts < $2 AND ok IS NOT TRUE AND kind IN ('yakeen','yakeen_address','absher','nafath','semati','manafith','naqeel','payment','payment_loop')
         ORDER BY kind, ts DESC`, P),
     /* a retry loop = the same path+reason ≥ 30 times, spread over ≥ 20 min, present in most 5-minute buckets of its span,
      * and WITHOUT distinct request ids — a worker, not customers (635 phones failing the same way is a channel problem, not a loop) */
