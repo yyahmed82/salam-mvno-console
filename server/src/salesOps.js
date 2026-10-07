@@ -4,9 +4,8 @@
  *   Mobile › DMS (dealer app)          — the DMS ledger sim_activation_logs (MariaDB, live, PK-bounded)
  *                                        with the console's hourly rollups + masked failure events as the
  *                                        fallback when the ledger is not reachable
- *   Mobile › Self-activation (web)     — the hybrid DEALER web portal mobile.salammobile.sa: the selfcare
- *                                        activation_logs (prod replica) of dealer orders (seller_id → sellers);
- *                                        create-individual-subscriber state=true = an activation (alpha.147)
+ *   Mobile › Self-activation (web)     — the hybrid DEALER web portal mobile.salammobile.sa: its DMS ledger
+ *                                        dms_v1.report_request_self_activation (live, like DMS; rollups as fallback)
  *   Fixed  › QR code (e-purchase)      — sda_ops order_attempts, channel epurchase + referral_code
  *   Fixed  › SDA (fixed dealer app)    — sda_ops order_attempts channel sda · error_events
  *
@@ -15,7 +14,7 @@
  * errors (dealers / QR codes / platforms), the live activity feed (masked), the failure reasons and the
  * NOTICES IT Operations posted for it. The activity feed of the two dealer channels (DMS, SDA) carries the
  * dealer's STAFF ID and DEALER CODE so the Sales Ops team knows who sold (7 Oct 2026); the self-activation feed
- * carries the same pair — DEALER ID (the DMS username the portal signs in with) and DEALER CODE (alpha.147).
+ * carries the same pair — DEALER ID (the dealer's DMS username on the portal ledger) and DEALER CODE (alpha.148).
  * The channel HEALTH from the open alerts of its rule families is NOT sent by default (7 Oct 2026: the Sales
  * Ops team does not want IT alerts on the wall) — `?alerts=1` on /overview and /channel brings it back.
  *
@@ -138,21 +137,27 @@ async function dmsDealerCodes(keys) {
   }
   return (uid, user) => { const a = DLR.get(dlrKey(uid, user)); if (a && a.code) return a.code; const u = user ? DLR.get(dlrKey(null, user)) : null; return u ? u.code : null; };
 }
-async function dmsLive(win, D) {
+/* the LIVE DMS ledger of one journey, since yesterday 00:00 KSA: 'activation' = the DMS app's sim_activation_logs,
+ * 'self_activation' = the web portal's dms_v1.report_request_self_activation (alpha.148). Columns are resolved by
+ * dmsJourneys (same candidates, same KSA-local clock detection — the portal table writes KSA local time). */
+async function ledgerLive(key, D) {
   if (!DMSJ || !DMSJ.resolve) throw new Error('DMS ledger module unavailable');
   const dms = require('./dmsDb');
-  const r = await DMSJ.resolve('activation');
-  if (!r.ok) throw new Error('activation ledger: ' + (r.why || 'unresolved'));
-  const C = r.cols; if (!C.code || !C.dealer) throw new Error('activation ledger: code/dealer column missing');
+  const r = await DMSJ.resolve(key);
+  if (!r.ok) throw new Error(`${key} ledger: ` + (r.why || 'unresolved'));
+  const C = r.cols; if (!C.code || !C.dealer) throw new Error(`${key} ledger: code/dealer column missing`);
   const shift = r.tzShiftMs || 0;
   const f = d => new Date(d.getTime() + shift).toISOString().slice(0, 19).replace('T', ' ');
-  const T = `\`${DMSJ.SCHEMA || 'dms_audit_logs'}\`.\`${DMSJ.JOURNEYS.activation.table}\``;
+  const J = DMSJ.JOURNEYS[key]; const schema = J.schema || DMSJ.SCHEMA || 'dms_audit_logs';
+  const T = `\`${schema}\`.\`${J.table}\``;
   const mx = await dms.q(`SELECT max(id) m FROM ${T}`);
-  const lo = Math.max(0, N((mx[0] || {}).m) - 80000);            // ≈ months of activations — a cheap PK range (same bound as /api/dms/journeys/home)
-  /* who sold and where: the staff user id (→ dealer code), the shop (channel) name, region / city — when the ledger has them */
-  const have = await dms.columnsOf(DMSJ.SCHEMA || 'dms_audit_logs', DMSJ.JOURNEYS.activation.table);
-  const opt = c => have.has(c) ? c : null;
-  const X = { uid: C.dealer === 'channel_user_id' ? null : opt('channel_user_id'), shop: opt('channel_name'), region: opt('region_name'), city: opt('city_name') };
+  const lo = Math.max(0, N((mx[0] || {}).m) - 80000);            // ≈ months of rows — a cheap PK range (same bound as /api/dms/journeys/home)
+  /* who sold and where: the staff user id (→ dealer code), the shop (channel) name, region / city — when the ledger has them;
+   * the portal's use case (SIM activation / port-in) and its refund flag (port-in rejected → the dealer was refunded) */
+  const have = await dms.columnsOf(schema, J.table);
+  const opt = (...cs) => cs.find(c => have.has(c)) || null;
+  const X = { uid: C.dealer === 'channel_user_id' ? null : opt('channel_user_id'), shop: opt('channel_name'), region: opt('region_name'), city: opt('city_name'),
+    use: opt('use_case', 'usecase'), refund: opt('refund_status') };
   const sel = [`id`, `\`${C.at}\` AS ts`, `\`${C.code}\` AS code`, `\`${C.dealer}\` AS dealer`]
     .concat(C.message ? [`\`${C.message}\` AS message`] : []).concat(C.api ? [`\`${C.api}\` AS api`] : [])
     .concat(Object.entries(X).filter(([, c]) => c).map(([k, c]) => `\`${c}\` AS x_${k}`)).join(', ');
@@ -160,16 +165,16 @@ async function dmsLive(win, D) {
   const str = v => v == null || v === '' ? null : String(v);
   const items = rows.map(x => { const at = new Date(new Date(x.ts).getTime() - shift); const ok = !DMSJ.isFail(x.code, x.message);
     return { at, ok, code: x.code == null ? null : String(x.code), message: x.message == null ? null : String(x.message), dealer: x.dealer == null ? null : String(x.dealer), api: x.api == null ? null : String(x.api),
-      uid: C.dealer === 'channel_user_id' ? str(x.dealer) : str(x.x_uid), shop: str(x.x_shop), region: str(x.x_region), city: str(x.x_city) }; });
-  return { items, source: `${r.table} (live, last ${rows.length} rows since yesterday 00:00 KSA)`, latest: items[0] ? items[0].at : null };
+      uid: C.dealer === 'channel_user_id' ? str(x.dealer) : str(x.x_uid), shop: str(x.x_shop), region: str(x.x_region), city: str(x.x_city), use: str(x.x_use), refund: str(x.x_refund) }; });
+  return { items, cols: { ...C, ...X }, source: `${J.table} (live, last ${rows.length} rows since yesterday 00:00 KSA)`, latest: items[0] ? items[0].at : null };
 }
-async function dmsRollup(D) {
+async function ledgerRollup(key, D) {
   /* fallback: the console's own hourly rollups + masked failure events (5-min sync of the same ledger) */
   const c = db.console;
   const [stats, ev, st] = await Promise.all([
-    c.query(`SELECT bucket, calls, errors FROM dms_journey_stats WHERE journey = 'activation' AND bucket >= $1 ORDER BY bucket`, [D.y0]),
-    c.query(`SELECT at, dealer, code, message, api FROM dms_journey_events WHERE journey = 'activation' AND at >= $1 ORDER BY at DESC LIMIT 2000`, [D.y0]),
-    c.query(`SELECT updated_at, note FROM dms_journey_state WHERE journey = 'activation'`)
+    c.query(`SELECT bucket, calls, errors FROM dms_journey_stats WHERE journey = $2 AND bucket >= $1 ORDER BY bucket`, [D.y0, key]),
+    c.query(`SELECT at, dealer, code, message, api FROM dms_journey_events WHERE journey = $2 AND at >= $1 ORDER BY at DESC LIMIT 2000`, [D.y0, key]),
+    c.query(`SELECT updated_at, note FROM dms_journey_state WHERE journey = $1`, [key])
   ]);
   const okIn = (a, b) => stats.rows.filter(x => x.bucket >= a && x.bucket < b).reduce((s, x) => s + N(x.calls) - N(x.errors), 0);
   const attemptsIn = (a, b) => stats.rows.filter(x => x.bucket >= a && x.bucket < b).reduce((s, x) => s + N(x.calls), 0);
@@ -179,30 +184,51 @@ async function dmsRollup(D) {
 }
 /* the DMS activity rows: STAFF ID = the DMS username of the dealer staff who sold (channel_username),
  * DEALER CODE = that user's dms_users.dealer_code, location = region · city of the ledger row */
-async function dmsActivity(rows) {
+async function ledgerActivity(rows, key) {
   let codeOf = () => null;
   try { codeOf = await dmsDealerCodes(rows.map(x => ({ uid: x.uid, user: x.dealer }))); } catch (e) { /* lookup unavailable — the column stays empty */ }
-  return rows.map(x => ({ at: x.at, who: clip(x.dealer, 40), staff: clip(x.dealer, 40), dcode: clip(codeOf(x.uid, x.dealer), 40), dname: clip(x.shop, 60),
-    where: clip([x.region, x.city].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' · ') || null, 40),
-    tx: clip(x.api || 'sim activation', 60), code: clip(x.code, 24), msg: maskNum(clip(x.message, 140)), cls: cls(x.ok, x.code, x.message) }));
+  return rows.map(x => { const c = stOf(key, x);
+    return { at: x.at, who: clip(x.dealer, 40), staff: clip(x.dealer, 64), dcode: clip(codeOf(x.uid, x.dealer), 40), dname: clip(x.shop, 60),
+      where: clip([x.region, x.city].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' · ') || null, 40),
+      tx: clip(key === 'self_activation' ? useLabel(x.use) : (x.api || 'sim activation'), 60), code: clip(x.code, 24),
+      msg: maskNum(clip(key === 'self_activation' ? portalMsg(x, c) : x.message, 140)), cls: c }; });
 }
-async function dmsChannel(win) {
+/* SUCCESS / PENDING / FAILED for one ledger row. DMS app: the ledger's response code (DMSJ.isFail, errclass split).
+ * Web portal (report_request_self_activation): a row is written when the portal reports an activation, its
+ * order_status says how it ended; a port-in waits for the donor (pending) and a rejected port-in refunds the dealer. */
+const PORTAL_OK = /^(completed?|complete|success(ful)?|succeeded|done|ok|0+|600|active|activated|approved)$/i;
+const PORTAL_PENDING = /pend|progress|initiat|processing|waiting|submitted|^new$|^created$|^open$/i;
+const truthy = v => v != null && /^(1|true|y|yes|refunded|done|completed?)$/i.test(String(v).trim());
+function stOf(key, x) {
+  if (key !== 'self_activation') return cls(x.ok, x.code, x.message);
+  if (truthy(x.refund)) return 'business';                                   // port-in rejected → the dealer was refunded
+  const c = String(x.code == null ? '' : x.code).trim();
+  if (!c || PORTAL_OK.test(c)) return 'success';                              // a report row with no status = an activation the portal reported
+  if (PORTAL_PENDING.test(c)) return 'pending';
+  return cls(false, x.code, x.message || x.code);
+}
+const useLabel = u => { const s = String(u || '').trim(); if (!s) return 'self-activation';
+  return /mnp|port/i.test(s) ? 'port-in (MNP)' : /sim.?activation|activation/i.test(s) ? 'SIM activation' : s.replace(/[_-]+/g, ' ').toLowerCase(); };
+const portalMsg = (x, c) => truthy(x.refund) ? 'Port-in rejected · dealer refunded' : c === 'success' ? (x.code || 'Completed') : c === 'pending' ? `${x.code} — waiting` : (x.message || x.code);
+async function ledgerChannel(win, key, chKey) {
   const D = days(); const w0 = new Date(D.now.getTime() - win * 60e3);
-  const base = { key: 'dms', ...CHANNELS.dms };
+  const base = { key: chKey, ...CHANNELS[chKey] };
   try {
-    const L = await dmsLive(win, D);
-    const it = L.items;
+    const L = await ledgerLive(key, D);
+    const it = L.items.map(x => ({ ...x, st: stOf(key, x) }));
     const inW = it.filter(x => x.at >= w0);
-    const cnt = (a, b) => it.filter(x => x.ok && x.at >= a && (!b || x.at < b)).length;
-    const outcomes = tally(inW.map(x => cls(x.ok, x.code, x.message)));
+    const cnt = (a, b) => it.filter(x => x.st === 'success' && x.at >= a && (!b || x.at < b)).length;
+    const outcomes = { ...tally(inW.map(x => x.st)), pending: inW.filter(x => x.st === 'pending').length };
+    const today = it.filter(x => x.at >= D.day0);
     return { ...base, activations: { h1: cnt(D.h1), today: cnt(D.day0), yesterday: cnt(D.y0, D.day0), ySame: cnt(D.y0, D.ySame),
-        attemptsToday: it.filter(x => x.at >= D.day0).length },
-      outcomes, errorFacing: facing(inW, x => x.dealer, x => cls(x.ok, x.code, x.message)),
-      failures: reasons(inW.filter(x => !x.ok), x => (x.message || x.code || 'unknown'), x => cls(false, x.code, x.message)),
-      activity: await dmsActivity(it.slice(0, 14)),
-      source: { label: L.source, latest: L.latest, live: true } };
+        attemptsToday: today.length, ...(key === 'self_activation' ? { dealersToday: new Set(today.filter(x => x.st === 'success').map(x => x.dealer)).size } : {}) },
+      outcomes, errorFacing: facing(inW.filter(x => x.st !== 'pending'), x => x.dealer, x => x.st),
+      failures: reasons(inW.filter(x => x.st === 'business' || x.st === 'technical'), x => (key === 'self_activation' ? portalMsg(x, x.st) : (x.message || x.code || 'unknown')), x => x.st),
+      activity: await ledgerActivity(it.slice(0, 14), key),
+      ...(key === 'self_activation' ? { statusMix: Object.entries(today.reduce((m, x) => { const k = `${x.code == null ? '∅' : x.code}${x.refund != null ? ' · refund ' + x.refund : ''}`; m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 8), ledgerCols: L.cols } : {}),
+      source: { label: key === 'self_activation' ? `dealer web portal mobile.salammobile.sa · DMS ${L.source}` : L.source, latest: L.latest, live: true } };
   } catch (e) {
-    const R = await dmsRollup(D);
+    const R = await ledgerRollup(key, D);
     const inW = R.fails.filter(x => x.at >= w0);
     const h1b = R.H(D.h1.getTime());
     const attW = R.attemptsIn(R.H(w0.getTime()), D.now), failW = inW.length;
@@ -211,81 +237,22 @@ async function dmsChannel(win) {
       outcomes: { ...tally(inW.map(x => cls(false, x.code, x.message))), success: Math.max(0, attW - failW), total: Math.max(attW, failW) },
       errorFacing: facing(inW, x => x.dealer, x => cls(false, x.code, x.message)),
       failures: reasons(inW, x => (x.message || x.code || 'unknown'), x => cls(false, x.code, x.message)),
-      activity: await dmsActivity(R.fails.slice(0, 14)),
+      activity: await ledgerActivity(R.fails.slice(0, 14), key),
       source: { label: 'console rollups of the DMS ledger (hourly) + failure events — live ledger not reachable: ' + clip(e.message, 160), latest: R.updated, live: false, note: R.note } };
   }
 }
+const dmsChannel = win => ledgerChannel(win, 'activation', 'dms');
 
 /* ---------------------------------------------------------------- Mobile › Self-activation = the dealer WEB portal */
 /* SELF-ACTIVATION IS THE HYBRID DEALER WEB PORTAL mobile.salammobile.sa — "like DMS, but a web app" (Sales Ops, 7 Oct 2026).
- * Until alpha.145 this page counted every selfcare activation call, i.e. the customer app and web, the resellers (tygo)
- * and the portal mixed together. Now it is the portal only:
- *   - The portal is the selfcare backend in SELLER mode. An indirect seller signs in with sellers.username, which is the
- *     dealer's DMS username (pos_016740, mtl_010765, dis_011149 …): the backend asks DMS
- *     /self-activation-portal/getmsisdnbyusername with it at login and debits that DMS wallet. The order carries the
- *     dealer as onboarding_orders.seller_id (flow indirect; flow partner for the dealer's QR).
- *   - The Semati / BSS calls land in activation_logs like the app's, with neither the order nor the dealer
- *     (ExternalRequests::ActivationLog.create is never given the order; the BSS request has the constant dealerCode 1).
- *     A call is the portal's when its number is the number of a seller order placed since 2 days before yesterday:
- *     numbers.identifier through numbers.onboarding_order_id (indexed by indexSource), or the port-in number
- *     (onboarding_orders.mnp_number). That is exactly the order's reserved_number the backend sends.
- *   - Dealer ID = sellers.username (the DMS username, as on the DMS page) · dealer code = dms_v1.dms_users.dealer_code
- *     of that username (the DMS page's own lookup, cached 30 min).
- * One query per refresh (cached 20 s with the page): the seller orders since 2 days before yesterday (partial index on the
- * replica, seller orders only) → their numbers (index on numbers.onboarding_order_id) → the activation_logs rows since
- * yesterday 00:00 KSA with those numbers (created_at index); everything on the page is aggregated from them. */
-const ACT_API = '/bss/account/create-individual-subscriber';
-const PORTAL_ORDER_DAYS = 2;   // a portal order is activated within minutes to a day; 2 days before yesterday 00:00 covers it
-async function selfactChannel(win) {
-  const D = days(); const w0 = new Date(D.now.getTime() - win * 60e3);
-  const CLS = classCaseSql('a.status_code', `coalesce(a.response::text,'')`);
-  const r = await db.source.query(`
-    WITH so AS (SELECT o.id, o.seller_id, o.created_at, nullif(o.mnp_number::text, '') AS mnp FROM onboarding_orders o
-                 WHERE o.seller_id IS NOT NULL AND o.created_at >= $1),
-         nk AS (SELECT DISTINCT ON (k) k, seller_id FROM (
-                  SELECT right(regexp_replace(n.identifier::text, '[^0-9]', '', 'g'), 9) AS k, so.seller_id, so.created_at FROM so JOIN numbers n ON n.onboarding_order_id = so.id
-                  UNION ALL
-                  SELECT right(regexp_replace(so.mnp, '[^0-9]', '', 'g'), 9), so.seller_id, so.created_at FROM so WHERE so.mnp IS NOT NULL) z
-                WHERE length(k) = 9 ORDER BY k, created_at DESC)
-    SELECT a.created_at AS at, a.api, a.status_code, a.state, a.platform,
-           left(coalesce(nullif(a.response->>'responseMessage', ''), nullif(a.response->>'message', ''), ''), 140) AS msg, (${CLS}) AS c,
-           s.id::text AS sid, s.username, nullif(trim(concat_ws(' ', s.first_name, s.last_name)), '') AS sname
-      FROM activation_logs a
-      JOIN nk ON nk.k = right(regexp_replace(coalesce(a.msisdn, ''), '[^0-9]', '', 'g'), 9)
-      JOIN sellers s ON s.id = nk.seller_id
-     WHERE a.created_at >= $2
-     ORDER BY a.created_at DESC`, [new Date(D.y0.getTime() - PORTAL_ORDER_DAYS * 864e5), D.y0]);
-  const did = v => { const s = String(v).trim(); return /^\+?\d{9,}$/.test(s) ? maskNum(s) : s; };   // a username that is a phone / ID number stays masked
-  const P = r.rows.map(x => ({ ...x, t: new Date(x.at).getTime(), dealer: x.username ? did(x.username) : (x.sid ? 'seller ' + x.sid : null) }));
-  const act = x => x.api === ACT_API;
-  const bad = x => x.state !== true;
-  const day0 = D.day0.getTime(), y0 = D.y0.getTime(), ySame = D.ySame.getTime(), h1 = D.h1.getTime(), wt = w0.getTime();
-  const okAct = P.filter(x => act(x) && x.state === true);
-  const today = okAct.filter(x => x.t >= day0).length;
-  const inW = P.filter(x => x.t >= wt);
-  const biz = inW.filter(x => bad(x) && x.c === 'business').length, tech = inW.filter(x => bad(x) && x.c === 'technical').length;
-  /* who faces errors = dealers (as on the DMS page) */
-  const fm = new Map();
-  for (const x of inW) { const k = x.dealer || '—'; const e = fm.get(k) || { who: k, label: x.sname ? `${k} — ${x.sname}` : k, ok: 0, biz: 0, tech: 0, total: 0 };
-    e.total++; if (!bad(x)) e.ok++; else if (x.c === 'technical') e.tech++; else e.biz++; fm.set(k, e); }
-  const facing = [...fm.values()].sort((a, b) => (b.biz + b.tech) - (a.biz + a.tech) || b.total - a.total).slice(0, 12);
-  const rm = new Map();
-  for (const x of inW.filter(bad)) { const k = maskNum(clip(x.msg || x.status_code || 'no response', 90)); const e = rm.get(k + '|' + x.c) || { reason: k, n: 0, cls: x.c }; e.n++; rm.set(k + '|' + x.c, e); }
-  const feed = P.slice(0, 14);
-  let codeOf = () => null;
-  try { codeOf = await dmsDealerCodes(feed.map(x => ({ uid: null, user: x.username }))); } catch (e) { /* DMS unreachable — the dealer code column stays empty */ }
-  const apiShort = s => String(s || '').replace(/^\/(bss|semati)\//, '$1 · ').replace(/^.*\//, '');
-  return { key: 'selfact', ...CHANNELS.selfact,
-    activations: { h1: okAct.filter(x => x.t >= h1).length, today, yesterday: okAct.filter(x => x.t >= y0 && x.t < day0).length, ySame: okAct.filter(x => x.t >= y0 && x.t < ySame).length,
-      attemptsToday: P.filter(x => act(x) && x.t >= day0).length, dealersToday: new Set(okAct.filter(x => x.t >= day0).map(x => x.dealer)).size },
-    outcomes: { success: inW.filter(x => x.state === true).length, business: biz, technical: tech, total: inW.length },
-    errorFacing: facing,
-    failures: [...rm.values()].sort((a, b) => b.n - a.n).slice(0, 10),
-    activity: feed.map(x => ({ at: x.at, who: clip(x.platform || '—', 20), staff: clip(x.dealer, 64), dcode: clip(codeOf(null, x.username), 40), dname: clip(x.sname, 60),
-      tx: apiShort(x.api), code: clip(x.status_code, 24), msg: maskNum(clip(x.msg, 140)), cls: x.state === true ? 'success' : x.c })),
-    source: { label: 'dealer web portal mobile.salammobile.sa · selfcare activation_logs (prod replica) of dealer orders (onboarding_orders.seller_id → sellers) · activation = create-individual-subscriber succeeded',
-      latest: P[0] ? P[0].at : null, live: true } };
-}
+ * The portal registers the number at Semati as the online channel (ONLINE_000001) and settles with the dealer through the
+ * DMS customer service (/cus/self-activtion-portal/* via UIL: balance, debit, commission, report). Its per-activation
+ * record is dms_v1.report_request_self_activation — the console's own 'self_activation' journey (dmsJourneys.js), which
+ * carries the dealer's DMS username (pos_016740, mtl_010765, dis_011149 …), the number, the ICCID, the use case and the
+ * order / commission / refund status. So the page is the DMS page on that ledger: live from DMS, the console's hourly
+ * rollups when DMS cannot be read, dealer ID + DMS dealer code per row, error facing = dealers.
+ * (alpha.147 looked for the portal in the selfcare replica — 3 seller orders a day there: wrong place.) */
+const selfactChannel = win => ledgerChannel(win, 'self_activation', 'selfact');
 
 /* ---------------------------------------------------------------- Fixed › QR code & SDA (sda_ops) */
 const OUTCOME_CLS = { COMPLETED: 'success', IN_PROGRESS: 'pending', STALLED: 'business', CANCELLED: 'business', EXPIRED: 'business' };
