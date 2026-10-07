@@ -358,7 +358,7 @@ async function overview() {
   const runs = (await q.query(`SELECT at, ms, hosts, reachable, by_source, errors, kind FROM infra_runs ORDER BY at DESC LIMIT 10`)).rows;
   const changes = (await q.query(`SELECT c.*, h.label, h.ip, h.segment FROM infra_host_changes c JOIN infra_hosts h ON h.id = c.host_id ORDER BY c.at DESC LIMIT 30`)).rows;
   const c = CFG();
-  return { hosts, nodes, by_segment: Object.values(bySeg), runs, last_run: runs[0] || lastRun, changes, running: busy, diagrams: DIAGRAMS.map(d => ({ key: d.key, title: d.title, segment: d.segment })),
+  return { hosts, nodes, by_segment: Object.values(bySeg), runs, last_run: runs[0] || lastRun, changes, running: busy, on_hold: !c.enabled, diagrams: DIAGRAMS.map(d => ({ key: d.key, title: d.title, segment: d.segment })),
     sources: { local: true, ssh: !!(c.sshUser || c.sshKey), ssh_user: c.sshUser || null, instana: !!(c.instanaUrl && c.instanaToken), instana_url: c.instanaUrl || null, mails: c.mails.length, interval_sec: c.intervalSec, inventory_hours: c.inventoryHours, thresholds: c.th } };
 }
 async function hostDetail(id) {

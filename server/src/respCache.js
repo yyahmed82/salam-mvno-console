@@ -15,7 +15,7 @@
 const TTL = Math.max(0, Number(process.env.RESP_CACHE_TTL_SEC ?? 120)) * 1000;
 const MAX_ENTRIES = Number(process.env.RESP_CACHE_MAX || 300);
 
-const store = new Map();     // key → { body, at, building, url, n }
+const store = new Map();     // key → { body, at, building, url, n, last (ms of the last real viewer request) }
 let hits = 0, misses = 0, stale = 0;
 
 /* ---- PERSISTENCE (alpha.17) — a deploy or restart must not mean "Loading…" for the first viewer ----
@@ -37,7 +37,7 @@ function load() {
     const maxMin = Number(process.env.RESP_CACHE_RESTORE_MAX_MIN) || 30;
     if (ageMin > maxMin) { console.log(`[CACHE] snapshot is ${Math.round(ageMin)} min old (> ${maxMin}) — not restored, starting cold`); return; }
     let n = 0;
-    for (const [k, e] of Object.entries(j.entries || {})) { if (e && e.body !== undefined) { store.set(k, { body: e.body, at: 1, url: e.url, n: e.n || 0 }); n++; } }
+    for (const [k, e] of Object.entries(j.entries || {})) { if (e && e.body !== undefined) { store.set(k, { body: e.body, at: 1, url: e.url, n: e.n || 0, last: e.last || null }); n++; } }
     console.log(`[CACHE] restored ${n} responses from ${FILE} (${Math.round(ageMin)} min old — served stale, refreshed in the background)`);
   } catch (e) { if (e.code !== 'ENOENT') console.error('[CACHE] restore failed:', e.message); }
 }
@@ -45,7 +45,7 @@ function save(reason) {
   if (!TTL || !dirty) return;
   try {
     const entries = {};
-    for (const [k, e] of store) if (e.body !== undefined && e.at > 0) entries[k] = { body: e.body, url: e.url, n: e.n || 0, at: e.at };
+    for (const [k, e] of store) if (e.body !== undefined && e.at > 0 && e.persist !== false) entries[k] = { body: e.body, url: e.url, n: e.n || 0, at: e.at, last: e.last || null };
     const json = JSON.stringify({ savedAt: new Date().toISOString(), entries });
     if (json.length > PERSIST_MAX_MB * 1024 * 1024) { console.error(`[CACHE] snapshot skipped — ${Math.round(json.length / 1048576)} MB > RESP_CACHE_FILE_MAX_MB`); return; }
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
@@ -62,17 +62,28 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { save(sig); });
  * Every TTL the most-requested URLs that have gone stale are re-fetched over loopback (the fetch itself
  * lands in wrap() as a stale hit → background recompute). Bounded to RESP_CACHE_WARM_TOP URLs per cycle. */
 const WARM_TOP = Math.max(0, Number(process.env.RESP_CACHE_WARM_TOP ?? 40));
+/* ACTIVE WINDOW (7 Oct 2026, the slowness review). The warm set was "the 40 most-requested URLs ever" — request
+ * counts never decayed, so every TTL the console recomputed NOC, Exec, Home, the traffic overview and thirty
+ * other heavy pages for viewers who had left hours ago, around the clock, on a database shared with production.
+ * A URL is now kept warm only while somebody has asked for it in the last RESP_CACHE_WARM_ACTIVE_MIN minutes
+ * (120). A page nobody is watching simply goes stale; the first viewer back still gets the stale copy at once
+ * and the refresh runs behind it (wrap() below) — same experience, no idle load. 0 = warm everything, as before. */
+const WARM_ACTIVE_MS = Math.max(0, Number(process.env.RESP_CACHE_WARM_ACTIVE_MIN ?? 120)) * 60000;
+let warmLast = { at: null, refreshed: 0, candidates: 0 };
 function startKeepWarm() {
   if (!TTL || !WARM_TOP) return;
   const port = process.env.PORT || 4600;
   const hdr = { 'X-Console-User': process.env.CONSOLE_ADMIN_USER || 'y.yahmed.sns@salam.sa', 'X-Demo-Bypass': '1', 'X-Cache-Warm': '1' };
   const cycle = async () => {
     const now = Date.now();
-    const hot = [...store.values()].filter(e => e.url && e.body !== undefined && !e.building && now - e.at > TTL * 0.8).sort((a, b) => (b.n || 0) - (a.n || 0)).slice(0, WARM_TOP);
+    const active = e => !WARM_ACTIVE_MS || (e.last && now - e.last < WARM_ACTIVE_MS);
+    const hot = [...store.values()].filter(e => e.url && e.body !== undefined && !e.building && now - e.at > TTL * 0.8 && active(e)).sort((a, b) => (b.n || 0) - (a.n || 0)).slice(0, WARM_TOP);
+    warmLast = { at: new Date(now).toISOString(), refreshed: hot.length, candidates: [...store.values()].filter(e => e.url && now - e.at > TTL * 0.8).length };
     for (const e of hot) { try { const r = await fetch(`http://127.0.0.1:${port}${e.url}`, { headers: hdr, signal: AbortSignal.timeout(60000) }); await r.arrayBuffer(); } catch (_) {} }
   };
   setInterval(() => { cycle().catch(() => {}); }, Math.max(60000, TTL)).unref?.();
-  console.log(`[CACHE] keep-warm armed — top ${WARM_TOP} hot responses refreshed every ${Math.round(Math.max(60000, TTL) / 1000)} s`);
+  console.log(`[CACHE] keep-warm armed — top ${WARM_TOP} hot responses refreshed every ${Math.round(Math.max(60000, TTL) / 1000)} s`
+    + (WARM_ACTIVE_MS ? ` · only URLs viewed in the last ${WARM_ACTIVE_MS / 60000} min` : ''));
 }
 
 
@@ -102,8 +113,12 @@ function evictIfNeeded() {
   for (let i = 0; i < Math.ceil(MAX_ENTRIES / 4); i++) store.delete(byAge[i][0]);
 }
 
-/* wrap(req, compute) → resolves to the body (cached or fresh) */
-async function wrap(req, compute) {
+/* wrap(req, compute, { persist, warm }) → resolves to the body (cached or fresh). persist:false keeps the entry in
+ * memory only — never in the on-disk snapshot — and warm:false keeps it out of the keep-warm loop (no audited
+ * route gets re-fetched on a timer under the admin's name); both for answers that carry identifiers (the DMS pages). */
+async function wrap(req, compute, opts) {
+  const persist = !(opts && opts.persist === false);
+  const warmable = !(opts && opts.warm === false);
   if (!TTL) return compute();
   const key = cacheKey(req);
   const now = Date.now();
@@ -112,7 +127,8 @@ async function wrap(req, compute) {
   /* cold miss still computing: a concurrent caller must SHARE the in-flight promise — before this
    * guard it fell into the stale path and was handed body:undefined, which surfaced downstream as
    * "Cannot read properties of undefined (reading 'ok')" (seen on the commissioning board, 31 Aug). */
-  if (e && !req.get?.('X-Cache-Warm')) e.n = (e.n || 0) + 1;
+  const viewer = !req.get?.('X-Cache-Warm');               // a real request, not the keep-warm loop
+  if (e && viewer) { e.n = (e.n || 0) + 1; e.last = now; }
   if (e && e.at === 0 && e.building) { hits++; return e.building; }
 
   if (e && now - e.at < TTL) { hits++; return e.body; }
@@ -121,7 +137,7 @@ async function wrap(req, compute) {
     stale++;
     if (!e.building) {
       e.building = compute()
-        .then(body => { store.set(key, { body, at: Date.now(), url: e.url || req.originalUrl, n: e.n || 0 }); dirty = true; })
+        .then(body => { store.set(key, { body, at: Date.now(), url: warmable ? (e.url || req.originalUrl) : null, n: e.n || 0, last: e.last || null, persist }); dirty = true; })
         .catch(() => {})                     // keep serving the old value on failure
         .finally(() => { if (store.get(key)) store.get(key).building = null; });
     }
@@ -133,7 +149,7 @@ async function wrap(req, compute) {
   store.set(key, { body: undefined, at: 0, building: pending });
   try {
     const body = await pending;
-    store.set(key, { body, at: Date.now(), url: req.originalUrl, n: 1 });
+    store.set(key, { body, at: Date.now(), url: warmable ? req.originalUrl : null, n: 1, last: viewer ? now : null, persist });
     dirty = true;
     evictIfNeeded();
     return body;
@@ -146,6 +162,10 @@ async function wrap(req, compute) {
 /* after a sync writes new data: mark everything STALE (served instantly + refreshed behind), never clear —
  * clearing meant every viewer paid the full recompute right after each sync tick */
 function invalidate() { for (const e of store.values()) if (e.at > 1) e.at = 1; }
-function stats() { return { entries: store.size, hits, misses, stale, ttlSec: TTL / 1000, file: FILE, warmTop: WARM_TOP }; }
+function stats() {
+  const now = Date.now();
+  return { entries: store.size, hits, misses, stale, ttlSec: TTL / 1000, file: FILE, warmTop: WARM_TOP, warmActiveMin: WARM_ACTIVE_MS / 60000,
+    active: [...store.values()].filter(e => e.last && now - e.last < (WARM_ACTIVE_MS || Infinity)).length, lastWarm: warmLast };
+}
 
 module.exports = { wrap, invalidate, stats, save, startKeepWarm };

@@ -15,14 +15,18 @@ async function probe(pool, sql, params = []) {
   } catch (e) { return { configured: true, ok: false, ms: Date.now() - t0, error: e.message }; }
 }
 
-/* What each source looks like when it is alive. Cheap queries only — these run on every health call. */
+/* What each source looks like when it is alive. Cheap queries only — these run on every health call.
+ * Row counts come from the statistics collector (n_live_tup), not count(*): /api/health is asked on every page and
+ * three exact counts over order_attempts / dealers / error_events were three table scans per call (7 Oct review). */
+const EST = (tbl) => `(SELECT greatest(coalesce((SELECT n_live_tup FROM pg_stat_user_tables WHERE relname = '${tbl}' AND schemaname = current_schema()), 0),
+                                coalesce((SELECT reltuples FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relname = '${tbl}' AND n.nspname = current_schema()), 0))::int)`;
 async function status() {
   const [ops, opsBeta, nexus, payments] = await Promise.all([
     probe(db.ops, `SELECT
-        (SELECT count(*)::int FROM order_attempts)                       AS attempts,
+        ${EST('order_attempts')}                                          AS attempts,
         (SELECT max(started_at) FROM order_attempts)                      AS newest_attempt,
-        (SELECT count(*)::int FROM dealers)                               AS dealers,
-        (SELECT count(*)::int FROM error_events)                          AS error_events,
+        ${EST('dealers')}                                                 AS dealers,
+        ${EST('error_events')}                                            AS error_events,
         (SELECT last_ts FROM ingest_state WHERE source='replica' LIMIT 1) AS ingest_cursor,
         current_database()                                                AS db,
         current_schema()                                                  AS schema`),

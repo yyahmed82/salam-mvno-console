@@ -45,8 +45,27 @@ const IDX = [
    * an index on the same expression can). Each of those scans read gigabytes on a server shared with production. */
   ['otps', 'idx_src_otps_created', '(created_at)'],
   ['otps', 'idx_src_otps_for', '(otp_for)'],
-  ['checkouts', 'idx_src_checkouts_id_text', '((id::text))']
+  ['checkouts', 'idx_src_checkouts_id_text', '((id::text))'],
+  /* 7 Oct 2026, second pass (D4 scan deltas after alpha.140): onboarding_orders was still read whole 26 times in 18 min
+   * and users 28 times. The feed row → timeline lookups are `WHERE id::text = $1` on payments and onboarding_orders
+   * (the same uuid-cast shape as checkouts — served by an expression index), the visitor resolver asks
+   * `upper(nationality_id_number) = $1`, the register funnel counts users by created_at, and the Customer 360 VAS tab
+   * reads service_logs by the mobile column (the one unindexed lookup in that page, flagged by vasMeta since 4 Sep). */
+  ['payments', 'idx_src_payments_id_text', '((id::text))'],
+  ['onboarding_orders', 'idx_src_onb_id_text', '((id::text))'],
+  ['onboarding_orders', 'idx_src_onb_nid_upper', '((upper(nationality_id_number)))'],
+  ['users', 'idx_src_users_created', '(created_at)'],
+  ['service_logs', 'idx_src_svclog_mobile', '(mobile_number)'],
+  ['service_logs', 'idx_src_svclog_msisdn', '(msisdn)']
 ];
+
+/* a plain single-column index is only attempted when that column exists on this replica (service_logs' mobile
+ * column is discovered at runtime — subscriber.js — so both spellings are listed and the absent one is skipped) */
+async function columnExists(tbl, cols) {
+  const m = /^\((\w+)/.exec(cols); if (!m) return true;                 // expression index — let Postgres judge
+  const r = await db.source.query(`SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`, [tbl, m[1]]);
+  return r.rowCount > 0;
+}
 
 async function indexSource() {
   let made = 0, skipped = 0, already = 0;
@@ -55,6 +74,7 @@ async function indexSource() {
       // already there? (cheap check — avoids re-running the build every boot)
       const ex = await db.source.query(`SELECT 1 FROM pg_class WHERE relkind='i' AND relname=$1`, [name]);
       if (ex.rowCount) { already++; continue; }
+      if (!(await columnExists(tbl, cols))) { skipped++; console.log(`  index ${name} skipped: ${tbl}.${cols} is not on this replica`); continue; }
       // CONCURRENTLY: no table lock, so a busy/loading table doesn't block us (and vice versa).
       // Needs its own statement_timeout=0 — a big index build legitimately exceeds the default.
       const c = await db.source.connect();

@@ -102,6 +102,23 @@ const respCache = require('./respCache');
 // requests from the box itself (schedulers: prod-sync tick, escalation) may identify via the
 // legacy X-Console-User header. Uses the RAW socket address (not X-Forwarded-For) — unspoofable.
 const isLoopback = req => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+/* ROLE LOOKUP CACHE (7 Oct 2026, the slowness review). The session token is cached 60 s in sessions.js, but the
+ * console_users row behind it (roles, business) was read again on EVERY request — one console-pool query per API
+ * call, which under load meant queueing behind the heavy api_traffic_events scans for a value that changes a few
+ * times a month. Cached 60 s per e-mail (the same window as the session cache), and dropped the moment a super
+ * admin saves a user (POST / PATCH /api/users below), so a role change is still visible on the next request. */
+const USER_ROW_MS = 60_000;
+const USER_ROWS = new Map();                                   // email → { at, row|null }
+async function userRow(email) {
+  const hit = USER_ROWS.get(email);
+  if (hit && Date.now() - hit.at < USER_ROW_MS) return hit.row;
+  const r = await C.query(`SELECT email, name, roles, role, business FROM console_users WHERE email=$1 AND enabled=true`, [email]);
+  const row = r.rowCount ? r.rows[0] : null;
+  USER_ROWS.set(email, { at: Date.now(), row });
+  if (USER_ROWS.size > 2000) USER_ROWS.clear();                 // bounded; a clear only costs one lookup per user
+  return row;
+}
+const forgetUserRows = () => USER_ROWS.clear();
 app.use(async (req, _res, next) => {
   // identity comes from the session token, never from a client-supplied header.
   // EXCEPTION — GET /api/stream only: EventSource cannot send headers at all, so the live SSE
@@ -123,8 +140,8 @@ app.use(async (req, _res, next) => {
   if (email) {
     names = ['report_manager'];                    // registered fallback role
     try {
-      const r = await C.query(`SELECT roles, role, business FROM console_users WHERE email=$1 AND enabled=true`, [email]);
-      if (r.rowCount) { const row = r.rows[0]; names = (row.roles && row.roles.length) ? row.roles : [row.role]; business = roles.normBusiness(row.business); }
+      const row = await userRow(email);
+      if (row) { names = (row.roles && row.roles.length) ? row.roles : [row.role]; business = roles.normBusiness(row.business); }
     } catch (e) {}
   }
   const rmap = rolePerms.current();   // code defaults merged with super-admin's saved overrides
@@ -152,9 +169,8 @@ app.use(async (req, _res, next) => {
   const vaHdr = (req.get('X-Console-View-As') || '').toLowerCase().trim();
   if (isRealSuper && vaHdr && vaHdr !== email) {
     try {
-      const t = await C.query(`SELECT email, name, roles, role, business FROM console_users WHERE email=$1 AND enabled=true`, [vaHdr]);
-      if (t.rowCount) {
-        const row = t.rows[0];
+      const row = await userRow(vaHdr);
+      if (row) {
         req.viewAs = { email: row.email, name: row.name || null };
         effNames = (row.roles && row.roles.length) ? row.roles : [row.role];
         effBusiness = roles.normBusiness(row.business);
@@ -590,6 +606,7 @@ app.post('/api/users', requireSuper, async (req, res) => {
        ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, mobile=EXCLUDED.mobile, role=EXCLUDED.role, roles=EXCLUDED.roles, tags=EXCLUDED.tags,
          mail_report=EXCLUDED.mail_report, mail_alert=EXCLUDED.mail_alert, business=EXCLUDED.business`,
     [email, b.name || null, b.mobile || null, primary, rolesArr, tags, !!b.mail_report, !!b.mail_alert, business]);
+  forgetUserRows();                                             // the role cache must not outlive this save
   let affiliation = null; try { affiliation = await require('./affiliation').classifyUser(email); } catch (_) {}
   await audit(req, 'user.upsert', email, { roles: rolesArr, business, affiliation: affiliation && affiliation.kind });
   res.json({ ok: true, affiliation });
@@ -619,6 +636,7 @@ app.patch('/api/users/:id', requireSuper, async (req, res) => {
   if (!sets.length) return res.json({ ok: true });
   vals.push(req.params.id);
   await C.query(`UPDATE console_users SET ${sets.join(',')} WHERE id=$${vals.length}`, vals);
+  forgetUserRows();                                             // roles / enabled / business may have changed
   await audit(req, 'user.update', req.params.id, req.body);
   res.json({ ok: true });
 });
@@ -652,8 +670,12 @@ async function boardNow(sim) {
 app.get('/api/errors/summary', async (req, res) => {
   try {
     const { window = 24, team, channel, sim } = req.query;
-    const now = await boardNow(sim);
-    res.json({ summary: await errors.summary({ now, windowHours: Number(window), team, channel }), now });
+    /* counts per category only — cached like the other boards (4.4 s per load in the 7 Oct review; the Troubleshoot
+     * page asks for it on every range change). `sim` is bucketed by the cache key; without it "now" is the data edge. */
+    res.json(await respCache.wrap(req, async () => {
+      const now = await boardNow(sim);
+      return { summary: await errors.summary({ now, windowHours: Number(window), team, channel }), now };
+    }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/errors/feed', async (req, res) => {
@@ -1139,7 +1161,9 @@ app.get('/api/dms/dealer360', async (req, res) => {
      * request, and each reveal is audited as `pii.unmask` with the record named, so "who looked
      * at this dealer's identifiers, and when" is answerable afterwards. */
     const allowUnmask = !!(req.caps && req.caps.unmaskPII) && req.query.unmask === '1';
-    const out = await require('./dealer360').dealer360(q);
+    /* the RAW record is cached per dealer key (8 s of MariaDB per open in the 7 Oct review); masking stays per
+     * request below, so the cache never decides who sees an identifier — and every open is still audited */
+    const out = await respCache.wrap(dmsCacheReq(req, '/api/dms/dealer360', { q }), () => require('./dealer360').dealer360(q), { persist: false, warm: false });
     audit(req, allowUnmask ? 'pii.unmask' : 'DEALER_360', q.slice(0, 40),
       { found: !!out.found, unmask: allowUnmask, subject: 'dealer' });
     res.json({ ...roles.maskDeep(out, allowUnmask), unmasked: allowUnmask, can_unmask: !!(req.caps && req.caps.unmaskPII) });
@@ -1162,10 +1186,18 @@ app.get('/api/dms/dealers', async (req, res) => {
     // was hardcoded maskDeep(..., false) — the ONE endpoint that ignored the reveal toggle (found 1 Sep)
     const allowUnmask = !!(req.caps && req.caps.unmaskPII) && req.query.unmask === '1';
     if (allowUnmask) await audit(req, 'pii.unmask', 'dealer-board', {});
-    res.json({ ...roles.maskDeep(await require('./dealerBoard').board(o), allowUnmask),
-      unmasked: allowUnmask, can_unmask: !!(req.caps && req.caps.unmaskPII) });
+    /* the board aggregates the 2.9 M-row commission ledger for a 1,200-dealer pool (13.7 s in the 7 Oct review);
+     * the RAW board is cached per filter set, masking applied per request */
+    const board = await respCache.wrap(dmsCacheReq(req, '/api/dms/dealers', o), () => require('./dealerBoard').board(o), { persist: false, warm: false });
+    res.json({ ...roles.maskDeep(board, allowUnmask), unmasked: allowUnmask, can_unmask: !!(req.caps && req.caps.unmaskPII) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* cache key for the DMS pages: the route + the filter params only — never `unmask`, which is a per-request act on
+ * the raw cached record, and never the caller — so one computed board serves everyone and masking stays per viewer */
+function dmsCacheReq(req, route, params) {
+  const qs = Object.keys(params).sort().map(k => k + '=' + encodeURIComponent(String(params[k]))).join('&');
+  return { originalUrl: route + (qs ? '?' + qs : ''), get: h => req.get(h) };
+}
 
 /* DEALER WALLET STATEMENT — the report Ops currently raises a ticket for (INC0020115 pattern:
  * "commission deposit report for pos_016740, 10→19 Aug"). Same 11 columns as the file the app
@@ -2100,7 +2132,7 @@ app.get('/api/monitoring/health', async (req, res) => {
     const st = !traffic.ok || bads.length === hostsArr.length ? 'fail' : (bads.length || stale) ? 'warn' : 'ok';
     const perHost = hostsArr.map(h => `${h.host.split('.').pop()}:${h.lastError ? 'ERR' : (h.lagBytes != null ? (h.lagBytes > 1048576 ? Math.round(h.lagBytes / 1048576) + 'MB behind' : 'live') : '—')}`).join(' · ');
     push('api_traffic', 'API traffic', st,
-      `SSH collector · ${perHost || 'no hosts'} · ${traffic.events != null ? traffic.events.toLocaleString() + ' events' : 'no data'}${newest != null ? ` · newest ${newest}m ago` : ''}`
+      `SSH collector · ${perHost || 'no hosts'} · ${traffic.events != null ? (traffic.eventsApprox ? '~' : '') + traffic.events.toLocaleString() + ' events' : 'no data'}${newest != null ? ` · newest ${newest}m ago` : ''}`
       + (bads.length ? ` · ${bads[0].host}: ${bads[0].lastError}` : ''), traffic.ms);
   } else push('api_traffic', 'API traffic', traffic.ok ? 'ok' : 'fail', 'MySQL fallback · ' + (traffic.ok ? (traffic.target || 'connected') : (traffic.error || 'unreachable')), traffic.ms);
 
@@ -2191,6 +2223,13 @@ app.get('/api/payments/deep-dive', async (req, res) => {
     // `sim` = window END anchor (ISO) — the same contract every Troubleshoot panel uses, so the
     // deep-dive follows the global RANGE bar (incl. Yesterday / custom ranges) instead of "now".
     const sim = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z?$/.test(String(req.query.sim || '')) ? req.query.sim : null;
+    /* aggregates only (no identifier leaves this route), so the answer is cached like the other boards: 34 s for
+     * a 30-day window in the 7 Oct review, paid again by every viewer and every range change */
+    res.json(await respCache.wrap(req, () => paymentsDeepDive({ hours, vendor, sim })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+async function paymentsDeepDive({ hours, vendor, sim }) {
+  {
     const p = []; let vw = '';
     if (vendor) { p.push(vendor); vw = ` AND vendor=$${p.length}`; }
     const ANS = `(payment_commit_response IS NOT NULL AND payment_commit_response::text NOT IN ('{}','null'))`;
@@ -2228,9 +2267,9 @@ app.get('/api/payments/deep-dive', async (req, res) => {
               count(*) FILTER (WHERE status='pending' AND NOT ${ANS})::int AS abandoned
        FROM payments WHERE created_at > ${END} - interval '14 days' AND created_at <= ${END}${vw}
        GROUP BY 1 ORDER BY 1`, p)).rows;
-    res.json({ hours, sim, vendor: vendor || null, funnel, declines, retry, trend });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    return { hours, sim, vendor: vendor || null, funnel, declines, retry, trend };
+  }
+}
 
 /* Deep-dive drill — the actual cases behind one funnel number. outcome × vendor × period
  * (or one trend day). Every row carries the journey link (payment_on_*) and the UPG join key

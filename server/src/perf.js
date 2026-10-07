@@ -101,16 +101,32 @@ function watchPool(name, pool) {
   if (!ON || !pool || typeof pool.query !== 'function' || pools[name]) return;
   const P = { pool, q: { n: 0, ms: 0, max: 0, err: 0, slow: [] }, maxWaiting: 0, waitSamples: 0, samples: 0 };
   pools[name] = P;
-  const orig = pool.query.bind(pool);
-  pool.query = function (...args) {
+  const timed = (orig, label) => function (...args) {
     if (typeof args[args.length - 1] === 'function') return orig(...args);          // callback style: pass through
     const t0 = performance.now();
     const sql = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].text) || '';
     const fin = (err) => { const d = performance.now() - t0; P.q.n++; P.q.ms += d; if (d > P.q.max) P.q.max = d; if (err) P.q.err++;
-      if (d >= SLOW_Q_MS) { P.q.slow.push({ at: new Date().toISOString(), ms: Math.round(d), err: err ? String(err.message).slice(0, 80) : null, sql: String(sql).replace(/\s+/g, ' ').trim().slice(0, 160) }); if (P.q.slow.length > 40) P.q.slow.shift(); } };
+      if (d >= SLOW_Q_MS) { P.q.slow.push({ at: new Date().toISOString(), ms: Math.round(d), err: err ? String(err.message).slice(0, 80) : null, via: label, sql: String(sql).replace(/\s+/g, ' ').trim().slice(0, 160) }); if (P.q.slow.length > 40) P.q.slow.shift(); } };
     let p; try { p = orig(...args); } catch (e) { fin(e); throw e; }
+    if (!p || typeof p.then !== 'function') return p;
     return p.then(r => { fin(); return r; }, e => { fin(e); throw e; });
   };
+  pool.query = timed(pool.query.bind(pool), 'query');
+  /* checked-out clients too (7 Oct 2026): prod-sync, the refund detectors, the visitor probe and the index builder all
+   * run on pool.connect() clients, which the first version never saw — their statements now land in the same slow
+   * list, marked via:'client'. Only the client's own query() is wrapped; release() and events are untouched. */
+  if (typeof pool.connect === 'function') {
+    const origConnect = pool.connect.bind(pool);
+    pool.connect = function (...args) {
+      if (typeof args[args.length - 1] === 'function') return origConnect(...args);  // callback style: pass through
+      return origConnect(...args).then(client => {
+        if (client && typeof client.query === 'function' && !client.__perfWrapped) {
+          client.query = timed(client.query.bind(client), 'client'); client.__perfWrapped = true;
+        }
+        return client;
+      });
+    };
+  }
 }
 function samplePools() {
   for (const P of Object.values(pools)) { const w = Number(P.pool.waitingCount || 0); P.samples++; if (w > 0) P.waitSamples++; if (w > P.maxWaiting) P.maxWaiting = w; if (w > minuteWaiting) minuteWaiting = w; }

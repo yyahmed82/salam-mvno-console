@@ -292,6 +292,41 @@ function robust(values) {
   const dev = a.map(v => Math.abs(v - med)).sort((x, y) => x - y); const mad = dev[Math.floor(dev.length / 2)];
   return { med, mad, n: a.length };
 }
+/* 14-DAY HISTORY, ONCE AN HOUR (7 Oct 2026). The three app-log metrics below each re-read fourteen days of
+ * fixed_app_events on every evaluation (two baselines + the "never seen" check: three 14-day scans per sync tick,
+ * 11 s for the signature one on the shared 121 server). The history is now computed once per clock hour and
+ * kept in memory — keyed on the evaluation hour, so a replay at another time never reuses it — and each
+ * evaluation adds only the small slice between the cached edge and its own window from the index. */
+const HIST = new Map();                                      // key → { at, rows | set }
+const hourOf = now => Math.floor(new Date(now).getTime() / 3600e3);
+const hourStart = now => new Date(hourOf(now) * 3600e3).toISOString();
+async function histRows(C, now, cls) {
+  const key = `hist:${cls}:${hourOf(now)}`;
+  const hit = HIST.get(key); if (hit) return hit.rows;
+  const h0 = hourStart(now);
+  const rows = (await C.query(`SELECT ${APPLOG_SIG} AS sig, date_trunc('hour', ts) AS h, count(*)::int AS n
+      FROM fixed_app_events WHERE ok IS NOT TRUE AND reason_class = $2 AND ts >= $1::timestamptz - interval '14 days' AND ts < $1::timestamptz - interval '60 minutes'
+      GROUP BY 1,2`, [h0, cls])).rows;
+  HIST.set(key, { at: Date.now(), rows });
+  for (const k of HIST.keys()) if (HIST.get(k).at < Date.now() - 3 * 3600e3) HIST.delete(k);   // keep the map small
+  return rows;
+}
+async function seenSignatures(C, now) {
+  const key = `seen:${hourOf(now)}`;
+  let hit = HIST.get(key);
+  if (!hit) {
+    const h0 = hourStart(now);
+    const rows = (await C.query(`SELECT DISTINCT ${APPLOG_SIG} AS sig FROM fixed_app_events
+        WHERE ok IS NOT TRUE AND ts >= $1::timestamptz - interval '14 days' AND ts < $1::timestamptz - interval '60 minutes'`, [h0])).rows;
+    hit = { at: Date.now(), set: new Set(rows.map(r => r.sig)) };
+    HIST.set(key, hit);
+  }
+  /* the slice the cache does not cover: from the cached edge (hour start − 60 min) up to this evaluation's edge */
+  const delta = (await C.query(`SELECT DISTINCT ${APPLOG_SIG} AS sig FROM fixed_app_events
+      WHERE ok IS NOT TRUE AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $2::timestamptz - interval '60 minutes'`, [hourStart(now), now])).rows;
+  const set = new Set(hit.set); for (const r of delta) set.add(r.sig);
+  return set;
+}
 async function applogAnomaly(now, cls) {
   const C = consoleDb();
   const cur = (await C.query(`SELECT ${APPLOG_SIG} AS sig, count(*)::int AS n, count(DISTINCT request_id)::int AS requests, (array_agg(left(reason,90) ORDER BY ts DESC))[1] AS reason
@@ -299,9 +334,8 @@ async function applogAnomaly(now, cls) {
       GROUP BY 1 HAVING count(*) >= 10 ORDER BY 2 DESC LIMIT 40`, [now, cls])).rows;
   if (!cur.length) return [];
   const hod = new Date(new Date(now).getTime() + 3 * 3600e3).getUTCHours();
-  const hist = (await C.query(`SELECT ${APPLOG_SIG} AS sig, date_trunc('hour', ts) AS h, count(*)::int AS n
-      FROM fixed_app_events WHERE ok IS NOT TRUE AND reason_class = $2 AND ts >= $1::timestamptz - interval '14 days' AND ts < $1::timestamptz - interval '60 minutes'
-        AND ${APPLOG_SIG} = ANY($3::text[]) GROUP BY 1,2`, [now, cls, cur.map(c => c.sig)])).rows;
+  const want = new Set(cur.map(c => c.sig));
+  const hist = (await histRows(C, now, cls)).filter(r => want.has(r.sig));
   const oldest = (await C.query(`SELECT min(ts) AS t FROM fixed_app_events`)).rows[0].t;
   const coverageH = oldest ? (new Date(now) - new Date(oldest)) / 3600e3 : 0;
   let worst = null;
@@ -341,10 +375,11 @@ Object.assign(FIXED_METRICS, {
         const C = consoleDb();
         const cov = (await C.query(`SELECT min(ts) AS t FROM fixed_app_events`)).rows[0].t;
         if (!cov || (new Date(now) - new Date(cov)) < 24 * 3600e3) return [];   // needs a day of history before "never seen" means anything
-        const rows = (await C.query(`WITH cur AS (SELECT ${APPLOG_SIG} AS sig, count(*)::int AS n, (array_agg(left(reason,80) ORDER BY ts DESC))[1] AS reason
-              FROM fixed_app_events WHERE ok IS NOT TRUE AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1 HAVING count(*) >= 5)
-            SELECT c.* FROM cur c WHERE NOT EXISTS (SELECT 1 FROM fixed_app_events e WHERE e.ok IS NOT TRUE AND e.ts >= $1::timestamptz - interval '14 days' AND e.ts < $1::timestamptz - interval '60 minutes' AND ${APPLOG_SIG.replace(/\b(channel|path|kind|reason_class)\b/g, 'e.$1')} = c.sig)
-            ORDER BY n DESC LIMIT 5`, [now])).rows;
+        const cur = (await C.query(`SELECT ${APPLOG_SIG} AS sig, count(*)::int AS n, (array_agg(left(reason,80) ORDER BY ts DESC))[1] AS reason
+              FROM fixed_app_events WHERE ok IS NOT TRUE AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1 HAVING count(*) >= 5
+              ORDER BY 2 DESC LIMIT 200`, [now])).rows;
+        const seen = cur.length ? await seenSignatures(C, now) : new Set();
+        const rows = cur.filter(c => !seen.has(c.sig)).slice(0, 5);
         const total = rows.reduce((a, r) => a + r.n, 0);
         return [{ dim: { note: rows.length ? rows.map(r => `${r.sig} ×${r.n} “${r.reason || ''}”`).join(' | ').slice(0, 220) : '' }, value: rows.length, sample: total }];
       } catch (e) { console.error(`[fixedMetrics] new signature: ${e.message}`); return []; }

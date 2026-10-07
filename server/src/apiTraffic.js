@@ -221,6 +221,33 @@ async function pgTechFailStats({ hours = 1, host = null } = {}) {
   return { global: { total, tech, rate: total > 0 ? tech / total : null }, byApi };
 }
 
+/* The filter lists (every path / host seen in the window) are two DISTINCT scans of the whole window — 3.3 s each
+ * on 24 h in the 7 Oct review — for dropdowns whose content changes about never. Memoised 10 min per window. */
+const _lists = new Map();                                      // mins → { at, apis, hosts }
+async function pgFilterLists(mins) {
+  const hit = _lists.get(mins);
+  if (hit && Date.now() - hit.at < 10 * 60000) return hit;
+  const db = require('./db');
+  const apis = await db.console.query(
+    `SELECT DISTINCT path AS api FROM api_traffic_events
+     WHERE ts >= now() - ($1 || ' minutes')::interval ORDER BY 1 LIMIT 300`, [String(mins)]);
+  const hosts = await db.console.query(
+    `SELECT DISTINCT host FROM api_traffic_events
+     WHERE ts >= now() - ($1 || ' minutes')::interval ORDER BY 1`, [String(mins)]);
+  const v = { at: Date.now(), apis: apis.rows.map(r => r.api).filter(Boolean), hosts: hosts.rows.map(r => r.host).filter(Boolean) };
+  _lists.set(mins, v);
+  return v;
+}
+/* run the jobs at most `n` at a time: the console pool has 4 connections and every other request's auth lookup
+ * shares them — eight window scans fired at once used to park everything else behind this page */
+async function limited(n, jobs) {
+  const out = new Array(jobs.length); let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, jobs.length) }, async () => {
+    while (i < jobs.length) { const k = i++; out[k] = await jobs[k](); }
+  }));
+  return out;
+}
+
 async function pgOverview({ hours = 24, api = null, host = null } = {}) {
   const db = require('./db');
   const c = CFG();
@@ -228,40 +255,35 @@ async function pgOverview({ hours = 24, api = null, host = null } = {}) {
   const bucket = h <= 1 ? 1 : h <= 6 ? 5 : 15;   // series granularity: 1/5/15-minute buckets
   const { w, params } = pgWhere({ mins, api, host });
   try {
-    const [tot, codes, ser, slow, perApi, errs, apis, hosts] = await Promise.all([
-      db.console.query(
+    const [tot, codes, ser, slow, perApi, errs] = await limited(2, [
+      () => db.console.query(
         `SELECT count(*)::bigint AS total, (count(*) FILTER (WHERE err_class = 'success'))::bigint AS ok
          FROM api_traffic_events ${w}`, params),
-      db.console.query(
+      () => db.console.query(
         `SELECT COALESCE(NULLIF(response_code, ''), '(none)') AS code, count(*)::bigint AS n,
                 COALESCE(err_class, 'business') AS cls
          FROM api_traffic_events ${w} GROUP BY 1, 3 ORDER BY n DESC LIMIT 15`, params),
-      db.console.query(
+      () => db.console.query(
         `SELECT to_timestamp(floor(extract(epoch FROM ts) / $${params.length + 1}) * $${params.length + 1}) AS b,
                 avg(duration_ms) AS avg_ms, max(duration_ms) AS max_ms, count(*)::bigint AS n
          FROM api_traffic_events ${w} GROUP BY 1 ORDER BY 1`, [...params, bucket * 60]),
-      db.console.query(
+      () => db.console.query(
         `SELECT ts AS at, host, path AS api, transaction_id AS txn, response_code AS code, duration_ms AS ms
          FROM api_traffic_events ${w} ORDER BY duration_ms DESC NULLS LAST LIMIT 20`, params),
-      db.console.query(
+      () => db.console.query(
         `SELECT path AS api, count(*)::bigint AS calls,
                 (count(*) FILTER (WHERE err_class = 'success'))::bigint AS ok,
                 (count(*) FILTER (WHERE err_class = 'business'))::bigint AS biz,
                 (count(*) FILTER (WHERE err_class = 'technical'))::bigint AS tech,
                 avg(duration_ms) AS avg_ms, max(duration_ms) AS max_ms
          FROM api_traffic_events ${w} GROUP BY 1 ORDER BY calls DESC LIMIT 100`, params),
-      db.console.query(
+      () => db.console.query(
         `SELECT COALESCE(NULLIF(response_code, ''), '(none)') AS code, response_message AS msg,
                 count(*)::bigint AS n, COALESCE(err_class, 'business') AS cls
          FROM api_traffic_events ${w} AND err_class <> 'success' AND COALESCE(response_message, '') <> ''
-         GROUP BY 1, 2, 4 ORDER BY n DESC LIMIT 15`, params),
-      db.console.query(
-        `SELECT DISTINCT path AS api FROM api_traffic_events
-         WHERE ts >= now() - ($1 || ' minutes')::interval ORDER BY 1 LIMIT 300`, [String(mins)]),
-      db.console.query(
-        `SELECT DISTINCT host FROM api_traffic_events
-         WHERE ts >= now() - ($1 || ' minutes')::interval ORDER BY 1`, [String(mins)])
+         GROUP BY 1, 2, 4 ORDER BY n DESC LIMIT 15`, params)
     ]);
+    const lists = await pgFilterLists(mins);
     let p95 = null;
     try { p95 = await pgP95Stats({ hours: h, api, host }); } catch (e) { /* p95 optional — table still renders */ }
     const p95ByApi = new Map((p95 && p95.byApi || []).map(r => [r.api, r.p95]));
@@ -286,8 +308,8 @@ async function pgOverview({ hours = 24, api = null, host = null } = {}) {
       }),
       globalP95: p95 && p95.global && p95.global.p95 != null ? Math.round(p95.global.p95) : null,
       errors: errs.rows.map(r => ({ code: r.code, msg: maskText(r.msg), count: Number(r.n), cls: r.cls })),
-      apis: apis.rows.map(r => r.api).filter(Boolean),
-      hosts: hosts.rows.map(r => r.host).filter(Boolean)
+      apis: lists.apis,
+      hosts: lists.hosts
     };
   } catch (e) {
     return { configured: true, ok: false, mode: 'collector', error: e.message, code: e.code };

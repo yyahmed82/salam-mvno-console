@@ -57,6 +57,14 @@ const n = v => Number(v) || 0;
 const pct = (a, b) => b > 0 ? Math.round((a / b) * 1000) / 10 : 0;
 
 /* ---- masking helpers (identifiers only; bodies are already masked at ingest) ---- */
+/* run thunks at most `n` at a time, results in order */
+async function limited(n, jobs) {
+  const out = new Array(jobs.length); let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, jobs.length) }, async () => {
+    while (i < jobs.length) { const k = i++; out[k] = await jobs[k](); }
+  }));
+  return out;
+}
 const tail = (s, k) => s == null || s === '' ? null : '…' + String(s).slice(-k);
 function maskAttempt(r) {
   return { ...r,
@@ -84,7 +92,9 @@ async function freshness(pool = db.ops) {
 const MEMO = {}, FRESH_MS = 60e3, STALE_MS = 600e3;
 async function summary(q) {
   const qq = Object.assign({}, q || {}); const fresh = qq.fresh; delete qq.fresh;
-  for (const k of ['from', 'to']) if (qq[k]) qq[k] = String(qq[k]).slice(0, 16);
+  /* from/to rounded to a 5-minute bucket (was the minute: the range bar derives them from "now", so a reload one
+   * minute later was a new key and a full recompute — the 3.2 s p95 of /api/fixed/summary in the 7 Oct review) */
+  for (const k of ['from', 'to']) if (qq[k]) { const t = Date.parse(qq[k]); qq[k] = isNaN(t) ? String(qq[k]).slice(0, 16) : new Date(Math.floor(t / 300e3) * 300e3).toISOString().slice(0, 16); }
   const key = JSON.stringify(qq, Object.keys(qq).sort());
   const m = MEMO[key] || (MEMO[key] = {});
   const age = m.data ? Date.now() - m.at : Infinity;
@@ -100,39 +110,41 @@ async function summaryRaw(q) {
   const pool = poolFor(s.channel); if (!pool) throw notConfigured();
   const P = s.params, W = s.where;
   const Q = (sql, extra = []) => pool.query(sql, P.concat(extra));
-  const [kpi, outcomes, byWf, byCh, byRegion, byDay, topDealers, naf, dv, errs, fresh] = await Promise.all([
-    Q(`SELECT count(*)::int AS attempts, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed,
+  /* at most 3 of the 11 scans at a time: the ops pool has 6 connections and the Fixed pages, agents and alert rules
+   * share them — eleven at once from one dashboard load left nothing for anyone else */
+  const [kpi, outcomes, byWf, byCh, byRegion, byDay, topDealers, naf, dv, errs, fresh] = await limited(3, [
+    () => Q(`SELECT count(*)::int AS attempts, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed,
               count(DISTINCT oa.dealer_id)::int AS active_dealers,
               count(*) FILTER (WHERE oa.order_number IS NOT NULL)::int AS with_order,
               round(avg(oa.duration_s) FILTER (WHERE oa.outcome='COMPLETED'))::int AS avg_duration_s
          ${FROM} ${W}`),
-    Q(`SELECT oa.outcome::text AS outcome, count(*)::int AS n ${FROM} ${W} GROUP BY 1 ORDER BY 2 DESC`),
-    Q(`SELECT oa.workflow::text AS workflow, count(*)::int AS n, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed
+    () => Q(`SELECT oa.outcome::text AS outcome, count(*)::int AS n ${FROM} ${W} GROUP BY 1 ORDER BY 2 DESC`),
+    () => Q(`SELECT oa.workflow::text AS workflow, count(*)::int AS n, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed
          ${FROM} ${W} GROUP BY 1 ORDER BY 2 DESC`),
-    Q(`SELECT oa.channel, count(*)::int AS n, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed
+    () => Q(`SELECT oa.channel, count(*)::int AS n, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed
          ${FROM} ${W} GROUP BY 1 ORDER BY 2 DESC`),
-    Q(`SELECT COALESCE(oa.region, d.region, '—') AS region, count(*)::int AS n,
+    () => Q(`SELECT COALESCE(oa.region, d.region, '—') AS region, count(*)::int AS n,
               count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed,
               count(*) FILTER (WHERE oa.nafath_outcome IS NOT NULL AND oa.nafath_outcome<>'COMPLETED')::int AS nafath_failed,
               count(*) FILTER (WHERE oa.dealer_validation='DENIED')::int AS manafith_denied
          ${FROM} ${W} GROUP BY 1 ORDER BY 2 DESC LIMIT 12`),
-    Q(`SELECT date_trunc('day', oa.started_at AT TIME ZONE 'Asia/Riyadh') AS day, count(*)::int AS n,
+    () => Q(`SELECT date_trunc('day', oa.started_at AT TIME ZONE 'Asia/Riyadh') AS day, count(*)::int AS n,
               count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed
          ${FROM} ${W} GROUP BY 1 ORDER BY 1`),
-    Q(`SELECT d.id, d.staff_code, d.staff_name, d.dealer_code, d.dealer_name, d.region, d.role::text AS role,
+    () => Q(`SELECT d.id, d.staff_code, d.staff_name, d.dealer_code, d.dealer_name, d.region, d.role::text AS role,
               count(*)::int AS n, count(*) FILTER (WHERE oa.outcome='COMPLETED')::int AS completed,
               max(oa.started_at) AS last_seen
          ${FROM} ${W} AND oa.dealer_id IS NOT NULL GROUP BY d.id ORDER BY n DESC LIMIT 10`),
-    Q(`SELECT oa.nafath_outcome AS outcome, count(*)::int AS n ${FROM} ${W}
+    () => Q(`SELECT oa.nafath_outcome AS outcome, count(*)::int AS n ${FROM} ${W}
           AND oa.channel='sda' AND oa.nafath_outcome IS NOT NULL GROUP BY 1 ORDER BY 2 DESC`),
-    Q(`SELECT oa.dealer_validation AS outcome, count(*)::int AS n ${FROM} ${W}
+    () => Q(`SELECT oa.dealer_validation AS outcome, count(*)::int AS n ${FROM} ${W}
           AND oa.channel='sda' AND oa.dealer_validation IS NOT NULL GROUP BY 1`),
     // error_events has its own timestamp; reuse the window + channel only
-    pool.query(`SELECT category, count(*)::int AS n, count(*) FILTER (WHERE NOT resolved)::int AS open,
+    () => pool.query(`SELECT category, count(*)::int AS n, count(*) FILTER (WHERE NOT resolved)::int AS open,
                          max(occurred_at) AS last_at
                     FROM error_events WHERE occurred_at >= $1 AND occurred_at < $2 ${s.channel ? 'AND channel = $3' : ''}
                    GROUP BY 1 ORDER BY 2 DESC LIMIT 12`, s.channel ? [P[0], P[1], s.channel] : [P[0], P[1]]),
-    freshness(pool),
+    () => freshness(pool),
   ]);
   const k = kpi.rows[0] || {};
   const nafTotal = naf.rows.reduce((a, r) => a + n(r.n), 0);

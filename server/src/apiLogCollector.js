@@ -304,11 +304,7 @@ async function tick() {
     }
     await saveWatermarks(wm).catch(e => console.error('[API-LOG] watermark save failed: ' + e.message));
     await purgeOld().catch(e => console.error('[API-LOG] retention purge failed: ' + e.message));
-    try {
-      const db = require('./db');
-      const r = await db.console.query(`SELECT count(*)::bigint AS n, max(ts) AS newest FROM api_traffic_events`);
-      _dbStats.events = Number(r.rows[0].n); _dbStats.newestTs = r.rows[0].newest ? new Date(r.rows[0].newest).toISOString() : null;
-    } catch (e) { /* stats are cosmetic */ }
+    try { await dbStats(); } catch (e) { /* stats are cosmetic */ }
   } catch (e) {
     console.error('[API-LOG] tick failed: ' + e.message);        // never crash the app
   } finally { _busy = false; }
@@ -320,7 +316,7 @@ function status() {
     configured: configured(), intervalMin: c.intervalMin, logPath: c.path,
     user: c.user || null, capMb: Math.round(c.capBytes / MB), backfillMb: Math.round(c.backfillBytes / MB),
     retentionDays: c.retentionDays, bootedAt: _bootedAt,
-    events: _dbStats.events, newestTs: _dbStats.newestTs,
+    events: _dbStats.events, eventsApprox: !!_dbStats.eventsApprox, newestTs: _dbStats.newestTs,
     hosts: c.hosts.map(h => {
       const st = _hostState.get(h) || {};
       return { host: h, watermark: st.watermark ?? null, size: st.size ?? null,
@@ -331,16 +327,26 @@ function status() {
   };
 }
 
-// async freshness probe for the health strip: event count + newest ts straight from the DB
+/* Table stats for the status strip. Was `SELECT count(*), max(ts) FROM api_traffic_events` — with both aggregates
+ * in one statement Postgres cannot take max(ts) from the index, so every minute (the tick) and every health strip
+ * (ping) read the whole 7-day table: 6.9 s and the single biggest scanner on the console DB in the 7 Oct review.
+ * Now: max(ts) alone (one index probe) and the row count from the planner's estimate, which autovacuum keeps
+ * within a few percent on a table this busy — exact enough for "how many events do we hold". */
+async function dbStats() {
+  const db = require('./db');
+  const r = await db.console.query(`SELECT (SELECT max(ts) FROM api_traffic_events) AS newest,
+      (SELECT greatest(reltuples, 0)::bigint FROM pg_class WHERE oid = 'api_traffic_events'::regclass) AS n`);
+  _dbStats.events = Number(r.rows[0].n); _dbStats.eventsApprox = true;
+  _dbStats.newestTs = r.rows[0].newest ? new Date(r.rows[0].newest).toISOString() : null;
+  return _dbStats;
+}
+// async freshness probe for the health strip: newest ts (indexed) + estimated event count
 async function ping() {
   if (!configured()) return { ok: false, configured: false };
   const t0 = Date.now();
   try {
-    const db = require('./db');
-    const r = await db.console.query(`SELECT count(*)::bigint AS n, max(ts) AS newest FROM api_traffic_events`);
-    _dbStats.events = Number(r.rows[0].n);
-    _dbStats.newestTs = r.rows[0].newest ? new Date(r.rows[0].newest).toISOString() : null;
-    return { ok: true, configured: true, ms: Date.now() - t0, events: _dbStats.events, newestTs: _dbStats.newestTs };
+    await dbStats();
+    return { ok: true, configured: true, ms: Date.now() - t0, events: _dbStats.events, eventsApprox: true, newestTs: _dbStats.newestTs };
   } catch (e) { return { ok: false, configured: true, ms: Date.now() - t0, error: e.message }; }
 }
 
