@@ -64,7 +64,7 @@ function mount(app, { requireView, audit } = {}) {
   // page-level gates (matrix columns): each module answers to its own Fixed view; everything else stays on 'fixed'
   const VIEW_OF = { fixedMap: 'fixed_maps', fixedErrors: 'fixed_errors', fixedErrorTrend: 'fixed_errors', fixedAlerts: 'fixed_alerts', fixedDash: 'fixed_reports', fixedReport: 'fixed_reports', fixedDocs: 'fixed_explore' };
   const gateFor = v => requireView ? requireView(v) : gate;
-  for (const m of ['fixedMap', 'fixedErrors', 'fixedErrorTrend', 'fixedDash', 'fixedAlerts', 'fixedDocs', 'fixedReport', 'fixedCustomer', 'fixedChannel']) {
+  for (const m of ['fixedMap', 'fixedErrors', 'fixedErrorTrend', 'fixedDash', 'fixedAlerts', 'fixedDocs', 'fixedReport', 'fixedCustomer', 'fixedChannel', 'fixedEpWatch']) {
     try { const mod = require('./' + m); if (typeof mod.mount === 'function') { mod.mount(app, VIEW_OF[m] ? { ...deps, gate: gateFor(VIEW_OF[m]) } : deps); console.log(`[fixed] mounted ${m}`); } }
     catch (e) { if (e.code === 'MODULE_NOT_FOUND' && String(e.message).includes(m)) continue; console.error(`[fixed] ${m} failed to mount:`, e.message); }
   }

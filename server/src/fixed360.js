@@ -14,10 +14,10 @@ const db = require('./db');
 
 const WORKFLOW_LABEL = {
   ftth: 'FTTH (fiber)', fttb: 'FTTB', fiveGWhiteLabel: '5G white-label', fiveGFWA: '5G FWA', promoters: 'Promoters',
-  ePurchaseFTTH: 'e-purchase FTTH', salamHomeFreeze: 'Salam Home · Freeze', salamHomeUnFreeze: 'Salam Home · Unfreeze',
+  ePurchaseFTTH: 'e-purchase FTTH', ePurchase5GWhiteLabel: 'e-purchase 5G HomeFi (Naqeel delivery)', salamHomeFreeze: 'Salam Home · Freeze', salamHomeUnFreeze: 'Salam Home · Unfreeze',
   salamHomeRelocationFTTH: 'Salam Home · Relocation FTTH', salamHomeRelocationWL: 'Salam Home · Relocation 5G WL',
   salamHomeRelocationOwn: 'Salam Home · Relocation 5G own CPE', salamHomeChangePlan: 'Salam Home · Change plan',
-  salamHomeChangePlanPre2Post: 'Salam Home · Pre→Post', salamHomeRenew: 'Salam Home · Renew', unknown: 'unknown' };
+  salamHomeChangePlanPre2Post: 'Salam Home · Pre→Post', salamHomeChangePlanPost2Pre: 'Salam Home · Post→Pre', salamHomeRenew: 'Salam Home · Renew', unknown: 'unknown' };
 
 function notConfigured() { const e = new Error('Fixed data source not configured (OPS_DATABASE_URL)'); e.status = 503; return e; }
 

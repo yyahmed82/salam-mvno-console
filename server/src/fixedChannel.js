@@ -28,7 +28,7 @@ const CHANNELS = { epurchase: { label: 'Epurchase', desc: 'public web / QR flow 
                    salamhome: { label: 'Salam Home app', desc: 'Pulse app · buy FTTH + manage-line journeys' } };
 const SECTIONS = ['kpis', 'journeys', 'flows', 'plans', 'campaigns', 'payments', 'errors', 'integrations', 'regions', 'findings'];
 /* FTTX = the fixed-line family (FTTH consumer fiber + FTTB business fiber); the two are ALWAYS reported apart. */
-const SEG_SQL = `CASE WHEN oa.workflow::text IN ('fiveGWhiteLabel','fiveGFWA','salamHomeRelocationWL','salamHomeRelocationOwn') OR oa.plan ILIKE '%5g%' THEN '5g'
+const SEG_SQL = `CASE WHEN oa.workflow::text IN ('fiveGWhiteLabel','ePurchase5GWhiteLabel','fiveGFWA','salamHomeRelocationWL','salamHomeRelocationOwn') OR oa.plan ILIKE '%5g%' THEN '5g'
   WHEN oa.workflow::text = 'fttb' OR oa.plan ILIKE '%fttb%' OR oa.plan ILIKE '%business%' THEN 'fttb'
   WHEN oa.workflow::text IN ('ftth','ePurchaseFTTH','salamHomeRelocationFTTH','promoters') OR oa.plan ILIKE '%fiber%' OR oa.plan ILIKE '%ftth%' OR oa.plan ILIKE '%فايبر%' THEN 'ftth'
   ELSE 'other' END`;
@@ -146,7 +146,9 @@ async function flows(channel, q) {
   const out = [];
   for (const w of Object.values(byWf)) {
     const total = w.groups.reduce((a, g) => a + g.count, 0);
-    let steps = stepsFor(w.workflow);
+    // 5G e-purchase arrives from the prod ingest as fiveGWhiteLabel with e-purchase step names → use its own step list
+    const wfKey = (w.workflow === 'fiveGWhiteLabel' && w.groups.some(g => /^ePurchase/.test(g.step_reached || ''))) ? 'ePurchase5GWhiteLabel' : w.workflow;
+    let steps = stepsFor(wfKey);
     // unknown workflow → order the observed stop steps by frequency (never hide a step)
     if (!steps.length) steps = [...new Set(w.groups.filter(g => g.step_reached).sort((a, b) => b.count - a.count).map(g => g.step_reached))];
     const reach = new Array(steps.length).fill(0), L = steps.length;
@@ -155,8 +157,8 @@ async function flows(channel, q) {
     const stops = {}; for (const g of w.groups) if (g.outcome !== 'COMPLETED') { const k = g.step_reached || '(none)'; stops[k] = (stops[k] || 0) + g.count; }
     const stopRows = Object.entries(stops).map(([step, cnt]) => ({ step, n: cnt, pct: pct(cnt, total) })).sort((a, b) => b.n - a.n);
     const completed = w.groups.filter(g => g.outcome === 'COMPLETED').reduce((a, g) => a + g.count, 0);
-    out.push({ workflow: w.workflow, label: f360.WORKFLOW_LABEL[w.workflow] || w.workflow, segment: w.segment, seg_label: SEG_LABEL[w.segment], total, completed, conversion: pct(completed, total),
-      steps_known: !!stepsFor(w.workflow).length, funnel, stops: stopRows.slice(0, 8), biggest_drop: funnel.slice().sort((a, b) => b.drop - a.drop)[0] || null });
+    out.push({ workflow: w.workflow, label: f360.WORKFLOW_LABEL[wfKey] || w.workflow, segment: w.segment, seg_label: SEG_LABEL[w.segment], total, completed, conversion: pct(completed, total),
+      steps_known: !!stepsFor(wfKey).length, funnel, stops: stopRows.slice(0, 8), biggest_drop: funnel.slice().sort((a, b) => b.drop - a.drop)[0] || null });
   }
   // stop steps per day — top 6 steps overall, rest folded into "other"
   const stepTot = {}; for (const x of sd.rows) stepTot[x.step] = (stepTot[x.step] || 0) + n(x.n);

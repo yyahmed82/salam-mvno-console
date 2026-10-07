@@ -21,8 +21,12 @@ const STEPS = {
   promoters: ['promotersFeasibilityCheck', 'customerProfile', 'promotersConfirmOtp', 'promotersReviewOrder'],
   ePurchaseFTTH: ['ePurchaseCustomerProfile', 'ePurchaseFeasibilityCheck', 'ePurchaseSubmitOrder', 'ePurchaseOrderSummary', 'ePurchasePayment',
     'ePurchaseCustomerProfileVerification', 'ePurchaseConfirmOtp', 'ePurchaseReviewOrder'],
+  /* 5G HomeFi on the web / in the Salam Home app, device delivered by Naqeel (salam-nexus 30 Sep 2026). The prod ingest
+   * stores these as workflow 'fiveGWhiteLabel' + channel 'epurchase' — fixedChannel switches to this list for them. */
+  ePurchase5GWhiteLabel: ['ePurchaseGeoFeasibilityCheck', 'ePurchaseCustomerProfile', 'ePurchaseNafathCheck', 'ePurchaseOrderSummary', 'ePurchasePayment',
+    'ePurchaseCustomerProfileVerification', 'ePurchaseConfirmOtp', 'ePurchaseReviewOrder'],
 };
-const PLAN_LABEL = { ftth: 'FTTH', fttb: 'FTTB', fiveGWhiteLabel: '5G HomeFI', fiveGFWA: '5G FWA', promoters: 'Lead', ePurchaseFTTH: 'FTTH (e-Purchase/QR)' };
+const PLAN_LABEL = { ftth: 'FTTH', fttb: 'FTTB', fiveGWhiteLabel: '5G HomeFI', fiveGFWA: '5G FWA', promoters: 'Lead', ePurchaseFTTH: 'FTTH (e-Purchase/QR)', ePurchase5GWhiteLabel: '5G HomeFi (e-Purchase · Naqeel)' };
 const stepsFor = wf => (wf && STEPS[wf]) || [];
 
 /* funnel.ts → computeFunnelFromCounts: groups = [{outcome, step_reached, count}] */

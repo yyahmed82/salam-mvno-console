@@ -770,7 +770,7 @@ for (const ch of ['salamhome', 'web', 'sda']) {
     description: `${c.label}: app-log lines in the last 60 min are ≤ ${Math.round((TUNED.volume_floor[ch] || 0.25) * 100)} % of the same-hour 7-day median (KSA ${c.consumer ? '09–23' : '10–22'}) — the channel went quiet: an outage BEFORE the app (store, CDN, gateway, login page) shows up as silence, not as errors. Needs 3 days of log history. Measured 18 Sep 2026: this ratio's median is 0.76 here (Salam Home), 0.40 (web) and 0.11 (SDA) where a ratio against its own median should sit near 1.0 — the 7-day median is inflated, so the floors below are provisional and SDA is seeded OFF until the baseline is corrected.`,
     runbook: `1) Open the ${c.page} yourself (or ask CX): does it load / log in? 2) Check the app-log collector rule (stale collector = same symptom) and the gateway / 146 health. 3) Compare the board ingest lag rule — both silent = platform-wide. 4) Clears when traffic returns.` }));
 }
-const KIND_LABEL = { yakeen: 'Yakeen / ELM (NIC record)', yakeen_address: 'Yakeen address (ELM)', absher: 'Absher OTP (DRM)', nafath: 'Nafath', semati: 'Semati (CITC)', manafith: 'Manafith', drm: 'DRM' };
+const KIND_LABEL = { yakeen: 'Yakeen / ELM (NIC record)', yakeen_address: 'Yakeen address (ELM)', absher: 'Absher OTP (DRM)', nafath: 'Nafath', semati: 'Semati (CITC)', manafith: 'Manafith', drm: 'DRM', naqeel: 'Naqeel (5G stock & delivery)', payment: 'Card capture / void / refund (payments v2)' };
 for (const [kind, label] of Object.entries(KIND_LABEL)) {
   if (kind !== 'yakeen') CH_RULES.push(R({ key: `fixed_provider_tech_${kind}`, name: `${label} · technical failure rate (P2)`, severity: 'P2', alert_class: 'technical',
     metric_key: 'fixed_applog_provider_technical_rate', dim: { kind }, operator: 'gte', threshold: 0.3, min_sample: 5,
@@ -799,6 +799,50 @@ CH_RULES.push(
     description: 'The slowest integration host has a p95 ≥ 15 s — calls are hitting the app timeouts; journeys through this provider fail.',
     runbook: '1) Page OSS Ops + provider. 2) Expect the technical-rate rules for the same provider footprint to follow. 3) Downgrades to the P2 twin as it recovers.' }),
 );
+/* NEXUS MONEY / STOCK WATCH (7 Oct 2026 — salam-nexus 30 Sep review, claude/FIXED-NEXUS-REVIEW-2026-10-07.md).
+ * Metrics in fixedEpWatch.js read nexus directly: the read models never see the Naqeel order, the manual capture, the
+ * delivery-time BSS order, the return-to-origin refund or the SIM / landline locks. Baseline measured 7 Oct: 8 paid 5G
+ * journeys in 3 weeks (2 provisioned, 2 refunded, 5 without a BSS order ≥ 3 d), 74 leaked locks, 39 AUTHORIZED FTTH rows,
+ * 90 % of 5G journeys ending at the location / stock step. Page: Fixed › Payments watch. */
+const EPW = [
+  R({ key: 'fixed_ep5g_paid_no_bss_order', name: '5G e-purchase · paid, no BSS order after 72 h', severity: 'P2', alert_class: 'business', window_hours: 24,
+    metric_key: 'fixed_ep5g_paid_no_bss_order', operator: 'gte', threshold: 1,
+    description: 'A 5G HomeFi e-purchase journey was paid (card captured) and the Naqeel delivery order placed ≥ 72 h ago, but no BSS order exists — or the BSS order created at delivery (Naqeel event 7) failed. The backend creates the subscription only on that webhook and does not retry: the customer may hold a delivered device with no service.',
+    runbook: '1) Fixed › Payments watch → 5G paid journeys → "Paid, no BSS order": journey id, Naqeel waybill. 2) Ask Naqeel for the shipment status (delivered / in transit). 3) Delivered → Fixed squad creates the BSS order (createOrderNew5g) by hand; in transit > 5 d → Naqeel escalation. 4) Clears when the real order number lands in the journey.' }),
+  R({ key: 'fixed_ep5g_naqeel_fail_charged', name: '5G e-purchase · Naqeel order failed but the card was charged (P1)', severity: 'P1', alert_class: 'business', window_hours: 24,
+    metric_key: 'fixed_ep5g_naqeel_fail_charged', operator: 'gte', threshold: 1,
+    description: 'The Naqeel delivery order failed and the invoice is CAPTURED / PAID — the void did not happen. Money taken, nothing shipped.',
+    runbook: '1) Payments watch → the journey → invoice. 2) Finance: refund (payments v2 refundInvoice). 3) Inventory: release the SIM / landline lock. 4) Report to the Fixed squad (capture-after-failure path).' }),
+  R({ key: 'fixed_ep5g_rto_refund_missing', name: '5G e-purchase · returned to origin, refund missing (P1)', severity: 'P1', alert_class: 'business', window_hours: 24,
+    metric_key: 'fixed_ep5g_rto_refund_missing', operator: 'gte', threshold: 1,
+    description: 'Naqeel reported the shipment returned (event 9 / 113) but no refund is recorded on the journey — the refund call failed (the backend only logs it).',
+    runbook: '1) Payments watch → "Returned to origin — refund missing". 2) Finance refunds the captured payment. 3) Inventory releases the stock. 4) Clears when invoice.refund is written.' }),
+  R({ key: 'fixed_ep5g_paid_stopped', name: '5G e-purchase · paid, journey stopped before the Naqeel order', severity: 'P2', alert_class: 'business', window_hours: 24,
+    metric_key: 'fixed_ep5g_paid_stopped', operator: 'gte', threshold: 1,
+    description: 'A 5G e-purchase journey holds an AUTHORIZED / CAPTURED / PAID invoice but stopped before the OTP step that places the Naqeel order (≥ 1 h). Authorised = the 10-min loop should void it; captured = money taken without an order.',
+    runbook: '1) Payments watch → "Paid, journey stopped before the Naqeel order". 2) Authorised → confirm it is voided in payments; captured → refund or complete the order with the customer. 3) Fixed squad if it repeats (capture-throw path).' }),
+  R({ key: 'fixed_ep5g_lock_leak', name: '5G stock · SIM / landline locks never released', severity: 'P3', alert_class: 'business', window_hours: 24,
+    metric_key: 'fixed_ep5g_lock_leak', operator: 'gte', threshold: 5,
+    description: '≥ 5 SIM (ICCID) / landline (MSISDN) locks taken at the 5G e-purchase location step are still LOCKED on journeys expired > 2 h. Cancelling does not release them and the backend release sweep has no scheduler — sellable stock shrinks.',
+    runbook: '1) Payments watch → Stock locks (Show full serials, audited). 2) Inventory / BSS team releases them (lockOrUnlockResource R). 3) Fixed squad: schedule the unlockDevices sweep and release on cancel.' }),
+  R({ key: 'fixed_ep_auth_stuck', name: 'E-purchase · card authorisations neither captured nor voided', severity: 'P2', alert_class: 'business', window_hours: 24,
+    metric_key: 'fixed_ep_auth_stuck', operator: 'gte', threshold: 1,
+    description: 'epurchase_payments rows still AUTHORIZED on journeys expired > 60 min. The backend 10-min loop captures (order exists) or voids them; a hold that stays means the customer\'s card is blocked or the order is unpaid. The row can be stale — confirm in payments.',
+    runbook: '1) Payments watch → Card holds: journey, invoice, "order in context". 2) Payments v2: actual invoice status. 3) Still AUTHORIZED there → capture (order exists) or void (no order) by hand; ask the Fixed squad why the loop skipped it.' }),
+  R({ key: 'fixed_ep_ftth_paid_no_order', name: 'E-purchase FTTH · charged before the order, no later order (verify first)', severity: 'P2', alert_class: 'business', window_hours: 24, enabled: false,
+    metric_key: 'fixed_ep_ftth_paid_no_order', operator: 'gte', threshold: 1,
+    description: 'FTTH e-purchase journeys holding a PAID / CAPTURED invoice that expired at verification or OTP (the step that creates the order) and whose customer never reached the order step later. Seeded OFF: the volume (thousands over 60 days) must first be reconciled with Finance / back-office order creation.',
+    runbook: '1) Payments watch → FTTH charged before the order. 2) Sample 10 journeys with Finance: refunded? order created in back-office? 3) Enable the rule once the definition is confirmed.' }),
+  R({ key: 'fixed_ep_webhook_fail', name: 'Payment webhooks failing (P2)', severity: 'P2', alert_class: 'technical',
+    metric_key: 'fixed_ep_webhook_fail', dim: { source: '(worst)' }, operator: 'gte', threshold: 3,
+    description: '≥ 3 payment webhooks (Sadad / e-purchase / Salam Home) failed or never finished in the last 60 min for one source — paid invoices are not being applied to the journey / BSS.',
+    runbook: '1) Payments watch → Payment webhooks: source, last failures. 2) Payments v2 + the Fixed app log (Troubleshoot › From the app log). 3) Replay the failed webhooks once fixed.' }),
+  R({ key: 'fixed_ep5g_location_stop', name: '5G e-purchase · most journeys end at the location / stock step', severity: 'P3', alert_class: 'business', window_hours: 24,
+    metric_key: 'fixed_ep5g_location_stop_rate', operator: 'gte', threshold: 0.8, min_sample: 10,
+    description: '≥ 80 % of the 5G e-purchase journeys that ended in the last 24 h (≥ 10) stopped at the location step — no coverage, no Naqeel stock, or the SIM Naqeel reserved is not sellable in BSS (simState ≠ I). 7 Oct baseline: 90 %.',
+    runbook: '1) Payments watch → Location step · SIM check: the simState mix. 2) Not I → Naqeel / BSS inventory sync (Supply Chain). 3) Troubleshoot › app log → Naqeel lane for "no skus" / "Sim card is not available".' }),
+];
+for (const r of EPW) CH_RULES.push(r);
 /* INFRASTRUCTURE rules (30 Sep 2026): one set per side, owner infra-l2 (Fixed) / mobile-digital-l2 (Mobile, until a Mobile infra responder is named) */
 const INFRA_RULES = (seg) => { const p = seg === 'fixed' ? 'fixed_' : ''; const team = seg === 'fixed' ? 'infra-l2' : 'mobile-digital-l2'; const side = seg === 'fixed' ? 'Fixed' : 'Mobile'; const extra = seg === 'fixed' ? { segment: 'fixed' } : {};
   return [

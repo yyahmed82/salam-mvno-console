@@ -36,7 +36,7 @@ const BOARD_CH = ['sda', 'qr', 'web', 'salamhome'];
 const APP_CH = ['sda', 'web', 'salamhome', 'payments'];
 const ATT_CH = `CASE WHEN oa.channel = 'sda' THEN 'sda' WHEN oa.channel = 'salamhome' THEN 'salamhome' WHEN oa.referral_code IS NOT NULL THEN 'qr' ELSE 'web' END`;
 const MONEY = ['PAYMENT_NOT_NOTIFIED', 'PROVISION_NO_ORDER', 'PAYMENT_FAILED'];
-const KINDS = ['yakeen', 'yakeen_address', 'absher', 'nafath', 'semati', 'manafith', 'drm'];
+const KINDS = ['yakeen', 'yakeen_address', 'absher', 'nafath', 'semati', 'manafith', 'drm', 'naqeel', 'payment'];
 const HOST = `coalesce(substring(ac.endpoint from '^https?://([^/:]+)'), 'unknown')`;
 const C = () => db.console;
 const n = v => Number(v) || 0;
@@ -288,7 +288,7 @@ const METRICS = {
     }))
   },
   fixed_applog_provider_technical_rate: {
-    label: 'Fixed · provider technical failure rate, 60 min (per provider: Yakeen, Absher, Nafath, Semati, Manafith, DRM)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
+    label: 'Fixed · provider technical failure rate, 60 min (per provider: Yakeen, Absher, Nafath, Semati, Manafith, DRM, Naqeel, card capture)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
     compute: safe('applog_provider', async now => cached('appProv:' + minuteKey(now), 60e3, async () => {
       if (!C()) return [];
       const r = (await C().query(`SELECT kind, count(*)::int AS calls, count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'technical')::int AS tech, count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'business')::int AS biz,

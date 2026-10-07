@@ -131,7 +131,7 @@ function channelBuckets(q) {
 const TYPES = [
   { key: 'ftth',    label: 'FTTH',         desc: 'fibre to the home — ftth · ePurchaseFTTH · salamHomeRelocationFTTH · plan ~ fiber' },
   { key: 'fttb',    label: 'FTTB',         desc: 'fibre to the building (business) — fttb · plan ~ FTTB / business' },
-  { key: '5gwl',    label: '5G HomeFi',    desc: 'fiveGWhiteLabel · salamHomeRelocationWL / Own' },
+  { key: '5gwl',    label: '5G HomeFi',    desc: 'fiveGWhiteLabel (SDA + e-purchase / Naqeel) · ePurchase5GWhiteLabel · salamHomeRelocationWL / Own' },
   { key: '5gfwa',   label: '5G FWA',       desc: 'fiveGFWA' },
   { key: '5g',      label: '5G (plan)',    desc: 'workflow does not say — the plan text says 5G' },
   { key: 'lead',    label: 'Lead',         desc: 'promoters (lead capture, no order)' },
@@ -141,16 +141,16 @@ const TYPE = Object.fromEntries(TYPES.map(t => [t.key, t]));
 const TYPE_EXPR = `CASE
   WHEN oa.workflow::text IN ('ftth','ePurchaseFTTH','salamHomeRelocationFTTH') THEN 'ftth'
   WHEN oa.workflow::text = 'fttb' THEN 'fttb'
-  WHEN oa.workflow::text IN ('fiveGWhiteLabel','salamHomeRelocationWL','salamHomeRelocationOwn') THEN '5gwl'
+  WHEN oa.workflow::text IN ('fiveGWhiteLabel','ePurchase5GWhiteLabel','salamHomeRelocationWL','salamHomeRelocationOwn') THEN '5gwl'
   WHEN oa.workflow::text = 'fiveGFWA' THEN '5gfwa'
   WHEN oa.workflow::text = 'promoters' THEN 'lead'
   WHEN oa.plan ILIKE '%5g%' THEN '5g'
   WHEN oa.plan ILIKE '%fttb%' OR oa.plan ILIKE '%business%' THEN 'fttb'
   WHEN oa.plan ILIKE '%ftth%' OR oa.plan ILIKE '%fiber%' OR oa.plan ILIKE '%fibre%' THEN 'ftth'
   ELSE 'unknown' END`;
-const WF_LABEL = { ftth: 'New line', fttb: 'New line', fiveGWhiteLabel: 'New line', fiveGFWA: 'New line', promoters: 'Lead', ePurchaseFTTH: 'New line',
+const WF_LABEL = { ftth: 'New line', fttb: 'New line', fiveGWhiteLabel: 'New line', fiveGFWA: 'New line', promoters: 'Lead', ePurchaseFTTH: 'New line', ePurchase5GWhiteLabel: 'New line',
   salamHomeFreeze: 'Freeze', salamHomeUnFreeze: 'Unfreeze', salamHomeRelocationFTTH: 'Relocation', salamHomeRelocationWL: 'Relocation', salamHomeRelocationOwn: 'Relocation',
-  salamHomeChangePlan: 'Change plan', salamHomeChangePlanPre2Post: 'Pre → post', salamHomeRenew: 'Renew', unknown: '' };
+  salamHomeChangePlan: 'Change plan', salamHomeChangePlanPre2Post: 'Pre → post', salamHomeChangePlanPost2Pre: 'Post → pre', salamHomeRenew: 'Renew', unknown: '' };
 const JOIN_OA = 'LEFT JOIN order_attempts oa ON oa.id = e.attempt_id';
 /* ---- error MESSAGE as a filter dimension (15 Sep 2026: "a select with every error message and its count in the period").
  * The message is the provider / app text of the failing call (resultDesc, error message …). Grouped after masking digit

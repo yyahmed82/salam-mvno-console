@@ -69,6 +69,10 @@ const PROVIDER_RE = [
   [/getYakeenInfo/i, 'yakeen'], [/getYakeenAddress/i, 'yakeen_address'],
   [/sendAbsherValidateCode|checkValidateCode|absher/i, 'absher'],
   [/nafath/i, 'nafath'], [/semati|IssueNewMobileIndividual/i, 'semati'], [/dealerValidation|manafith/i, 'manafith'],
+  /* 7 Oct 2026 (salam-nexus 30 Sep): MANUAL_CAPTURE settlement lines and the 5G e-purchase stock / delivery provider.
+   * payment first so "[NAQEEL Webhook] refundInvoice call failed" counts as a payment (refund) failure. */
+  [/captured successfully|voided successfully|capturing invoice|voiding invoice|failed to process payment|refundInvoice call failed/i, 'payment'],
+  [/naqeel|^lockDevices:/i, 'naqeel'],
 ];
 const MUT_RE = /^mutation\s+(\S+)\s+(success|succeeded|fail|failed|error)\b(?:.*?(\d+)\s*ms)?/i;
 const TECH_RE = /timed? ?out|timeout|gateway|\b5\d\d\b|ECONN|ETIMEDOUT|EAI_AGAIN|socket hang up|TLS|certificate|unavailable|internal (server )?error|system error|unkn?own error|\[CC-[A-Z]|CRM error|null pointer|<h1>|exception/i;
@@ -121,8 +125,21 @@ function parseLine(line) {
   const resp = o.response && typeof o.response === 'object' ? o.response : null;
   let kind = null, ok = null, status = null, reason = null, duration = null, path = o.path || null, dflt = 'technical';
   for (const [re, k] of PROVIDER_RE) if (re.test(msg) || re.test(String(o.service || '')) || re.test(path || '')) { kind = k; break; }
-  const m = MUT_RE.exec(msg);
-  if (m) {
+  const m = kind === 'naqeel' || kind === 'payment' ? null : MUT_RE.exec(msg);
+  if (kind === 'naqeel') {
+    /* naqeel.ts logs EVERY search / order response at level error (success included) — judge by the body, not the level.
+     * Only outcome lines count; request / progress lines ("lockDevices called", "createNaqeelOrder body") are skipped. */
+    const src = (o.data && typeof o.data === 'object') ? o.data : o;
+    if (/^naqeel (search|order)$/i.test(msg.trim())) { ok = !(src.IsSuccess === false || src.IsAvailable === false || src.errorMessage); if (!ok) { dflt = 'business'; reason = short(src.Result || src.Message || src.errorMessage || 'Naqeel refused', 300); } }
+    else if (/delivery fail started/i.test(msg)) { ok = false; dflt = 'business'; reason = 'Naqeel: shipment returned to origin (refund + stock release)'; }
+    else if (level === 'error') { ok = false; status = (err && (err.statusCode || err.httpStatus)) || null; reason = short((err && err.message) || msg, 300);
+      if (/sim not available|sim card is not available|no skus|not available|no coverage/i.test(msg + ' ' + (reason || ''))) dflt = 'business'; }
+    else return null;
+  } else if (kind === 'payment') {
+    if (/captured successfully|voided successfully/i.test(msg)) ok = true;
+    else if (level === 'error') { ok = false; reason = short((err && err.message) || msg, 300); }
+    else return null;                                       // "Capturing / Voiding invoice …" start lines
+  } else if (m) {
     kind = kind || 'mutation'; path = path || m[1]; ok = /^succ/i.test(m[2]); duration = m[3] ? Number(m[3]) : null;
     if (!ok) reason = short(msg, 300);
   } else if (level === 'error') {

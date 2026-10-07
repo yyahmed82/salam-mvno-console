@@ -14,7 +14,8 @@
  * yesterday-same-time, outcomes success · business · technical in a window (15 m … 24 h), who is facing
  * errors (dealers / QR codes / platforms), the live activity feed (masked), the failure reasons and the
  * NOTICES IT Operations posted for it. The activity feed of the two dealer channels (DMS, SDA) carries the
- * dealer's STAFF ID and DEALER CODE so the Sales Ops team knows who sold (7 Oct 2026).
+ * dealer's STAFF ID and DEALER CODE so the Sales Ops team knows who sold (7 Oct 2026); the self-activation feed
+ * carries the DEALER ID of the order behind the call instead of the platform and the number (alpha.145).
  * The channel HEALTH from the open alerts of its rule families is NOT sent by default (7 Oct 2026: the Sales
  * Ops team does not want IT alerts on the wall) — `?alerts=1` on /overview and /channel brings it back.
  *
@@ -217,6 +218,54 @@ async function dmsChannel(win) {
 
 /* ---------------------------------------------------------------- Mobile › Self-activation (customer app / web) */
 const ACT_API = '/bss/account/create-individual-subscriber';
+
+/* WHO SOLD a self-activation (alpha.145, Sales Ops ask: no platform, no number, the DEALER ID instead).
+ * activation_logs knows neither the dealer nor the order: the selfcare backend logs every Optiva / Semati call through
+ * ExternalRequests::ActivationLog.create without the order (onboarding_order_id stays NULL) and the BSS request carries
+ * the constant dealerCode 1. The dealer lives on the ORDER: onboarding_orders.seller_id → sellers, set when a dealer
+ * sells from the seller app (flow indirect) or the customer orders from a dealer's QR (flow partner); sellers.username is
+ * the dealerUsername of that dealer's wallet in Optiva's self-activation portal. A log row reaches its order through the
+ * number it carries: the new number (numbers.identifier, indexed on the replica) or the ported one
+ * (onboarding_orders.mnp_number, indexed), and the order is the latest one placed in the 7 days before the call.
+ * No such order (a SIM replacement on an old line, or a row the replica has not synced yet) = no dealer shown, never a guess.
+ * The number is only used for the lookup here; it never leaves this function. */
+const DEALER_DAYS = 7;
+const FLOW = { 1: 'seller app (indirect)', 2: 'retail POSA', 5: 'dealer QR (partner)', 7: 'retail QR POSA' };
+const last9 = v => { const d = String(v == null ? '' : v).replace(/\D/g, ''); return d.length >= 9 ? d.slice(-9) : null; };
+const dealerId = v => { const s = String(v).trim(); return /^\+?\d{9,}$/.test(s) ? maskNum(s) : clip(s, 64); };   // a username that is a phone / ID number stays masked
+async function selfactDealers(rows) {
+  const keys = [...new Set(rows.map(r => last9(r.msisdn)).filter(Boolean))];
+  if (!keys.length) return new Map();
+  const forms = keys.flatMap(k => ['966' + k, '0' + k, k]);
+  const oldest = new Date(Math.min(...rows.map(r => new Date(r.at).getTime())) - DEALER_DAYS * 864e5);
+  const r = await db.source.query(`
+    SELECT x.num, o.created_at, o.flow_type::text AS flow, nullif(o.external_service_name, '') AS ext, o.store_id::text AS store,
+           s.id::text AS sid, s.username, nullif(trim(concat_ws(' ', s.first_name, s.last_name)), '') AS sname
+      FROM (SELECT n.identifier::text AS num, n.onboarding_order_id AS oid FROM numbers n
+             WHERE n.identifier::text = ANY($1::text[]) AND n.onboarding_order_id IS NOT NULL
+            UNION ALL
+            SELECT m.mnp_number::text, m.id FROM onboarding_orders m WHERE m.mnp_number = ANY($1::text[])) x
+      JOIN onboarding_orders o ON o.id = x.oid
+      LEFT JOIN sellers s ON s.id = o.seller_id
+     WHERE o.created_at >= $2
+     ORDER BY o.created_at DESC`, [forms, oldest]);
+  const by = new Map();
+  for (const x of r.rows) { const k = last9(x.num); if (!k) continue; if (!by.has(k)) by.set(k, []); by.get(k).push(x); }
+  return by;
+}
+/* the order behind one log row: the latest order with that number placed in the 7 days before the call (10 min of slack
+ * for the replica's clocks) → dealer (seller username) · reseller (external_service_name) · retail store · direct */
+function dealerOf(row, by) {
+  const k = last9(row.msisdn); const cands = k && by.get(k); if (!cands) return { dkind: 'none' };
+  const t = new Date(row.at).getTime();
+  const o = cands.find(x => { const c = new Date(x.created_at).getTime(); return c <= t + 10 * 60e3 && c >= t - DEALER_DAYS * 864e5; });
+  if (!o) return { dkind: 'none' };
+  const via = FLOW[o.flow] || null;
+  if (o.username || o.sid) return { dealer: dealerId(o.username || 'seller ' + o.sid), dname: clip(o.sname, 60), dkind: 'dealer', dvia: via || 'dealer order' };
+  if (o.ext) return { dealer: clip(o.ext, 40), dkind: 'reseller', dvia: 'reseller channel' };
+  if (o.flow === '2' || o.flow === '7') return { dealer: o.store ? 'store ' + clip(o.store, 20) : null, dkind: 'retail', dvia: via };
+  return { dkind: 'direct' };
+}
 async function selfactChannel(win) {
   const D = days(); const w0 = new Date(D.now.getTime() - win * 60e3);
   const S = db.source;
@@ -245,12 +294,16 @@ async function selfactChannel(win) {
   ]);
   const a = act.rows[0] || {};
   const apiShort = s => String(s || '').replace(/^\/(bss|semati)\//, '$1 · ').replace(/^.*\//, '');
+  let dealers = new Map(), dealerErr = null;
+  try { dealers = await selfactDealers(feed.rows); } catch (e) { dealerErr = clip(e.message, 160); }   // lookup down → the column says so, the page still answers
   return { key: 'selfact', ...CHANNELS.selfact,
     activations: { h1: N(a.h1), today: N(a.today), yesterday: N(a.yesterday), ySame: N(a.ysame), attemptsToday: N(a.today) + N(a.fail_today), byPlatform: byPl.rows },
     outcomes: { success: N(outc.rows[0].success), business: N(outc.rows[0].business), technical: N(outc.rows[0].technical), total: N(outc.rows[0].total) },
     errorFacing: facingR.rows.map(x => ({ who: x.who, ok: N(x.ok), biz: N(x.biz), tech: N(x.tech), total: N(x.total) })),
     failures: fails.rows.map(x => ({ reason: maskNum(x.reason), n: N(x.n), cls: x.c })),
-    activity: feed.rows.map(x => ({ at: x.at, who: clip(x.platform || '—', 20), where: maskNum(clip(x.msisdn, 20)), tx: apiShort(x.api), code: clip(x.status_code, 24), msg: maskNum(clip(x.msg, 140)), cls: x.state === true ? 'success' : x.c })),
+    activity: feed.rows.map(x => ({ at: x.at, who: clip(x.platform || '—', 20), ...(dealerErr ? { dkind: 'unavailable' } : dealerOf(x, dealers)),
+      tx: apiShort(x.api), code: clip(x.status_code, 24), msg: maskNum(clip(x.msg, 140)), cls: x.state === true ? 'success' : x.c })),
+    dealerLookup: dealerErr ? { ok: false, error: dealerErr } : { ok: true, days: DEALER_DAYS },
     source: { label: 'selfcare activation_logs (prod replica) · activation = create-individual-subscriber succeeded', latest: latest.rows[0] ? latest.rows[0].t : null, live: true } };
 }
 
@@ -303,7 +356,7 @@ async function fixedChannel(ch, win) {
       note: 'orders started in the window: completed · stalled / cancelled / expired · technical = platform-side error events' },
     errorFacing: facingR.rows.map(x => ({ who: clip(x.who, 30), label: clip(x.nm, 40), where: clip(x.region, 24), ok: N(x.ok), biz: N(x.biz), tech: 0, pend: N(x.pend), total: N(x.total), cat: x.cat })),
     failures: fails.rows.map(x => ({ reason: clip(String(x.category || 'unknown').replace(/_/g, ' '), 60) + (x.msg ? ' — ' + maskNum(clip(x.msg, 70)) : ''), n: N(x.n), cls: errCat(x.category, x.code, x.msg) })),
-    activity: feed.rows.map(x => ({ at: x.at, who: clip(x.who, 30), staff: isQr ? null : clip(x.staff, 30), dcode: isQr ? null : clip(x.dcode, 30), dname: isQr ? null : clip(x.dname, 60), where: clip(x.region, 24), tx: wfLabel(x.wf) + (x.step ? ' · ' + x.step : ''), code: x.o,
+    activity: feed.rows.map(x => ({ at: x.at, who: clip(x.who, 30), staff: isQr ? null : clip(x.staff, 64), dcode: isQr ? null : clip(x.dcode, 30), dname: isQr ? null : clip(x.dname, 60), where: clip(x.region, 24), tx: wfLabel(x.wf) + (x.step ? ' · ' + x.step : ''), code: x.o,
       msg: x.cat ? String(x.cat).replace(/_/g, ' ') : (x.o === 'COMPLETED' ? 'Completed' : x.o === 'IN_PROGRESS' ? 'In progress' : ''), cls: OUTCOME_CLS[x.o] || 'business', ord: x.ord ? '…' + String(x.ord).slice(-5) : null })),
     source: { label: isQr ? 'sda_ops order_attempts · e-purchase orders opened from a dealer QR code' : 'sda_ops order_attempts · SDA dealer orders · error_events', latest: latest.rows[0] ? latest.rows[0].t : null, live: true } };
 }
