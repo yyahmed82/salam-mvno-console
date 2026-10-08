@@ -178,7 +178,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     l1_oss:"L1 OSS",l2_oss:"L2 OSS",l3_oss:"L3 OSS",l1_infra:"L1 Infra",l2_infra:"L2 Infra",l3_infra:"L3 Infra",
     l1_data:"L1 Data",l2_data:"L2 Data",l3_data:"L3 Data",
     l1_enterprise:"L1 Enterprise",l2_enterprise:"L2 Enterprise",l3_enterprise:"L3 Enterprise",
-    cio:"CIO / Executive",ops_vp:"VP Operations",call_center:"Call Center"};
+    cio:"CIO / Executive",ops_vp:"VP Operations",report_contributor:"Report contributor",call_center:"Call Center"};
   let ROLE_TEAMS = {};
   let ROLE_RANKS = {};
   let rolesHydrated = false;
@@ -251,7 +251,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   window.opsSession = () => SES;   // { email, role, me:{name,mobile,dashboard,...} }
   /* 2 Sep 2026 view split: home→'dashboard', dms→'dms' (own view), every Explore-menu entry
    * (topology/apigw/docs/journeys/integrations/sub360) → the single 'explore' view. */
-  const NAV_VIEW = { landing:"dashboard", execops:"exec", vpcockpit:"vp", nocwall:"noc", salesops:"salesops", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
+  const NAV_VIEW = { landing:"dashboard", execops:"exec", vpcockpit:"vp", opsreports:"opsreports", nocwall:"noc", salesops:"salesops", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
     explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", dmsdocs:"explore", dmsflows:"explore", tapdocs:"explore", alertjourney:"explore", alerts:"alerts", errors:"errors", refunds:"errors", flowguard:"errors", infra:"noc", analytics:"analytics", sub360:"explore", settings:"settings" };
 
   /* VIEW AS USER — the persistent "you are not yourself" bar. Fixed to the bottom so it can never

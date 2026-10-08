@@ -1935,6 +1935,8 @@
     <button class="navtab" data-view="execops" data-hash="exec"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></span><span>Executive Dashboard<small>both businesses · KPIs · SLOs · alert radar · brief</small></span></button>
     <!-- VP Operations cockpit (8 Oct 2026, vpcockpit.js): the 'vp' view — VP Operations, admins, and the tower leads / change managers named in its settings -->
     <button class="navtab" data-view="vpcockpit" data-hash="vp"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.2 4.8-4.8 2.2 2.2-4.8z"/></svg></span><span>VP Operations<small>cockpit · last updates · CAB changes · tower challenges</small></span></button>
+    <!-- Operations reports (8 Oct 2026, opsreports.js): weekly reports of every team / vendor in their own format, status table, action tracker, ServiceNow ITSM, consolidated report for management -->
+    <button class="navtab" data-view="opsreports" data-hash="opsreports"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 17v-3M12 17v-5M16 17v-2"/></svg></span><span>Operations reports<small>weekly reports · status · actions · ITSM · management report</small></span></button>
     <!-- salam.sa-style structure (5 Sep 2026): two equal businesses, each a dropdown — Mobile (MVNO) and Home
          (Fixed). The buttons inside are ordinary .navtab elements, so role scoping (ops.js), routing (router.js)
          and the tour keep working unchanged; the dropdown is only presentation (navdrop.js). -->
@@ -2201,6 +2203,7 @@
        two separate nav items so there is one "Topology" to look for. -->
   <section id="view-execops" class="view"></section>
   <section id="view-vpcockpit" class="view"></section>
+  <section id="view-opsreports" class="view"></section>
   <section id="view-nocwall" class="view"></section>
   <section id="view-salesops" class="view"></section>
   <section id="view-topology2" class="view">
@@ -2492,6 +2495,7 @@
 <script src="execops.js?v=20260925a"></script>
 <script src="execbrief.js?v=20260921a"></script>
 <script src="vpcockpit.js?v=20261008c"></script>
+<script src="opsreports.js?v=20261008a"></script>
 <script src="cst-remedy.js?v=20260918f"></script>
 <script src="cst-api.js?v=20260918f"></script>
 <script src="arqami-api.js?v=20260918f"></script>

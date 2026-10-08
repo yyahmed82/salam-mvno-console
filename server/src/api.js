@@ -71,6 +71,9 @@ app.use('/api/cst', (req, res, next) => req.method === 'POST' && /\/import$/.tes
 // Semati clearance: a pasted list or a base64 .xlsx/.csv (a 5,000-row workbook ≈ 300 KB) — same per-route large-body trick.
 app.use('/api/semati', (req, res, next) => req.method === 'POST' && /\/(parse|jobs)$/.test(req.path)
   ? express.json({ limit: process.env.SEMATI_BODY_LIMIT || '8mb' })(req, res, next) : next());
+// Operations reports (8 Oct 2026): a weekly report in the team's own format, base64 (a 40-slide deck with screenshots ≈ 20 MB) — same per-route trick.
+app.use('/api/opsreports', (req, res, next) => req.method === 'POST' && /^\/(upload|drop\/[^/]+)$/.test(req.path)
+  ? express.json({ limit: process.env.OPSR_BODY_LIMIT || '42mb' })(req, res, next) : next());
 app.use(express.json({ limit: '1mb' }));
 // General API limiter: keyed by CONSOLE USER (not IP) because the console sits behind a
 // shared corporate VPN — a per-IP limit would let one office collectively throttle itself.
@@ -119,6 +122,7 @@ async function userRow(email) {
   return row;
 }
 const forgetUserRows = () => USER_ROWS.clear();
+const opsReports = require('./opsReports');   // Operations reports (8 Oct 2026) — membership check in the session middleware below
 const cockpit = require('./opsCockpit');   // VP Operations cockpit — membership check in the session middleware below, routes mounted with the exec pages
 app.use(async (req, _res, next) => {
   // identity comes from the session token, never from a client-supplied header.
@@ -201,6 +205,8 @@ app.use(async (req, _res, next) => {
    * on top of their own role, so a BSS lead keeps L2 BSS and can still post his tower's challenges. Synchronous, from a
    * 60 s cache in opsCockpit.js; while viewing as someone, membership follows THAT account like the rest of the session. */
   try { if (!req.views.includes('vp') && cockpit.isMember(req.viewAs ? req.viewAs.email : email)) req.views = [...req.views, 'vp']; } catch (e) {}
+  /* Operations reports (8 Oct 2026): ITSM editors, management recipients, team owners and uploaders get the 'opsreports' view the same way */
+  try { if (!req.views.includes('opsreports') && opsReports.isMember(req.viewAs ? req.viewAs.email : email)) req.views = [...req.views, 'opsreports']; } catch (e) {}
   next();
 });
 /* VIEW-AS IS READ-ONLY. A super admin looking through someone else's account may read whatever that
@@ -222,7 +228,7 @@ app.use('/api/', (req, res, next) => {
 // (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
 // through the stripped views (every Fixed route is requireView-gated). Kept as an allow-list so a new
 // Mobile endpoint is closed for the Fixed team by default.
-const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents|semati|salesops|cockpit)/;   // salesops: the Sales Operations wall (its own view) · alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
+const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents|semati|salesops|cockpit|opsreports)/;   // salesops: the Sales Operations wall (its own view) · alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
 app.use('/api/', (req, res, next) => {
   if (req.business === 'fixed' && !FIXED_TEAM_ALLOW.test(req.originalUrl.split('?')[0]))
     return res.status(403).json({ error: 'Not available for the Fixed team — this endpoint belongs to the Mobile side.', business: 'fixed' });
@@ -236,6 +242,7 @@ app.use('/api/', (req, res, next) => {
   if (req.sessionEmail) return next();
   const full = '/api' + (req.path === '/' ? '' : req.path);
   if (OPEN_PATHS.has(full) || OPEN_PATHS.has(req.path)) return next();
+  if (/^\/api\/opsreports\/drop\/[A-Za-z0-9_-]{24,64}$/.test(full)) return next();   // vendor drop link: token-gated, rate-limited, one team (opsReports.js)
   return res.status(401).json({ error: 'Not signed in.' });
 });
 app.get('/api/cache-stats', (req, res) => res.json({ ...respCache.stats(),
@@ -3508,7 +3515,8 @@ require('./cst').mount(app, { requireSuper, audit });                   // CST s
   require('./execUnified').mount(app, execDeps);
   require('./execRadar').mount(app, execDeps);     // the case file behind one radar contact
   require('./execBrief').mount(app, { ...execDeps, execDeps, mvnoExec: require('./mvnoExec'), fixedExec: require('./fixedExec') });   // CEO / CIO brief: /api/exec/brief (outages, vendor SLAs, RCAs)
-  try { cockpit.mount(app, { requireView, audit, execDeps }); } catch (e) { console.error('[cockpit] mount failed:', e.message); } }   // VP Operations cockpit: /api/cockpit/* (8 Oct 2026)
+  try { cockpit.mount(app, { requireView, audit, execDeps }); } catch (e) { console.error('[cockpit] mount failed:', e.message); }
+  try { opsReports.mount(app, { requireView, audit }); } catch (e) { console.error('[opsreports] mount failed:', e.message); } }   // Operations reports: /api/opsreports/* (8 Oct 2026)   // VP Operations cockpit: /api/cockpit/* (8 Oct 2026)
   /* Fixed app-log collector (combined.log → fixed_app_events): status + freshness for the Fixed pages / agents */
   app.get('/api/fixed/applog/status', requireView('fixed'), async (req, res) => {
     try { const col = require('./fixedAppLogCollector'); res.json({ ...col.status(), db: await col.ping() }); }
@@ -7223,6 +7231,7 @@ app.listen(PORT, async () => {
   try { demo.startWarmup(); } catch (e) { /* cache warm-up is best-effort */ }
   try { require('./lookupCache').startWarm(); } catch (e) { console.error('lookup cache:', e.message); }
   try { require('./prodHealth').start(); } catch (e) { console.error('prod-safety healthcheck:', e.message); }
-  try { cockpit.start(); } catch (e) { console.error('VP cockpit:', e.message); }   // tables + first content + the 08:00 KSA morning brief
+  try { cockpit.start(); } catch (e) { console.error('VP cockpit:', e.message); }
+  try { opsReports.start(); } catch (e) { console.error('Operations reports:', e.message); }   // tables + first teams + reminder / late / consolidated mails   // tables + first content + the 08:00 KSA morning brief
   try { respCache.startKeepWarm(); } catch (e) { /* keep-warm is best-effort */ }
 });

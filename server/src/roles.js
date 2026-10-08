@@ -27,9 +27,9 @@ const FIXED_TAB_VIEW = { overview:'fixed', epurchase:'fixed_epurchase', salamhom
  * They survive both business scopes (scopeViews) because none of them belongs to Mobile or Fixed alone.
  * The remaining gear entries (Notifications, Navigation & tabs, Demo, Yusr, Agents) stay under 'settings':
  * they are settings panels, not destinations of their own. */
-const CROSS_VIEWS = ['exec','vp','noc','salesops','governance','cst','audit','tickets'];   // vp (8 Oct 2026): the VP Operations cockpit
+const CROSS_VIEWS = ['exec','vp','opsreports','noc','salesops','governance','cst','audit','tickets'];   // vp (8 Oct 2026): the VP Operations cockpit
 const ALL_VIEWS = ['dashboard','monitoring','dms','alerts','errors','analytics','workbench', ...FIXED_VIEWS,
-  'exec','vp','noc','salesops','governance','cst','audit','tickets', 'explore','settings','users'];   // salesops (5 Oct 2026): the Sales Operations wall — four sales channels, full screen   // grouped: mobile · fixed · cross · shared
+  'exec','vp','opsreports','noc','salesops','governance','cst','audit','tickets', 'explore','settings','users'];   // salesops (5 Oct 2026): the Sales Operations wall — four sales channels, full screen   // grouped: mobile · fixed · cross · shared
 /* ---- Business scope (6 Sep 2026) ----------------------------------------------------------------
  * Every console user belongs to a BUSINESS: 'mobile' (MVNO team), 'fixed' (Fixed team) or 'both'. It is a
  * second axis next to ROLES: the role says WHAT a person may do (views + caps), the business says on WHICH
@@ -64,7 +64,7 @@ const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS',
   errors:'Troubleshoot', analytics:'Reports', explore:'Explore & Customer 360', settings:'Settings', users:'User management',
   fixed:'Fixed · Overview', fixed_epurchase:'Fixed · Epurchase', fixed_salamhome:'Fixed · Salam Home app', fixed_maps:'Fixed · SDA map & QR codes',
   fixed_reports:'Fixed · Reports', fixed_errors:'Fixed · Troubleshoot', fixed_alerts:'Fixed · Alerts', fixed_explore:'Fixed · Playbook & Diagrams',
-  exec:'Executive Dashboard', vp:'VP Operations cockpit', noc:'NOC wall', salesops:'Sales Operations wall', governance:'IT Governance (SLA · vendors · SLO)', cst:'CST (Arqami · escalations)',
+  exec:'Executive Dashboard', vp:'VP Operations cockpit', opsreports:'Operations reports (weekly · ITSM)', noc:'NOC wall', salesops:'Sales Operations wall', governance:'IT Governance (SLA · vendors · SLO)', cst:'CST (Arqami · escalations)',
   audit:'Audit log', tickets:'Tickets & feedback' };
 /* which nav family each page belongs to — the matrix UI groups by this instead of guessing from the key */
 const VIEW_GROUP = Object.fromEntries(ALL_VIEWS.map(v => [v,
@@ -95,7 +95,7 @@ const ROLES = {
   },
   admin: {
     label: 'Admin', team: 'Digital Ops', rank: 2,
-    views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','exec','vp','noc','salesops','explore','tickets','settings'],
+    views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','exec','vp','opsreports','noc','salesops','explore','tickets','settings'],
     /* unmaskPII granted to admin on 21 Aug 2026 at the owner's request — per-request ACT, never a
      * mode: caller must pass unmask=1, value fetched live, every reveal audited as pii.unmask. */
     caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false, postNotices:true },
@@ -128,6 +128,15 @@ const ROLES = {
     views: ['salesops'],
     caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:false, ackErrors:false, useYusr:false, customizeDashboard:false, sematiClear:false, postNotices:false },
     note: 'Shared sign-in for the Sales Operations TV: the four channel pages (DMS · Self-activation · QR code · SDA), full screen, read-only, PII masked. Nothing else.'
+  },
+  /* REPORT CONTRIBUTOR (8 Oct 2026): a team SPOC or vendor lead who only sends the weekly report. One page, Operations
+   * reports — upload in the team's own format, complete, submit, follow the team's actions. What each one may edit comes
+   * from the team settings (owners / uploaders), not from the role. No PII, no other page. */
+  report_contributor: {
+    label: 'Report contributor', team: 'Operations reports', rank: 7, home: 'opsreports',
+    views: ['opsreports'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:false, ackErrors:false, useYusr:false, customizeDashboard:false, sematiClear:false, postNotices:false },
+    note: 'Sends the weekly report of the teams that name them (Operations reports › Teams): upload in their own format, complete, submit, update their actions. Nothing else.'
   },
   errors_manager: {
     label: 'Errors Manager', team: 'OSS Ops', rank: 3,
@@ -271,7 +280,7 @@ const ROLES = {
    * the only way to hand someone the executive dashboard was to hand them Home and everything keyed to it. */
   cio: {
     label: 'CIO / Executive', team: 'Executive', rank: 2,
-    views: ['exec', 'noc'],
+    views: ['exec', 'opsreports', 'noc'],
     caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Executive view — the Executive Dashboard, the NOC walls and Yusr AI, with export. No operate pages, no Customer 360, no PII.'
   },
@@ -283,7 +292,7 @@ const ROLES = {
    * the router sends him at sign-in, instead of the Home page every other role starts on. */
   ops_vp: {
     label: 'VP Operations', team: 'Executive', rank: 2, home: 'vp',
-    views: ['vp', 'dashboard', 'exec', 'noc', 'salesops', 'tickets', ...(FIXED_ENABLED ? ['fixed'] : [])],
+    views: ['vp', 'opsreports', 'dashboard', 'exec', 'noc', 'salesops', 'tickets', ...(FIXED_ENABLED ? ['fixed'] : [])],
     caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false, postNotices:false },
     note: 'VP Operations — lands on the VP cockpit (KPIs, last updates, CAB changes, tower challenges, 08:00 morning brief). Read-only Executive Dashboard, NOC walls, Sales Ops wall, tickets and the Mobile / Fixed operations dashboards. No PII, no edits.'
   },
