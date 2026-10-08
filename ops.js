@@ -178,7 +178,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     l1_oss:"L1 OSS",l2_oss:"L2 OSS",l3_oss:"L3 OSS",l1_infra:"L1 Infra",l2_infra:"L2 Infra",l3_infra:"L3 Infra",
     l1_data:"L1 Data",l2_data:"L2 Data",l3_data:"L3 Data",
     l1_enterprise:"L1 Enterprise",l2_enterprise:"L2 Enterprise",l3_enterprise:"L3 Enterprise",
-    cio:"CIO / Executive",call_center:"Call Center"};
+    cio:"CIO / Executive",ops_vp:"VP Operations",call_center:"Call Center"};
   let ROLE_TEAMS = {};
   let ROLE_RANKS = {};
   let rolesHydrated = false;
@@ -251,7 +251,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   window.opsSession = () => SES;   // { email, role, me:{name,mobile,dashboard,...} }
   /* 2 Sep 2026 view split: home→'dashboard', dms→'dms' (own view), every Explore-menu entry
    * (topology/apigw/docs/journeys/integrations/sub360) → the single 'explore' view. */
-  const NAV_VIEW = { landing:"dashboard", execops:"exec", nocwall:"noc", salesops:"salesops", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
+  const NAV_VIEW = { landing:"dashboard", execops:"exec", vpcockpit:"vp", nocwall:"noc", salesops:"salesops", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
     explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", dmsdocs:"explore", dmsflows:"explore", tapdocs:"explore", alertjourney:"explore", alerts:"alerts", errors:"errors", refunds:"errors", flowguard:"errors", infra:"noc", analytics:"analytics", sub360:"explore", settings:"settings" };
 
   /* VIEW AS USER — the persistent "you are not yourself" bar. Fixed to the bottom so it can never
@@ -317,7 +317,10 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const FTV = (SES.me&&SES.me.fixedTabViews)||{};
     document.querySelectorAll(".navtab").forEach(b=>{
       // Fixed sub-pages answer to their own view (matrix column); the hub itself to 'fixed'
-      const v = b.dataset.fxtab ? (FTV[b.dataset.fxtab]||"fixed") : NAV_VIEW[b.dataset.view];
+      let v = b.dataset.fxtab ? (FTV[b.dataset.fxtab]||"fixed") : NAV_VIEW[b.dataset.view];
+      /* Infrastructure ▾ › infra alerts open the Alerts view (#infra-alerts / #fixed-infra-alerts): a role holding the NOC walls
+       * but not Alerts (CIO, VP Operations) saw the entries and hit ACCESS DENIED — the entry now follows the page it opens */
+      if(b.dataset.iftab==="alerts:mvno") v="alerts"; else if(b.dataset.iftab==="alerts:fixed") v="fixed_alerts";
       // Executive / Operations: the Home entries need either business, the Mobile entries need the Dashboard view
       const ok = b.dataset.view==="execops" ? (views.includes("dashboard")||views.includes("fixed")) : views.includes(v);
       b.classList.toggle("hidden", !ok);   // Dashboard too — a real gated view since 2 Sep 2026
@@ -349,6 +352,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     show("missionMenuItem", isSuper || has("alerts") || has("fixed_alerts") || has("monitoring"));   // AI agents mission control (24 Sep 2026)
     show("teamsMenuItem", !!isSuper);   // responder teams (24 Sep 2026)
     show("refundDesksMenuItem", !!isSuper);   // refund desks (26 Sep 2026) — Teams management group
+    show("vpCfgMenuItem", has("vp") && !!((SES.me&&SES.me.caps)||{}).adminTools);   // VP cockpit people & morning brief (8 Oct 2026)
     // if current active tab is hidden, jump to first visible
     const active = document.querySelector(".navtab.active");
     if(active && active.classList.contains("hidden")){

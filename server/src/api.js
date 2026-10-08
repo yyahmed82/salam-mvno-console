@@ -119,6 +119,7 @@ async function userRow(email) {
   return row;
 }
 const forgetUserRows = () => USER_ROWS.clear();
+const cockpit = require('./opsCockpit');   // VP Operations cockpit — membership check in the session middleware below, routes mounted with the exec pages
 app.use(async (req, _res, next) => {
   // identity comes from the session token, never from a client-supplied header.
   // EXCEPTION — GET /api/stream only: EventSource cannot send headers at all, so the live SSE
@@ -196,6 +197,10 @@ app.use(async (req, _res, next) => {
   req.roleName = eff.primary;
   req.caps = eff.caps;
   req.views = roles.scopeViews(eff.views, business);   // role ∩ business — every requireView gate follows
+  /* VP cockpit (8 Oct 2026): the people named in its settings — tower leads, change managers, editors — get the 'vp' view
+   * on top of their own role, so a BSS lead keeps L2 BSS and can still post his tower's challenges. Synchronous, from a
+   * 60 s cache in opsCockpit.js; while viewing as someone, membership follows THAT account like the rest of the session. */
+  try { if (!req.views.includes('vp') && cockpit.isMember(req.viewAs ? req.viewAs.email : email)) req.views = [...req.views, 'vp']; } catch (e) {}
   next();
 });
 /* VIEW-AS IS READ-ONLY. A super admin looking through someone else's account may read whatever that
@@ -217,7 +222,7 @@ app.use('/api/', (req, res, next) => {
 // (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
 // through the stripped views (every Fixed route is requireView-gated). Kept as an allow-list so a new
 // Mobile endpoint is closed for the Fixed team by default.
-const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents|semati|salesops)/;   // salesops: the Sales Operations wall (its own view) · alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
+const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents|semati|salesops|cockpit)/;   // salesops: the Sales Operations wall (its own view) · alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
 app.use('/api/', (req, res, next) => {
   if (req.business === 'fixed' && !FIXED_TEAM_ALLOW.test(req.originalUrl.split('?')[0]))
     return res.status(403).json({ error: 'Not available for the Fixed team — this endpoint belongs to the Mobile side.', business: 'fixed' });
@@ -498,6 +503,7 @@ app.get('/api/me', async (req, res) => {
     readOnly: !!req.viewAs,
     role: req.roleName, roles: req.roleNames, realRole: req.realRole, realRoles: req.realRoles,
     label: roles.role(req.roleName).label, team: roles.role(req.roleName).team, note: roles.role(req.roleName).note,
+    home: (rolePerms.current()[req.roleName] || {}).home || null,   // a role's own landing page (VP Operations → #vp)
     // `root` = "this session passes requireRoot" — a FLAG, not a role (never rendered in role UIs).
     // While ROOT_ADMINS is unset it reports true so the client falls back to today's role-based
     // visibility (matches the server-side failsafe in requireRoot).
@@ -3501,7 +3507,8 @@ require('./cst').mount(app, { requireSuper, audit });                   // CST s
   require('./mvnoExec').mount(app, execDeps);
   require('./execUnified').mount(app, execDeps);
   require('./execRadar').mount(app, execDeps);     // the case file behind one radar contact
-  require('./execBrief').mount(app, { ...execDeps, execDeps, mvnoExec: require('./mvnoExec'), fixedExec: require('./fixedExec') }); }   // CEO / CIO brief: /api/exec/brief (outages, vendor SLAs, RCAs)
+  require('./execBrief').mount(app, { ...execDeps, execDeps, mvnoExec: require('./mvnoExec'), fixedExec: require('./fixedExec') });   // CEO / CIO brief: /api/exec/brief (outages, vendor SLAs, RCAs)
+  try { cockpit.mount(app, { requireView, audit, execDeps }); } catch (e) { console.error('[cockpit] mount failed:', e.message); } }   // VP Operations cockpit: /api/cockpit/* (8 Oct 2026)
   /* Fixed app-log collector (combined.log → fixed_app_events): status + freshness for the Fixed pages / agents */
   app.get('/api/fixed/applog/status', requireView('fixed'), async (req, res) => {
     try { const col = require('./fixedAppLogCollector'); res.json({ ...col.status(), db: await col.ping() }); }
@@ -4010,19 +4017,20 @@ app.get('/api/tickets/mine', async (req, res) => {      // caller's own tickets 
   try { res.json(await tickets.listMine(req.actor)); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.get('/api/tickets', requireCap('adminTools'), async (req, res) => {   // admin board
+const ticketsReader = req => !!(req.caps && (req.caps.adminTools || req.caps.manageUsers)) || (req.views || []).includes('tickets');   // the board is readable with the 'tickets' view (VP Operations); edits stay adminTools
+app.get('/api/tickets', (req, res, next) => ticketsReader(req) ? next() : res.status(403).json({ error: `role ${req.roleName} lacks the tickets board` }), async (req, res) => {   // admin board
   try { res.json(await tickets.listBoard(req.query || {})); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/tickets/:id/file/:fileId', async (req, res) => {   // stream a screenshot (own ticket or admin)
   try {
-    const isAdmin = !!(req.caps && req.caps.manageUsers);
+    const isAdmin = !!(req.caps && req.caps.manageUsers) || ticketsReader(req);
     await tickets.streamFile(req, res, req.params.id, req.params.fileId, req.actor, isAdmin);
   } catch (e) { if (!res.headersSent) res.status(500).json({ error: e.message }); }
 });
 app.get('/api/tickets/:ref', async (req, res) => {      // detail — own ticket, or any for admins
   try {
-    const isAdmin = !!(req.caps && req.caps.manageUsers);
+    const isAdmin = !!(req.caps && req.caps.manageUsers) || ticketsReader(req);   // read only — PATCH and comments keep their own gates
     const t = await tickets.getByRef(req.params.ref, req.actor, isAdmin);
     if (!t) return res.status(404).json({ error: 'not found' });
     res.json(t);
@@ -7215,5 +7223,6 @@ app.listen(PORT, async () => {
   try { demo.startWarmup(); } catch (e) { /* cache warm-up is best-effort */ }
   try { require('./lookupCache').startWarm(); } catch (e) { console.error('lookup cache:', e.message); }
   try { require('./prodHealth').start(); } catch (e) { console.error('prod-safety healthcheck:', e.message); }
+  try { cockpit.start(); } catch (e) { console.error('VP cockpit:', e.message); }   // tables + first content + the 08:00 KSA morning brief
   try { respCache.startKeepWarm(); } catch (e) { /* keep-warm is best-effort */ }
 });

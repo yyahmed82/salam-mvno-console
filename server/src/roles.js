@@ -27,9 +27,9 @@ const FIXED_TAB_VIEW = { overview:'fixed', epurchase:'fixed_epurchase', salamhom
  * They survive both business scopes (scopeViews) because none of them belongs to Mobile or Fixed alone.
  * The remaining gear entries (Notifications, Navigation & tabs, Demo, Yusr, Agents) stay under 'settings':
  * they are settings panels, not destinations of their own. */
-const CROSS_VIEWS = ['exec','noc','salesops','governance','cst','audit','tickets'];
+const CROSS_VIEWS = ['exec','vp','noc','salesops','governance','cst','audit','tickets'];   // vp (8 Oct 2026): the VP Operations cockpit
 const ALL_VIEWS = ['dashboard','monitoring','dms','alerts','errors','analytics','workbench', ...FIXED_VIEWS,
-  'exec','noc','salesops','governance','cst','audit','tickets', 'explore','settings','users'];   // salesops (5 Oct 2026): the Sales Operations wall — four sales channels, full screen   // grouped: mobile · fixed · cross · shared
+  'exec','vp','noc','salesops','governance','cst','audit','tickets', 'explore','settings','users'];   // salesops (5 Oct 2026): the Sales Operations wall — four sales channels, full screen   // grouped: mobile · fixed · cross · shared
 /* ---- Business scope (6 Sep 2026) ----------------------------------------------------------------
  * Every console user belongs to a BUSINESS: 'mobile' (MVNO team), 'fixed' (Fixed team) or 'both'. It is a
  * second axis next to ROLES: the role says WHAT a person may do (views + caps), the business says on WHICH
@@ -64,7 +64,7 @@ const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS',
   errors:'Troubleshoot', analytics:'Reports', explore:'Explore & Customer 360', settings:'Settings', users:'User management',
   fixed:'Fixed · Overview', fixed_epurchase:'Fixed · Epurchase', fixed_salamhome:'Fixed · Salam Home app', fixed_maps:'Fixed · SDA map & QR codes',
   fixed_reports:'Fixed · Reports', fixed_errors:'Fixed · Troubleshoot', fixed_alerts:'Fixed · Alerts', fixed_explore:'Fixed · Playbook & Diagrams',
-  exec:'Executive Dashboard', noc:'NOC wall', salesops:'Sales Operations wall', governance:'IT Governance (SLA · vendors · SLO)', cst:'CST (Arqami · escalations)',
+  exec:'Executive Dashboard', vp:'VP Operations cockpit', noc:'NOC wall', salesops:'Sales Operations wall', governance:'IT Governance (SLA · vendors · SLO)', cst:'CST (Arqami · escalations)',
   audit:'Audit log', tickets:'Tickets & feedback' };
 /* which nav family each page belongs to — the matrix UI groups by this instead of guessing from the key */
 const VIEW_GROUP = Object.fromEntries(ALL_VIEWS.map(v => [v,
@@ -95,7 +95,7 @@ const ROLES = {
   },
   admin: {
     label: 'Admin', team: 'Digital Ops', rank: 2,
-    views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','exec','noc','salesops','explore','tickets','settings'],
+    views: ['dashboard','monitoring','dms', ...FIXED_VIEWS, 'workbench','alerts','errors','analytics','exec','vp','noc','salesops','explore','tickets','settings'],
     /* unmaskPII granted to admin on 21 Aug 2026 at the owner's request — per-request ACT, never a
      * mode: caller must pass unmask=1, value fetched live, every reveal audited as pii.unmask. */
     caps: { editRules:true, manageSync:true, manageUsers:false, adminTools:true, unmaskPII:true, export:true, ackErrors:true, useYusr:true, customizeDashboard:true, sematiClear:false, postNotices:true },
@@ -275,6 +275,18 @@ const ROLES = {
     caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false },
     note: 'Executive view — the Executive Dashboard, the NOC walls and Yusr AI, with export. No operate pages, no Customer 360, no PII.'
   },
+  /* VP OPERATIONS (8 Oct 2026) — the executive who runs operations across both businesses. Lands on his own page, the VP
+   * cockpit (#vp): the CIO's KPIs, last updates from every tower, the week of CAB changes and each tower's daily challenges.
+   * Beside it, READ-ONLY: the Executive Dashboard, the NOC walls (and through them Infrastructure), the Sales Operations
+   * wall, the tickets board and the two operations dashboards (Home / Mobile and Fixed). No Customer 360 (that view carries
+   * PII), no Troubleshoot, no edit capability at all — he comments on a challenge, he does not edit one. `home` is where
+   * the router sends him at sign-in, instead of the Home page every other role starts on. */
+  ops_vp: {
+    label: 'VP Operations', team: 'Executive', rank: 2, home: 'vp',
+    views: ['vp', 'dashboard', 'exec', 'noc', 'salesops', 'tickets', ...(FIXED_ENABLED ? ['fixed'] : [])],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:false, sematiClear:false, postNotices:false },
+    note: 'VP Operations — lands on the VP cockpit (KPIs, last updates, CAB changes, tower challenges, 08:00 morning brief). Read-only Executive Dashboard, NOC walls, Sales Ops wall, tickets and the Mobile / Fixed operations dashboards. No PII, no edits.'
+  },
   call_center: {
     label: 'Call Center', team: 'Call Center', rank: 6,
     views: ['dashboard','explore'],
@@ -300,7 +312,7 @@ function effective(names, map) {
   const caps = {};
   for (const n of list) for (const [c, v] of Object.entries(M[n].caps)) caps[c] = caps[c] || v;
   const primary = list.slice().sort((a, b) => M[a].rank - M[b].rank)[0]; // best (lowest rank #) wins
-  return { roles: list, primary, label: M[primary].label, team: M[primary].team, note: M[primary].note, views, caps };
+  return { roles: list, primary, label: M[primary].label, team: M[primary].team, note: M[primary].note, home: M[primary].home || null, views, caps };
 }
 
 /* Apply super-admin-editable overrides on top of the code defaults, returning a NEW role map.

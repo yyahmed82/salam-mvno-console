@@ -403,4 +403,4 @@ function mount(app, { requireView, requireCap, audit }) {
   console.log('[salesops] Sales Operations wall mounted — /api/salesops/{overview,channel/:ch,notices}');
 }
 
-module.exports = { mount, CHANNELS, ORDER, channelOfAlert };
+module.exports = { mount, CHANNELS, ORDER, channelOfAlert, channel };   // channel: read by the VP cockpit's morning brief (activations yesterday per channel)

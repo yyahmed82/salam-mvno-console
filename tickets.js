@@ -240,8 +240,12 @@
     if((t.files||[]).length){
       h+=`<div style="${lbl}">SCREENSHOTS (${t.files.length})</div><div id="tdImgs" style="display:flex;gap:8px;flex-wrap:wrap"></div>`;
     }
-    // admin controls
-    h+=`<div style="${lbl}">UPDATE</div>
+    // admin controls — a reader of the board (the 'tickets' view without adminTools, e.g. VP Operations) sees the ticket, not the levers
+    const canEdit=can("adminTools");
+    const me=((window.opsSession&&window.opsSession())||{}).me||{};
+    const canComment=canEdit||(me.email&&t.created_by&&String(me.email).toLowerCase()===String(t.created_by).toLowerCase())||can("manageUsers");
+    if(!canEdit) h+=`<div style="${lbl}">STATUS</div><div class="sub">${statusPill(t.status)} · priority <b>${esc(t.priority||"—")}</b>${t.resolution?`<div style="white-space:pre-wrap;margin-top:8px;font-size:13px;line-height:1.55;background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:10px 12px">${esc(t.resolution)}</div>`:""}</div>`;
+    if(canEdit) h+=`<div style="${lbl}">UPDATE</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <label style="font-size:11.5px;color:var(--muted)">Status<br><select id="tdStatus" style="${sel};margin-top:3px">${STATUSES.map(s=>`<option value="${s}"${t.status===s?" selected":""}>${STATUS_LABEL[s]}</option>`).join("")}</select></label>
         <label style="font-size:11.5px;color:var(--muted)">Priority<br><select id="tdPriority" style="${sel};margin-top:3px">${PRIORITIES.map(p=>`<option value="${p}"${t.priority===p?" selected":""}>${p}</option>`).join("")}</select></label>
@@ -252,12 +256,13 @@
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
         <button id="tdSave" class="navtab" style="background:var(--green);color:#fff;border-color:var(--green)">Save changes</button>
         <span id="tdMsg" class="sub"></span></div>`;
+    if(!canEdit) h+=`<span id="tdMsg" class="sub"></span>`;
     // comments
     h+=`<div style="${lbl}">COMMENTS</div><div id="tdComments">`;
     h+=(t.comments||[]).length?t.comments.map(c=>`<div style="border-top:1px solid var(--line);padding:8px 0;font-size:12.5px"><b>${esc(c.author||"—")}</b> <span class="sub">${esc(ksaT(c.at))}</span><div style="white-space:pre-wrap;margin-top:2px">${esc(c.body)}</div></div>`).join(""):`<div class="sub">No comments yet.</div>`;
-    h+=`</div><div style="display:flex;gap:8px;margin-top:8px">
+    h+=`</div>`+(canComment?`<div style="display:flex;gap:8px;margin-top:8px">
         <input id="tdComment" type="text" placeholder="Add a comment…" style="${sel};flex:1">
-        <button id="tdAddComment" class="navtab">Add</button></div>
+        <button id="tdAddComment" class="navtab">Add</button></div>`:"")+`
       </div>`;
     body.innerHTML=h;
     body.querySelector("#tdX").onclick=closeDrawer;
@@ -271,7 +276,7 @@
       });
     }
     const segCtl=body.querySelector("#tdSegment"); if(segCtl) segCtl.querySelectorAll(".bizchip").forEach(b=>b.onclick=()=>{ segCtl.querySelectorAll(".bizchip").forEach(x=>x.classList.remove("on")); b.classList.add("on"); segCtl.dataset.value=b.dataset.seg; });
-    body.querySelector("#tdSave").onclick=async()=>{
+    if(canEdit) body.querySelector("#tdSave").onclick=async()=>{
       const msg=body.querySelector("#tdMsg"); msg.textContent="Saving…";
       try{
         const out=await api("/api/tickets/"+encodeURIComponent(t.ref),{method:"PATCH",body:JSON.stringify({
@@ -281,7 +286,7 @@
         renderBoard();
       }catch(e){ msg.textContent="Error: "+e.message; }
     };
-    const ci=body.querySelector("#tdComment");
+    const ci=body.querySelector("#tdComment"); if(!ci) return;
     const addC=async()=>{ const v=ci.value.trim(); if(!v) return; try{ await api("/api/tickets/"+encodeURIComponent(t.ref)+"/comments",{method:"POST",body:JSON.stringify({body:v})}); openDrawer(t.ref); }catch(e){ body.querySelector("#tdMsg").textContent="Error: "+e.message; } };
     body.querySelector("#tdAddComment").onclick=addC;
     ci.onkeydown=e=>{ if(e.key==="Enter") addC(); };
