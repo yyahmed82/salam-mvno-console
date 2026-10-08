@@ -512,10 +512,14 @@
   }
   function renderChallenge(dr, r) {
     const c = r.challenge, m = me();
-    const notes = (r.notes || []).map(x => `<li class="vp-note vp-note-${esc(x.kind)}"><div class="vp-noteh">${x.kind === 'comment' ? '<span class="vp-vpq">VP</span>' : ''}${x.tag ? `<span class="vp-ntag">${esc(x.tag)}</span>` : x.kind === 'status' ? `<span class="vp-notes-st">${svg(IC.flag, 11)} status</span>` : ''}<b>${esc(nameOnly(x.by, x.byName))}</b><span>${esc(KT.md(x.at))}</span></div><div class="vp-noteb">${esc(x.body)}</div></li>`).join('');
+    /* a challenge can carry years of history (the eSIM orders since 2022): an older date shows its year */
+    const yr = v => String(KT.d(v)).slice(0, 4), thisYr = yr(new Date());
+    const when = v => yr(v) === thisYr ? KT.md(v) : KT.dmy(v);
+    const notes = (r.notes || []).map(x => `<li class="vp-note vp-note-${esc(x.kind)}"><div class="vp-noteh">${x.kind === 'comment' ? '<span class="vp-vpq">VP</span>' : ''}${x.tag ? `<span class="vp-ntag">${esc(x.tag)}</span>` : x.kind === 'status' ? `<span class="vp-notes-st">${svg(IC.flag, 11)} status</span>` : ''}<b>${esc(nameOnly(x.by, x.byName))}</b><span>${esc(when(x.at))}</span></div><div class="vp-noteb">${esc(x.body)}</div></li>`).join('');
     /* the journey so far: every note that carries a milestone label, oldest first — date and status at a glance */
     const miles = (r.notes || []).filter(x => x.tag).slice().reverse();
-    const journey = miles.length > 1 ? `<div class="vp-drsec"><div class="vp-drk">The journey so far</div><ol class="vp-jny">${miles.map((x, i) => `<li class="${i === miles.length - 1 ? 'now' : ''}"><span class="vp-jd">${esc(KT.md(x.at).slice(0, 6))}</span><span class="vp-jt">${esc(x.tag)}</span></li>`).join('')}</ol></div>` : '';
+    const showYr = miles.some(x => yr(x.at) !== thisYr);   // any milestone from another year → every date carries its year
+    const journey = miles.length > 1 ? `<div class="vp-drsec"><div class="vp-drk">The journey so far</div><ol class="vp-jny">${miles.map((x, i) => `<li class="${i === miles.length - 1 ? 'now' : ''}"><span class="vp-jd">${esc(KT.md(x.at).slice(0, 6))}${showYr ? `<small>${esc(yr(x.at))}</small>` : ''}</span><span class="vp-jt">${esc(x.tag)}</span></li>`).join('')}</ol></div>` : '';
     const ph = m.isVp ? 'Ask a question or leave a note for the team…' : r.canEdit ? 'Today’s update — what moved, what is next…' : 'Add a note…';
     dr.innerHTML = drHead(`${twChip(c.tower)}${segChip(c.segment)}${sevPill(c.severity)}${chStatus(c.status)}`) + `<div class="vp-drb">
       <h3 class="vp-drt">${esc(c.title)}</h3>
@@ -1086,7 +1090,7 @@ b.c{background:var(--tint-red);color:var(--tint-red-fg)}b.h{background:var(--tin
 .vp-drsec{margin-top:18px}.vp-drk{font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--green);margin:0 0 9px}
 .vp-impbox,.vp-resbox,.vp-nextbox,.vp-warnbox{padding:11px 13px;border-radius:12px;font-size:13px;line-height:1.55;margin:10px 0}
 .vp-impbox{background:var(--tint-amber);color:var(--tint-amber-fg)}.vp-impbox svg,.vp-resbox svg{vertical-align:-2px}
-.vp-resbox{background:var(--ok-bg);color:var(--ok-fg)}.vp-nextbox{background:var(--card);border:1px solid var(--green-line);border-left:4px solid var(--green);color:var(--ink)}
+.vp-resbox{background:var(--ok-bg);color:var(--ok-fg)}.vp-nextbox{background:var(--card);border:1px solid var(--green-line);border-left:4px solid var(--green);color:var(--ink);white-space:pre-line}
 .vp-warnbox{background:var(--tint-warn-bg);color:var(--tint-warn-fg);border:1px solid var(--tint-warn-line)}
 .vp-prose{font-size:13.5px;line-height:1.6;white-space:pre-wrap}
 .vp-cks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
@@ -1111,7 +1115,8 @@ b.c{background:var(--tint-red);color:var(--tint-red-fg)}b.h{background:var(--tin
 .vp-jny li:first-child::before{top:50%}.vp-jny li:last-child::before{bottom:50%}
 .vp-jny li::after{content:"";position:absolute;left:68px;top:50%;width:12px;height:12px;margin-top:-6px;border-radius:50%;background:var(--card);border:3px solid var(--green)}
 .vp-jny li.now::after{background:var(--amber);border-color:var(--amber);box-shadow:0 0 0 4px color-mix(in srgb,var(--amber) 25%,transparent)}
-.vp-jd{font-size:12px;font-weight:800;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.vp-jd{font-size:12px;font-weight:800;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;line-height:1.2}
+.vp-jd small{display:block;font-size:10.5px;font-weight:700;opacity:.75;letter-spacing:.02em}
 .vp-jt{margin-left:22px;font-size:13px;font-weight:700;padding:5px 11px;border-radius:9px;background:var(--card);border:1px solid var(--line);justify-self:start}
 .vp-jny li.now .vp-jt{border-color:var(--amber);background:var(--tint-amber);color:var(--tint-amber-fg)}
 .vp-noteadd{display:flex;flex-direction:column;gap:6px}.vp-tagin{max-width:260px;font-size:12px!important;padding:7px 9px!important}

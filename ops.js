@@ -1523,9 +1523,11 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
    * fetched from /api/roles each render, falling back to the last known list. */
   let UM_ROLES = [["super_admin","Super admin"],["admin","Admin"],["report_manager","Sales Ops"],["errors_manager","Errors manager"],["events_manager","Events manager"],
     ["l1_bss","L1 BSS"],["l2_bss","L2 BSS"],["l1_digital","L1 Digital"],["l2_digital","L2 Digital"],["l3_digital","L3 Digital"],["call_center","Call Center"]];
+  let UM_ROLES_AT = 0;   // when UM_ROLES was last loaded from /api/roles (0 = still the fallback list above)
   async function refreshRoleList(){
     try{ const rr=await api("/api/roles"); const m=rr.roles||{};
       UM_ROLES = Object.entries(m).sort((a,b)=>(a[1].rank-b[1].rank)||a[1].label.localeCompare(b[1].label)).map(([k,v])=>[k,v.label]);
+      UM_ROLES_AT = Date.now();
     }catch(e){}
   }
   const UM_TAGS = ["BSS","OSS","DIGITAL","FIXED","SALES OPS","PLATFORM","IDENTITY","CALL CENTER"];
@@ -1663,7 +1665,10 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   /* ---- user edit panel (6 Sep 2026): one place for every field of an account ----
    * Slides in from the right (same .drawer as the transaction trace → full screen on phones). Saves with ONE
    * PATCH so a half-edited row is never left behind; Block / Unblock lives in a marked danger zone. */
-  function openUserPanel(u){
+  async function openUserPanel(u){
+    /* The Users page has been usersmgmt.js since 10 Sep 2026, and it never ran refreshRoleList(): this panel kept the 11 roles
+     * of the fallback list, so VP Operations, CIO / Executive and every Fixed role could not be ticked (8 Oct 2026). */
+    if(!UM_ROLES_AT || Date.now()-UM_ROLES_AT>60e3) await refreshRoleList();
     let ov=document.getElementById("userPanel");
     if(!ov){ ov=document.createElement("div"); ov.id="userPanel"; ov.className="drawer-ov"; ov.innerHTML=`<div class="drawer" id="userPanelBody"></div>`; document.body.appendChild(ov);
       ov.addEventListener("click",e=>{ if(e.target===ov) closeUserPanel(); }); }

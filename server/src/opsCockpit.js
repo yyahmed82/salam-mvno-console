@@ -459,14 +459,33 @@ async function rewordSeed() {
     await put('cockpit_reports', r.id, ['created_by'], r, () => reword);
   return n;
 }
+/* one seeded challenge with its dated notes; a seed key already present (kept, edited or deleted) is never written again */
+async function insertSeedChallenge(ch) {
+  const ins = await C().query(`INSERT INTO cockpit_challenges (seed_key, tower, segment, title, impact, detail, severity, status, fix_owner, followed_by, next_step, since, refs, created_by, updated_by, updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14,$15) ON CONFLICT (seed_key) DO NOTHING RETURNING id`,
+    [ch.seed_key, ch.tower, ch.segment, ch.title, ch.impact, ch.detail, ch.severity, ch.status, ch.fix_owner, ch.followed_by, ch.next_step, ch.since, ch.refs, ch.created_by,
+      (ch.notes && ch.notes.length) ? ch.notes[ch.notes.length - 1].at : new Date().toISOString()]);
+  if (!ins.rowCount) return false;
+  for (const n of ch.notes || []) await C().query(`INSERT INTO cockpit_notes (challenge_id, kind, body, status_to, tag, created_by, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [ins.rows[0].id, n.kind || 'note', n.body, n.status_to || null, n.tag || null, n.by, n.at]);
+  return true;
+}
 async function seed() {
   const st = await settings.getSetting('cockpit_seed').catch(() => null);
   const have = st ? Number(st.version) || 0 : 0;
   if (have >= SEED.SEED_VERSION) return;
-  if (have >= 1) {                                                   // seeded before → only the later corrections, never a second load
-    const n = await rewordSeed();
-    await settings.setSetting('cockpit_seed', { ...st, version: SEED.SEED_VERSION, reworded: n, rewordedAt: new Date().toISOString() });
-    console.log(`[cockpit] seed v${SEED.SEED_VERSION}: first content now says "IT Operations" (${n} row${n === 1 ? '' : 's'} reworded)`);
+  if (have >= 1) {                                                   // seeded before → only the later steps, never a second load
+    const done = [], out = { ...st, version: SEED.SEED_VERSION };
+    if (have < 2) { const n = await rewordSeed(); Object.assign(out, { reworded: n, rewordedAt: new Date().toISOString() }); done.push(`first content now says "IT Operations" (${n} row${n === 1 ? '' : 's'} reworded)`); }
+    for (const [v, keys] of Object.entries(SEED.ADDED || {})) {
+      if (have >= Number(v)) continue;
+      for (const k of keys) {
+        const ch = SEED.CHALLENGES.find(c => c.seed_key === k); if (!ch) continue;
+        if (await insertSeedChallenge(ch)) { (out.added = out.added || []).push(k); done.push(`challenge added: "${ch.title.slice(0, 70)}${ch.title.length > 70 ? '…' : ''}"`); }
+      }
+    }
+    await settings.setSetting('cockpit_seed', out);
+    console.log(`[cockpit] seed v${SEED.SEED_VERSION}: ${done.join(' · ') || 'nothing to change'}`);
     return;
   }
   const S = SEED.CAB_2026_10_07;
@@ -493,15 +512,7 @@ async function seed() {
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (seed_key) DO NOTHING`,
       [u.seed_key, u.tower, u.segment, u.kind, u.tone, u.title, u.body, u.impact, u.ref, u.status, !!u.pinned, u.happened_at, u.created_by]);
   }
-  for (const ch of SEED.CHALLENGES) {
-    const ins = await C().query(`INSERT INTO cockpit_challenges (seed_key, tower, segment, title, impact, detail, severity, status, fix_owner, followed_by, next_step, since, refs, created_by, updated_by, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14,$15) ON CONFLICT (seed_key) DO NOTHING RETURNING id`,
-      [ch.seed_key, ch.tower, ch.segment, ch.title, ch.impact, ch.detail, ch.severity, ch.status, ch.fix_owner, ch.followed_by, ch.next_step, ch.since, ch.refs, ch.created_by,
-        (ch.notes && ch.notes.length) ? ch.notes[ch.notes.length - 1].at : new Date().toISOString()]);
-    if (!ins.rowCount) continue;
-    for (const n of ch.notes || []) await C().query(`INSERT INTO cockpit_notes (challenge_id, kind, body, status_to, tag, created_by, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [ins.rows[0].id, n.kind || 'note', n.body, n.status_to || null, n.tag || null, n.by, n.at]);
-  }
+  for (const ch of SEED.CHALLENGES) await insertSeedChallenge(ch);
   for (const r of SEED.REPORTS || []) await C().query(`INSERT INTO cockpit_reports (seed_key, vendor, segment, template, period_from, period_to, title, data, created_by)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (seed_key) DO NOTHING`,
     [r.seed_key, r.vendor, r.segment, r.template, r.period_from, r.period_to, r.title, JSON.stringify(normReport(r.data)), r.created_by]);

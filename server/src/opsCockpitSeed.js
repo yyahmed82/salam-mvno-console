@@ -7,7 +7,9 @@
  *   · "5G HomeFi Blocked by Resource Locks" (Digital Ops → BSS, 7 Oct) and "Change Address throw Salam APP" (29 Sep – 7 Oct)
  * No customer identifier is copied in (no ID, MSISDN, account or service number): the cockpit is an executive page.
  * v2 (8 Oct 2026, alpha.150): console copy names the team "IT Operations", never "Digital Operations" — the CAB rows
- * stay as ITSM mailed them. A console seeded with v1 gets the same wording through opsCockpit.rewordSeed(). */
+ * stay as ITSM mailed them. A console seeded with v1 gets the same wording through opsCockpit.rewordSeed().
+ * v3 (8 Oct 2026, alpha.151): the eSIM procurement challenge (server 146 / Optiva). ADDED names the challenges each version
+ * brings, so a console seeded earlier receives only those — never a second load of the rest. */
 'use strict';
 
 const CAB_2026_10_07 = {
@@ -153,6 +155,30 @@ const CHALLENGES = [
       { at: '2026-09-30T12:39:00Z', by: 'Saleh N Musaynid', tag: 'R5 / R6 early Dec', body: 'R5 & R6 launch planned for early December 2026.' },
       { at: '2026-10-04T08:15:00Z', by: 'Mamoun O Abu Salah', tag: '64 AR / 128 EN', body: 'Character limit per SMS: 64 Arabic, 128 English.' },
       { at: '2026-10-08T05:00:00Z', by: 'IT Operations', kind: 'status', status_to: 'in_progress', tag: 'Top-up to confirm', body: 'Credit top-up still to be confirmed; volume reduction work in progress — Operations following.' }
+    ] },
+  /* eSIM procurement from STC — call with Debasis Sahoo (TCS), 8 Oct 2026 10:15 KSA (recording, 11 min): the TCS SOP
+   * "eSIM Procurement and uploading in Optiva", the procedure "SALAM E-Sim ICCID's Loading Procedure" and the server 146
+   * file history (7 orders, dates as listed on the server). Seed v3 (alpha.151). No IP, account, key or SIM data copied in. */
+  { seed_key: 'esim-procurement-optiva-146', tower: 'bss', segment: 'mobile', severity: 'high', status: 'open',
+    title: 'eSIM procurement from STC still runs on Optiva server 146 — migrate it before the shutdown',
+    impact: 'Every new eSIM line and eSIM swap draws on the eSIM stock bought from STC. While server 146 is unreachable, or once it is switched off, no new stock can be loaded: when the stock runs out, eSIM sales stop. Seven orders since Nov 2022, 5–9 months apart lately, so the next one falls between March and July 2027. The new path has to be live before then, and before 146 is switched off.',
+    detail: 'How eSIM stock is bought today (TCS SOP):\n• An alert fires when the eSIM stock falls under 5,000, and management orders more eSIMs from STC.\n• The Core Network team prepares the request in files of 10,000 eSIMs. TCS places them in the IN folder on server 146, in the Optiva stack.\n• STC pulls the file over a dedicated MPLS channel, the only channel STC accepts for these files, and pushes the encrypted output back to the OUT folder.\n• The output is decrypted with Salam\'s PGP key, held on that server, and loaded into the BSS inventory (Optiva before, Oracle now).\n\nWhat happened: after the move to the Narjis data centre the channel broke, and STC could not reach 146 from 28 Sep. The route was restored, and STC pulled the request and pushed the output on 7 Oct.\n\nWhy it matters: Optiva is otherwise retired (CDRs and the rest have already moved). This eSIM step was left on it, and 146 is due for decommission.',
+    fix_owner: 'BSS: TCS (MVNO operations) with Oracle (new BSS). Salam network team for the STC channel, and STC', followed_by: 'IT Operations',
+    next_step: 'Move the STC exchange off Optiva before 146 is shut down:\n1) A new SFTP endpoint in the current stack, with the MPLS route and STC\'s access agreed (STC accepts only this channel).\n2) The PGP keys moved, and rotated with STC.\n3) The decrypted files handed to Oracle over SFTP, not by e-mail.\n4) Confirm the under-5,000 stock alert runs on the new BSS.\n5) The SOP updated: new Core Network contacts, and Oracle loads the two files as they are.\nThen one end-to-end test with STC.',
+    since: '2026-09-28', refs: 'TCS SOP "eSIM Procurement and uploading in Optiva" · "SALAM E-Sim ICCID\'s Loading Procedure" · call with Debasis Sahoo (TCS), 8 Oct 2026 · server 146 file history',
+    created_by: 'IT Operations',
+    notes: [
+      { at: '2022-11-07T06:00:00Z', by: 'Server 146 · file history', tag: '1st order', body: 'eSIM order from STC through server 146: request files ITM00003–05, 10,000 eSIMs each. STC\'s output was decrypted and loaded into Optiva.' },
+      { at: '2023-10-09T06:00:00Z', by: 'Server 146 · file history', tag: '2nd order', body: 'Request files ITM00006–08, 10,000 eSIMs each. STC\'s output was converted into one upload file for Optiva.' },
+      { at: '2024-02-06T06:00:00Z', by: 'Server 146 · file history', tag: '3rd order', body: 'eSIM order through server 146, same channel and steps.' },
+      { at: '2025-03-06T06:00:00Z', by: 'Server 146 · file history', tag: '4th order', body: 'eSIM order through server 146, same channel and steps.' },
+      { at: '2025-08-07T06:00:00Z', by: 'Server 146 · file history', tag: '5th order', body: 'eSIM order through server 146, same channel and steps.' },
+      { at: '2026-01-16T06:00:00Z', by: 'Server 146 · file history', tag: '6th order', body: 'eSIM order through server 146, the last one before the data-centre move.' },
+      { at: '2026-09-28T06:00:00Z', by: 'IT Operations', tag: 'Channel down', body: 'After the move to the Narjis data centre, STC can no longer reach server 146 over the dedicated MPLS channel, so the request file cannot be pulled. Raised on 28 Sep.' },
+      { at: '2026-10-05T06:00:00Z', by: 'IT Operations', tag: 'Route restored', body: 'About a week from 28 Sep: both network teams checked their side and found no fault, until the Salam network team restored the dedicated route.' },
+      { at: '2026-10-07T06:00:00Z', by: 'Server 146 · file history', tag: '7th order', body: 'STC pulled the request file and pushed its output to server 146: the 7th eSIM order since Nov 2022.' },
+      { at: '2026-10-08T07:15:00Z', by: 'Yosri A Yahmed · IT Operations', tag: 'TCS walkthrough', body: 'Call with Debasis Sahoo (TCS) on the SOP. Optiva is otherwise retired (CDRs and the rest have already moved), but this eSIM step was not moved, and server 146 is due for decommission. The new BSS (Oracle) loads the two decrypted output files as they are, with no conversion. Today they reach Oracle by e-mail.' },
+      { at: '2026-10-08T07:45:00Z', by: 'IT Operations', kind: 'status', status_to: 'open', tag: 'Migrate off Optiva', body: 'Fixed: STC can pull and push again. Next: migrate this step off Optiva now, before the servers are shut down, so the old scripts and server can no longer block eSIM stock.' }
     ] }
 ];
 
@@ -188,4 +214,4 @@ const REPORTS = [
     } }
 ];
 
-module.exports = { SEED_VERSION: 2, CAB_2026_10_07, IMPLEMENTED, UPDATES, CHALLENGES, REPORTS };
+module.exports = { SEED_VERSION: 3, ADDED: { 3: ['esim-procurement-optiva-146'] }, CAB_2026_10_07, IMPLEMENTED, UPDATES, CHALLENGES, REPORTS };

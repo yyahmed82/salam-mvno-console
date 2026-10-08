@@ -1,3 +1,15 @@
+## 2.0.0-alpha.151 — 2026-10-08
+
+- **VP Operations cockpit — new challenge: eSIM procurement still runs on Optiva server 146** (BSS · Mobile · high · open, seed v3). Source: the call with Debasis Sahoo (TCS) on 8 Oct, the TCS SOP "eSIM Procurement and uploading in Optiva", the procedure "SALAM E-Sim ICCID's Loading Procedure" and the server 146 file history.
+  - **How eSIM stock is bought:** an alert fires under 5,000 eSIMs; the Core Network team prepares the request in files of 10,000; STC pulls them from server 146 over the dedicated MPLS channel (the only channel STC accepts) and pushes the encrypted output back; it is decrypted with Salam's PGP key on that server and loaded into the BSS (Optiva before, Oracle now).
+  - **What happened:** after the move to the Narjis data centre the channel broke and STC could not reach 146 from 28 Sep. It was restored, and STC pulled and pushed the files on 7 Oct.
+  - **History:** 7 orders, on 7 Nov 2022, 9 Oct 2023, 6 Feb 2024, 6 Mar 2025, 7 Aug 2025, 16 Jan 2026 and 7 Oct 2026.
+  - **The ask:** migrate this step off Optiva before the servers are shut down: a new SFTP endpoint with STC's access, the keys moved and rotated, files to Oracle over SFTP instead of e-mail, the stock alert on the new BSS, and the SOP updated.
+  - No IP, account, key or SIM data is copied into the console.
+- **Seed steps by version** (`opsCockpitSeed.ADDED`). A console seeded earlier receives only the challenges a later version brings (`insertSeedChallenge()`, logged once as `[cockpit] seed v3: challenge added: …`); nothing else is loaded twice. A seeded challenge that someone deleted is not brought back.
+- **Challenge drawer:** a milestone or note from another year shows its year, so the eSIM history 2022 → 2026 reads right. The next-step box keeps its line breaks.
+- **Settings › Users › edit panel: every role can be ticked.** The panel kept the 11 roles of its built-in fallback list, because the redesigned Users page (`usersmgmt.js`, 10 Sep) never loaded the role list. VP Operations, CIO / Executive, Fixed Ops, the L1–L3 Data / Enterprise / Infra / OSS roles, Salam Home (B2C) and Sales Ops wall (TV) could not be assigned there. `openUserPanel()` now loads `/api/roles` first, refreshed every minute.
+
 ## 2.0.0-alpha.150 — 2026-10-08
 
 - **VP Operations cockpit — "IT Operations" in the copy.** The page and its first content said "Digital Operations" for the team that posts and follows. Console copy names it **IT Operations**.
