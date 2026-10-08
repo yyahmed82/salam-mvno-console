@@ -5,7 +5,9 @@
  *   · "RE: Salam IT Change Management || CAB - 7 Oct 2026" (IT Change Management, 7 Oct 18:25) — totals + 25 changes
  *   · "CHG0030330 | UPG Backend Change" (Hazem A Ghanem, 8 Oct 00:35) + the PIR form for CHG0030330
  *   · "5G HomeFi Blocked by Resource Locks" (Digital Ops → BSS, 7 Oct) and "Change Address throw Salam APP" (29 Sep – 7 Oct)
- * No customer identifier is copied in (no ID, MSISDN, account or service number): the cockpit is an executive page. */
+ * No customer identifier is copied in (no ID, MSISDN, account or service number): the cockpit is an executive page.
+ * v2 (8 Oct 2026, alpha.150): console copy names the team "IT Operations", never "Digital Operations" — the CAB rows
+ * stay as ITSM mailed them. A console seeded with v1 gets the same wording through opsCockpit.rewordSeed(). */
 'use strict';
 
 const CAB_2026_10_07 = {
@@ -65,9 +67,9 @@ const UPDATES = [
   { seed_key: 'upg-chg0030330', tower: 'digital', segment: 'fixed', kind: 'change', tone: 'good', pinned: true,
     ref: 'CHG0030330', status: 'Completed · under monitoring', happened_at: '2026-10-07T21:10:00Z',
     title: 'UPG now double-checks payments when TAP misses the webhook — CHG0030330 live',
-    body: 'Implemented last night: 23:00 → 00:10 KSA, inside the approved window, after the CAB of 7 Oct. Digital Operations asked for this fix: when TAP captures a payment but never sends the webhook to Salam UPG, UPG now runs its own second get-status check and completes the order. The missing webhook was hurting customers (paid, nothing happened), the call center, operations, the big-data reports and the business. Tested — the fix works; payments are under monitoring. PIR submitted: successful, no impact, no back-out.',
+    body: 'Implemented last night: 23:00 → 00:10 KSA, inside the approved window, after the CAB of 7 Oct. IT Operations asked for this fix: when TAP captures a payment but never sends the webhook to Salam UPG, UPG now runs its own second get-status check and completes the order. The missing webhook was hurting customers (paid, nothing happened), the call center, operations, the big-data reports and the business. Tested — the fix works; payments are under monitoring. PIR submitted: successful, no impact, no back-out.',
     impact: ['Customers', 'Call center', 'Operations', 'Big data reports', 'Business'],
-    created_by: 'Digital Operations' }
+    created_by: 'IT Operations' }
 ];
 
 const CHALLENGES = [
@@ -75,31 +77,31 @@ const CHALLENGES = [
     title: '5G HomeFi ePurchase blocked by BSS / DRM resource locks',
     impact: 'Since the 17 Sep launch about 90% of 5G HomeFi ePurchase journeys stop at the location step. 30 of 35 white-label SIMs and 34 landline numbers are locked, so new SIM sales are blocked.',
     detail: 'When a journey is cancelled or abandoned, the SIM (ICCID) and landline number it reserved in BSS / DRM stay locked. Latest check, 7 Oct 17:40: DRM querySimCard answers resultCode 0 "Success" with an empty SIM list (simCardDtoList = null), so the journey shows "no SIM card available".',
-    fix_owner: 'BSS team (BSS Operations)', followed_by: 'Operations — Digital Ops L2',
+    fix_owner: 'BSS team (BSS Operations)', followed_by: 'IT Operations — L2',
     next_step: 'BSS to (1) release the 26 locked-only ICCIDs with their landline numbers and cancel the Semati registration where applicable; (2) leave the 4 resources already sold and anything with an ORDER_CREATED record; (3) release locks on cancel and on expiry, with a scheduled sweep that skips sold resources; (4) confirm the unlock runs on the BSS side for both flows.',
     since: '2026-09-17', refs: 'Mail "5G HomeFi Blocked by Resource Locks" (7 Oct) · DRM querySimCard',
-    created_by: 'Operations',
+    created_by: 'IT Operations',
     notes: [
-      { at: '2026-10-07T12:47:00Z', by: 'Michael ElSabie · Digital Ops L2', tag: 'Raised to BSS', body: 'Raised to BSS: ~90% of journeys stop at the location step since launch; 30/35 white-label SIMs and 34 landline numbers locked. Asked to release the 26 locked-only ICCIDs, keep the sold ones, release on cancel / expiry and confirm the unlock on the BSS side.' },
+      { at: '2026-10-07T12:47:00Z', by: 'Michael ElSabie · IT Operations L2', tag: 'Raised to BSS', body: 'Raised to BSS: ~90% of journeys stop at the location step since launch; 30/35 white-label SIMs and 34 landline numbers locked. Asked to release the 26 locked-only ICCIDs, keep the sold ones, release on cancel / expiry and confirm the unlock on the BSS side.' },
       { at: '2026-10-07T14:23:00Z', by: 'Wadhah A Qaid', tag: 'Operations looped', body: 'Operations looped in — to be taken with the BSS operation team.' },
-      { at: '2026-10-07T14:40:00Z', by: 'Michael ElSabie · Digital Ops L2', tag: 'Empty SIM list', body: 'DRM querySimCard returns "Success" with an empty SIM list (simCardDtoList = null) → the journey shows "no SIM card available".' },
-      { at: '2026-10-08T05:00:00Z', by: 'Operations', kind: 'status', status_to: 'in_progress', tag: 'Under fix · BSS', body: 'Under fix by the BSS team — Operations following.' }
+      { at: '2026-10-07T14:40:00Z', by: 'Michael ElSabie · IT Operations L2', tag: 'Empty SIM list', body: 'DRM querySimCard returns "Success" with an empty SIM list (simCardDtoList = null) → the journey shows "no SIM card available".' },
+      { at: '2026-10-08T05:00:00Z', by: 'IT Operations', kind: 'status', status_to: 'in_progress', tag: 'Under fix · BSS', body: 'Under fix by the BSS team — Operations following.' }
     ] },
   { seed_key: 'ftth-relocation-dawiyat-slotid', tower: 'digital', segment: 'fixed', severity: 'high', status: 'in_progress',
     title: 'FTTH relocation in the Salam app fails for DAWIYAT addresses (slotId)',
     impact: 'Customers pay the relocation fee in the app (Change Address) but the BSS order is rejected after payment, so the move is never created and the customer waits. Back office reports several customers; first confirmed failure 2 Oct.',
     detail: 'The BSS relocation API answers CC-S-SALES-01014 "The parameter[slotId] should not be null" for DAWIYAT. slotId was never required since the relocation launch; BSS now needs the slotId of the selected appointment for DAWIYAT only (not for the third-party provider). Whale Cloud, 7 Oct 14:34: the null slotId comes from the DAWIYAT side although the appointment was sent.',
-    fix_owner: 'Digital team, with BSS (TCS) and Whale Cloud', followed_by: 'Operations — Digital Ops L2',
+    fix_owner: 'Digital team, with BSS (TCS) and Whale Cloud', followed_by: 'IT Operations — L2',
     next_step: 'Digital to send the appointment slotId on DAWIYAT relocations. BSS / Whale Cloud to share a request validated in Postman with slotId and confirm with DAWIYAT why slotId comes back null. Paid cases followed one by one with BSS until the fix is live.',
     since: '2026-10-02', refs: 'Mail "Change Address throw Salam APP" (29 Sep – 7 Oct) · CC-S-SALES-01014',
-    created_by: 'Operations',
+    created_by: 'IT Operations',
     notes: [
-      { at: '2026-10-04T09:03:00Z', by: 'Michael ElSabie · Digital Ops L2', tag: 'Order rejected', body: 'Customer paid, order creation failed: CC-S-SALES-01014 "slotId should not be null" — while other relocations without slotId went through.' },
+      { at: '2026-10-04T09:03:00Z', by: 'Michael ElSabie · IT Operations L2', tag: 'Order rejected', body: 'Customer paid, order creation failed: CC-S-SALES-01014 "slotId should not be null" — while other relocations without slotId went through.' },
       { at: '2026-10-04T11:50:00Z', by: 'Md Shahnawaz Ahmad · BSS (TCS)', tag: 'BSS needs slotId', body: 'The slotId generated for the selected appointment date is required for DAWIYAT; not required for the third-party provider.' },
-      { at: '2026-10-04T13:34:00Z', by: 'Michael ElSabie · Digital Ops L2', tag: 'New requirement', body: 'slotId was not mandatory since the relocation launch — a new requirement; raised to Wadhah A Qaid.' },
-      { at: '2026-10-07T10:11:00Z', by: 'Michael ElSabie · Digital Ops L2', tag: 'Postman test asked', body: 'Asked BSS for valid request parameters including slotId, tested in Postman, before implementing on the digital side.' },
+      { at: '2026-10-04T13:34:00Z', by: 'Michael ElSabie · IT Operations L2', tag: 'New requirement', body: 'slotId was not mandatory since the relocation launch — a new requirement; raised to Wadhah A Qaid.' },
+      { at: '2026-10-07T10:11:00Z', by: 'Michael ElSabie · IT Operations L2', tag: 'Postman test asked', body: 'Asked BSS for valid request parameters including slotId, tested in Postman, before implementing on the digital side.' },
       { at: '2026-10-07T11:34:00Z', by: 'Whale Cloud (Yulin Wu)', tag: 'DAWIYAT side', body: 'The issue is on the DAWIYAT side: slotId comes back null although the appointment was sent — to be confirmed with DAWIYAT.' },
-      { at: '2026-10-08T05:00:00Z', by: 'Operations', kind: 'status', status_to: 'in_progress', tag: 'Fix in progress · Digital', body: 'Fix in progress by Digital — Operations following.' }
+      { at: '2026-10-08T05:00:00Z', by: 'IT Operations', kind: 'status', status_to: 'in_progress', tag: 'Fix in progress · Digital', body: 'Fix in progress by Digital — Operations following.' }
     ] },
   /* STC Pay (Mobile) — "STC Pay Payment Method Update" (Tap notice 26 Aug → disabled in UPG 1 Sep) and "[URGENT] STC Pay 100%
    * failure on HyperPay since go-live (result code 800.100.156 — format error)" (3 – 20 Sep). Today's line is the state the
@@ -107,23 +109,23 @@ const CHALLENGES = [
   { seed_key: 'stcpay-mobile-disabled', tower: 'digital', segment: 'mobile', severity: 'high', status: 'in_progress',
     title: 'STC Pay disabled on Mobile payments — re-enabling it is under discussion',
     impact: 'Mobile (MVNO) customers cannot pay with STC Pay — recharges, bills, advance payments, new lines, change of plan — since 1 Sep; card (mada, Visa, Mastercard, AMEX) and Apple Pay work. Over the 12 months before, STC Pay carried 12.4% of successful payments (327,510) but 20.7% of all failures (114,802): 74.0% success against 82.7% for all methods.',
-    detail: 'Tap announced on 26 Aug that STC Pay wallets are being phased out with the STC Pay → STC Bank transition and would be deactivated. Digital Operations removed STC Pay from every payment page (web and app) in a controlled change approved by Demand and Business, live 1 Sep 00:00. On 3 Sep at 16:27 all payment traffic moved to HyperPay as the only gateway: STC Pay failed 100% — 235 of 235 attempts declined with result 800.100.156 (format error) on iOS, Android and web, while mada (~87%) and Visa (~82%) went through. It cannot work there until Salam\'s merchant account with STC Bank exists (the financial contract). Payments are back on UPG / Tap with STC Pay still disabled.',
-    fix_owner: 'Salam Finance & Business (STC Bank account), with Digital and HyperPay / Tap', followed_by: 'Operations — Digital Ops',
+    detail: 'Tap announced on 26 Aug that STC Pay wallets are being phased out with the STC Pay → STC Bank transition and would be deactivated. IT Operations removed STC Pay from every payment page (web and app) in a controlled change approved by Demand and Business, live 1 Sep 00:00. On 3 Sep at 16:27 all payment traffic moved to HyperPay as the only gateway: STC Pay failed 100% — 235 of 235 attempts declined with result 800.100.156 (format error) on iOS, Android and web, while mada (~87%) and Visa (~82%) went through. It cannot work there until Salam\'s merchant account with STC Bank exists (the financial contract). Payments are back on UPG / Tap with STC Pay still disabled.',
+    fix_owner: 'Salam Finance & Business (STC Bank account), with Digital and HyperPay / Tap', followed_by: 'IT Operations',
     next_step: 'Agree the route for STC Pay (Tap or HyperPay) and get Salam\'s STC Bank merchant account created — Finance to complete the steps HyperPay asked for on 13 Sep. Then test STC Pay end to end, set the date with Business, brief the call centre and switch it back on, web and app.',
     since: '2026-09-01', refs: 'Mails "STC Pay Payment Method Update" (26 Aug – 1 Sep) · "[URGENT] STC Pay 100% failure on HyperPay since go-live (800.100.156)" (3 – 20 Sep) · salam-nexus MR 3808',
-    created_by: 'Operations',
+    created_by: 'IT Operations',
     notes: [
       { at: '2026-08-26T14:17:00Z', by: 'Tap — Payment Acceptance', tag: 'Tap notice', body: 'With the STC Pay → STC Bank transition, STC Pay wallets are being gradually discontinued; STC Pay will be deactivated from Salam\'s payment methods.' },
-      { at: '2026-08-27T08:04:00Z', by: 'Yosri A Yahmed · Head of Digital Operations', tag: 'Removal requested', body: 'Asked Delivery to hide STC Pay on every Salam payment page (recharge, invoice, advance payment, onboarding checkout, change plan — web and app), card and Apple Pay unchanged, with Demand and Business approval. 12 months of data: STC Pay = 12.4% of successful payments, 20.7% of failures, 74.0% success against 82.7%.' },
+      { at: '2026-08-27T08:04:00Z', by: 'Yosri A Yahmed · IT Operations', tag: 'Removal requested', body: 'Asked Delivery to hide STC Pay on every Salam payment page (recharge, invoice, advance payment, onboarding checkout, change plan — web and app), card and Apple Pay unchanged, with Demand and Business approval. 12 months of data: STC Pay = 12.4% of successful payments, 20.7% of failures, 74.0% success against 82.7%.' },
       { at: '2026-08-27T08:13:00Z', by: 'Ahmed A Zaidani', tag: 'Revenue owner in', body: 'Revenue owner added; customers to be informed of the change so there is no confusion.' },
       { at: '2026-08-31T12:42:00Z', by: 'Ghassan N Shoujen · Ahmed A Zaidani', tag: 'Approved', body: 'Approved by Ghassan N Shoujen (13:58) and Ahmed A Zaidani (15:42) for Demand and Business. Delivery shared the merge request (salam-nexus MR 3808); change scheduled 23:00.' },
-      { at: '2026-08-31T21:00:00Z', by: 'Yosri A Yahmed · Head of Digital Operations', tag: 'Disabled in UPG', body: 'STC Pay disabled in UPG successfully — all other payment methods working.' },
-      { at: '2026-09-03T13:27:00Z', by: 'Digital Operations', tag: 'Moved to HyperPay', body: 'All customer payment traffic switched to HyperPay as the only gateway.' },
-      { at: '2026-09-03T14:56:00Z', by: 'Yosri A Yahmed · Head of Digital Operations', tag: '100% failure', body: 'STC Pay 0% success on HyperPay: 235 of 235 attempts (16:27–17:51) declined with 800.100.156 "format error", same on iOS, Android and web, while mada (~87%) and Visa (~82%) succeed. Escalated to HyperPay as urgent (reminders 20:38 and 21:15).' },
+      { at: '2026-08-31T21:00:00Z', by: 'Yosri A Yahmed · IT Operations', tag: 'Disabled in UPG', body: 'STC Pay disabled in UPG successfully — all other payment methods working.' },
+      { at: '2026-09-03T13:27:00Z', by: 'IT Operations', tag: 'Moved to HyperPay', body: 'All customer payment traffic switched to HyperPay as the only gateway.' },
+      { at: '2026-09-03T14:56:00Z', by: 'Yosri A Yahmed · IT Operations', tag: '100% failure', body: 'STC Pay 0% success on HyperPay: 235 of 235 attempts (16:27–17:51) declined with 800.100.156 "format error", same on iOS, Android and web, while mada (~87%) and Visa (~82%) succeed. Escalated to HyperPay as urgent (reminders 20:38 and 21:15).' },
       { at: '2026-09-09T11:28:00Z', by: 'Mian T Nasruddin · Director Digital Experience', tag: 'Chased', body: 'Asked HyperPay for the status.' },
       { at: '2026-09-13T07:11:00Z', by: 'HyperPay — Chief Revenue Officer', tag: 'STC Bank agrees', body: 'STC Bank agreed to reactivate Salam\'s account; Salam Finance asked to call HyperPay to complete the required steps.' },
       { at: '2026-09-20T13:37:00Z', by: 'Ghassan N Shoujen', tag: 'Account pending', body: 'HyperPay offered to activate STC Pay (15:23); Salam is still pushing STC Bank to create the account — no result yet.' },
-      { at: '2026-10-08T05:00:00Z', by: 'Operations', kind: 'status', status_to: 'in_progress', tag: 'Back on UPG / Tap', body: 'Payments are back on UPG / Tap with STC Pay disabled; discussions ongoing to re-enable STC Pay — Operations following.' }
+      { at: '2026-10-08T05:00:00Z', by: 'IT Operations', kind: 'status', status_to: 'in_progress', tag: 'Back on UPG / Tap', body: 'Payments are back on UPG / Tap with STC Pay disabled; discussions ongoing to re-enable STC Pay — Operations following.' }
     ] },
   /* Unifonic SMS credit — "SMS TOPUP request" (8 Sep – 4 Oct) and the DOT Monitoring alert "UnifonicPointsWarning [FIRING]" (28 Sep).
    * Two sides kept apart on purpose: WHY it must be solved now (one account carries every SMS flow) and WHAT Commercial asks
@@ -132,14 +134,14 @@ const CHALLENGES = [
     title: 'Unifonic SMS credit low — top-up pending while Commercial pushes to cut SMS volume',
     impact: 'Every SMS Salam sends goes through one Unifonic account: the OTPs of onboarding, payments and app login (Digital), bills and reminders (BSS), field and appointment messages (OSS). If the credit runs out, onboarding and payments stop at the OTP step and customers stop receiving bills and notifications — on Mobile and Fixed at once. The balance fell under the 200,000-point warning on 28 Sep (166,363 points left).',
     detail: 'Commercial raised an RFQ on 8 Sep because the SMS cost is too high, and is asking every team to justify and reduce volume. What the thread established:\n• ≈ 18M SMS units a month — 15M from FTTH BSS, 3M from all other systems (IT, 22 Sep).\n• By Unifonic account: 177.9M units in 2025 and 150.3M in 2026 up to September, 82% on the main IT integration account.\n• Digital platforms send ≈ 0.3–0.4M messages a month (3.74M in 2025, 2.93M in 2026 to 9 Sep); payment OTP ≈ 70% of the Fixed digital volume. Messages ≠ billed units: long bilingual messages are several units each (the consent OTP ≈ 12).\n• Commercial asks: 13–14M SMS a month for a base of 161K customers?\n• Levers: Segment already rewrote 200+ texts and needs the costliest ones; the limit is 64 characters per SMS in Arabic, 128 in English; existing BSS SMS cannot change before the R5 / R6 migration (early Dec 2026).',
-    fix_owner: 'Commercial & Procurement (top-up, RFQ), with IT (Unifonic account), Segment (texts) and BSS (bill SMS)', followed_by: 'Operations — Digital Ops',
+    fix_owner: 'Commercial & Procurement (top-up, RFQ), with IT (Unifonic account), Segment (texts) and BSS (bill SMS)', followed_by: 'IT Operations',
     next_step: '1) Commercial / Procurement: close the RFQ and top up now — the volume work cannot hold the top-up. 2) IT: Unifonic units per account and sub-account (Salammobile, Etihad Salam Telecom), Jan 2025 → Sep 2026, with the top senders named. 3) BSS: stop unwanted bill and reminder SMS (the 15M units / month); text changes after R5 / R6 in early December. 4) Segment: shorten the costliest texts to 64 Arabic / 128 English characters, one language per message. 5) Digital: longer payment-OTP validity / session reuse to cut the payment OTPs.',
     since: '2026-09-08', refs: 'Mails "SMS TOPUP request" (8 Sep – 4 Oct 2026) · DOT Monitoring "UnifonicPointsWarning [FIRING]" (28 Sep, RUH-IntegrationP01)',
-    created_by: 'Operations',
+    created_by: 'IT Operations',
     notes: [
       { at: '2026-09-08T07:30:00Z', by: 'Mamoun O Abu Salah', tag: 'Few days left', body: 'A few days remain before the SMS balance runs out — asked to expedite the top-up.' },
       { at: '2026-09-08T14:25:00Z', by: 'Waqas B Bashir', tag: 'RFQ raised', body: 'RFQ raised to get the lowest price — the SMS cost is too high; procurement to finalise.' },
-      { at: '2026-09-09T14:37:00Z', by: 'Yosri A Yahmed · Head of Digital Operations', tag: 'Digital volumes shared', body: 'Monthly digital SMS volumes shared, Mobile vs Fixed: 3.74M in 2025, 2.93M in 2026 to 9 Sep. Payment OTP ≈ 70% of the Fixed volume; message count ≠ billed units. Asked IT for the Unifonic units per account to reconcile.' },
+      { at: '2026-09-09T14:37:00Z', by: 'Yosri A Yahmed · IT Operations', tag: 'Digital volumes shared', body: 'Monthly digital SMS volumes shared, Mobile vs Fixed: 3.74M in 2025, 2.93M in 2026 to 9 Sep. Payment OTP ≈ 70% of the Fixed volume; message count ≠ billed units. Asked IT for the Unifonic units per account to reconcile.' },
       { at: '2026-09-10T09:03:00Z', by: 'Waqas B Bashir', tag: 'Splits requested', body: 'Asked for bill and reminder SMS split Mobile vs Fixed, the internal SMS usage and the OSS SMS.' },
       { at: '2026-09-21T14:48:00Z', by: 'Waqas B Bashir', tag: 'Accounts breakdown', body: 'Unifonic by account: 177.9M units in 2025, 150.3M in 2026 to September — 82% on the main IT integration account. Asked what types of SMS they are.' },
       { at: '2026-09-22T12:55:00Z', by: 'Mamoun O Abu Salah', tag: '18M units / month', body: '≈ 18M SMS units a month: 15M for FTTH BSS, 3M for all other systems; details requested from Unifonic.' },
@@ -150,7 +152,7 @@ const CHALLENGES = [
       { at: '2026-09-30T10:11:00Z', by: 'Waqas B Bashir', tag: 'Meeting: cut SMS', body: 'Critical meeting: reduce SMS by monetising the SMS journey; Unifonic\'s per-SMS character limit so Segment can shorten texts; no CR on existing SMS during the R5 / R6 migration; use the enhanced Oracle journey once live.' },
       { at: '2026-09-30T12:39:00Z', by: 'Saleh N Musaynid', tag: 'R5 / R6 early Dec', body: 'R5 & R6 launch planned for early December 2026.' },
       { at: '2026-10-04T08:15:00Z', by: 'Mamoun O Abu Salah', tag: '64 AR / 128 EN', body: 'Character limit per SMS: 64 Arabic, 128 English.' },
-      { at: '2026-10-08T05:00:00Z', by: 'Operations', kind: 'status', status_to: 'in_progress', tag: 'Top-up to confirm', body: 'Credit top-up still to be confirmed; volume reduction work in progress — Operations following.' }
+      { at: '2026-10-08T05:00:00Z', by: 'IT Operations', kind: 'status', status_to: 'in_progress', tag: 'Top-up to confirm', body: 'Credit top-up still to be confirmed; volume reduction work in progress — Operations following.' }
     ] }
 ];
 
@@ -159,7 +161,7 @@ const CHALLENGES = [
  * Copied as presented; the only figure derived here is the DMS SIM-swap daily average (the deck shows the daily chart only). */
 const REPORTS = [
   { seed_key: 'tcs-mvno-2026-09-27', vendor: 'TCS', segment: 'mobile', template: 'tcs_mvno_weekly', period_from: '2026-09-27', period_to: '2026-10-03',
-    title: 'Salam Digital MVNO IT Operations Managed Services — weekly', created_by: 'Digital Operations',
+    title: 'Salam Digital MVNO IT Operations Managed Services — weekly', created_by: 'IT Operations',
     data: {
       presented: '2026-10-03',
       availability: { apps: [{ name: 'Self Care', pct: 100 }, { name: 'Information website', pct: 100 }, { name: 'CMS', pct: 100 }], weeks: 4, outage: 'None' },
@@ -186,4 +188,4 @@ const REPORTS = [
     } }
 ];
 
-module.exports = { SEED_VERSION: 1, CAB_2026_10_07, IMPLEMENTED, UPDATES, CHALLENGES, REPORTS };
+module.exports = { SEED_VERSION: 2, CAB_2026_10_07, IMPLEMENTED, UPDATES, CHALLENGES, REPORTS };

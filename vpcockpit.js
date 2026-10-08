@@ -665,7 +665,7 @@
     md.querySelector('.vp-mb').innerHTML = `${dl}<div class="vp-form">
       <div class="vp-drk">Tower leads — post and update their own tower</div>
       <div class="vp-setgrid">${s.towers.map(t => `<div class="vp-setrow" style="--tw:${(TW[t.key] || {}).color}"><span class="vp-tw" style="--tw:${(TW[t.key] || {}).color}">${esc(t.label)}</span>${emails('lead:' + t.key, t.leads, 'lead e-mail')}</div>`).join('')}</div>
-      <div class="vp-row2">${field('Cockpit editors — any tower (Digital Operations)', emails('editors', s.editors))}${field('Change managers — import the CAB, edit any change (ITSM)', emails('changeManagers', s.changeManagers))}</div>
+      <div class="vp-row2">${field('Cockpit editors — any tower (IT Operations)', emails('editors', s.editors))}${field('Change managers — import the CAB, edit any change (ITSM)', emails('changeManagers', s.changeManagers))}</div>
       <div class="vp-hint">Everyone listed gets the VP cockpit page automatically, on top of their own role. Admins can always do everything. The VP Operations role only comments.</div>
       <div class="vp-drk">Morning brief</div>
       <div class="vp-row3">${field('Send', `<label class="vp-chk"><input type="checkbox" id="vsOn"${dg.enabled ? ' checked' : ''}> every day</label><label class="vp-chk"><input type="checkbox" id="vsWd"${dg.weekdays ? ' checked' : ''}> skip Friday &amp; Saturday</label>`)}

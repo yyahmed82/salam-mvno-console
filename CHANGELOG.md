@@ -1,3 +1,10 @@
+## 2.0.0-alpha.150 — 2026-10-08
+
+- **VP Operations cockpit — "IT Operations" in the copy.** The page and its first content said "Digital Operations" for the team that posts and follows. Console copy names it **IT Operations**.
+  - Settings: "Cockpit editors — any tower (IT Operations)".
+  - First content (`opsCockpitSeed.js`, seed v2): the UPG highlight is posted by IT Operations, and its text says IT Operations asked for the fix. The four challenges are raised and followed by IT Operations (L2 where it was Digital Ops L2), and the seeded note authors and the TCS weekly report follow the same wording.
+  - A console seeded with v1 (152, alpha.149) is corrected in place at the next start (`rewordSeed()`, once, logged as `[cockpit] seed v2: …`). Only the seeded rows change; notes people wrote themselves are left alone. The CAB rows keep the text ITSM mailed.
+
 ## 2.0.0-alpha.149 — 2026-10-08
 
 - **VP Operations cockpit (`#vp`, new role `ops_vp`)** — the page the new VP Operations lands on. The person who holds the role sees the CIO's KPIs, the last updates from every tower, the week of CAB changes (status, result, PIR) and each tower's daily challenges (Digital · BSS · OSS · ITSM · Infra). He gets an 08:00 KSA morning brief by e-mail. `vpcockpit.js` (page), `server/src/opsCockpit.js` (API, tables, mail), `server/src/opsCockpitSeed.js` (first content).

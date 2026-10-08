@@ -30,7 +30,7 @@
  * WHO MAY DO WHAT. Reading needs the 'vp' view (ops_vp, admin, super admin — and everybody named below gets it
  * automatically: api.js adds 'vp' to the session of any member, so a tower lead keeps his own role). Writing is
  * per person, from console_settings key 'cockpit' (Settings › VP cockpit):
- *   editors          edit any tower, post any update (Digital Operations)
+ *   editors          edit any tower, post any update (IT Operations)
  *   changeManagers   import the CAB, edit any change (ITSM)
  *   towers[].leads   post and update their own tower's challenges and updates, record results / PIR of their changes
  *   admins           (adminTools) everything above + the settings
@@ -433,9 +433,42 @@ function parseCab({ html, text }) {
 }
 
 /* ---------------------------------------------------------------- seed (once) */
+/* seed v2 (alpha.150): console copy names the team "IT Operations", never "Digital Operations". A console seeded with
+ * v1 gets the seeded rows rewritten in place: the update, the four challenges with their seeded notes (authors that are
+ * labels, not e-mails — what people wrote themselves is left alone) and the TCS report. The CAB rows keep ITSM's text. */
+const REWORD = [['Operations — Digital Ops L2', 'IT Operations — L2'], ['Operations — Digital Ops', 'IT Operations'],
+  ['Head of Digital Operations', 'IT Operations'], ['Digital Ops L2', 'IT Operations L2'], ['Digital Operations', 'IT Operations']];
+const reword = s => typeof s === 'string' ? REWORD.reduce((t, [a, b]) => t.split(a).join(b), s) : s;
+const rewordWho = s => s === 'Operations' ? 'IT Operations' : reword(s);
+async function rewordSeed() {
+  let n = 0;
+  const put = async (table, id, cols, row, fn) => {
+    const next = cols.map(c => fn(c)(row[c]));
+    if (!cols.some((c, i) => next[i] !== row[c])) return;
+    await C().query(`UPDATE ${table} SET ${cols.map((c, i) => `${c}=$${i + 2}`).join(', ')} WHERE id=$1`, [id, ...next]); n++;
+  };
+  const keys = list => (list || []).map(x => x.seed_key);
+  for (const r of (await C().query(`SELECT id, body, created_by FROM cockpit_updates WHERE seed_key = ANY($1)`, [keys(SEED.UPDATES)])).rows)
+    await put('cockpit_updates', r.id, ['body', 'created_by'], r, () => reword);
+  for (const r of (await C().query(`SELECT id, impact, detail, fix_owner, followed_by, next_step, created_by, updated_by FROM cockpit_challenges WHERE seed_key = ANY($1)`, [keys(SEED.CHALLENGES)])).rows) {
+    await put('cockpit_challenges', r.id, ['impact', 'detail', 'fix_owner', 'followed_by', 'next_step', 'created_by', 'updated_by'], r, c => /_by$/.test(c) ? rewordWho : reword);
+    for (const x of (await C().query(`SELECT id, body, created_by FROM cockpit_notes WHERE challenge_id=$1 AND position('@' in coalesce(created_by, '')) = 0`, [r.id])).rows)
+      await put('cockpit_notes', x.id, ['body', 'created_by'], x, c => c === 'created_by' ? rewordWho : reword);
+  }
+  for (const r of (await C().query(`SELECT id, created_by FROM cockpit_reports WHERE seed_key = ANY($1)`, [keys(SEED.REPORTS)])).rows)
+    await put('cockpit_reports', r.id, ['created_by'], r, () => reword);
+  return n;
+}
 async function seed() {
   const st = await settings.getSetting('cockpit_seed').catch(() => null);
-  if (st && Number(st.version) >= SEED.SEED_VERSION) return;
+  const have = st ? Number(st.version) || 0 : 0;
+  if (have >= SEED.SEED_VERSION) return;
+  if (have >= 1) {                                                   // seeded before → only the later corrections, never a second load
+    const n = await rewordSeed();
+    await settings.setSetting('cockpit_seed', { ...st, version: SEED.SEED_VERSION, reworded: n, rewordedAt: new Date().toISOString() });
+    console.log(`[cockpit] seed v${SEED.SEED_VERSION}: first content now says "IT Operations" (${n} row${n === 1 ? '' : 's'} reworded)`);
+    return;
+  }
   const S = SEED.CAB_2026_10_07;
   const idx = Object.fromEntries(STD_ORDER.map((k, i) => [k, i]));
   const changes = []; let pendingCk = '';
