@@ -115,7 +115,8 @@
   const BIZ_STATE = { OK: ['ok', 'OK'], DEGRADED: ['warn', 'Degraded'], OUTAGE: ['bad', 'Outage'], CASE: ['bad', 'P1 case'], BLIND: ['warn', 'Monitoring gap'] };
   const EXEC_STATE = { HEALTHY: ['ok', 'Healthy'], WARNING: ['warn', 'Warning'], CRITICAL: ['bad', 'Critical'] };
   function bizState(biz) {
-    const b = briefOf(biz); if (b) { const [cls, label] = BIZ_STATE[b.status.state] || ['', b.status.state]; return { cls, label, b }; }
+    /* technical incidents only on this page (alpha.155): statusTech leaves the business-rule incidents to the Executive Dashboard */
+    const b = briefOf(biz); if (b) { const st = b.statusTech || b.status; const [cls, label] = BIZ_STATE[st.state] || ['', st.state]; return { cls, label, b, st }; }
     const e = execOf(biz); if (e) { const [cls, label] = EXEC_STATE[e.status] || ['', e.status]; return { cls, label, e }; }
     return null;
   }
@@ -125,8 +126,8 @@
     const d = D(), s = d.stats || {}, m = me();
     const chips = [];
     ['mobile', 'fixed'].forEach(biz => { const x = bizState(biz); if (!x) return;
-      const st = x.b ? x.b.status.state : null;
-      const p = st === 'CASE' ? ' · service up' : st === 'BLIND' ? ' · state not known' : x.b ? (x.b.status.openP1 + x.b.status.openP2 ? ` · ${x.b.status.openP1 ? x.b.status.openP1 + ' P1' : ''}${x.b.status.openP1 && x.b.status.openP2 ? ' + ' : ''}${x.b.status.openP2 ? x.b.status.openP2 + ' P2' : ''} open` : '') : '';
+      const ss = x.st || null, st = ss ? ss.state : null;
+      const p = st === 'CASE' ? ' · service up' : st === 'BLIND' ? ' · state not known' : ss ? (ss.openP1 + ss.openP2 ? ` · ${ss.openP1 ? ss.openP1 + ' P1' : ''}${ss.openP1 && ss.openP2 ? ' + ' : ''}${ss.openP2 ? ss.openP2 + ' P2' : ''} open` : '') : '';
       chips.push(`<button type="button" class="vp-hchip ${x.cls}" data-act="biz" data-biz="${biz}" title="What is open now, and this month's incidents"><i></i>${biz === 'mobile' ? 'Mobile' : 'Fixed'} · ${esc(x.label)}${esc(p)}</button>`); });
     if (S.d) {
       chips.push(`<button type="button" class="vp-hchip" data-act="goto" data-to="vpWeek">${svg(IC.clock, 14)}${num(s.tonight)} change${s.tonight === 1 ? '' : 's'} tonight</button>`);
@@ -178,7 +179,7 @@
     const x = bizState(biz);
     if (!x) return `<a class="vp-tile vp-skel" href="${href}"><div class="vp-tl">${label}</div><div class="vp-tv">…</div><div class="vp-ts">${S.brief || S.exec ? 'not available for this account' : 'reading the incidents'}</div></a>`;
     let sub = '';
-    if (x.b) { const st = x.b.status, imp = x.b.impact || {}, open = (st.openP1 || 0) + (st.openP2 || 0);
+    if (x.b) { const st = x.st, imp = x.b.impact || {}, open = (st.openP1 || 0) + (st.openP2 || 0);
       const kinds = [st.openP1 ? `${st.openP1} P1` : '', st.openP2 ? `${st.openP2} P2` : ''].filter(Boolean).join(' + ');
       const now1 = open ? `<b>${open}</b> incident${open === 1 ? '' : 's'} open (${kinds})${st.since ? ` · since ${esc(sinceTxt(st.since))}` : ''}` : 'No P1 / P2 incident open';
       const cust = open ? (st.estimated ? `<b>${num(st.affectedNow)}</b> customers affected` : 'customer impact not estimated') : '';
@@ -268,7 +269,8 @@
     let tiles = '';
     if (!S.exec && !S.execErr) tiles = '<div class="vp-kgrid">' + Array.from({ length: 4 }, () => '<div class="vp-kpi vp-skel"><div class="vp-kt">…</div><div class="vp-kv">…</div></div>').join('') + '</div>';
     else if (!hs.length) tiles = `<div class="vp-empty">${esc(S.execErr || 'KPIs not available for this account')}</div>`;
-    else tiles = '<div class="vp-kgrid">' + hs.map(h => (VPK[h.biz] || []).map(key => (h.kpis || []).find(k => k.key === key)).filter(k => k && k.value != null && k.value !== '—').map(k => { const d = kdef(h.biz, k.key) || {};
+    /* technical errors only on this page (alpha.155): a tile with a `tech` reading shows it, whatever the SLO Counts setting */
+    else tiles = '<div class="vp-kgrid">' + hs.map(h => (VPK[h.biz] || []).map(key => (h.kpis || []).find(k => k.key === key)).filter(k => k && k.value != null && k.value !== '—').map(k0 => { const k = k0.tech ? { ...k0, ...k0.tech } : k0; const d = kdef(h.biz, k.key) || {};
         return `
         <a class="vp-kpi vp-t-${esc(k.tone || 'none')}" href="${esc(k.href || (h.biz === 'fixed' ? '#fixed' : '#dashboard'))}">
           <div class="vp-kh"><span class="vp-kbiz vp-kbiz-${esc(h.biz)}">${h.biz === 'fixed' ? 'Fixed' : 'Mobile'}</span><span class="vp-kw">${esc(d.window || k.window || '')}</span></div>
@@ -277,7 +279,7 @@
           ${k.delta && k.delta.pct != null ? `<div class="vp-kd ${k.delta.pct === 0 ? '' : k.delta.good ? 'good' : 'bad'}">${k.delta.of ? esc(k.delta.of) + ' ' : ''}${k.delta.pct > 0 ? '+' : ''}${esc(k.delta.pct)}% vs the previous 24 h</div>` : ''}
           ${d.what ? `<div class="vp-kdef">${esc(d.what)}</div>` : ''}
         </a>`; }).join('')).join('') + '</div>';
-    return `<section class="vp-sec" id="vpKpis">${secHead('Key indicators · last 24 h', 'Mobile app &amp; web · Fixed orders and errors', `<button type="button" class="vp-link" data-act="defs" data-to="kpi">How we count ${svg(IC.info, 13)}</button><a class="vp-link" href="#exec">Executive Dashboard ${svg(IC.arrow, 13)}</a>`, 'The same numbers as the Executive Dashboard, over the last 24 hours. Today\'s dealer and QR sales, since midnight, are in the sales tile above.')}${tiles}</section>`;
+    return `<section class="vp-sec" id="vpKpis">${secHead('Key indicators · last 24 h', 'Mobile app &amp; web · Fixed orders and errors', `<button type="button" class="vp-link" data-act="defs" data-to="kpi">How we count ${svg(IC.info, 13)}</button><a class="vp-link" href="#exec">Executive Dashboard ${svg(IC.arrow, 13)}</a>`, 'Over the last 24 hours; errors and failures are technical only (our systems or a partner). Today\'s dealer and QR sales, since midnight, are in the sales tile above.')}${tiles}</section>`;
   }
   const secHead = (kick, title, right, sub) => `<div class="vp-sh"><div><div class="vp-shk">${esc(kick)}</div><h2 class="vp-sht">${title}</h2>${sub ? `<div class="vp-shs">${sub}</div>` : ''}</div>${right ? `<div class="vp-shr">${right}</div>` : ''}</div>`;
 
@@ -573,10 +575,10 @@
   function openBiz(biz) {
     const x = bizState(biz), label = biz === 'mobile' ? 'Mobile' : 'Fixed';
     if (!x || !x.b) { location.hash = biz === 'mobile' ? '#dashboard' : '#fixed'; return; }
-    const st = x.b.status, imp = x.b.impact || {}, open = ((x.b.actions || {}).open) || [], defs = D().defs || {};
+    const st = x.st, imp = x.b.impact || {}, acts = x.b.actions || {}, open = acts.openTech || (acts.open || []).filter(a => a.kind !== 'business'), defs = D().defs || {};
     const openRows = open.length ? `<ul class="vp-inc">${open.map(a => `<li><span class="vp-psev vp-psev-${esc(String(a.severity).toLowerCase())}">${esc(a.severity)}</span><div><b>${esc(a.name)}</b>${a.kind && a.kind !== 'service' ? ` <span class="vp-kind vp-kind-${esc(a.kind)}">${esc((P1KIND[a.kind] || [a.kind])[0])}</span>` : ''}
         <div class="vp-dim">open ${esc(durTxt(a.ageMin))} · ${a.owner ? 'owner ' + esc(String(a.owner).split('@')[0]) : 'nobody has taken it'}${a.acked ? ' · acknowledged' : ''}${a.ticket ? ' · ' + esc(a.ticket) : ''}${a.customers != null ? ` · ${num(a.customers)} customers` : ''}</div></div></li>`).join('')}</ul>` : '<div class="vp-empty">No P1 / P2 incident open.</div>';
-    const list = (imp.list || []).slice().sort((a, b) => (b.minutes || 0) - (a.minutes || 0));
+    const list = (imp.list || []).filter(a => a.kind !== 'business').sort((a, b) => (b.minutes || 0) - (a.minutes || 0));   // technical only
     /* the P1 time of each incident (alpha.154): an incident can open at P2 and cross into P1, or step back — only its P1 periods count */
     const reg = list.length ? `<table class="vp-tbl vp-regtbl"><thead><tr><th>P1 incident</th><th>At P1 from</th><th>Until</th><th>P1 time this month</th><th>Kind</th></tr></thead><tbody>${list.slice(0, 15).map(a => { const k = P1KIND[a.kind] || P1KIND.service;
         const part = a.lifeMin != null && a.lifetimeMin != null && a.lifeMin - a.lifetimeMin >= 5 ? `<div class="vp-dim">at P1 ${esc(durTxt(a.lifetimeMin))} of its ${esc(durTxt(a.lifeMin))}${a.p1Periods > 1 ? ` · ${a.p1Periods} periods` : ''}</div>` : '';
@@ -584,7 +586,7 @@
           <td data-l="P1 time this month">${esc(durTxt(a.minutes))}</td><td data-l="Kind"><span class="vp-kind vp-kind-${esc(a.kind || 'service')}">${esc(k[0])}</span><div class="vp-dim">${esc(k[1])}</div></td></tr>`; }).join('')}</tbody></table>${list.length > 15 ? `<div class="vp-dim">${list.length - 15} more in the Executive Dashboard.</div>` : ''}`
       : '<div class="vp-empty">No P1 incident of 5 minutes or more this month.</div>';
     const svc = imp.service != null ? imp.service : imp.incidents;
-    const other = [(imp.business ? `${imp.business} business case${imp.business === 1 ? '' : 's'}` : ''), (imp.monitoring ? `${imp.monitoring} monitoring` : '')].filter(Boolean).join(' · ');
+    const other = imp.monitoring ? `${imp.monitoring} monitoring` : '';
     const def = k => defs[k] ? `<p class="vp-defl"><b>${esc(defs[k].label)}</b> — ${esc(defs[k].what)}</p>` : '';
     drawer(drHead(`<b>${label}</b><span class="vp-stchip vp-st-${x.cls}"><i></i>${esc(x.label)}</span>`) + `<div class="vp-drb">
       <div class="vp-drsec"><div class="vp-drk">Open now</div>

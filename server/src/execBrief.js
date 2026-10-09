@@ -66,19 +66,26 @@ function vendorFor(cfg, biz) {
   return vendor && { vendor, contract, assignment: pick };
 }
 
-/* ---------------------------------------------------------------- alerts of one business in a window */
+/* ---------------------------------------------------------------- alerts of one business in a window
+ * OPENED / ENDED as the incident really ran (alpha.155). The convergence import (7 Sep 2026) copied the old consoles'
+ * firings as history: status 'resolved', no opened_wall (so it took the import time, 7 Sep 04:16) and, for a legacy
+ * firing with no OK after it, no resolved_at. Read as written, 51 July "Error spike (P0/P1)" firings of the Operations
+ * Console ran from 7 Sep to "now" and made Fixed read 0.00 % available in October. A legacy row starts at its fired_at;
+ * a row that is not open but has no resolved_at ended when it was last seen. */
+const OPENED_SQL = `CASE WHEN a.source IN ('operations','digital') THEN a.fired_at ELSE COALESCE(a.opened_wall, a.fired_at) END`;
+const ENDED_SQL = `CASE WHEN a.status <> 'open' AND a.resolved_at IS NULL THEN COALESCE(a.last_seen_at, a.fired_at) ELSE a.resolved_at END`;
 async function alertsIn(seg, from, to) {
   const W = SEG.sqlWhere('a', 'rule_key', seg) + SEG.appOnly('a');   // infra incidents never drive the executive status
   const r = await db.console.query(
-    `SELECT a.id, a.rule_key, a.name, a.severity, a.team, a.status, a.customers, a.services, a.observed_value, a.peak_value,
-            a.fired_at, COALESCE(a.opened_wall, a.fired_at) AS opened, a.resolved_at, a.ack_at, a.ack_by, a.assignee, a.sn_number, a.resolve_reason,
+    `SELECT a.id, a.rule_key, a.name, a.severity, a.team, a.status, a.customers, a.services, a.observed_value, a.peak_value, a.dim, a.source,
+            a.fired_at, ${OPENED_SQL} AS opened, ${ENDED_SQL} AS resolved_at, a.ack_at, a.ack_by, a.assignee, a.sn_number, a.resolve_reason,
             t.probable_cause, t.impact AS triage_impact, r.alert_class AS rule_class
        FROM alerts a
        LEFT JOIN agent_triage t ON t.alert_id = a.id
        LEFT JOIN alert_rules r ON r.key = a.rule_key
-      WHERE ${W} AND COALESCE(a.opened_wall, a.fired_at) < $2::timestamptz
-        AND (a.resolved_at IS NULL OR a.resolved_at >= $1::timestamptz)
-      ORDER BY COALESCE(a.opened_wall, a.fired_at)`, [from, to]);
+      WHERE ${W} AND ${OPENED_SQL} < $2::timestamptz
+        AND (${ENDED_SQL} IS NULL OR ${ENDED_SQL} >= $1::timestamptz)
+      ORDER BY ${OPENED_SQL}`, [from, to]);
   return r.rows;
 }
 const minutesOf = (a, now) => Math.round(((a.resolved_at ? new Date(a.resolved_at) : now) - new Date(a.opened)) / 60000);
@@ -101,7 +108,12 @@ function unionMinutes(rows, from, to, now) {
  *               was down, only that we could not see it.
  * Before this, one P1 case left open across the month read "Fixed 0% available" on the Executive and VP pages. */
 const MONITORING_RX = /(^|_)(ingest|collector)_stale|read model stale|board blind|collector stale/i;
-const kindOf = a => (MONITORING_RX.test(a.rule_key || '') || MONITORING_RX.test(a.name || '')) ? 'monitoring' : a.rule_class === 'business' ? 'business' : 'service';
+/* business without a rule row (alpha.155): the DMS flow rules (dms:flow:*) carry their family in dim — money and regulator
+ * findings are cases (top-up without debit, orphan Semati registration…), integrity and access are technical; refund
+ * tickets (refund_batch) have no rule row at all */
+const dimOf = a => { const d = a && a.dim; if (!d) return {}; if (typeof d === 'object') return d; try { return JSON.parse(d); } catch (e) { return {}; } };
+const isBusiness = a => a.rule_class === 'business' || ['money', 'regulator'].includes(dimOf(a).family) || (!a.rule_class && /refund/i.test(a.rule_key || ''));
+const kindOf = a => (MONITORING_RX.test(a.rule_key || '') || MONITORING_RX.test(a.name || '')) ? 'monitoring' : isBusiness(a) ? 'business' : 'service';
 
 /* ---------------------------------------------------------------- the state right now (alpha.152)
  * Read from the open P1 / P2 incidents with the same three kinds, so the state and the month's availability cannot
@@ -258,6 +270,14 @@ async function business(seg, win, now, cfg, deps, q) {
   const since = open.length ? open.map(a => a.opened).sort()[0] : null;
   const st = stateOf(open);
   const kinds = { service: 0, business: 0, monitoring: 0 }; open.forEach(a => { kinds[kindOf(a)]++; });
+  /* the VP page reads the technical incidents only (alpha.155): the platform, a partner, or the console's own feeds —
+   * business-rule incidents (refunds, decline storms, money / regulator findings) stay on the Executive Dashboard */
+  const openTech = open.filter(a => kindOf(a) !== 'business'), stT = stateOf(openTech);
+  const statusTech = { state: stT.state, stateKind: stT.kind, stateNote: stT.note,
+    openP1: openTech.filter(a => a.severity === 'P1').length, openP2: openTech.filter(a => a.severity === 'P2').length,
+    since: openTech.length ? openTech.map(a => a.opened).sort()[0] : null,
+    affectedNow: openTech.reduce((t, a) => t + n(a.customers), 0), estimated: openTech.some(a => a.customers != null),
+    what: stT.top ? (stT.top.name || stT.top.rule_key) : null, owner: stT.top ? (stT.top.assignee || stT.top.ack_by || null) : null };
   const status = { biz: B.biz, label: B.label, state: st.state, stateKind: st.kind, stateNote: st.note, openKinds: kinds,
     affectedNow: open.reduce((s, a) => s + n(a.customers), 0), estimated: open.some(a => a.customers != null), openP1: openP1.length, openP2: openP2.length, since,
     what: st.top ? (st.top.name || st.top.rule_key) : null,
@@ -270,8 +290,9 @@ async function business(seg, win, now, cfg, deps, q) {
   const vendor = vend ? { id: vend.vendor.id, name: vend.vendor.name, contract: vend.contract ? { id: vend.contract.id, title: vend.contract.title, status: vend.contract.status, capPct, feeConfigured: fee != null } : null,
     obligations, exposureSar: fee == null ? null : (capPct != null ? Math.min(raw, Math.round(fee * capPct / 100)) : raw), breaches: obligations.filter(o => o.breached).length, measured: obligations.filter(o => o.measured).length } : null;
 
-  const actions = { open: open.sort((a, b) => (a.severity > b.severity ? 1 : a.severity < b.severity ? -1 : new Date(a.opened) - new Date(b.opened))).slice(0, 5)
-      .map(a => ({ id: a.id, name: a.name || a.rule_key, severity: a.severity, kind: kindOf(a), ageMin: Math.round((now - new Date(a.opened)) / 60000), owner: a.assignee || a.ack_by || null, acked: !!a.ack_at, ticket: a.sn_number || null, customers: a.customers == null ? null : n(a.customers), cause: a.probable_cause || null })),
+  const openItem = a => ({ id: a.id, name: a.name || a.rule_key, severity: a.severity, kind: kindOf(a), ageMin: Math.round((now - new Date(a.opened)) / 60000), owner: a.assignee || a.ack_by || null, acked: !!a.ack_at, ticket: a.sn_number || null, customers: a.customers == null ? null : n(a.customers), cause: a.probable_cause || null });
+  const bySevAge = (a, b) => (a.severity > b.severity ? 1 : a.severity < b.severity ? -1 : new Date(a.opened) - new Date(b.opened));
+  const actions = { open: open.slice().sort(bySevAge).slice(0, 5).map(openItem), openTech: openTech.slice().sort(bySevAge).slice(0, 8).map(openItem),
     rca: { due: reg.list.filter(x => x.rca.status === 'due').length, overdue: reg.list.filter(x => x.rca.status === 'overdue').length, pending: reg.list.filter(x => x.rca.status === 'pending').length, recorded: 0,
       items: reg.list.filter(x => ['due', 'overdue'].includes(x.rca.status)).map(x => ({ id: x.id, name: x.name, ended: x.ended, due: x.rca.due, status: x.rca.status, vendor: vend ? vend.vendor.name : null })) } };
 
@@ -281,7 +302,7 @@ async function business(seg, win, now, cfg, deps, q) {
     kpis = (h.kpis || []).filter(k => k.exec && k.value !== '—' && k.value != null).map(k => ({ key: k.key, title: k.title, value: k.value, sub: k.sub, tone: k.tone, delta: k.delta, href: k.href, window: k.window }));
   } catch (e) { console.error('[execBrief] kpis', seg, e.message); }
 
-  return { biz: B.biz, label: B.label, status, impact: { ...reg, availabilityPct, prev: { incidents: prev.incidents, service: prev.service, minutes: prev.minutes, customers: prev.customers, money: prev.money, availabilityPct: prevAvail } }, vendor, actions, kpis };
+  return { biz: B.biz, label: B.label, status, statusTech, impact: { ...reg, availabilityPct, prev: { incidents: prev.incidents, service: prev.service, minutes: prev.minutes, customers: prev.customers, money: prev.money, availabilityPct: prevAvail } }, vendor, actions, kpis };
 }
 
 function mount(app, deps) {
@@ -301,4 +322,4 @@ function mount(app, deps) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 }
-module.exports = { mount, monthWindow, targetMinutes, unionMinutes, register, measure, kindOf, stateOf, p1Spans, severityMoves };
+module.exports = { mount, monthWindow, targetMinutes, unionMinutes, register, measure, kindOf, stateOf, p1Spans, severityMoves, OPENED_SQL, ENDED_SQL };

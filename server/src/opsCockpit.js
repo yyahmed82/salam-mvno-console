@@ -89,13 +89,13 @@ const IMPL_OFF = ['postponed', 'cancelled', 'rejected'];                        
  * so the VP reads one definition everywhere. Each entry must stay true to the code named in `src`. */
 const DEFS = {
   state: { label: 'Mobile / Fixed state', window: 'right now',
-    what: 'Read from the open P1 / P2 incidents, the most serious first. Outage: a P1 service incident is open (the platform or a partner is failing). P1 case open: a P1 business case is open (customers charged but not served, refunds missing, decline storms…) while the service itself is up. Degraded: a P2 incident is open. Monitoring gap: only a monitoring incident is open (the console cannot read one of its data feeds), so the state is not known. OK: nothing open at P1 / P2. The Executive Dashboard uses the same rule. Infrastructure alerts are not counted here; they are in Infrastructure.',
-    src: 'Console alerts of the application rules (execBrief.js)' },
+    what: 'Read from the open P1 / P2 incidents of the technical rules, the most serious first: the platform, a partner, or the console\'s own data feeds. Business-rule incidents (refunds, decline storms, money and regulator findings) are not shown on this page; they are on the Executive Dashboard. Outage: a P1 is open (the platform or a partner is failing). Degraded: a P2 is open. Monitoring gap: only a monitoring incident is open (the console cannot read one of its data feeds), so the state is not known. OK: nothing technical open at P1 / P2. Infrastructure alerts are not counted here; they are in Infrastructure.',
+    src: 'Console alerts of the technical application rules (execBrief.js, statusTech)' },
   affected: { label: 'Customers affected now', window: 'right now',
-    what: 'The customers that the open P1 / P2 incidents carry, added up. Most rules do not estimate customers; the tile then says "customer impact not estimated", never zero.',
+    what: 'The customers that the open technical P1 / P2 incidents carry, added up. Most rules do not estimate customers; the tile then says "customer impact not estimated", never zero.',
     src: 'alerts.customers (execBrief.js)' },
   month: { label: 'This month', window: 'calendar month, KSA, up to now',
-    what: 'Service incidents are P1 incidents of a technical rule (the platform or a partner failing) that spent 5 minutes or more at P1, or are at P1 now. Only their time at P1 counts: an incident often opens at P2 and crosses into P1, or steps back, and each move is recorded. Two at the same time count once. Availability = 1 − service-incident time ÷ time elapsed this month. Two kinds of P1 are listed in the drill-down but are not downtime: business cases (card-decline storms, refunds missing, charged-but-failed orders) and monitoring incidents (the console unable to read one of its data feeds).',
+    what: 'Service incidents are incidents of a technical rule (the platform or a partner failing) that spent 5 minutes or more at P1, or are at P1 now. Only their time at P1 counts: an incident often opens at P2 and crosses into P1, or steps back, and each move is recorded. Two at the same time count once. Availability = 1 − service-incident time ÷ time elapsed this month. Monitoring incidents (the console unable to read one of its data feeds) are listed in the drill-down but are not downtime. Business-rule incidents are not counted or shown here. The firings copied from the old consoles count from when they fired and end when they were last seen.',
     src: 'Executive Dashboard › What did it cost us (execBrief.js)' },
   sales: { label: 'Dealer & QR sales today', window: 'today since 00:00 KSA, compared with yesterday at the same time',
     what: 'Mobile counts the SIM activations dealers completed, on the DMS app and on the dealer web portal (mobile.salammobile.sa). Fixed counts the orders completed on the SDA dealer app and through QR codes (e-purchase orders opened from a dealer or campaign QR code). The customers\' own app and web journeys are not in this number; they are in the KPIs below (last 24 h). The tile refreshes every minute; the Sales Operations wall every 30 seconds.',
@@ -116,15 +116,15 @@ const DEFS = {
     'mobile.orders': { label: 'App & web orders', window: 'last 24 h',
       what: 'Orders opened in the Salam Mobile app and website (new lines and port-ins), including those abandoned before payment. The line under it counts the checkouts. Dealer sales are in the sales tile.', src: 'Selfcare onboarding_orders and checkouts' },
     'mobile.activations': { label: 'Activation success · app & web', window: 'last 24 h',
-      what: '', src: 'Selfcare activation_logs, objective "Activation success" (its Counts setting on the SLO page)' },
+      what: 'App and web SIM activations that succeeded, out of those that succeeded or failed for a technical reason (our systems or a partner). Refusals by a business rule (eligibility, …) are left out on this page, whatever the SLO Counts setting. The change under it is the volume of activations, not the rate. Dealer activations are in the sales tile.', src: 'Selfcare activation_logs, technical class (errclass.js)' },
     'mobile.payments': { label: 'Payment reliability · platform', window: 'last 24 h',
       what: 'Payments settled, out of those the gateway approved. "Unconfirmed" means the gateway approved but our platform had not finalised the payment 30 min later. A card decline is the bank\'s answer and is not counted, so this is not the payment success rate (TCS reports that one in its weekly).', src: 'Selfcare payments, objective "Payment reliability"' },
     'mobile.errors': { label: 'Technical errors · app & web', window: 'last 24 h',
-      what: 'Failed calls to the Salam Mobile app and web APIs caused by our systems or a partner, against the daily budget. Refusals caused by the customer or a business rule are counted apart (the line under the number).', src: 'API error log, technical class (errclass.js)' },
+      what: 'Failed calls to the Salam Mobile app and web APIs caused by our systems or a partner, against the daily budget. Refusals caused by the customer or a business rule are not counted.', src: 'API error log, technical class (errclass.js)' },
     'fixed.attempts': { label: 'Orders started · SDA & QR', window: 'last 24 h, by start time',
       what: 'Fixed orders started on the SDA dealer app and through QR codes in the last 24 h, whatever happened to them since. The line under it counts those completed and those that created a BSS order. Customer-direct web orders and the Salam Home app are not in this number.', src: 'sda_ops order_attempts (fixed360.js)' },
-    'fixed.errors': { label: 'API errors · all journeys', window: 'last 24 h',
-      what: '', src: 'sda_ops error_events, objective "API error budget" (its Counts setting on the SLO page)' }
+    'fixed.errors': { label: 'Technical API errors · all journeys', window: 'last 24 h',
+      what: 'Technical API errors on every Fixed journey (SDA, QR, web e-purchase and the Salam Home app), against the daily budget. Business errors are not counted on this page, whatever the SLO Counts setting. Unlike the orders started, it includes the customers\' own web and app journeys.', src: 'sda_ops error_events, technical class' }
   },
   /* the questions the VP asked first: two numbers that look alike and are not (8 Oct 2026) */
   diff: [
@@ -135,21 +135,8 @@ const DEFS = {
     { a: 'This page', b: 'Sales Operations wall', why: 'The same source and the same count; the wall refreshes every 30 seconds, the sales tile here every minute and the rest of the page every 5 minutes. The sales tile says the time of its numbers ("as of").' }
   ]
 };
-/* the two definitions that depend on a setting: what a failure is follows the objective's Counts on the SLO page */
-async function defsNow() {
-  let actCls = 'all', errCls = 'all';
-  try { const slo = require('./slo'); const cfg = await slo.getConfig();
-    actCls = slo.effectiveClass(slo.findDef(cfg, 'mobile_activation_success'), cfg); errCls = slo.effectiveClass(slo.findDef(cfg, 'fixed_api_error_budget'), cfg); } catch (e) { /* defaults */ }
-  const act = actCls === 'technical' ? 'App and web SIM activations that succeeded, out of those that succeeded or failed for a technical reason (our systems or a partner). A refusal by a business rule (eligibility, …) is left out, per the SLO setting.'
-    : actCls === 'business' ? 'App and web SIM activations that succeeded, out of those that succeeded or were refused by a business rule; technical failures are left out, per the SLO setting.'
-    : 'App and web SIM activations that succeeded, out of all that ended: technical failures and business refusals (eligibility, …) both count as failed, per the SLO setting.';
-  const err = errCls === 'technical' ? 'Technical API errors on every Fixed journey (SDA, QR, web e-purchase and the Salam Home app), against the daily budget. Business errors are left out, per the SLO setting; the line under the number gives both.'
-    : errCls === 'business' ? 'Business API errors on every Fixed journey (SDA, QR, web e-purchase and the Salam Home app), against the daily budget; technical errors are left out, per the SLO setting.'
-    : 'API errors on every Fixed journey (SDA, QR, web e-purchase and the Salam Home app), technical and business together, against the daily budget. The line under the number splits them.';
-  const kpi = { ...DEFS.kpi, 'mobile.activations': { ...DEFS.kpi['mobile.activations'], what: act + ' The change under it is the volume of activations, not the rate. Dealer activations are in the sales tile.' },
-    'fixed.errors': { ...DEFS.kpi['fixed.errors'], what: err + ' Unlike the orders started, it includes the customers\' own web and app journeys.' } };
-  return { ...DEFS, kpi };
-}
+/* the definitions the page reads (alpha.155: technical only, so no longer tied to the SLO Counts setting) */
+async function defsNow() { return DEFS; }
 
 /* ---------------------------------------------------------------- settings (console_settings 'cockpit') */
 const DEFAULT_CFG = {
@@ -855,12 +842,13 @@ async function buildDigest(deps, opts) {
    * incident open, CASE = a P1 business case open, DEGRADED = a P2 open, BLIND = only monitoring open, OK otherwise;
    * the 24 h signal summary of the exec contract stays as the line under it */
   const SEGM = require('./segment'), EB = require('./execBrief');
-  const openOf = async seg => { try { const r = await C().query(`SELECT a.severity, a.name, a.rule_key, a.customers, a.fired_at, COALESCE(a.opened_wall, a.fired_at) AS opened, a.assignee, a.ack_by,
+  const openOf = async seg => { try { const r = await C().query(`SELECT a.severity, a.name, a.rule_key, a.customers, a.fired_at, a.dim, COALESCE(a.opened_wall, a.fired_at) AS opened, a.assignee, a.ack_by,
           r.alert_class AS rule_class FROM alerts a LEFT JOIN alert_rules r ON r.key = a.rule_key
         WHERE a.status='open' AND a.severity IN ('P1','P2') AND ${SEGM.sqlWhere('a', 'rule_key', seg)}${SEGM.appOnly('a')} ORDER BY a.severity, COALESCE(a.opened_wall, a.fired_at)`);
-      const st = EB.stateOf(r.rows);
-      return { state: st.state, note: st.note, p1: r.rows.filter(x => x.severity === 'P1').length, p2: r.rows.filter(x => x.severity === 'P2').length,
-        what: st.top ? (st.top.name || st.top.rule_key) : null, customers: r.rows.reduce((t, x) => t + (Number(x.customers) || 0), 0), estimated: r.rows.some(x => x.customers != null) }; }
+      const rows = r.rows.filter(x => EB.kindOf(x) !== 'business');              // technical only, like the page (alpha.155)
+      const st = EB.stateOf(rows);
+      return { state: st.state, note: st.note, p1: rows.filter(x => x.severity === 'P1').length, p2: rows.filter(x => x.severity === 'P2').length,
+        what: st.top ? (st.top.name || st.top.rule_key) : null, customers: rows.reduce((t, x) => t + (Number(x.customers) || 0), 0), estimated: rows.some(x => x.customers != null) }; }
     catch (e) { return null; } };
   const [openM, openF] = await Promise.all([openOf('mvno'), openOf('fixed')]);
   let sales = null;
@@ -870,7 +858,7 @@ async function buildDigest(deps, opts) {
     const open = op ? `${op.p1 ? op.p1 + ' P1' : ''}${op.p1 && op.p2 ? ' + ' : ''}${op.p2 ? op.p2 + ' P2' : ''} open` : '';
     const [col, txt] = !op ? ['#64748b', '—'] : op.state === 'OUTAGE' ? ['#dc2626', `Outage · ${open}`] : op.state === 'CASE' ? ['#dc2626', `P1 case open · service up`]
       : op.state === 'DEGRADED' ? ['#d97706', `Degraded · ${open}`] : op.state === 'BLIND' ? ['#d97706', 'Monitoring gap · state not known'] : ['#0e9f5a', 'OK'];
-    const line = op && (op.p1 || op.p2) ? `${esc(op.what || '')} · ${op.estimated ? `${op.customers.toLocaleString('en-US')} customers affected` : 'customer impact not estimated'}` : `No P1 / P2 open${((h || {}).summary || [])[0] ? ' · ' + esc(h.summary[0]) : ''}`;
+    const line = op && (op.p1 || op.p2) ? `${esc(op.what || '')} · ${op.estimated ? `${op.customers.toLocaleString('en-US')} customers affected` : 'customer impact not estimated'}` : `No technical P1 / P2 open${((h || {}).summary || [])[0] ? ' · ' + esc(h.summary[0]) : ''}`;
     return `<td style="padding:10px 12px;border:1px solid #e3e7e5;vertical-align:top"><div style="font-size:11px;color:#64748b;font-weight:700;letter-spacing:.06em">${esc(label).toUpperCase()}</div>
       <div style="font-size:17px;font-weight:800;color:${col};margin-top:3px">● ${esc(txt)}</div><div style="font-size:12px;color:#475569;margin-top:2px">${line}</div></td>`;
   };
@@ -889,7 +877,7 @@ async function buildDigest(deps, opts) {
     <tr>${tile('Open challenges', String(s.openChallenges), `${s.critical} critical · ${s.high} high · ${s.blocked} blocked`, s.critical ? '#dc2626' : null)}${tile('Towers reported today', `${s.towersReported} / ${s.towers}`, o.towers.filter(t => t.reportedToday).map(t => esc(t.label + (t.report && t.report.byName ? ' (' + t.report.byName + ')' : ''))).join(' · ') || 'none yet today')}</tr></table>`;
   const VPK = { Mobile: ['orders', 'activations', 'payments', 'errors'], Fixed: ['attempts', 'errors'] };
   const kpiList = (h, biz) => (h && h.configured !== false ? VPK[biz].map(key => (h.kpis || []).find(k => k.key === key)).filter(k => k && k.value != null && k.value !== '—')
-    .map(k => { const d = DEFS.kpi[`${biz.toLowerCase()}.${k.key}`] || {}; return { ...k, title: d.label || k.title, window: d.window || k.window }; }) : []);
+    .map(k => { const d = DEFS.kpi[`${biz.toLowerCase()}.${k.key}`] || {}; return { ...k, ...(k.tech || {}), title: d.label || k.title, window: d.window || k.window }; }) : []);
   const kpiCol = (label, h) => { const ks = kpiList(h, label); if (!ks.length) return ''; return `<td style="vertical-align:top;padding:0 6px;width:50%"><div style="font-size:11px;font-weight:800;color:#0b3d2b;letter-spacing:.06em;margin:4px 0 6px">${esc(label).toUpperCase()}</div>${ks.map(k => `<div style="border-left:3px solid #0e9f5a;padding:4px 10px;margin-bottom:6px"><div style="font-size:12px;color:#64748b">${esc(k.title)}${k.window ? ' · ' + esc(k.window) : ''}</div><div style="font-size:16px;font-weight:800;color:#14352a">${esc(typeof k.value === 'number' ? k.value.toLocaleString('en-US') : k.value)}</div>${k.sub ? `<div style="font-size:11.5px;color:#64748b">${esc(k.sub)}</div>` : ''}</div>`).join('')}</td>`; };
   const kpis = kpiCol('Mobile', mobile) + kpiCol('Fixed', fixed);
   const h2 = t => `<div style="font-size:12px;font-weight:800;color:#0b3d2b;letter-spacing:.08em;margin:22px 0 8px;border-bottom:2px solid #e8f7f0;padding-bottom:5px">${esc(t).toUpperCase()}</div>`;

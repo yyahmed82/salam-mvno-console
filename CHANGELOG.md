@@ -1,3 +1,11 @@
+## 2.0.0-alpha.155 — 2026-10-09
+
+- **VP Operations cockpit — technical incidents and technical errors only.** Asked by the VP after alpha.154: the page measures the technical health of Mobile and Fixed; business-rule incidents are not shown there.
+  - **Mobile / Fixed tiles, hero chips, the drawer and the morning brief** read `statusTech` and `actions.openTech` (execBrief.js): the open P1 / P2 of the technical rules — the platform, a partner, or the console's own feeds. Business-rule incidents (refunds, decline storms, the DMS flow money and regulator findings) stay on the Executive Dashboard, which is unchanged. The P1 register in the drawer lists technical incidents only.
+  - **Business without a rule row:** a DMS flow finding (`dms:flow:*`) of the money or regulator family, and a refund ticket, now count as business (`kindOf`).
+  - **KPI tiles:** activation success and Fixed API errors show their technical reading (`tech` in the exec contract: failed technically, technical errors against the budget), whatever the SLO Counts setting; the business-refusal counts are gone from the tiles. Definitions updated ("Technical API errors · all journeys").
+- **Fixed availability read 0.00 % because of 51 firings copied from the old Operations Console.** The convergence import (7 Sep) stored July "Error spike (P0/P1)" firings as resolved history with no opened_wall (it took the import time, 7 Sep 04:16) and no resolved_at (no OK followed them). The brief read them as P1s running from 7 Sep to now. It now starts a copied firing (source operations / digital) at its fired_at, and ends a row that is not open but has no resolved_at at its last_seen_at (`OPENED_SQL`, `ENDED_SQL`). The rows themselves are not changed.
+
 ## 2.0.0-alpha.154 — 2026-10-09
 
 - **VP Operations cockpit — the Open challenges and Towers reported tiles show the details, not only the counts.**
