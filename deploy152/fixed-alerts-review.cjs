@@ -85,7 +85,7 @@ async function opsCompleted(days) {
   return { ids, notes };
 }
 async function section18(q) {
-  hr(`18 · JOURNEYS — the app-log rate rules replayed per CUSTOMER JOURNEY, orders processed left out (${SNAPD} d) · and traffic by day type`);
+  hr(`18 · JOURNEYS — the app-log rate rules replayed per CUSTOMER JOURNEY, orders processed left out (${SNAPD} d) · and traffic by weekday`);
   const ops = await opsCompleted(SNAPD);
   for (const n of ops.notes) console.log('  ' + n);
   const hrs = await q(`
@@ -123,30 +123,30 @@ async function section18(q) {
     for (const h of hit.slice(-3)) console.log('  ' + ' '.repeat(42) + `↳ ${iso(h.hh)}Z  ${h[k]} of ${h.n} journeys (${f1(h[k] / h.n)}) · ${d.cls === 'business' ? h.br : h.tr} more to review`);
   }
 
-  /* traffic: distinct journeys per clock hour vs the median of the same KSA hour on the same day type, prior 28 days */
+  /* traffic: distinct journeys per clock hour vs the median of the same KSA hour on the same KSA weekday, prior 5 weeks (alpha.172) */
   const vol = await q(`SELECT date_trunc('hour', ts) hh, count(*)::int lines,
         count(DISTINCT state_id) FILTER (WHERE channel = 'web')::int web, count(DISTINCT state_id) FILTER (WHERE channel = 'sda')::int sda,
         count(DISTINCT coalesce(request_id, id::text)) FILTER (WHERE channel = 'salamhome')::int salamhome
-      FROM fixed_app_events WHERE ts >= now() - (($1::int + 28)||' days')::interval GROUP BY 1`, [SNAPD]);
-  const ksa = t => new Date(new Date(t).getTime() + 3 * 3600e3); const wk = t => [5, 6].includes(ksa(t).getUTCDay());
+      FROM fixed_app_events WHERE ts >= now() - (($1::int + 35)||' days')::interval GROUP BY 1`, [SNAPD]);
+  const ksa = t => new Date(new Date(t).getTime() + 3 * 3600e3); const wk = t => ksa(t).getUTCDay(); const DN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const byT = new Map(vol.map(v => [new Date(v.hh).getTime(), v]));
   const vrules = await q(`SELECT r.key, r.threshold, r.dim, r.active_from, r.active_to, r.enabled,
       (SELECT count(*) FROM alerts a WHERE a.rule_key = r.key AND a.fired_at >= now() - interval '30 days')::int fires30
     FROM alert_rules r WHERE r.metric_key = 'fixed_applog_volume_ratio' ORDER BY r.key`);
-  console.log('\n  Traffic collapse replayed: journeys in the clock hour vs the median of the same KSA hour on the same day type (Fri/Sat | Sun–Thu), 4 weeks before:');
+  console.log('\n  Traffic collapse replayed: journeys in the clock hour vs the median of the same KSA hour on the same KSA weekday, 5 weeks before:');
   for (const r of vrules) {
     const ch = (r.dim || {}).channel; let hours = 0; const hit = [];
     const start = Date.now() - Number(SNAPD) * 864e5;
     for (const v of vol) {
       const t = new Date(v.hh).getTime(); if (t < start || t > Date.now() - 3600e3) continue;
       const h = ksa(v.hh).getUTCHours(); if (r.active_from != null && (h < r.active_from || h >= r.active_to)) continue;
-      const same = []; for (let k = 1; k <= 28; k++) { const p = byT.get(t - k * 864e5); if (p && p.lines > 0 && wk(p.hh) === wk(v.hh)) same.push(p[ch]); }
+      const same = []; for (let k = 7; k <= 35; k += 7) { const p = byT.get(t - k * 864e5); if (p && p.lines > 0) same.push(p[ch]); }
       if (same.length < 3) continue; const med = pct(same, 0.5); if (med < 20) continue;
       hours++; const ratio = v[ch] / med; if (ratio <= Number(r.threshold)) hit.push({ hh: v.hh, n: v[ch], med, ratio });
     }
     const ep = episodes(hit.map(x => x.hh));
     console.log(`  ${pad(r.key, 42)} floor ${r.threshold} · ${hours} hours judged · ${hit.length} under the floor · ${ep} episodes (${(ep * 7 / Number(SNAPD)).toFixed(1)}/week) · fired ${r.fires30}× in 30 d before${r.enabled ? '' : ' · disabled'}`);
-    for (const h of hit.slice(-5)) console.log(`      ↳ ${iso(h.hh)}Z (KSA ${ksa(h.hh).toISOString().slice(0, 16).replace('T', ' ')} ${wk(h.hh) ? 'weekend' : 'weekday'}) ${h.n} vs typical ${h.med} → ${h.ratio.toFixed(2)}`);
+    for (const h of hit.slice(-5)) console.log(`      ↳ ${iso(h.hh)}Z (KSA ${ksa(h.hh).toISOString().slice(0, 16).replace('T', ' ')} ${DN[wk(h.hh)]}) ${h.n} vs typical ${h.med} → ${h.ratio.toFixed(2)}`);
   }
 }
 

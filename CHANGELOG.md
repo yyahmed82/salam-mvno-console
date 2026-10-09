@@ -1,3 +1,15 @@
+## 2.0.0-alpha.172 — 2026-10-09
+
+- **Traffic collapse compares the same weekday.**
+  - **The problem:** alpha.169 grouped Friday with Saturday as "weekend". On 9 Oct at 16:38 KSA, Epurchase's six weekend days read 305, 89, 308, 92, 278, 86: Saturdays trade like weekdays, Fridays at about a third of that. A normal Friday hour read 0.19 against the Saturday-heavy median, just over the 0.15 floor. SDA showed the same pattern (Fridays 29–30, Saturdays 49–101).
+  - **The fix:** the baseline is now the same trailing 60 minutes on the same KSA weekday of each of the last 5 weeks (median, at least 3 days, 3 weeks of history). The note names the days, e.g. "on a Friday (median of the last 5 Fridays: …)".
+  - **Census section 18** replays it the same way.
+- **Code:**
+  - `server/src/fixedChannelMetrics.js`
+  - `seedRules.js` (description)
+  - `alertCases.js` (note)
+  - `deploy152/fixed-alerts-review.cjs`
+
 ## 2.0.0-alpha.171 — 2026-10-09
 
 - **Fixed alert thresholds set on the journey counts (census section 18, 14 days to 9 Oct).** Hourly rate of journeys that failed and did not complete, hours with ≥ 30 journeys, p50 / p95 / p99:

@@ -36,8 +36,8 @@
  *   · a journey whose order was processed (fixedJourneyDone: read-model outcome COMPLETED, or its final step succeeded in
  *     the app log) leaves the numerator and is reported in dim.note as "errors to review" — never a trigger;
  *   · rows carry customers = journeys hit and customers_total = journeys seen, so the incident reads "· N customers";
- *   · traffic (volume collapse) = distinct journeys against the same trailing hour on the same KSA day type (Fri/Sat
- *     weekend vs Sun–Thu) over 4 weeks — the 9 Oct P1 was a Friday afternoon compared with weekday medians. */
+ *   · traffic (volume collapse) = distinct journeys against the same trailing hour on the same KSA WEEKDAY over the last
+ *     5 weeks — the 9 Oct P1 was a Friday afternoon compared with weekday medians. */
 const db = require('./db');
 const fe = require('./fixedErrors');
 const jd = require('./fixedJourneyDone');
@@ -344,38 +344,40 @@ const METRICS = {
    * as "traffic collapsed (silent outage)" — the P1 of 9 Oct. Now:
    *   unit     = distinct JOURNEYS (state_id) for Epurchase and SDA, distinct requests for the Salam Home app (its lines
    *              carry almost no state id) — a retry storm cannot hold the number up, a chatty page cannot either;
-   *   baseline = the SAME trailing 60 minutes on each of the last 28 days of the SAME KSA day type (Fri/Sat weekend vs
-   *              Sun–Thu), median — at least 3 such days; a past window where the collector saw nothing at all is a gap,
-   *              not a zero, and is left out;
+   *   baseline = the SAME trailing 60 minutes on the SAME KSA WEEKDAY of each of the last 5 weeks, median — at least 3
+   *              such days; a past window where the collector saw nothing at all is a gap, not a zero, and is left out.
+   *              (alpha.172) alpha.169 grouped Friday with Saturday as "weekend": on 9 Oct 16:38 KSA the six weekend days read
+   *              Epurchase 305, 89, 308, 92, 278, 86 — Saturdays trade like weekdays, Fridays at a third of that — so a
+   *              normal Friday hour read 0.19 against a Saturday median, a whisker over the 0.15 floor;
    *   guard    = no reading while the collector is behind (20 min) or when this hour is normally quiet (< 20). */
   fixed_applog_volume_ratio: {
-    label: 'Fixed · customer journeys in the last 60 min vs the same hour on the same day type (median of 4 weeks; 1.0 = normal, per channel)', unit: 'ratio', higherIsBad: false, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
+    label: 'Fixed · customer journeys in the last 60 min vs the same hour on the same weekday (median of 5 weeks; 1.0 = normal, per channel)', unit: 'ratio', higherIsBad: false, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
     compute: safe('applog_volume', async now => cached('appVol:' + minuteKey(now).slice(0, 15), 5 * 60e3, async () => {
       if (!C()) return [];
       const cv = (await C().query(`SELECT min(ts) AS t, max(ts) AS hi FROM fixed_app_events`)).rows[0], cov = cv.t;
-      if (!cov || (new Date(now) - new Date(cov)) < 7 * 864e5) return [];        // a week of history before "quiet" means anything (both day types seen)
+      if (!cov || (new Date(now) - new Date(cov)) < 21 * 864e5) return [];       // three of the same weekday before "quiet" means anything
       /* the collector itself behind (alpha.162): silence then means "we cannot see", not "customers left" — the collector-stale
        * rule says it */
       if (!cv.hi || new Date(now) - new Date(cv.hi) > 20 * 60e3) return [];
-      const r = (await C().query(`WITH w AS (SELECT k, $1::timestamptz - k * interval '1 day' AS t FROM generate_series(0, 28) k)
+      const r = (await C().query(`WITH w AS (SELECT k, $1::timestamptz - k * interval '1 day' AS t FROM generate_series(0, 35, 7) k)
           SELECT w.k, w.t, count(e.id)::int AS lines,
             count(DISTINCT e.state_id) FILTER (WHERE e.channel = 'web')::int AS web,
             count(DISTINCT e.state_id) FILTER (WHERE e.channel = 'sda')::int AS sda,
             count(DISTINCT coalesce(e.request_id, e.id::text)) FILTER (WHERE e.channel = 'salamhome')::int AS salamhome
           FROM w LEFT JOIN fixed_app_events e ON e.ts >= w.t - interval '60 minutes' AND e.ts < w.t
           GROUP BY 1,2 ORDER BY 1`, [now])).rows;
-      const ksaDay = t => new Date(new Date(t).getTime() + 3 * 3600e3).getUTCDay();          // 5 = Friday, 6 = Saturday
-      const weekend = t => { const d = ksaDay(t); return d === 5 || d === 6; };
+      const DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const ksaDay = t => new Date(new Date(t).getTime() + 3 * 3600e3).getUTCDay();
       const cur = r.find(x => x.k === 0); if (!cur) return [];
-      const type = weekend(now) ? 'weekend' : 'weekday';
-      const past = r.filter(x => x.k > 0 && weekend(x.t) === weekend(now) && x.lines > 0 && new Date(x.t) - 3600e3 >= new Date(cov));
+      const type = DAY[ksaDay(now)];
+      const past = r.filter(x => x.k > 0 && ksaDay(x.t) === ksaDay(now) && x.lines > 0 && new Date(x.t) - 3600e3 >= new Date(cov));
       const rows = [];
       for (const ch of ['sda', 'web', 'salamhome']) {
         const same = past.map(x => x[ch]); if (same.length < 3) continue;
         const b = robust(same); const cnt = cur[ch] || 0;
         if (b.med < 20) continue;                                                    // a channel that is normally quiet at this hour cannot "collapse"
         const unit = ch === 'salamhome' ? 'requests' : 'journeys';
-        rows.push({ dim: { channel: ch, note: `${CH[ch]} · ${cnt} ${unit} in the last 60 min vs typical ${b.med} at this hour on a ${type} (median of ${same.length} ${type} days: ${same.slice(0, 6).join(', ')}${same.length > 6 ? ' …' : ''})` },
+        rows.push({ dim: { channel: ch, note: `${CH[ch]} · ${cnt} ${unit} in the last 60 min vs typical ${b.med} at this hour on a ${type} (median of the last ${same.length} ${type}s: ${same.join(', ')})` },
           value: Math.round((cnt / b.med) * 100) / 100, sample: cnt });
       }
       return rows;
