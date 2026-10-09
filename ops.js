@@ -317,9 +317,10 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
     const views = (SES.me&&SES.me.views)||[];
     const FTV = (SES.me&&SES.me.fixedTabViews)||{};
     /* "visible to" roles set on a menu entry in Settings › Navigation (alpha.160): presentation only — the page's own
-     * permission still decides who can open it. Super admins see every entry; View as user shows a role's menus. */
+     * permission still decides who can open it. The list is exact (alpha.161): a super admin sees a restricted entry only
+     * when Super Admin is in it — an entry restricted to Events Manager left the header of the person who restricted it */
     const myRoles = (SES.me&&(SES.me.roles||[SES.me.role]))||[];
-    const rolesOk = b => { const r=b.dataset.roles; if(!r) return true; if(myRoles.includes("super_admin")) return true; return r.split(",").some(x=>myRoles.includes(x)); };
+    const rolesOk = b => { const r=b.dataset.roles; if(!r) return true; return r.split(",").some(x=>myRoles.includes(x)); };
     document.querySelectorAll(".navtab").forEach(b=>{
       /* entries added in Settings › Navigation (navmenu.js, alpha.160): an external link is for everyone; a console link
        * follows the page it opens — the view router.js requires for it, or the Fixed hub tab's own view */

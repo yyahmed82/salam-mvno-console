@@ -12,8 +12,9 @@
  *   entry (in a menu)   page · link · { t:'head', label }  a plain label (divider) — never at the top level
  *   known: [pageKey…]  every console page that existed when the layout was saved — a page added by a later release is
  *                      not in it, so the header places it where the default markup puts it instead of hiding it
- *   page · link · menu may carry roles:[roleKey…] — the entry (a whole menu) shows only to those roles; none = every role
- *   that can open the page. It is presentation: who may OPEN a page is still the role's permissions (router + API gates).
+ *   page · link · menu may carry roles:[roleKey…] — the entry (a whole menu) shows only to those roles, super admins
+ *   included only when listed (alpha.161); none = every role that can open the page. It is presentation: who may OPEN a
+ *   page is still the role's permissions (router + API gates).
  * A page appears once; a menu cannot hold a menu. */
 'use strict';
 

@@ -7,7 +7,8 @@
  * menu · ▶ into the menu just above it (when the entry above is a page or link, ▶ turns it into a menu holding both) ·
  * remove. A page removed from the menus waits under "Not in the menus" and can be added back; Reset returns the default.
  * "Visible to" roles hide an entry (or a whole menu) from the other roles — presentation only: the page's permissions
- * still decide who may open it; super admins see every entry (View as user shows a role's menus).
+ * still decide who may open it. The list is exact (alpha.161): a super admin sees a restricted entry only when Super
+ * Admin is selected (View as user shows a role's menus).
  * Nothing is live until Save; "Preview in the header" draws the draft in this browser only. */
 (function(){
   "use strict";
@@ -121,6 +122,7 @@ html[dir=rtl] #navMenuCfg .nm-kids{margin:6px 22px 2px 0;padding:0 14px 0 0;bord
 #navMenuCfg select.nm-in{appearance:none;-webkit-appearance:none;padding-right:32px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center}
 #navMenuCfg .nm-hint{font-size:11.5px;color:var(--muted);font-weight:500}
 #navMenuCfg .nm-hint.bad{color:var(--red);font-weight:700}
+#navMenuCfg .nm-hint.warn{color:var(--tint-amber-fg,#9a3412)}
 #navMenuCfg .nm-fa{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 #navMenuCfg .nm-sec{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;font-weight:700;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 13px;cursor:pointer}
 #navMenuCfg .nm-sec:hover{border-color:var(--green);color:var(--green-dark)}
@@ -174,7 +176,7 @@ html[dir=rtl] #navMenuCfg .nm-kids{margin:6px 22px 2px 0;padding:0 14px 0 0;bord
     return `<div class="nm-row ${x.t}${E.flash===ps?" flash":""}" data-p="${ps}">
       ${x.t==="menu"?`<button type="button" class="nm-fold" data-a="fold" aria-expanded="${!folded}" aria-label="${folded?"Show":"Hide"} the entries of ${esc(x.label)}" title="${folded?"Show":"Hide"} its entries">${folded?IC.in:IC.down}</button>`:""}
       <span class="nm-ic">${icon}</span>
-      <div class="nm-txt"><div class="nm-lb">${esc(lb)}${chip}${renamed?`<em class="nm-chip renamed" title="The page's own name">was ${esc(pageLabel(x.key))}</em>`:""}${x.roles&&x.roles.length?`<em class="nm-chip roles" title="Visible to: ${esc(x.roles.map(roleLabel).join(", "))}">${IC.lock} ${esc(rolesText(x.roles))}</em>`:""}</div>${x.t!=="head"?`<div class="nm-tg">${esc(targetText(x))}</div>`:""}</div>
+      <div class="nm-txt"><div class="nm-lb">${esc(lb)}${chip}${renamed?`<em class="nm-chip renamed" title="The page's own name">was ${esc(pageLabel(x.key))}</em>`:""}${x.roles&&x.roles.length?`<em class="nm-chip roles" title="Visible to: ${esc(x.roles.map(roleLabel).join(", "))}${x.roles.includes("super_admin")?"":" — not to super admins"}">${IC.lock} ${esc(rolesText(x.roles))}</em>`:""}</div>${x.t!=="head"?`<div class="nm-tg">${esc(targetText(x))}</div>`:""}</div>
       <div class="nm-acts">
         <button type="button" class="nm-b" data-a="up" aria-label="Move up"${dis(form||i===0,i===0?"Already first":"Finish the open form first")}>${IC.up}</button>
         <button type="button" class="nm-b" data-a="down" aria-label="Move down"${dis(form||i===sibs-1,i===sibs-1?"Already last":"Finish the open form first")}>${IC.down}</button>
@@ -213,7 +215,7 @@ html[dir=rtl] #navMenuCfg .nm-kids{margin:6px 22px 2px 0;padding:0 14px 0 0;bord
       const sel=d.roles||[];
       fields+=`<div class="nm-f nm-roles"><span>Visible to${d.t==="menu"?" — the whole menu":""}</span>
         <div class="nm-rl" role="group" aria-label="Visible to"><button type="button" class="nm-rc all" data-role="*" aria-pressed="${!sel.length}">Every role with access</button>${ROLES.map(r=>`<button type="button" class="nm-rc" data-role="${esc(r.key)}" aria-pressed="${sel.includes(r.key)}"${r.team?` title="${esc(r.team)}"`:""}>${esc(r.label)}</button>`).join("")}</div>
-        <div class="nm-hint">${sel.length?`Shown only to ${esc(sel.map(roleLabel).join(", "))}${d.t==="menu"?" (an entry inside can narrow it further)":""}. `:"No role selected: every role that can open the page sees it. "}Who may open a page is still decided by its permissions. Super admins always see every entry — use <b>View as user</b> to check a role.</div></div>`;
+        <div class="nm-hint${sel.length&&!sel.includes("super_admin")?" warn":""}">${sel.length?`Shown only to ${esc(sel.map(roleLabel).join(", "))}${d.t==="menu"?" (an entry inside can narrow it further)":""}.${sel.includes("super_admin")?"":` Super Admin is not selected, so it leaves your header too.`} `:"No role selected: every role that can open the page sees it. "}It only hides the entry — who may open a page is still decided by its permissions. <b>View as user</b> shows a role's menus.</div></div>`;
     }
     return `<div class="nm-form" role="group" aria-label="${esc(head)}"><h4>${head}</h4>${F.types.length>1?`<div class="nm-seg" role="group" aria-label="Type">${types}</div>`:""}${fields}
       <div class="nm-fa"><button type="button" class="btn" data-a="form-ok">${IC.save} ${F.path?"Apply":"Add"}</button><button type="button" class="nm-sec" data-a="form-cancel">Cancel</button><span class="nm-err" data-err>${F.err?esc(F.err):""}</span></div></div>`;

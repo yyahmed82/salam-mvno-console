@@ -1,3 +1,10 @@
+## 2.0.0-alpha.161 — 2026-10-09
+
+- **Header menus › Visible to is exact, super admins included.** An entry (or a whole menu) limited to some roles now shows only to those roles; a super admin sees it only when Super Admin is in the list. Before, super admins saw every entry, so Operations reports, limited to Events Manager, stayed in the header of the admin who limited it. No role selected still means every role that can open the page.
+  - The editor says so as you pick the roles ("Super Admin is not selected, so it leaves your header too"), and the role chip on a row says "not to super admins".
+  - Settings › Navigation lives in the ⚙ menu, which the header menus do not manage, so an admin can always reach the editor again.
+- **Code:** `ops.js` (role check without the super-admin bypass), `navmenucfg.js` (hint, chip), `server/src/uiMenu.js` (comment), `index.html` (cache keys).
+
 ## 2.0.0-alpha.160 — 2026-10-09
 
 - **VP Operations is a menu:** VP dashboard (the cockpit, #vp) and Weekly Report (Operations reports › This week, where the weekly executive and complete decks are). Operations reports stays at the top level for the teams that report.
