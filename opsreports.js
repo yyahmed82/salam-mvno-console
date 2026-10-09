@@ -7,7 +7,10 @@
  *   ITSM          the ServiceHub "Unified ITSM Dashboards" drawn natively from the ServiceNow API (+ Open in ServiceHub)
  *   Library       every report and original file, by week
  *   Teams         who reports, in which format, KPIs with targets, owners / uploaders / vendor contacts, drop links
- *   Settings      due time, reminder, late mails, consolidated mail, recipients, ITSM editors, mail log
+ *   Settings      due time, reminder, late mails, consolidated mail, recipients, ITSM editors, weekly decks, mail log
+ * Weekly decks (alpha.157): the Operational Weekly Executive Report and the Application Operational weekly status
+ *                 report in the Salam template, built by the server as soon as every team is in — card on This week,
+ *                 every week's decks in Library, the executive text editable by ITSM, the sections in Settings.
  * Each team uploads its report in its own format (pptx · xlsx · docx · pdf · eml …): the server reads it and proposes
  * the KPIs, actions, highlights it found; the person accepts, completes and submits. Server: opsReports.js.
  * Deep links: #opsreports?week=2026-09-27 · &team=tcs_mvno (opens that report) · &tab=actions|itsm|library|teams|settings */
@@ -53,7 +56,7 @@
     dl: '<path d="M12 3v12M6 11l6 6 6-6"/><path d="M4 21h16"/>', trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>', plus: '<path d="M12 5v14M5 12h14"/>', check: '<path d="M20 6 9 17l-5-5"/>' };
 
   const S = { built: false, open: false, tab: 'week', week: null, ov: null, me: {}, teams: null, actions: null, itsm: null, itsmDays: 7, itsmTab: 'incident', lib: null, cfg: null, mails: null,
-    actFilter: { team: '', status: 'open', overdue: false, salam: false, q: '' }, rep: null };
+    actFilter: { team: '', status: 'open', overdue: false, salam: false, q: '' }, rep: null, decks: {} };
   const me = () => (S.ov && S.ov.me) || S.me || {};
 
   /* ---------------------------------------------------------------- shell */
@@ -113,6 +116,7 @@
       ${tile('Open actions', t.actionsOpen, `${t.actionsSalam} waiting on Salam`, null, 'data-act="tab" data-k="actions"')}
       ${tile('Overdue actions', t.actionsOverdue, 'ETA passed', t.actionsOverdue ? 'bad' : 'ok', 'data-act="tab" data-k="actions" data-overdue="1"')}
     </div>`;
+    h += decksCard();
     if (!o.rows.length) return h + `<div class="or-empty">No team yet. ${m.canTeams ? '<button class="or-link" data-act="tab" data-k="teams">Add the teams that report</button>' : 'ITSM adds the teams that report.'}</div>`;
     h += `<div class="or-card"><div class="or-ch"><div><div class="or-ck">Status table</div><div class="or-ct">Who reported for ${range(o.from, o.to)}</div></div>
       <div class="or-legend">${Object.keys(ST).map(k => pill(k)).join('')}</div></div>
@@ -131,6 +135,76 @@
     });
     h += `</tbody></table></div></div>`;
     return h;
+  }
+
+  /* ---------------------------------------------------------------- Weekly decks (This week) */
+  const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round((n || 0) / 1024)) + ' KB';
+  const PPT_IC = '<span class="or-dk-ic" aria-hidden="true">P</span>';
+  function deckTile(kind, meta, title, sub, d) {
+    return `<div class="or-dk ${meta ? '' : 'or-dk-empty'}">${PPT_IC}
+      <div class="or-dk-b"><div class="or-dk-t">${esc(title)}</div>
+        <div class="or-ts2">${meta ? `${meta.slides} slides · ${fmtSize(meta.size)} · ${esc(when(meta.createdAt))}${kind === 'exec' && d.edited ? ' · <b>text edited by ITSM</b>' : ''}` : `${esc(sub)} — not built yet`}</div></div>
+      ${meta ? `<button class="or-btn" data-act="deckdl" data-id="${meta.id}" data-name="${esc(meta.name)}">${svg(IC.dl, 14)} Download</button>` : ''}</div>`;
+  }
+  function decksCard() {
+    const o = S.ov, d = S.decks[o.week];
+    if (d === undefined) { loadDecks(o.week); return '<div class="or-card or-decks"><div class="or-empty">Loading the weekly decks…</div></div>'; }
+    if (!d) return '';
+    const built = d.exec || d.complete, done = d.teams.filter(t => t.done).length, wait = d.teams.filter(t => !t.done);
+    const by = m => m.trigger === 'auto' ? 'automatically, once every report was in' : m.trigger === 'edited' ? `with the text edited by ${esc(m.createdByName || m.createdBy || 'ITSM')}` : `by ${esc(m.createdByName || m.createdBy || 'ITSM')}`;
+    let state, tone = '';
+    if (d.building) { state = 'Building the two decks — about a minute…'; tone = 'blue'; }
+    else if (built && d.stale) { state = d.ready && d.auto ? 'A report changed since the last build — the decks are rebuilt automatically within a minute.' : 'A report changed since the last build — rebuild to include it.'; tone = 'amber'; }
+    else if (d.complete && d.complete.partial) { state = `Built ${by(d.complete)} before every report was in — missing: ${esc(d.complete.missing.join(', ') || '—')}.${d.auto ? ' Rebuilt automatically when the last one arrives.' : ''}`; tone = 'amber'; }
+    else if (built) { const m = d.complete || d.exec; state = `Ready — built ${esc(when(m.createdAt))} ${by(m)}.`; tone = 'ok'; }
+    else if (d.ready) { state = d.auto ? 'Every report is in — the decks are being built (within a minute).' : 'Every report is in — build the decks.'; tone = 'blue'; }
+    else state = `${d.auto ? 'Built automatically' : 'Ready to build'} once every team below has ${d.when === 'approved' ? 'been approved by ITSM' : 'submitted'} — ${done} of ${d.teams.length} in${wait.length ? `, waiting for ${esc(wait.map(t => t.name).join(', '))}` : ''}.`;
+    const chip = t => `<span class="or-tchip ${t.done ? 'ok' : t.status === 'missing' ? 'bad' : 'wait'}" title="${esc(t.name)} — ${esc(t.done ? 'in' : (ST[t.status] || [t.status])[0])}${t.files ? ` · ${t.files} file(s)` : ''}">${t.done ? svg(IC.check, 12) : ''}${esc(t.name)}${t.done ? '' : ` <i>${esc((ST[t.status] || [t.status])[0])}</i>`}</span>`;
+    let h = `<div class="or-card or-decks">
+      <div class="or-ch"><div><div class="or-ck">Weekly decks · Salam template</div><div class="or-ct">Executive report and complete status report</div>
+        <div class="or-cs or-dk-state ${tone ? 'or-dk-' + tone : ''}">${state}</div></div>
+        ${d.canBuild ? `<div class="or-factions"><button class="or-btn or-btn-sec" data-act="deckedit" ${d.content ? '' : 'disabled'}>Edit executive text</button><button class="or-btn" data-act="deckbuild" ${d.building ? 'disabled' : ''}>${svg(IC.refresh, 14)} ${built ? 'Rebuild now' : 'Build now'}</button></div>` : ''}</div>
+      ${d.templateOk === false ? '<div class="or-warnbox">The deck template is missing on this server (server/templates/opsreports-deck-template.pptx) — deploy again.</div>' : ''}
+      ${d.unknown && d.unknown.length ? `<div class="or-warnbox">Settings › Weekly decks name teams that do not exist: ${esc(d.unknown.join(', '))}.</div>` : ''}
+      <div class="or-dk-grid">
+        ${deckTile('exec', d.exec, 'Operational Weekly Executive Report', 'Brief · 6 executive areas · focus for next week', d)}
+        ${deckTile('complete', d.complete, 'Application Operational weekly status report', 'Every domain with the vendors’ own slides', d)}
+      </div>
+      <div class="or-tchips"><span class="or-ts2">Teams in the decks</span>${d.teams.map(chip).join('')}</div>`;
+    const rep = d.complete && d.complete.report;
+    if (rep && rep.length) h += `<details class="or-dk-det"><summary>What went into the complete deck</summary><div class="or-tblw"><table class="or-tbl"><thead><tr><th>Section</th><th>Slides</th><th>From</th></tr></thead><tbody>${rep.map(l => `<tr><td class="or-tn">${esc(l.domain)}</td><td>${l.slides}</td><td>${l.sources.map(x => `<div>${esc(x.file || x.label)}${x.of ? ` <span class="or-ts2">${x.slides} of ${x.of}</span>` : ''}${x.note ? `<div class="or-ts2 ${x.error || !x.slides ? 'or-warn' : ''}">${esc(x.note)}</div>` : ''}</div>`).join('') || '—'}</td></tr>`).join('')}</tbody></table></div></details>`;
+    return h + '</div>';
+  }
+  let deckTimer = null;
+  async function loadDecks(week) {
+    let d = null;
+    try { d = await api('/api/opsreports/decks?week=' + encodeURIComponent(week)); } catch (e) { d = null; }
+    S.decks[week] = d;
+    if (S.open && S.tab === 'week' && S.ov && S.ov.week === week && !$('#orModal.open')) render();
+    clearTimeout(deckTimer);
+    if (d && S.open && (d.building || (d.ready && d.auto && (!(d.exec || d.complete) || d.stale)))) deckTimer = setTimeout(() => { if (S.open && S.ov && S.ov.week === week) loadDecks(week); }, 6000);
+  }
+  function deckEditForm(c) {
+    const rows = (c.rows || []).map((r, i) => `<tr data-r="${i}">${[0, 1, 2].map(k => `<td data-l="${['Executive area', 'Weekly outcome', 'Leadership attention'][k]}"><textarea class="or-in" rows="${k ? 3 : 2}" data-c="${k}">${esc(r[k] || '')}</textarea></td>`).join('')}</tr>`).join('');
+    return `<div class="or-form" id="orDeckForm">
+      <div class="or-fg2"><label>Cover line<input class="or-in" name="cover_sub" value="${esc(c.cover_sub || '')}"></label><label>Brief title<input class="or-in" name="brief_title" value="${esc(c.brief_title || '')}"></label></div>
+      <label>Executive brief<textarea class="or-in" name="brief" rows="4">${esc(c.brief || '')}</textarea></label>
+      <label>Headline lines — one per line<textarea class="or-in" name="headlines" rows="4">${esc((c.headlines || []).join('\n'))}</textarea></label>
+      <div class="or-sub2">Executive areas <span class="or-ts2">two or three lines per cell, or the table runs off the slide</span></div>
+      <div class="or-tblw"><table class="or-mtbl or-dk-rows"><thead><tr><th>Executive area</th><th>Weekly outcome</th><th>Leadership attention</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <label>Focus for next week — one per line (six at most)<textarea class="or-in" name="focus" rows="6">${esc((c.focus || []).join('\n'))}</textarea></label>
+      <div class="or-ts2">${c.edited ? `Edited${c.editedBy ? ' by ' + esc(c.editedBy) : ''}${c.editedAt ? ' · ' + esc(when(c.editedAt)) : ''} — kept when the decks are rebuilt.` : 'Written from the submitted reports. Once you save, your text is kept when the decks are rebuilt.'}</div>
+      <div class="or-msg"></div>
+      <div class="or-factions"><button class="or-btn" data-act="decksave">${svg(IC.check, 14)} Save and rebuild the executive deck</button>${c.edited ? '<button class="or-btn or-btn-sec" data-act="deckreset">Back to the automatic text</button>' : ''}</div></div>`;
+  }
+  function deckEditModal() {
+    const d = S.decks[S.ov.week]; if (!d || !d.content) return;
+    modal(`Executive text · ${range(S.ov.from, S.ov.to)}<span class="or-mts">Operational Weekly Executive Report — slides 2 to 4</span>`, deckEditForm(d.content), true);
+  }
+  function readDeckForm() {
+    const root = $('#orDeckForm'), v = n => root.querySelector(`[name="${n}"]`).value;
+    return { cover_sub: v('cover_sub'), brief_title: v('brief_title'), brief: v('brief'), headlines: lines(v('headlines')), focus: lines(v('focus')),
+      rows: $$('tr[data-r]', root).map(tr => [0, 1, 2].map(k => tr.querySelector(`[data-c="${k}"]`).value.trim())) };
   }
 
   /* ---------------------------------------------------------------- Actions */
@@ -225,10 +299,10 @@
   /* ---------------------------------------------------------------- Library */
   function libraryTab() {
     if (!S.lib) { loadLib(); return '<div class="or-empty">Loading the library…</div>'; }
-    const byWeek = {}; S.lib.reports.forEach(r => { (byWeek[r.week] = byWeek[r.week] || []).push(r); });
+    const byWeek = {}; S.lib.reports.forEach(r => { (byWeek[r.week] = byWeek[r.week] || []).push(r); }); (S.lib.decks || []).forEach(x => { byWeek[x.week] = byWeek[x.week] || []; });
     const weeks = Object.keys(byWeek).sort().reverse();
     if (!weeks.length) return '<div class="or-empty">No report stored yet.</div>';
-    return weeks.map(w => `<div class="or-card"><div class="or-ch"><div><div class="or-ck">Week</div><div class="or-ct">${range(w, addDay(w, 6))}</div></div><button class="or-link" data-act="gotoweek" data-w="${w}">Status table of this week →</button></div>
+    return weeks.map(w => `<div class="or-card"><div class="or-ch"><div><div class="or-ck">Week</div><div class="or-ct">${range(w, addDay(w, 6))}</div></div><div class="or-factions">${(S.lib.decks || []).filter(x => x.week === w).map(x => `<button class="or-file or-file-deck" data-act="deckdl" data-id="${x.id}" data-name="${esc(x.name)}" title="${esc(x.name)} · ${x.slides} slides · ${fmtSize(x.size)}">${PPT_IC} ${x.kind === 'exec' ? 'Executive report' : 'Complete status report'}</button>`).join('')}<button class="or-link" data-act="gotoweek" data-w="${w}">Status table of this week →</button></div></div>
       <div class="or-tblw"><table class="or-tbl"><thead><tr><th>Team</th><th>Status</th><th>RAG</th><th>Headline</th><th>Files</th></tr></thead><tbody>
       ${byWeek[w].map(r => `<tr><td><button class="or-link" data-act="openrep" data-team="${r.teamId}" data-w="${w}">${esc(r.team)}</button></td><td>${pill(r.status)}${r.late ? ' <span class="or-late">late</span>' : ''}<div class="or-ts2">${esc(r.submittedByName || '')}${r.submittedAt ? ' · ' + esc(when(r.submittedAt)) : ''}</div></td><td>${rag(r.rag)}</td><td>${esc(r.headline || '')}</td>
         <td>${r.files.map(f => `<button class="or-file" data-act="dl" data-id="${f.id}" data-name="${esc(f.name)}" title="${esc(f.name)} · ${Math.round(f.size / 1024)} KB">${svg(IC.file, 13)} ${esc(f.name.length > 34 ? f.name.slice(0, 33) + '…' : f.name)}</button>`).join('') || '—'}</td></tr>`).join('')}
@@ -305,11 +379,50 @@
       <div class="or-fg2"><label>ServiceHub dashboard link<input class="or-in" name="sn_url" value="${esc(c.servicenow.dashboardUrl)}"></label><label>Default window<select class="or-in" name="sn_days">${[7, 30, 90].map(n => `<option value="${n}" ${c.servicenow.days === n ? 'selected' : ''}>${n} days</option>`).join('')}</select></label></div>
       <div class="or-msg"></div>
       <div class="or-factions"><button class="or-btn" data-act="cfgsave">Save settings</button><button class="or-btn or-btn-sec" data-act="constest">Send the consolidated report to me</button></div></div>`;
+    h += decksCfgCard(c.deck);
     const mails = S.mails;
     h += `<div class="or-card"><div class="or-ch"><div><div class="or-ck">Mail log</div><div class="or-ct">Follow-ups and consolidated reports</div></div></div>`;
     if (!mails) { loadMails(); h += '<div class="or-empty">Loading…</div>'; }
     else h += `<div class="or-tblw"><table class="or-tbl"><thead><tr><th>When</th><th>Kind</th><th>Team · week</th><th>To</th><th>Result</th></tr></thead><tbody>${mails.map(x => `<tr><td class="or-nowrap">${esc(dt(x.created_at))}</td><td>${esc(x.kind)}</td><td>${esc(x.team || '—')}${x.week ? `<div class="or-ts2">${esc(dshort(x.week))}</div>` : ''}</td><td>${esc((x.recipients || []).join(', '))}${(x.cc || []).length ? `<div class="or-ts2">cc ${esc(x.cc.join(', '))}</div>` : ''}</td><td>${x.ok ? '<span class="or-pill or-ok">sent</span>' : `<span class="or-pill or-red">not sent</span><div class="or-ts2">${esc(x.error || '')}</div>`}<div class="or-ts2">${esc(x.by || '')}</div></td></tr>`).join('') || '<tr><td colspan="5" class="or-empty">No mail yet.</td></tr>'}</tbody></table></div>`;
     return h + '</div>';
+  }
+
+  function decksCfgCard(dk) {
+    if (!dk) return '';
+    if (!S.teams) { loadTeams(); return '<div class="or-card"><div class="or-empty">Loading the weekly decks settings…</div></div>'; }
+    const teams = S.teams;
+    const tsel = v => `<select class="or-in" data-d="team"><option value="">—</option>${teams.map(t => `<option value="${esc(t.key)}" ${t.key === v ? 'selected' : ''}>${esc(t.name)}${t.active ? '' : ' (inactive)'}</option>`).join('')}${v && !teams.some(t => t.key === v) ? `<option value="${esc(v)}" selected>${esc(v)} (unknown)</option>` : ''}</select>`;
+    const dRow = d => { const s0 = (d.sources || [])[0] || {}; const extra = (d.sources || []).slice(1);
+      return `<tr class="or-drow" data-extra="${esc(JSON.stringify(extra))}"><td><textarea class="or-in" data-d="name" rows="2" placeholder="Section title">${esc(d.name || '')}</textarea></td><td>${tsel(s0.team)}${extra.length ? `<div class="or-ts2">+ ${extra.length} more source(s) kept</div>` : ''}</td>
+        <td><input class="or-in" data-d="file" value="${esc(s0.file || '')}" placeholder="any deck"></td><td><input class="or-in" data-d="slides" value="${esc(s0.slides && s0.slides !== 'auto' ? s0.slides : '')}" placeholder="auto"></td>
+        <td><input class="or-in" data-d="note" value="${esc(d.note || '')}" placeholder="—"></td>
+        <td class="or-nowrap"><button class="or-mini" data-act="drowup" title="Move up">${svg('<path d="M12 19V5M5 12l7-7 7 7"/>', 13)}</button><button class="or-mini" data-act="drowdown" title="Move down">${svg('<path d="M12 5v14M5 12l7 7 7-7"/>', 13)}</button><button class="or-mini" data-act="rmrow" title="Remove">${svg(IC.x, 13)}</button></td></tr>`; };
+    const aRow = a => `<div class="or-arow"><input class="or-in" data-a="name" value="${esc(a.name || '')}" placeholder="Executive area"><div class="or-achips">${teams.filter(t => t.active || (a.teams || []).includes(t.key)).map(t => `<label class="or-achip"><input type="checkbox" data-at="${esc(t.key)}" ${(a.teams || []).includes(t.key) ? 'checked' : ''}><span>${esc(t.name)}</span></label>`).join('')}</div><button class="or-mini" data-act="rmarow" title="Remove">${svg(IC.x, 13)}</button></div>`;
+    S._dRow = dRow; S._aRow = aRow;
+    return `<div class="or-card or-form" id="orDeckCfg">
+      <div class="or-ch"><div><div class="or-ck">Weekly decks</div><div class="or-ct">The executive report and the complete status report</div>
+        <div class="or-cs">Built in the Salam template from the teams' own files. Which slides: <b>auto</b> (all but “Thank you”, “Safe Harbor”, empty ones) · <b>all</b> · <b>2-7, 9</b> · <b>from:</b>words on the first slide · <b>until:</b>words on the slide after the last — several with “;”. A PDF goes in page by page; mails saved as PDF (“Fw …”) are left out.</div></div></div>
+      <div class="or-fg3"><label class="or-chk"><input type="checkbox" name="dk_auto" ${dk.auto ? 'checked' : ''}> Build automatically when every team is in</label>
+        <label>A team is in when its report is<select class="or-in" name="dk_when"><option value="submitted" ${dk.when !== 'approved' ? 'selected' : ''}>submitted</option><option value="approved" ${dk.when === 'approved' ? 'selected' : ''}>approved by ITSM</option></select></label>
+        <label>PDF pages at most<input class="or-in or-n" name="dk_pdf" value="${dk.maxPdfPages}"></label></div>
+      <div class="or-sub2">Sections of the complete deck <span class="or-ts2">in order — a new line in the title is a line break on the divider</span></div>
+      <div class="or-tblw"><table class="or-mtbl or-dk-cfg"><thead><tr><th>Section</th><th>Team</th><th>File name contains</th><th>Slides</th><th>Note on the divider</th><th></th></tr></thead><tbody id="orDRows">${dk.domains.map(dRow).join('')}</tbody></table></div>
+      <button class="or-link" data-act="drowadd">+ section</button>
+      <div class="or-sub2">Executive areas <span class="or-ts2">the 6 rows of the executive table and the teams each one sums up</span></div>
+      <div id="orARows">${dk.areas.map(aRow).join('')}</div>
+      <button class="or-link" data-act="arowadd" ${dk.areas.length >= 6 ? 'hidden' : ''}>+ area</button>
+      <div class="or-msg"></div>
+      <div class="or-factions"><button class="or-btn" data-act="deckcfgsave">Save weekly decks</button></div></div>`;
+  }
+  async function saveDeckCfg() {
+    const root = $('#orDeckCfg');
+    const domains = $$('#orDRows tr', root).map(tr => { const g = k => (tr.querySelector(`[data-d="${k}"]`) || {}).value || '';
+      let extra = []; try { extra = JSON.parse(tr.dataset.extra || '[]'); } catch (_) {}
+      const src = g('team') ? [{ team: g('team'), file: g('file').trim() || null, slides: g('slides').trim() || 'auto' }] : [];
+      return { name: g('name').trim(), note: g('note').trim() || null, sources: [...src, ...extra] }; }).filter(d => d.name);
+    const areas = $$('#orARows .or-arow', root).map(r => ({ name: r.querySelector('[data-a="name"]').value.trim(), teams: $$('input[data-at]', r).filter(x => x.checked).map(x => x.dataset.at) })).filter(a => a.name);
+    const deck = { auto: root.querySelector('[name="dk_auto"]').checked, when: root.querySelector('[name="dk_when"]').value, maxPdfPages: +root.querySelector('[name="dk_pdf"]').value || 30, domains, areas };
+    try { await send('/api/opsreports/settings', { deck }, 'PUT'); S.cfg = null; S.decks = {}; toast('Weekly decks saved — rebuilt automatically when every team is in'); render(); } catch (err) { flash(root, err.message, true); }
   }
 
   /* ---------------------------------------------------------------- report editor (modal) */
@@ -451,8 +564,8 @@
     ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
     dz.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) go(f); });
   }
-  async function download(id, name) {
-    try { const r = await fetch(API() + '/api/opsreports/files/' + id); if (!r.ok) throw new Error('HTTP ' + r.status);
+  async function download(id, name, url) {
+    try { const r = await fetch(API() + (url || '/api/opsreports/files/' + id)); if (!r.ok) throw new Error('HTTP ' + r.status);
       const b = await r.blob(), u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = name || 'report'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000);
     } catch (e) { toast('Download failed: ' + e.message, true); }
   }
@@ -491,13 +604,36 @@
       if (a === 'tab') { S.tab = b.dataset.k; if (b.dataset.overdue) Object.assign(S.actFilter, { overdue: true, status: 'open' }); render(); history.replaceState(null, '', '#opsreports?tab=' + S.tab + (S.ov ? '&week=' + S.ov.week : '')); return; }
       if (a === 'week') { const d = +b.dataset.d; await loadOverview(d === 0 ? S.ov.defaultWeek : addDay(S.ov.week, d)); return; }
       if (a === 'gotoweek') { S.tab = 'week'; await loadOverview(b.dataset.w); return; }
-      if (a === 'refresh') { S.actions = S.lib = S.teams = S.mails = null; await loadOverview(S.ov && S.ov.week); return; }
+      if (a === 'refresh') { S.actions = S.lib = S.teams = S.mails = null; S.decks = {}; await loadOverview(S.ov && S.ov.week); return; }
       if (a === 'open') return openReport(b.dataset.team, S.ov.week);
       if (a === 'openrep') return openReport(b.dataset.team, b.dataset.w);
       if (a === 'upload') return uploadModal(b.dataset.team);
       if (a === 'consolidated') return consolidatedModal();
       if (a === 'followup') return followupModal(b.dataset.team, b.dataset.kind);
       if (a === 'dl') return download(b.dataset.id, b.dataset.name);
+      if (a === 'deckdl') { toast('Downloading ' + b.dataset.name + '…'); return download(b.dataset.id, b.dataset.name, '/api/opsreports/decks/' + b.dataset.id + '/download'); }
+      if (a === 'deckedit') return deckEditModal();
+      if (a === 'deckbuild') {
+        const d = S.decks[S.ov.week] || {}, wait = (d.teams || []).filter(t => !t.done);
+        if (wait.length && !confirm(`Not every report is in (${wait.map(t => t.name).join(', ')}).\nBuild the decks anyway? Their dividers will say which reports are missing.`)) return;
+        b.disabled = true; if (S.decks[S.ov.week]) { S.decks[S.ov.week].building = true; render(); }
+        const week = S.ov.week;
+        try { const out = await send('/api/opsreports/decks/generate', { week }); toast(`Decks built — executive ${out.exec.slides} slides · complete ${out.complete.slides} slides`); }
+        finally { await loadDecks(week); }
+        return;
+      }
+      if (a === 'decksave' || a === 'deckreset') {
+        if (a === 'deckreset' && !confirm('Replace your text with the one written from the reports?')) return;
+        b.disabled = true; const week = S.ov.week;
+        try { await send('/api/opsreports/decks/content', a === 'deckreset' ? { week, reset: true } : { week, content: readDeckForm() }, 'PUT'); closeModal(); toast(a === 'deckreset' ? 'Back to the automatic text — executive deck rebuilt' : 'Saved — executive deck rebuilt'); await loadDecks(week); }
+        finally { b.disabled = false; }
+        return;
+      }
+      if (a === 'drowadd') { $('#orDRows').insertAdjacentHTML('beforeend', S._dRow({ name: '', sources: [] })); return; }
+      if (a === 'drowup' || a === 'drowdown') { const tr = b.closest('tr'), sib = a === 'drowup' ? tr.previousElementSibling : tr.nextElementSibling; if (sib) { if (a === 'drowup') sib.before(tr); else sib.after(tr); } return; }
+      if (a === 'arowadd') { const box = $('#orARows'); if (box.children.length < 6) box.insertAdjacentHTML('beforeend', S._aRow({ name: '', teams: [] })); if (box.children.length >= 6) b.hidden = true; return; }
+      if (a === 'rmarow') { b.closest('.or-arow').remove(); const ad = $('[data-act="arowadd"]'); if (ad) ad.hidden = false; return; }
+      if (a === 'deckcfgsave') return saveDeckCfg();
       if (a === 'droplink') { const d = await send('/api/opsreports/droplink', { team: b.dataset.team }); try { await navigator.clipboard.writeText(d.url); toast('Upload link copied — valid until ' + dt(d.expires)); } catch (_) { window.prompt('Vendor upload link (valid until ' + dt(d.expires) + ')', d.url); } return; }
       if (a === 'itsmdays') { S.itsmDays = +b.dataset.n; S.itsm = null; render(); return; }
       if (a === 'itsmrefresh') { S.itsm = null; render(); loadItsm(true); return; }
@@ -598,7 +734,7 @@
 
   /* ---------------------------------------------------------------- loaders */
   async function loadOverview(week) {
-    try { S.ov = await api('/api/opsreports/overview' + (week ? '?week=' + encodeURIComponent(week) : '')); S.me = S.ov.me; }
+    try { S.ov = await api('/api/opsreports/overview' + (week ? '?week=' + encodeURIComponent(week) : '')); S.me = S.ov.me; delete S.decks[S.ov.week]; }
     catch (e) { const host = $('#view-opsreports'); if (host) host.innerHTML = `<div class="or-wrap"><div class="or-empty or-bad">${esc(e.message)}</div></div>`; return; }
     if (S.tab !== 'week') { /* keep the tab */ }
     render();
@@ -606,7 +742,7 @@
   async function loadActions() { try { S.actions = (await api('/api/opsreports/actions?all=1')).actions; } catch (e) { S.actions = []; toast(e.message, true); } if (S.tab === 'actions') render(); }
   async function loadItsm(force) { try { S.itsm = await api(`/api/opsreports/itsm?days=${S.itsmDays}${force ? '&refresh=1' : ''}`); } catch (e) { S.itsm = { error: e.message }; } if (S.tab === 'itsm') render(); }
   async function loadLib() { try { S.lib = await api('/api/opsreports/library?weeks=12'); } catch (e) { S.lib = { reports: [] }; toast(e.message, true); } if (S.tab === 'library') render(); }
-  async function loadTeams() { try { S.teams = (await api('/api/opsreports/teams')).teams; } catch (e) { S.teams = []; toast(e.message, true); } if (S.tab === 'teams') render(); }
+  async function loadTeams() { try { S.teams = (await api('/api/opsreports/teams')).teams; } catch (e) { S.teams = []; toast(e.message, true); } if (S.tab === 'teams' || S.tab === 'settings') render(); }
   async function loadCfg() { try { S.cfg = await api('/api/opsreports/settings'); } catch (e) { S.cfg = null; toast(e.message, true); return; } if (S.tab === 'settings') render(); }
   async function loadMails() { try { S.mails = (await api('/api/opsreports/mails')).mails; } catch (e) { S.mails = []; } if (S.tab === 'settings') render(); }
 
@@ -753,9 +889,34 @@ span.or-muted.or-pill,.or-pill.or-muted{background:var(--card2);border:1px dashe
 .or-cons{width:100%;height:68vh;border:1px solid var(--line);border-radius:12px;background:#f2f4f3}
 #orToast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;z-index:9500;background:#0b3d2b;color:#eafff4;font-size:13px;font-weight:700;padding:10px 16px;border-radius:12px;box-shadow:var(--shadow-lg);transition:opacity .2s,transform .2s;pointer-events:none;max-width:92vw}
 #orToast.show{opacity:1;transform:translateX(-50%) translateY(0)}#orToast.bad{background:#7f1d1d}
+.or-decks .or-ch{margin-bottom:12px}
+.or-dk-state{display:flex;align-items:flex-start;gap:7px}.or-dk-state::before{content:"";flex:none;width:8px;height:8px;margin-top:6px;border-radius:50%;background:var(--muted)}
+.or-dk-ok::before{background:var(--green)}.or-dk-amber::before{background:var(--amber)}.or-dk-blue::before{background:var(--blue);animation:orPulse 1.2s ease-in-out infinite}
+@keyframes orPulse{50%{opacity:.25}}
+.or-dk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.or-dk{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card2);min-width:0}
+.or-dk-empty{border-style:dashed;opacity:.85}
+.or-dk-ic{flex:none;display:inline-flex;align-items:center;justify-content:center;width:38px;height:44px;border-radius:8px;background:linear-gradient(160deg,#e8673f,#c2410c);color:#fff;font-weight:900;font-size:17px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.15)}
+.or-dk-empty .or-dk-ic{background:var(--line);color:var(--muted);box-shadow:none}
+.or-dk-b{flex:1;min-width:0}.or-dk-t{font-weight:800;font-size:13.5px;line-height:1.3}
+.or-tchips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:12px}.or-tchips>.or-ts2{margin:0 4px 0 0;font-weight:700}
+.or-tchip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);white-space:nowrap}
+.or-tchip i{font-style:normal;font-weight:600;color:var(--muted)}.or-tchip.ok{background:var(--ok-bg);color:var(--ok-fg);border-color:var(--ok-line)}.or-tchip.bad{background:var(--tint-red);color:var(--tint-red-fg);border-color:transparent}.or-tchip.bad i{color:inherit}
+.or-tchip.wait{background:var(--tint-amber);color:var(--tint-amber-fg);border-color:transparent}.or-tchip.wait i{color:inherit}
+.or-dk-det{margin-top:12px;border-top:1px solid var(--line-soft);padding-top:10px}.or-dk-det summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--green-dark)}.or-dk-det .or-tbl{margin-top:8px}
+.or-file-deck .or-dk-ic{width:16px;height:19px;font-size:10px;border-radius:3px;box-shadow:none}
+.or-dk-rows textarea,.or-dk-cfg textarea{resize:vertical;min-height:40px;font-size:12.5px;line-height:1.4}.or-dk-rows td{min-width:200px}.or-dk-rows td:first-child{min-width:160px}
+.or-dk-cfg td:first-child{min-width:190px}.or-dk-cfg select{min-width:170px}.or-dk-cfg td:nth-child(3),.or-dk-cfg td:nth-child(4){min-width:150px}.or-dk-cfg td:nth-child(5){min-width:180px}
+.or-arow{display:grid;grid-template-columns:minmax(200px,300px) minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 0;border-bottom:1px solid var(--line-soft)}
+.or-achips{display:flex;flex-wrap:wrap;gap:5px}
+.or-achip{display:inline-flex !important;flex-direction:row !important;align-items:center;gap:0 !important;cursor:pointer}
+.or-achip input{position:absolute;opacity:0;width:1px;height:1px}.or-achip span{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft)}
+.or-achip input:checked+span{background:var(--green-bg);border-color:var(--green);color:var(--green-dark)}.or-achip input:focus-visible+span{outline:2px solid var(--green);outline-offset:1px}
 @media (max-width:1100px){.or-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}.or-tiles-4{grid-template-columns:repeat(2,minmax(0,1fr))}.or-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.or-rep{grid-template-columns:1fr}.or-files{position:static}}
 @media (max-width:640px){#view-opsreports{padding:10px 10px 30px}.or-hero{padding:18px 16px}.or-tiles,.or-tiles-4{grid-template-columns:repeat(2,minmax(0,1fr))}.or-grid{grid-template-columns:1fr}.or-wide2{grid-column:auto}
-  .or-fg2,.or-fg3{grid-template-columns:1fr}.or-tabs{width:100%;overflow-x:auto;flex-wrap:nowrap}.or-ov{padding:0}.or-modal{border-radius:0;max-height:100vh;min-height:100vh}.or-hl{min-width:180px}}
+  .or-fg2,.or-fg3{grid-template-columns:1fr}.or-dk-grid{grid-template-columns:1fr}.or-dk{flex-wrap:wrap}.or-dk .or-btn{width:100%;justify-content:center}.or-arow{grid-template-columns:1fr auto}.or-achips{grid-column:1/-1}
+  .or-dk-rows thead{display:none}.or-dk-rows,.or-dk-rows tbody,.or-dk-rows tr,.or-dk-rows td{display:block;width:100%;min-width:0 !important}.or-dk-rows tr{padding:8px 0;border-bottom:1px solid var(--line)}
+  .or-dk-rows td::before{content:attr(data-l);display:block;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:4px 0 2px}.or-tabs{width:100%;overflow-x:auto;flex-wrap:nowrap}.or-ov{padding:0}.or-modal{border-radius:0;max-height:100vh;min-height:100vh}.or-hl{min-width:180px}}
 @media (max-width:640px){.or-cards thead{display:none}.or-cards,.or-cards tbody,.or-cards tr,.or-cards td{display:block;width:100%}
   .or-cards tr{border:1px solid var(--line);border-radius:13px;padding:10px 12px;margin-bottom:10px;background:var(--card)}.or-cards td{border:0;padding:3px 0;min-width:0;max-width:none}
   .or-cards td.or-racts{text-align:left;padding-top:8px}.or-cards td.or-racts .or-mini{margin:0 6px 0 0}}

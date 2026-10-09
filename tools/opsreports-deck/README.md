@@ -1,5 +1,7 @@
 # Weekly operations decks (Salam templates)
 
+> Since alpha.157 the console builds both decks by itself (`server/src/opsDeck.js` · `opsReportsDecks.js`, template `server/templates/opsreports-deck-template.pptx`) as soon as every team is in — Operations reports › This week › Weekly decks. These Python scripts stay for a one-off build outside the console.
+
 Two decks per reporting week (Sun → Sat), in the Salam templates ITSM uses:
 
 | Deck | Builder | Input |

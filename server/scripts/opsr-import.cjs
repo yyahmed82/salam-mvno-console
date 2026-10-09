@@ -50,5 +50,6 @@ const MIME = { pptx: 'application/vnd.openxmlformats-officedocument.presentation
     if (out.actions) console.log(`    actions: ${out.actions.added} new, ${out.actions.moved} ETA moved`);
   }
   console.log(`\nDone — open Operations reports › This week (week of ${m.week}) and the Consolidated report.`);
+  console.log('The weekly decks are built by the running console within a minute once every team they use is in (Operations reports › This week › Weekly decks).');
   process.exit(0);
 })().catch(e => { console.error('✗', e.stack || e.message); process.exit(1); });

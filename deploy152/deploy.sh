@@ -58,6 +58,7 @@ cp deploy152/install-ollama.sh "$STAGE/install-ollama.sh" 2>/dev/null || true
 cp deploy152/jar-release-diff.sh "$STAGE/server/jar-release-diff.sh" 2>/dev/null || true   # DMS release diff (class-level, CFR) — bash /apps/unified/server/jar-release-diff.sh
 mkdir -p "$STAGE/server/tools"; cp deploy152/tools/cfr.jar "$STAGE/server/tools/cfr.jar" 2>/dev/null || true   # CFR 0.152 decompiler (2 MB), used by jar-release-diff.sh   # Ollama systemd unit with the memory ceiling (run once on 152: bash /apps/unified/install-ollama.sh)
 cp server/package.json        "$STAGE/server/"
+[ -d server/templates ] && { mkdir -p "$STAGE/server/templates"; cp server/templates/*.pptx "$STAGE/server/templates/" 2>/dev/null || true; }   # Operations reports › weekly decks: the Salam template (opsReportsDecks.js)
 [ -d server/jdbc ] && { mkdir -p "$STAGE/server/jdbc"; cp server/jdbc/*.java "$STAGE/server/jdbc/" 2>/dev/null || true; }   # Arqami JDBC bridge source (compiled on 152)
 # build stamp → /api/version reports the milestone actually shipped (VERSION file + git commit/tag)
 printf '{ "version": "%s", "commit": "%s", "tag": "%s", "builtAt": "%s" }\n' \
@@ -116,6 +117,7 @@ else
   cp -f /tmp/csync/server/db/*.sql  "$APP/server/db/"
   cp -f /tmp/csync/server/scripts/*.cjs "$APP/server/scripts/" 2>/dev/null || true
   cp -f /tmp/csync/server/package.json "$APP/server/" 2>/dev/null || true
+  [ -d /tmp/csync/server/templates ] && { mkdir -p "$APP/server/templates"; cp -f /tmp/csync/server/templates/* "$APP/server/templates/"; }   # weekly decks template
   cp -f /tmp/csync/server/build.json "$APP/server/" 2>/dev/null || true
   if [ -d /tmp/csync/server/jdbc ]; then mkdir -p "$APP/server/jdbc"; cp -f /tmp/csync/server/jdbc/*.java "$APP/server/jdbc/" 2>/dev/null || true
     JAVAC="${JAVAC:-/opt/java/bin/javac}"; OJDBC="$(ls "$APP"/server/jdbc/ojdbc*.jar 2>/dev/null | head -1)"

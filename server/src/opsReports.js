@@ -31,6 +31,8 @@
  *   GET    /api/opsreports/mails                  the follow-up / consolidated mail log
  *   GET    /api/opsreports/settings · PUT         schedule, recipients, editors, ServiceNow dashboard
  *   GET    /api/opsreports/itsm?days=             ServiceNow ITSM dashboard, native (snItsm.js)
+ *   GET    /api/opsreports/decks?week= · POST …/decks/generate · PUT …/decks/content · GET …/decks/:id/download
+ *                                                  the two weekly decks in the Salam template (opsReportsDecks.js, alpha.157)
  *   GET    /api/opsreports/drop/:token            PUBLIC — the vendor drop page reads its team and weeks
  *   POST   /api/opsreports/drop/:token            PUBLIC — the vendor drops a file (rate-limited, size-capped)
  *
@@ -54,6 +56,7 @@ const crypto = require('crypto');
 const db = require('./db');
 const settings = require('./settings');
 const parse = require('./opsReportsParse');
+const decks = require('./opsReportsDecks');                               // the weekly decks (alpha.157)
 
 const C = () => db.console;
 const KSA = 3 * 3600e3;
@@ -99,7 +102,8 @@ const DEFAULT_CFG = {
   late: { enabled: true, graceMin: 60, hour: 10, max: 3 },
   consolidated: { enabled: true, day: 1, time: '09:00', extra: [] },
   servicenow: { dashboardUrl: SN_DASH, days: 7 },
-  dropDays: 14, maxFileMB: 25
+  dropDays: 14, maxFileMB: 25,
+  deck: decks.DEFAULT_DECK
 };
 function normCfg(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
@@ -115,7 +119,8 @@ function normCfg(raw) {
       hour: Math.min(20, Math.max(6, cnt(lt.hour) == null ? 10 : cnt(lt.hour))), max: Math.min(5, Math.max(0, cnt(lt.max) == null ? 3 : cnt(lt.max))) },
     consolidated: { enabled: cs.enabled !== false, day: day(cs.day, 1), time: hmOk(cs.time) ? cs.time : '09:00', extra: emailList(cs.extra) },
     servicenow: { dashboardUrl: url && /^https:\/\//i.test(url) ? url : SN_DASH, days: [7, 30, 90].includes(+sn.days) ? +sn.days : 7 },
-    dropDays: Math.min(60, Math.max(1, cnt(r.dropDays) || 14)), maxFileMB: Math.min(30, Math.max(1, cnt(r.maxFileMB) || 25))
+    dropDays: Math.min(60, Math.max(1, cnt(r.dropDays) || 14)), maxFileMB: Math.min(30, Math.max(1, cnt(r.maxFileMB) || 25)),
+    deck: decks.normDeck(r.deck)
   };
 }
 let CFG = normCfg(DEFAULT_CFG), cfgAt = 0, cfgLoading = null;
@@ -493,8 +498,9 @@ async function buildConsolidated(week) {
   const overdue = acts.filter(a => a.overdue).map(a => ({ ...a, team: teamName(a.teamId) }));
   const salam = acts.filter(a => a.status === 'waiting_salam' || a.salamDep).map(a => ({ ...a, team: teamName(a.teamId) }));
   const slipped = acts.filter(a => a.etaMoves >= 2).map(a => ({ ...a, team: teamName(a.teamId) }));
+  const dk = await decks.summary(week).catch(() => null);
   const data = { week, from: week, to: addDays(week, 6), totals: ov.totals, rows: ov.rows, counters: sum, offTarget, risks, support, notes,
-    actions: { open: acts.length, overdue, salam, slipped }, servicenow: sn, cab, generatedAt: new Date().toISOString() };
+    actions: { open: acts.length, overdue, salam, slipped }, servicenow: sn, cab, decks: dk && (dk.exec || dk.complete) ? { exec: dk.exec && { slides: dk.exec.slides }, complete: dk.complete && { slides: dk.complete.slides }, partial: !!(dk.complete && dk.complete.partial) } : null, generatedAt: new Date().toISOString() };
   return { data, ...renderConsolidated(data) };
 }
 const RAG_HEX = { green: '#0e9f5a', amber: '#d97706', red: '#dc2626' };
@@ -558,6 +564,7 @@ function renderConsolidated(d) {
   }
   const missing = d.rows.filter(r => r.status === 'missing').map(r => r.team.name);
   if (missing.length) h += `<p style="margin-top:16px;font-size:13px;color:#dc2626"><b>Not received:</b> ${esc(missing.join(', '))}</p>`;
+  if (d.decks) h += `<p style="margin-top:14px;font-size:13px"><b>Weekly decks</b> in the Salam template are ready to download in the console${d.decks.partial ? ' (built before every report was in)' : ''}: ${[d.decks.exec ? `Executive report (${d.decks.exec.slides} slides)` : '', d.decks.complete ? `Application operational status report (${d.decks.complete.slides} slides)` : ''].filter(Boolean).join(' · ')}.</p>`;
   h += `<p style="margin-top:18px"><a href="${esc(url)}" style="display:inline-block;background:#0b3d2b;color:#fff;text-decoration:none;font-weight:700;padding:10px 18px;border-radius:9px">Open the full report in the console</a></p>`;
   const subject = `Salam IT Operations — weekly report ${range}${missing.length ? ` · ${missing.length} missing` : ''}`;
   const html = notify.shell({ title: `Weekly operations report · ${range}`, pill: T.red ? `${T.red} red` : T.amber ? `${T.amber} amber` : 'all green', pillColor: T.red ? '#dc2626' : T.amber ? '#d97706' : '#0e9f5a', badge: 'OPERATIONS REPORTS', bodyHtml: h });
@@ -645,6 +652,7 @@ let tickBusy = false, timer = null;
 async function tick() {
   if (tickBusy) return; tickBusy = true;
   try {
+    try { await ensure(); await loadCfg(); await decks.auto(); } catch (e) { console.error('[opsreports] decks tick:', e.message); }   // the weekly decks do not need mail
     if (process.env.OPSR_MAIL === '0') return;
     const notify = require('./notify'); if (!notify.smtpConfigured()) return;
     await ensure(); await loadCfg();
@@ -966,7 +974,7 @@ function mount(app, { requireView, audit }) {
     const files = await filesOf(reps.map(r => Number(r.id)));
     res.json({ from, reports: reps.map(r => ({ id: Number(r.id), teamId: Number(r.team_id), team: (TEAMS.find(t => t.id === Number(r.team_id)) || {}).name, week: r.week, status: r.status, late: r.late,
       rag: (r.data || {}).rag || (r.data || {}).ragAuto || null, headline: (r.data || {}).headline || null, submittedByName: nameOf(dir, r.submitted_by), submittedAt: r.submitted_at,
-      files: files.filter(f => f.reportId === Number(r.id)) })) });
+      files: files.filter(f => f.reportId === Number(r.id)) })), decks: await decks.list(from).catch(() => []) });
   }));
   app.get('/api/opsreports/mails', ok(async (req, res) => {
     const r = await C().query(`SELECT m.id, m.kind, m.team_id, to_char(m.week,'YYYY-MM-DD') week, m.recipients, m.cc, m.subject, m.ok, m.error, m.by, m.created_at FROM opsr_mails m ORDER BY m.id DESC LIMIT 200`);
@@ -998,7 +1006,10 @@ function mount(app, { requireView, audit }) {
     res.json({ configured: true, dashboardUrl: CFG.servicenow.dashboardUrl, ...(await sn.dashboard({ days, force: req.query.refresh === '1' })) });
   }));
 
-  console.log('[opsreports] Operations reports mounted — /api/opsreports/{overview,report,upload,actions,consolidated,followup,teams,settings,itsm,drop}');
+  /* ---- the weekly decks (opsReportsDecks.js) ---- */
+  decks.mount(app, { C, ensure, loadCfg, cfg: () => CFG, teams: () => TEAMS, who, claim, defaultWeek, addDays, isDay, weekOf, fmtDay, listActions, nameOf, people, audit });
+
+  console.log('[opsreports] Operations reports mounted — /api/opsreports/{overview,report,upload,actions,consolidated,followup,teams,settings,itsm,drop,decks}');
 }
 /* ---------------------------------------------------------------- import (server/scripts/opsr-import.cjs)
  * Loads a week that was collected by hand — the files as the vendors sent them plus the normalized report ITSM wrote
@@ -1043,4 +1054,4 @@ function start() {
   if (timer.unref) timer.unref();
 }
 
-module.exports = { mount, start, isMember, loadCfg, normData, kpiStatus, dueAt, teamPeriod, weekOf, weekForPeriod, defaultWeek, buildConsolidated, tick, actStatus, ensureTeam, importReport, SEED_TEAMS };
+module.exports = { decks, mount, start, isMember, loadCfg, normData, kpiStatus, dueAt, teamPeriod, weekOf, weekForPeriod, defaultWeek, buildConsolidated, tick, actStatus, ensureTeam, importReport, SEED_TEAMS };
