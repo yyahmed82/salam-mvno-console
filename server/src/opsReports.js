@@ -1000,6 +1000,42 @@ function mount(app, { requireView, audit }) {
 
   console.log('[opsreports] Operations reports mounted — /api/opsreports/{overview,report,upload,actions,consolidated,followup,teams,settings,itsm,drop}');
 }
+/* ---------------------------------------------------------------- import (server/scripts/opsr-import.cjs)
+ * Loads a week that was collected by hand — the files as the vendors sent them plus the normalized report ITSM wrote
+ * from them — exactly as if the team had uploaded and submitted it: files stored and read, report data normalized,
+ * actions synced into the tracker. `submittedAt` is when the vendor really sent it (the mail date), so "late" is true. */
+async function ensureTeam(def, by) {
+  await ensure();
+  const r = await C().query(`INSERT INTO opsr_teams (key, name, vendor, domain, tower, segment, format_note, week_start, due_day, kpis, sort, created_by)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12) ON CONFLICT (key) DO NOTHING RETURNING id`,
+    [def.key, def.name, def.vendor || null, def.domain || null, def.tower || null, def.segment || 'both', def.format_note || null, def.week_start || 0,
+      def.due_day == null ? null : def.due_day, JSON.stringify((def.kpis || []).map(normKpiTpl).filter(Boolean)), def.sort || 100, by || 'import']);
+  await loadCfg(true);
+  return { created: r.rowCount > 0, team: teamBy(def.key) };
+}
+async function importReport({ teamKey, week, files = [], data, status = 'submitted', submittedAt, by = 'import', via = 'import' }) {
+  await ensure(); await loadCfg(true);
+  const t = teamBy(teamKey); if (!t) throw new Error('no such team: ' + teamKey);
+  week = weekOf(week);
+  const out = { team: t.key, name: t.name, week, files: [] };
+  for (const f of files) {
+    const r = await storeFile({ t, week, name: f.name, mime: f.mime, buf: f.buf, by, via });
+    out.files.push({ name: f.name, id: r.fileId, duplicate: r.duplicate, pages: r.read.pages, note: r.read.note });
+  }
+  const reportId = await ensureReport(t, week, by, via);
+  if (data) {
+    const d = normData(data, t);
+    const at = submittedAt ? new Date(submittedAt) : new Date();
+    const late = status !== 'draft' && !!submittedAt && at > dueAt(t, week);   // send time unknown → not marked late
+    await C().query(`UPDATE opsr_reports SET data=$2::jsonb, status=$3, via=$4, updated_by=$5, updated_at=now(),
+        submitted_by=CASE WHEN $3='draft' THEN submitted_by ELSE $5 END, submitted_at=CASE WHEN $3='draft' THEN submitted_at ELSE $6::timestamptz END, late=$7 WHERE id=$1`,
+      [reportId, JSON.stringify(d), status, via, by, at.toISOString(), late]);
+    if (status !== 'draft') out.actions = await syncActions(t, week, d.actions, by);
+    Object.assign(out, { reportId, status, rag: d.rag || d.ragAuto, late, kpis: d.kpis.map(k => `${k.name}=${k.value}${k.unit === '%' ? '%' : ''}${k.status ? ' (' + k.status + ')' : ''}`) });
+  }
+  return out;
+}
+
 function start() {
   ensure().then(() => loadCfg(true)).catch(e => console.error('[opsreports] init:', e.message));
   if (timer) clearInterval(timer);
@@ -1007,4 +1043,4 @@ function start() {
   if (timer.unref) timer.unref();
 }
 
-module.exports = { mount, start, isMember, loadCfg, normData, kpiStatus, dueAt, teamPeriod, weekOf, weekForPeriod, defaultWeek, buildConsolidated, tick, actStatus, SEED_TEAMS };
+module.exports = { mount, start, isMember, loadCfg, normData, kpiStatus, dueAt, teamPeriod, weekOf, weekForPeriod, defaultWeek, buildConsolidated, tick, actStatus, ensureTeam, importReport, SEED_TEAMS };

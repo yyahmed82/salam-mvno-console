@@ -1,3 +1,11 @@
+## 2.0.0-alpha.156 — 2026-10-09
+
+- **Operations reports — load a week ITSM collected by hand (`server/scripts/opsr-import.cjs`).** A bundle of the vendors' files exactly as sent (pptx · xlsx · pdf) plus `manifest.json` (week, teams to create, conditional renames, one report per team with RAG, KPIs, counters, highlights, lowlights, risks and actions). Each report is stored like an upload + submit: files kept and read, data normalized, actions synced. `--dry` prints the plan only. Safe to run twice. Runs on 152 with the env of the PM2 process (console DB 172.31.15.121 · unified_console).
+  - `opsReports.js`: `ensureTeam(def, by)` (create if missing) and `importReport({ teamKey, week, files, data, status, submittedAt })`.
+  - **Late** is the vendor's real send time against the due time (Sunday 12:00 KSA); a report with no known send time is not marked late.
+  - First bundle: week of 27 Sep 2026 — 8 reports (new team `tcs_legacy` "MVNO – Legacy Operations"; `portals` renamed "SALAM – Digital Channels Operations" when it still carries the duplicated name).
+- **Weekly decks in the Salam templates (`tools/opsreports-deck/`).** `build_exec.py` fills the 5-slide *Operational Weekly Executive Report*; `build_complete.py` builds the *Application Operational weekly status report* — cover, operations domains, per domain a divider then the vendor's own slides on the Salam master (PowerPoint "use destination theme"), PDF reports page by page, one section per domain. Standard library only (`pdftoppm` for PDFs).
+
 ## 2.0.0-alpha.155 — 2026-10-09
 
 - **VP Operations cockpit — technical incidents and technical errors only.** Asked by the VP after alpha.154: the page measures the technical health of Mobile and Fixed; business-rule incidents are not shown there.
