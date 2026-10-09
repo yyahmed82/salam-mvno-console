@@ -1,3 +1,40 @@
+## 2.0.0-alpha.158 — 2026-10-09
+
+- **Fixed › Troubleshoot covers the 5G journeys.** The board lists the events the dealer-ops ingest writes. The ingest writes one only when an API call failed, meaning HTTP ≥ 400 or a resultCode other than 0. Two kinds of 5G failure never look like that. As a result, the 5G HomeFi e-purchase journey (web and Salam Home app) showed no errors at all, while about 9 in 10 of its journeys stop at the location step. On 9 Oct the Epurchase channel listed FTTH only.
+  - **SIM check without a sellable SIM** — new category "5G SIM not available", team BSS, P2.
+    - Every 5G journey asks BSS querySimCard for the serial it is about to sell. When the SIM is not sellable, BSS answers "Success" with no SIM, or with a state other than idle, and the journey stops with "Sim card is not available".
+    - The board now shows one event per such answer, read from the read model's `api_calls`. SDA 5G HomeFi and 5G FWA are included.
+    - **E-purchase:** the cause comes from the nexus stock locks at the time of the check:
+      - held by an expired journey whose lock was never released;
+      - already sold;
+      - a renamed serial (…_OLD);
+      - held by a journey still in progress (business);
+      - not idle, no SIM, or no answer.
+    - **SDA:** the dealer scanned the SIM, so the event is business by default.
+  - **The 5G e-purchase steps only nexus records:**
+    - from the Payments-watch snapshot (1-SAR launch tests left out):
+      - Naqeel delivery order failed, with the card charged or the payment voided;
+      - paid with no BSS order after three days;
+      - BSS order failed at delivery;
+      - paid but stopped before the Naqeel order;
+      - returned with no refund;
+    - Semati / Nafath stops: already holds a number, rejected, no answer, or a Semati failure;
+    - stock locks never released. A serial that was also sold is flagged "do not release".
+  - **Same tools as every other row.** The events carry channel (Epurchase, QR, Salam Home app, SDA), type (5G HomeFi, 5G FWA), class, priority, team and provider (Naqeel). They work with:
+    - every chip, filter and search;
+    - acks and exports;
+    - the error-message select and the "Classify errors…" catalogue;
+    - the hourly trend.
+  - **An opened row shows** the cause, the masked request and response, similar cases over 30 days, the journey's calls, and an audited unmask. The alert metrics are unchanged.
+  - **Code:** new `server/src/fixed5gLane.js`, merged in `fixedErrors.js`, `fixedErrCatalog.js`, `fixedErrorTrend.js` and `fixed-errors.js`.
+- **SIM secrets are masked in every body the console serves.**
+  - BSS querySimCard answers carry the SIM's ki, and can carry opc, pin / puk and adm. The read model, nexus and combined.log keep them as received, and Fixed › trace returned them.
+  - `secretMask.js` now masks them in the attempt trace (calls and raw context), the error board (detail, unmask, export), the app-log grep and the 5G lane. The app-log grep also masks them on 146, before the lines leave the node, like the tokens and passwords it already masked there.
+  - Unmask shows customer data, never SIM keys.
+- **Header: the account chip no longer gets cut off at 1366–1440 px.** It happened when a menu showed its current page, for example "Fixed · Troubleshoot".
+  - On 1141–1600 px the BETA badge and the wordmark now step aside while that chip shows.
+  - Below 1260 px the chip itself is hidden.
+
 ## 2.0.0-alpha.157 — 2026-10-09
 
 - **Operations reports — the two weekly decks are built by the console and downloaded from it.** As soon as every team the decks use has submitted its report (or, per Settings, once ITSM approved them), the 1-minute tick builds, in the Salam template:

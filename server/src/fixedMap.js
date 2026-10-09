@@ -247,8 +247,11 @@ function mount(app, deps) {
     } else if (wants) unmaskNote = 'unmask requires the unmaskPII capability';
     if (audit) audit(req, unmasked ? 'fixed.trace.unmasked' : 'fixed.trace', id, { channel: att.channel });
     const { step_detail, ...rest } = att;
+    /* SIM secrets (ki, opc, pin / puk …) are never served — querySimCard answers carry them (secretMask.js, alpha.158) */
+    const { maskSecretsText, maskSecretsObj } = require('./secretMask');
+    const apiCalls = calls.rows.map(c => ({ ...c, req_body: maskSecretsText(c.req_body), res_body: maskSecretsText(c.res_body), info: maskSecretsText(c.info) }));
     return { attempt: { ...maskAttempt(rest), outsideKsa: outsideKsa(Number(att.lat), Number(att.lng)), label: PLAN_LABEL[att.workflow] || att.workflow },
-      steps, stepDetail, apiCalls: calls.rows, unmasked, rawContext, unmaskNote };
+      steps, stepDetail, apiCalls, unmasked, rawContext: rawContext == null ? rawContext : maskSecretsObj(rawContext), unmaskNote };
   }
 
   /* ---- QR (dashboards.qr + activity.aggregate qr + referrals.summary) ---- */

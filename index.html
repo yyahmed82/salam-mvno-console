@@ -1751,6 +1751,13 @@
     .beta,.logo .brand-sub,.logo .brand-div{display:none}
     header>nav>.navtab,.navdrop-btn{padding:6px 8px;font-size:12px}
   }
+  /* a menu's current-page chip ("Fixed · Troubleshoot") adds ~95 px: on 1141–1600 px the BETA badge and the wordmark step
+     aside while one shows, and the chip never grows past 120 px (alpha.158 — the account chip was clipped at 1366–1440) */
+  @media (min-width:1141px) and (max-width:1600px){
+    header:has(.navdrop-cur:not([hidden])) .beta,header:has(.navdrop-cur:not([hidden])) .logo .brand-sub,header:has(.navdrop-cur:not([hidden])) .logo .brand-div{display:none}
+    .navdrop-cur{max-width:120px;overflow:hidden;text-overflow:ellipsis}
+  }
+  @media (min-width:1141px) and (max-width:1260px){ .navdrop-cur{display:none} }   /* the menu stays highlighted; its name is in the page title */
   /* ---------- drawer mode (≤1140) : nav leaves the header (the full nav needs ~1125px) ---------- */
   @media (max-width:1140px){
     header{flex-wrap:nowrap;gap:8px;padding-left:14px;padding-right:12px}
@@ -2498,7 +2505,7 @@
 <script src="fixed-errcat.js?v=20260915a"></script>
 <script src="fixed-grep.js?v=20260917b"></script>
 <script src="fixed-errtrend.js?v=20260924a"></script>
-<script src="fixed-errors.js?v=20261002a"></script>
+<script src="fixed-errors.js?v=20261009a"></script>
 <script src="fixed-alerts.js?v=20260911s"></script>
 <script src="fixed-playbook.js?v=20260910c"></script>
 <script src="fixed-diagrams.js?v=20260911x"></script>

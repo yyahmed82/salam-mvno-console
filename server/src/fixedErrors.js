@@ -23,16 +23,28 @@
  *   GET  detail   ?id[&src=ops|beta][&unmask=1]
  *   GET  export   ?format=xlsx|pdf …same filters as live   (cap export) — filters, period, summary, every row
  *   POST resolve  {id[, undo]}                     (cap ackErrors)
+ * 5G JOURNEYS (alpha.158, fixed5gLane.js): the ingest makes an event only from a FAILED api_log (HTTP ≥ 400 / resultCode ≠ 0),
+ * so a SIM check that answers "Success" without a sellable SIM — the step where 9 in 10 5G e-purchase journeys stop — and the
+ * 5G HomeFi e-purchase steps only nexus records (Naqeel order, payment without a BSS order, refund, Semati / Nafath, stock locks)
+ * never reached the board. The lane builds board-shaped events for them (src 'lane', ids 'g5-…'); every answer below merges
+ * them with the same filters, facets and acks. They are not fed to the alert metrics.
+ * SIM secrets (ki, opc, pin / puk …) in any body are masked (secretMask.js), unmask included.
  */
 
 /* ---- taxonomy — copied from packages/ingest/src/error-taxonomy.ts (single source of truth there) ----
- * severity = base priority 0..4 (P0 most severe); moneyAtRisk categories pin to P0 on a spike. */
+ * severity = base priority 0..4 (P0 most severe); moneyAtRisk categories pin to P0 on a spike.
+ * SIM_NOT_AVAILABLE · STOCK_LOCK_LEAK · NAQEEL_ORDER_FAILED · REFUND_MISSING are the console's own (5G journey lane,
+ * fixed5gLane.js) — the ingest never writes them. */
 const TAXONOMY = [
   { key: 'PAYMENT_NOT_NOTIFIED', label: 'Paid — BSS not notified',    team: 'BSS',      clientSide: false, tone: 'red',   severity: 1, moneyAtRisk: true },
   { key: 'PROVISION_NO_ORDER',   label: 'Paid — order not created',   team: 'OSS',      clientSide: false, tone: 'red',   severity: 1, moneyAtRisk: true },
   { key: 'PAYMENT_FAILED',       label: 'Payment failure',            team: 'BSS',      clientSide: false, tone: 'red',   severity: 2, moneyAtRisk: true },
   { key: 'OSS_EXCEPTION',        label: 'OSS / STC order exception',  team: 'OSS',      clientSide: false, tone: 'red',   severity: 2, moneyAtRisk: false },
   { key: 'LANDLINE_LOCK_FAILED', label: 'Failed to lock landline',    team: 'OSS',      clientSide: false, tone: 'red',   severity: 2, moneyAtRisk: false },
+  { key: 'NAQEEL_ORDER_FAILED',  label: 'Naqeel delivery order failed', team: 'OSS',     clientSide: false, tone: 'red',   severity: 1, moneyAtRisk: true },
+  { key: 'REFUND_MISSING',       label: 'Returned — refund missing',  team: 'BSS',      clientSide: false, tone: 'red',   severity: 1, moneyAtRisk: true },
+  { key: 'SIM_NOT_AVAILABLE',    label: '5G SIM not available',       team: 'BSS',      clientSide: false, tone: 'red',   severity: 2, moneyAtRisk: false },
+  { key: 'STOCK_LOCK_LEAK',      label: 'Stock lock never released',  team: 'PLATFORM', clientSide: false, tone: 'amber', severity: 2, moneyAtRisk: false },
   { key: 'NAFATH_TIMEOUT',       label: 'Nafath timeout / no callback', team: 'IDENTITY', clientSide: false, tone: 'amber', severity: 2, moneyAtRisk: false },
   { key: 'SEMATI_FAILED',        label: 'Semati failure',             team: 'IDENTITY', clientSide: false, tone: 'red',   severity: 2, moneyAtRisk: false },
   { key: 'YAKEEN_FAILED',        label: 'Yakeen validation failed',   team: 'IDENTITY', clientSide: false, tone: 'red',   severity: 3, moneyAtRisk: false },
@@ -220,6 +232,11 @@ function whereFor(s, src, split) {
 }
 const n = v => Number(v) || 0;
 const parseJson = s => { if (s == null) return null; if (typeof s === 'object') return s; try { return JSON.parse(s); } catch (_) { return s; } };
+const { maskSecrets, maskSecretsText } = require('./secretMask');
+/* a body as the board serves it: SIM secrets masked, then parsed when it is JSON */
+const bodyOut = v => parseJson(v == null ? null : (typeof v === 'object' ? maskSecrets(v) : maskSecretsText(v)));
+/* JS twin of msgOf() — the message signature the select, the catalogue and the overrides key on */
+const msgSig = t => String(t == null || String(t).trim() === '' ? '(no message)' : String(t).trim()).replace(/[0-9]+/g, '#').slice(0, 160);
 
 function mount(app, deps) {
   const { gate, wrap, audit, db } = deps;
@@ -281,10 +298,70 @@ function mount(app, deps) {
     } catch (_) { return {}; }
   }
 
+  /* ---- the 5G journey lane (fixed5gLane.js) — merged into every answer of this board, never into the alert metrics ---- */
+  const lane = require('./fixed5gLane');
+  const laneSources = async () => { const sp = await refreshSplit(); return active().map(x => ({ pool: x.pool, src: x.src, buckets: sp ? SRC_BUCKETS[x.src] : null })); };
+  async function laneFor(s, q = {}) {
+    if (!lane.enabled()) return { events: [], meta: null };
+    try { return await lane.events({ from: s.from, to: s.to, window: s.window, custom: !!(q.from || q.to), sources: await laneSources() }); }
+    catch (e) { console.error('[FIXED-ERRORS] 5G lane: ' + e.message); return { events: [], meta: { warnings: [e.message], parts: {} } }; }
+  }
+  const laneSig = e => msgSig(e.resp_text || e.message || meta(e.category).label);
+  const laneCls = e => { try { return require('./fixedErrCatalog').boardOverride(laneSig(e)) || e.cls_auto; } catch (_) { return e.cls_auto; } };
+  /* identifier search on lane events — the same fields identifierSql reads (full values stay server-side) */
+  function laneIdFilter(q) {
+    const any = q.find || q.anyId;
+    const keys = ['odb', 'iccid', 'cpe', 'msisdn', 'serviceNo', 'custCode', 'customerId', 'workflowId'];
+    if (!any && !keys.some(k => q[k]) && q.tech !== 'fttx' && q.tech !== '5g') return null;
+    if (q.tech === 'fttx') return false;                                    // every lane event is a 5G journey
+    const has = (v, t) => v != null && t != null && String(v).toLowerCase().includes(String(t).trim().toLowerCase());
+    return e => { const I = e.ids || {};
+      if (any && !(has(I.odb, odbTerm(any)) || has(I.serviceNo, any) || has(I.iccid, any) || has(I.cpe, any) || has(I.msisdn, any) || has(I.custCode, any) || has(I.customerId, any)
+        || has(e.order_number, any) || has(e.referral_code, any) || has(e.attempt_id, any) || has(e.dealer_code, any))) return false;
+      if (q.odb && !has(I.odb, odbTerm(q.odb))) return false;
+      for (const k of ['iccid', 'cpe', 'msisdn', 'serviceNo', 'custCode', 'customerId']) if (q[k] && !has(I[k], q[k])) return false;
+      if (q.workflowId && !has(e.attempt_id, q.workflowId)) return false;
+      return true; };
+  }
+  /* the board filters (baseWhere) in JS; skip = the dimension a facet counts without */
+  function laneMatch(evs, q, s, skip) {
+    const idf = laneIdFilter(q); if (idf === false) return [];
+    const type = skip === 'type' ? null : s.type;
+    const prov = skip === 'provider' || !q.provider ? null : String(q.provider).toUpperCase().slice(0, 40);
+    const cls = skip === 'cls' || !(q.cls === 'business' || q.cls === 'technical') ? null : q.cls;
+    const msg = skip === 'msg' || !q.msg ? null : String(q.msg).slice(0, 160);
+    const resp = q.resp ? String(q.resp).slice(0, 160).toLowerCase() : null;
+    const buckets = skip === 'channel' ? null : s.buckets;
+    return evs.filter(e => (!buckets || buckets.includes(e.chan)) && (!type || e.type === type)
+      && (!prov || (prov === '-' ? !e.provider : e.provider === prov)) && (!cls || laneCls(e) === cls) && (!msg || laneSig(e) === msg)
+      && (!resp || `${e.resp_text || ''} ${e.message || ''} ${e.res || ''}`.toLowerCase().includes(resp))
+      && (!q.region || e.region === String(q.region).slice(0, 60)) && (!q.dealerId || e.dealer_id === String(q.dealerId).slice(0, 40))
+      && (!idf || idf(e)));
+  }
+  /* catalogue + trend feeds (fixedErrCatalog.sync, fixedErrorTrend.roll) — every lane event in [from, to), all channels */
+  const laneRange = async (from, to) => { const f = new Date(from), t = new Date(to); return laneFor({ from: f, to: t, window: 'custom' }, { from: f.toISOString() }); };
+  module.exports.laneCatalog = async (from, to) => {
+    const L = await laneRange(from, to); const acc = new Map();
+    for (const e of L.events) { const sig = laneSig(e); let x = acc.get(sig);
+      if (!x) acc.set(sig, x = { sig, sample: e.resp_text || e.message || meta(e.category).label, category: e.category, step: e.step, n: 0, first: e.occurred_at, last: e.occurred_at, auto: e.cls_auto });
+      x.n++; if (e.occurred_at < x.first) x.first = e.occurred_at; if (e.occurred_at > x.last) x.last = e.occurred_at; }
+    return [...acc.values()];
+  };
+  module.exports.laneRollup = async (from, to) => {
+    const L = await laneRange(from, to); const acc = new Map();
+    for (const e of L.events) { const hour = new Date(Math.floor(Date.parse(e.occurred_at) / 3600e3) * 3600e3).toISOString();
+      const k = [hour, e.chan, e.type || 'unknown', e.provider || '-', e.category, laneSig(e), e.cls_auto].join('|'); let x = acc.get(k);
+      if (!x) acc.set(k, x = { hour, channel: e.chan, type: e.type || 'unknown', provider: e.provider || '-', category: e.category, msg: laneSig(e), cls_auto: e.cls_auto, n: 0, open: 0 });
+      x.n++; if (!e.resolved) x.open++; }
+    return [...acc.values()];
+  };
+  /* lane volume per category in the last 3 h (priority escalation, like the read-model counts) */
+  async function laneLast3h() { const now = new Date(); const L = await laneFor({ from: new Date(now.getTime() - 3 * 3600e3), to: now, window: '3h' }); const c = {}; for (const e of L.events) c[e.category] = (c[e.category] || 0) + 1; return c; }
+
   /* per-category last-3h volume → effective priority (same escalation as the prod board), summed over the sources */
-  async function effByCategory() {
+  async function effByCategory(extra = {}) {
     await refreshSplit();
-    const last3h = {};
+    const last3h = { ...extra };
     await Promise.all(active().map(async x => {
       const r = await x.pool.query(`SELECT category, count(*)::int AS n FROM error_events e
         WHERE e.occurred_at >= now() - interval '3 hours' ${sliceOnly(x.src)} GROUP BY 1`);
@@ -310,6 +387,7 @@ function mount(app, deps) {
     const s = baseWhere(q);
     const openOnly = q.openOnly === '1' || q.openOnly === 'true';
     await refreshSplit();
+    const laneP = laneFor(s, q);                       // the 5G lane computes beside the read-model scan
     const warnings = [];
     const t0 = Date.now();
     const soft = (name, pr) => pr.catch(e => { warnings.push({ part: name, error: e.message }); console.error(`[FIXED-ERRORS] ${name} breakdown failed (${s.window}): ${e.message}`); return []; });
@@ -341,6 +419,18 @@ function mount(app, deps) {
         return { src: x.src, buckets: served, latest: r.rows[0] && r.rows[0].latest || null, stale: x.src === 'beta' && both() && !split(), reason: x.src === 'beta' ? splitState.reason : undefined }; } catch (e) { return { src: x.src, error: e.message }; } })),
     ]);
     const catRows = pick(allParts, 'category', 100).map(x => ({ category: x.key, total: x.total, open: x.open, last3h: x.last3h }));
+    /* ---- merge the 5G lane: categories with every filter, each chip row without its own (as the SQL facets) ---- */
+    const L = await laneP;
+    const laneHit = laneMatch(L.events, q, s, null), since3h = Date.now() - 3 * 3600e3;
+    for (const e of laneHit) { let x = catRows.find(c => c.category === e.category); if (!x) catRows.push(x = { category: e.category, total: 0, open: 0, last3h: 0 });
+      x.total++; if (!e.resolved) x.open++; if (Date.parse(e.occurred_at) >= since3h) x.last3h++; }
+    const addFacet = (arr, skip, keyOf, limit) => { for (const e of laneMatch(L.events, q, s, skip)) { const k = keyOf(e); let x = arr.find(y => y.key === k);
+        if (!x) arr.push(x = { key: k, total: 0, open: 0, last3h: 0 }); x.total++; if (!e.resolved) x.open++; }
+      arr.sort((a, b) => b.total - a.total); if (arr.length > limit) arr.length = limit; };
+    addFacet(provs, 'provider', e => e.provider || '-', 20); addFacet(chans, 'channel', e => e.chan, 10); addFacet(types, 'type', e => e.type || 'unknown', 10);
+    addFacet(msgs, 'msg', laneSig, 80); addFacet(clss, 'cls', laneCls, 4);
+    if (L.meta && !L.meta.disabled) fresh.push({ src: 'lane', buckets: CHANNELS.map(c => c.key), latest: L.meta.latest || null, parts: L.meta.parts || {}, matched: laneHit.length,
+      warnings: L.meta.warnings || [], nexus: !!L.meta.nexus, took_ms: L.meta.took_ms || null });
     if (Date.now() - t0 > 3000 || warnings.length) console.log(`[FIXED-ERRORS] summary ${s.window} took ${Date.now() - t0} ms (${allParts.map(p => p.src + ':' + p.r.rows.length + ' rows').join(', ')})${warnings.length ? ' warnings ' + warnings.map(w => w.part).join(',') : ''}`);
     const byCategory = catRows.sort((a, b) => b.total - a.total).map(x => { const m = meta(x.category);
       return { category: x.category, label: m.label, team: m.team, tone: m.tone, clientSide: m.clientSide, moneyAtRisk: m.moneyAtRisk,
@@ -364,12 +454,14 @@ function mount(app, deps) {
   // ---- GET /api/fixed/errors/live ----
   async function live(q, req) {
     const s = baseWhere(q);
+    const laneP = laneFor(s, q);
     const P = s.P.slice(); const extra = [];
     if (q.openOnly === '1' || q.openOnly === 'true') extra.push('NOT e.resolved');
     if (q.category) { P.push(String(q.category).slice(0, 60)); extra.push(`e.category = $${P.length}`); }
     let cats = null;
     if (q.team && TEAMS.includes(q.team)) cats = TAXONOMY.filter(c => c.team === q.team).map(c => c.key);
-    const eff = await effByCategory();
+    const eff = await effByCategory(await laneLast3h().catch(() => ({})));
+    const laneCats = cats ? cats.slice() : null;       // the SQL branch below rewrites cats for the P3 catch-all
     if (q.priority !== undefined && q.priority !== '') {
       const p = Number(q.priority);
       const pc = Object.keys(eff).filter(k => eff[k] === p);
@@ -386,7 +478,16 @@ function mount(app, deps) {
         e.channel, e.dealer_id, e.dealer_code, e.referral_code, e.region, e.step, e.occurred_at, e.resolved, e.resolved_at, e.signature,
         ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_SQL()} AS cls, ${RESP_EXPR} AS resp_text, oa.workflow::text AS workflow, oa.plan, '${src}'::text AS src
       FROM error_events e ${JOIN_OA} ${where} ${extra.length ? 'AND ' + extra.join(' AND ') : ''} ORDER BY e.occurred_at DESC LIMIT $${P.length}`, P));
-    const all = [].concat(...parts.map(p => p.r.rows)).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
+    /* the 5G lane under the same filters, then one merge by time */
+    const L = await laneP;
+    let lr = laneMatch(L.events, q, s, null);
+    if (q.openOnly === '1' || q.openOnly === 'true') lr = lr.filter(e => !e.resolved);
+    if (q.category) lr = lr.filter(e => e.category === String(q.category).slice(0, 60));
+    if (laneCats) lr = lr.filter(e => laneCats.includes(e.category));
+    if (q.priority !== undefined && q.priority !== '') lr = lr.filter(e => (eff[e.category] != null ? eff[e.category] : meta(e.category).severity) === Number(q.priority));
+    if (q.cursor) { const c = Date.parse(String(q.cursor)); if (!isNaN(c)) lr = lr.filter(e => Date.parse(e.occurred_at) < c); }
+    const laneRows = lr.slice(0, lim + 1).map(e => ({ ...lane.toRow(e), cls: laneCls(e) }));
+    const all = [].concat(...parts.map(p => p.r.rows), laneRows).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
     const rows = all.slice(0, lim);
     const acks = await acksFor(rows.map(x => x.id));
     if (audit && (q.find || q.anyId)) audit(req, 'fixed.errors.search', String(q.find || q.anyId).slice(0, 40), { rows: rows.length });
@@ -442,6 +543,7 @@ function mount(app, deps) {
   // ---- GET /api/fixed/errors/detail ----
   async function detail(q, req) {
     const id = String(q.id || '').slice(0, 80); if (!id) { const e = new Error('id required'); e.status = 400; throw e; }
+    if (lane.isLaneId(id)) return laneDetail(id, q, req);
     const DSQL = `SELECT e.*, d.dealer_name, d.staff_name, d.staff_code, ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_SQL()} AS cls, oa.workflow::text AS workflow, oa.plan
       FROM error_events e LEFT JOIN dealers d ON d.id = e.dealer_id ${JOIN_OA} WHERE e.id = $1 LIMIT 1`;
     // the row's own source first (the board passes src=); the same id may exist in both read models with a different channel label
@@ -458,10 +560,15 @@ function mount(app, deps) {
     ]);
     const out = { event: { ...ev, req_body: undefined, res_body: undefined, label: m.label, team: m.team, tone: m.tone, basePriority: m.severity, acked: !!acks[ev.id], acked_by: acks[ev.id] ? acks[ev.id].actor : null,
         chanLabel: (CHAN[ev.chan] || {}).label || ev.chan, typeLabel: (TYPE[ev.type] || {}).label || ev.type, journey: WF_LABEL[ev.workflow] || '' },
-      request: parseJson(ev.req_body), response: parseJson(ev.res_body), masked: true,
+      request: bodyOut(ev.req_body), response: bodyOut(ev.res_body), masked: true,
       similar: sim, timeline: calls.rows, unmaskAvailable: !!db.nexus };
-    // ---- audited unmask: raw request/response of the failing step from nexus.api_logs ----
-    if (q.unmask === '1' && req && req.caps && req.caps.unmaskPII) {
+    if (q.unmask === '1' && req && req.caps && req.caps.unmaskPII) await unmaskInto(out, ev, req);
+    return out;
+  }
+
+  /* ---- audited unmask: raw request/response of the failing step from nexus.api_logs (customer data in clear,
+   * SIM secrets still masked) ---- */
+  async function unmaskInto(out, ev, req) {
       if (!db.nexus || !ev.attempt_id) { out.unmask = { unmaskAvailable: false }; return out; }
       try {
         const [logs, ws] = await Promise.all([
@@ -472,10 +579,37 @@ function mount(app, deps) {
         const match = bestRawMatch(raws, ev.step, ev.occurred_at ? new Date(ev.occurred_at) : null);
         if (audit) await audit(req, 'pii.unmask', ev.attempt_id, { errorId: ev.id, step: ev.step, matched: !!match, page: 'fixed.errors' });
         out.unmask = { unmaskAvailable: true, matched: !!match,
-          request: match ? parseJson(requestDisplay(match)) : null, response: match ? parseJson(match.response) : null,
+          request: match ? bodyOut(requestDisplay(match)) : null, response: match ? bodyOut(match.response) : null,
           endpoint: match ? match.url : null, at: match ? match.createdAt : null,
-          context: ws.rows[0] ? ws.rows[0].context : null, calls: raws.length };
+          context: ws.rows[0] ? maskSecrets(ws.rows[0].context) : null, calls: raws.length };
       } catch (e) { out.unmask = { unmaskAvailable: false, error: e.message }; }
+    return out;
+  }
+
+  /* ---- detail of a 5G lane event: the cause, the masked facts, similar cases over the lane's 30 days, the journey's
+   * calls from the read model, and an audited unmask (SIM check: the raw api_log; otherwise the raw nexus facts) ---- */
+  async function laneDetail(id, q, req) {
+    const srcs = await laneSources();
+    const ev = await lane.find(id, srcs);
+    if (!ev) { const e = new Error('event not found — a 5G journey condition that has cleared is no longer listed'); e.status = 404; throw e; }
+    const m = meta(ev.category);
+    const [sim, acks, calls] = await Promise.all([
+      lane.similar(ev, srcs).catch(() => ({})), acksFor([ev.id]),
+      ev.attempt_id ? (srcs.find(x => x.src === 'ops') || srcs[0]).pool.query(`SELECT id, method, endpoint, status, duration_ms, error_class, error_msg, info, created_at
+          FROM api_calls WHERE attempt_id = $1 ORDER BY created_at ASC LIMIT 200`, [ev.attempt_id]).catch(() => ({ rows: [] })) : { rows: [] },
+    ]);
+    const out = { event: { ...lane.toRow(ev), cls: laneCls(ev), label: m.label, team: m.team, tone: m.tone, basePriority: m.severity, acked: !!acks[ev.id], acked_by: acks[ev.id] ? acks[ev.id].actor : null,
+        chanLabel: (CHAN[ev.chan] || {}).label || ev.chan, typeLabel: (TYPE[ev.type] || {}).label || ev.type, journey: WF_LABEL[ev.workflow] || '', message: ev.resp_text || m.label },
+      request: bodyOut(ev.req), response: bodyOut(ev.res), masked: true, similar: sim, timeline: calls.rows.map(c => ({ ...c, info: maskSecretsText(c.info) })),
+      unmaskAvailable: !!db.nexus, lane: { kind: ev.kind, horizonDays: 30 } };
+    if (q.unmask === '1' && req && req.caps && req.caps.unmaskPII) {
+      if (ev.kind === 'sim') await unmaskInto(out, { ...ev, step: ev.step, occurred_at: ev.occurred_at }, req);
+      else {
+        try { const r = await lane.raw(ev);
+          if (audit) await audit(req, 'pii.unmask', ev.attempt_id, { errorId: ev.id, step: ev.step, matched: !!r, page: 'fixed.errors.5g' });
+          out.unmask = { unmaskAvailable: true, matched: !!r, request: r ? r.request : null, response: r ? r.response : null, endpoint: ev.step || null, at: ev.occurred_at, context: null, calls: 0 };
+        } catch (e) { out.unmask = { unmaskAvailable: false, error: e.message }; }
+      }
     }
     return out;
   }
@@ -519,7 +653,7 @@ function mount(app, deps) {
     const out = rows.slice(0, cap);
     // bodies and api_calls come from the row's own read model (rows carry src)
     const bodies = [], calls = [];
-    for (const src of [...new Set(out.map(r => r.src))]) {
+    for (const src of [...new Set(out.map(r => r.src))].filter(x => x !== 'lane')) {
       const mine = out.filter(r => r.src === src), pool = poolOf(src);
       const ids = mine.map(r => r.id), attempts = [...new Set(mine.map(r => r.attempt_id).filter(Boolean))];
       if (ids.length) bodies.push(...(await pool.query(`SELECT id, req_body, res_body FROM error_events WHERE id = ANY($1::text[])`, [ids])).rows);
@@ -527,17 +661,22 @@ function mount(app, deps) {
         `SELECT DISTINCT ON (attempt_id, endpoint) attempt_id, endpoint, method, status, duration_ms
            FROM api_calls WHERE attempt_id = ANY($1::text[]) ORDER BY attempt_id, endpoint, created_at DESC`, [attempts])).rows);
     }
+    /* 5G lane rows: their masked bodies and HTTP / duration ride on the lane event itself */
+    const laneById = new Map();
+    if (out.some(r => r.src === 'lane')) { const L = await laneFor(baseWhere(q), q); for (const e of L.events) laneById.set(e.id, e); }
+    for (const r of out) { if (r.src !== 'lane') continue; const e = laneById.get(r.id); if (e) bodies.push({ id: r.id, req_body: e.req, res_body: e.res, lane: e }); }
     const bodyById = Object.fromEntries(bodies.map(b => [b.id, b]));
     const callKey = {}; for (const c of calls) callKey[c.attempt_id + '|' + c.endpoint] = c;
     const callFor = r => { if (!r.attempt_id) return null; if (r.step && callKey[r.attempt_id + '|' + r.step]) return callKey[r.attempt_id + '|' + r.step];
       const tail = r.step ? calls.find(c => c.attempt_id === r.attempt_id && (c.endpoint.endsWith(r.step) || r.step.endsWith(c.endpoint))) : null; return tail || null; };
-    const flat = out.map(r => { const b = bodyById[r.id] || {}; const c = callFor(r);
+    const flat = out.map(r => { const b = bodyById[r.id] || {}; const le = b.lane || null; const c = le ? { method: le.method, status: le.http, duration_ms: le.ms } : callFor(r);
       return { when: r.occurred_at, priority: r.priority, team: r.team, cls: r.cls === 'technical' ? 'Technical' : 'Business', category: r.label || r.category, code: r.code || '', message: r.resp_text || r.message || '',
         endpoint: r.step || (c && c.endpoint) || '', method: (c && c.method) || '', http: c && c.status != null ? c.status : '', ms: c && c.duration_ms != null ? c.duration_ms : '',
         chan: r.chan || '', channel: r.chanLabel || r.chan || r.channel || '', type: r.typeLabel || r.type || '', journey: r.journey || '', workflow: r.workflow || '',
         dealer: r.chan === 'qr' && r.referral_code ? 'QR ' + r.referral_code : (r.dealer_code || (r.chan === 'web' ? 'consumer-direct' : r.chan === 'salamhome' ? 'app' : '')), region: r.region || '',
         order: r.order_number || '', attempt: r.attempt_id || '', status: r.resolved ? 'resolved' : (r.acked ? 'acked' : 'open'), acked_by: r.acked_by || '',
-        provider: provOf(b.req_body) || '', request: b.req_body || '', response: b.res_body || '' }; });
+        provider: (le ? le.provider : provOf(b.req_body)) || '', request: maskSecretsText(b.req_body || ''), response: maskSecretsText(b.res_body || ''), src: r.src }; });
+    const laneN = flat.filter(r => r.src === 'lane').length;
     const filters = [
       ['Period', `${WIN_LABEL[sum.window] || sum.window} — ${ksaStr(sum.from)} → ${ksaStr(sum.to)} KSA`],
       ['Channel', chanLabel(q.channel)], ['Type', q.type && TYPE[q.type] ? TYPE[q.type].label : 'All types'],
@@ -548,6 +687,7 @@ function mount(app, deps) {
       ['Search', [q.find, q.odb && 'ODB ' + q.odb, q.iccid && 'ICCID ' + q.iccid, q.cpe && 'CPE ' + q.cpe, q.msisdn && 'MSISDN ' + q.msisdn, q.serviceNo && 'service ' + q.serviceNo,
         q.custCode && 'custCode ' + q.custCode, q.customerId && 'customer ' + q.customerId, q.workflowId && 'workflow ' + q.workflowId].filter(Boolean).join(' · ') || '—'],
       ['Rows', `${flat.length}${rows.length > cap ? ` (capped at ${cap} — narrow the window for the rest)` : ''}`],
+      ['5G journeys', `${laneN} row(s) from the 5G lane — SIM checks answered without a sellable SIM, and the 5G e-purchase stops read from nexus (Naqeel, payment, Semati, stock locks)`],
       ['Generated', `${ksaStr(new Date().toISOString())} KSA by ${req.sessionEmail || req.actor || 'console'}`],
     ];
     return { sum, flat, filters, capped: rows.length > cap };

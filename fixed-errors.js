@@ -3,7 +3,9 @@
  * Window chips on this page (3h … 1 year) override the hub range. The board has its own channel select and starts on
  * ALL channels like /operations-console/errors (QR errors are epurchase — a hub chip on SDA would hide them); it follows
  * the hub chip only when the user changes it. Identifier searches apply live (debounced) or on Enter.
- * Identifiers arrive masked (last digits); "Unmask (audited)" only for caps.unmaskPII; "Ack" only for caps.ackErrors. */
+ * Identifiers arrive masked (last digits); "Unmask (audited)" only for caps.unmaskPII; "Ack" only for caps.ackErrors.
+ * 5G journeys (alpha.158): rows with src "lane" come from the server's 5G lane (fixed5gLane.js) — SIM checks answered
+ * without a sellable SIM and the 5G e-purchase stops only nexus records. Same chips, filters, acks and exports. */
 (function(){
   "use strict";
   const FX=()=>window.FX;
@@ -35,6 +37,11 @@
   /* one class attribute only — a second class="" is ignored by the browser and the chip falls back to the grey default */
   const chip=(on,label,attrs)=>{ const m=attrs.match(/\s*class="([^"]*)"/); const rest=m?attrs.replace(m[0],""):attrs; return `<button type="button" class="fe-chip${on?" on":""}${m?" "+m[1]:""}" ${rest}>${label}</button>`; };
   const CLS={ business:{label:"Business",color:"#3b82f6",bg:"rgba(59,130,246,.14)"}, technical:{label:"Technical",color:"#ef4444",bg:"rgba(239,68,68,.14)"} };
+  /* where a 5G-lane row comes from (server/src/fixed5gLane.js) — shown under "What happened" */
+  const LANE_NOTE={ sim:"5G journey · the SIM check answered “Success” without a sellable SIM, so the read model recorded no error. The cause comes from the stock locks at the time of the check. Resolved once the journey completes.",
+    paid:"5G journey · a paid 5G HomeFi e-purchase journey, read from nexus (also on Payments watch). Open while the condition lasts.",
+    lock:"5G journey · a SIM or landline lock still held by a journey that expired, read from nexus. Open until the lock is released.",
+    identity:"5G journey · the journey expired at the Nafath / Semati step with this answer in nexus." };
   const clsPill=r=>{ const k=r&&r.cls; const c=CLS[k]; if(!c) return ""; return `<span class="fe-clspill" style="background:${c.bg};color:${c.color}" title="${k==="technical"?"the platform or a provider failed to answer":"the API answered with a NO — the platform worked"}">${c.label}</span>`; };
   const prioBadge=p=>`<span class="fe-pri" style="background:${PRIO_COLOR[p]||"#7d8590"}">P${p}</span>`;
   const catBadge=(r)=>{ const esc=FX().esc; const t=TONE[r.tone]||TONE.muted; return `<span class="fe-cat"><span class="fe-catpill" style="background:${t.bg};color:${t.fg}">${esc(r.label||r.category)}</span><span class="fe-team" style="color:${TEAM_COLOR[r.team]||"var(--muted)"}">${esc(r.team||"")}</span></span>`; };
@@ -58,6 +65,7 @@
     #fxErr .fe-counts{margin-left:auto;font-size:12.5px;color:var(--muted)}
     #fxErr .fe-btn{cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:var(--ink);transition:border-color .14s,color .14s,transform .14s} #fxErr .fe-btn:hover{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);transform:translateY(-1px)}
     #fxErr .fe-hint{font-size:11px;color:var(--muted)}
+    #fxErr .fe-lanenote{margin-top:6px;font-size:11.5px;line-height:1.45;color:var(--muted);border-left:3px solid #2563eb;padding:2px 0 2px 9px}
     #fxErr .fe-clsdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:0} #fxErr .fe-chip.fe-cls-business.on{background:#3b82f6;border-color:#3b82f6} #fxErr .fe-chip.fe-cls-technical.on{background:#ef4444;border-color:#ef4444}
     #fxErr .fe-clspill{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:1px}
     #fxErr .fe-msgrow{display:flex;align-items:center;gap:8px;margin:6px 0 4px;flex-wrap:wrap} #fxErr .fe-msg{flex:1 1 320px;max-width:760px;width:auto;padding:7px 34px 7px 12px;font-size:12.5px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
@@ -134,7 +142,7 @@
     const ch=S.channel||"";
     host.innerHTML=`<div id="fxErr"><style>${STYLE}</style>
       <h1>Live error control board</h1>
-      <div class="fe-sub">Every Fixed sales &amp; service channel — SDA dealer app, QR codes, Epurchase and the Salam Home app — as errors happen. Filter by team / priority / provider / channel / product type and time window; open a row for the failed step, the request / response and how often it has happened before.</div>
+      <div class="fe-sub">Every Fixed sales &amp; service channel — SDA dealer app, QR codes, Epurchase and the Salam Home app — as errors happen. Filter by team / priority / provider / channel / product type and time window; open a row for the failed step, the request / response and how often it has happened before. 5G journeys include the SIM checks that answered without a sellable SIM and the 5G HomeFi e-purchase stops read from nexus (Naqeel order, payment, Semati, stock locks).</div>
       <div class="fe-cards">
         <div class="fe-card">
           <div class="fe-chips">${WINDOWS.map(([k,l])=>chip(S.win===k,l,`class="fe-win" data-w="${k}"`)).join("")}</div>
@@ -257,7 +265,10 @@
         if(!idOn) window.fixedErrTrend.render($("#feTrend"),fx,{ qs:tq, msg:S.msg, openOnly:S.openOnly, onPick:m=>{ S.msg=(S.msg===m)?"":m; load(host,fx,true); } }).catch(()=>{}); }
       /* which read model answers which channel, and how fresh each is */
       const srcEl=$("#feSrc"); if(srcEl&&sum.sources&&sum.sources.length){ const SRC={ops:"sda_ops",beta:"sda_ops_beta"};
-        srcEl.innerHTML=sum.sources.map(x=>{ const bk=(x.buckets||[]).map(k=>CH_LABEL[k]||k).join(" · "); if(x.error) return `<span><b>${esc(bk||SRC[x.src]||x.src)}</b> — <span class="stale">source unavailable</span> (${esc(SRC[x.src]||x.src)})</span>`;
+        srcEl.innerHTML=sum.sources.map(x=>{ const bk=(x.buckets||[]).map(k=>CH_LABEL[k]||k).join(" · ");
+          if(x.src==="lane"){ const p=x.parts||{}; const w=(x.warnings||[]);
+            return `<span title="SIM checks: the 5G journeys' querySimCard answers without a sellable SIM (sda_ops api_calls). From nexus: paid 5G e-purchase journeys without an order or a refund, Naqeel order failures, Semati / Nafath stops, stock locks never released.${x.nexus?"":" nexus is not configured — SIM checks only."}"><b>5G journeys</b> ← SIM checks${x.nexus?" + nexus":""} · ${fmt(x.matched||0)} in this view${x.latest?` · newest ${esc(rel(x.latest))}`:""}${w.length?` · <span class="stale">${esc(w[0])}</span>`:""}</span>`; }
+          if(x.error) return `<span><b>${esc(bk||SRC[x.src]||x.src)}</b> — <span class="stale">source unavailable</span> (${esc(SRC[x.src]||x.src)})</span>`;
           if(x.stale) return `<span><span class="stale">${esc(SRC[x.src]||x.src)} stale</span> — last event ${esc(rel(x.latest))}; Epurchase + Salam Home app are read from sda_ops instead (app journeys appear under Epurchase until opsb-ingest-watch is back)</span>`;
           const age=x.latest?Date.now()-new Date(x.latest).getTime():null; const stale=age==null||age>2*3600e3; return `<span><b>${esc(bk)}</b> ← ${esc(SRC[x.src]||x.src)} · last event <span class="${stale?"stale":""}">${esc(rel(x.latest))}</span></span>`; }).join(" &nbsp;·&nbsp; ");
         if(sum.warnings&&sum.warnings.length) srcEl.insertAdjacentHTML("beforeend",` &nbsp;·&nbsp; <span class="stale">${esc(sum.warnings.map(w=>w.part).join(", "))} breakdown not computed (${esc(sum.warnings[0].error.replace(/canceling statement due to statement timeout/i,"query too slow on the read model"))}) — narrow the period or the filters</span>`); }
@@ -273,7 +284,7 @@
       drawRows(host,fx,live.rows,first);
       $("#feMore").innerHTML=live.nextCursor?`<button id="feMoreBtn" class="btn" style="font-size:11px;padding:5px 12px">Load more</button>`:"";
       const mb=$("#feMoreBtn"); if(mb) mb.onclick=async()=>{ mb.disabled=true; try{ const more=await fx.api("/api/fixed/errors/live?"+lq+"&limit=100&cursor="+encodeURIComponent(live.nextCursor)); live.rows=live.rows.concat(more.rows); live.nextCursor=more.nextCursor; drawRows(host,fx,live.rows,true); $("#feMore").innerHTML=more.nextCursor?`<span class="rl" style="color:var(--muted);font-size:11px">more available — narrow the window</span>`:""; }catch(e){ mb.disabled=false; } };
-      $("#feStamp").textContent=`window ${fx.ts(sum.from)} → ${fx.ts(sum.to)} KSA · all channels (SDA · QR · Epurchase · Salam Home app) · refreshed ${fx.ts(new Date().toISOString(),true)} · auto-refresh 60 s`;
+      $("#feStamp").textContent=`window ${fx.ts(sum.from)} → ${fx.ts(sum.to)} KSA · all channels (SDA · QR · Epurchase · Salam Home app) + 5G journeys · refreshed ${fx.ts(new Date().toISOString(),true)} · auto-refresh 60 s`;
     }catch(e){ if(my!==S.tick) return; const t=host.querySelector("#feTiles"); if(t) t.innerHTML=`<div class="albanner" style="grid-column:1/-1;border-left:4px solid #dc2626;padding:12px 14px"><b>Error board unavailable</b> — ${esc(e.message)}</div>`; }
   }
 
@@ -317,10 +328,11 @@
     const tl=(d.timeline||[]);
     cell.innerHTML=`<div class="fe-xgrid">
       <div class="fe-what"><span class="k">What happened: </span><b style="font-weight:600">${esc(d.event.message||d.event.label)}</b>${clsPill(d.event)}${d.event.step?` <span class="k">· step ${esc(d.event.step)}</span>`:""}
-        <span class="rl" style="color:var(--muted);font-size:11px;margin-left:10px">${esc(d.event.chanLabel||row.chanLabel||"")}${d.event.typeLabel?` · ${esc(d.event.typeLabel)}`:""}${d.event.journey?` · ${esc(d.event.journey)}`:""}${d.event.workflow?` (${esc(d.event.workflow)})`:""} · ${esc(d.event.label)} · ${esc(d.event.team)} · base P${d.event.basePriority}${d.event.order_number?` · order ${esc(d.event.order_number)}`:""}${d.event.acct_masked?` · acct ${esc(d.event.acct_masked)}`:""}${d.event.cust_masked?` · cust …${esc(d.event.cust_masked)}`:""}${d.event.dealer_name?` · ${esc(d.event.dealer_name)}`:""}</span></div>
+        <span class="rl" style="color:var(--muted);font-size:11px;margin-left:10px">${esc(d.event.chanLabel||row.chanLabel||"")}${d.event.typeLabel?` · ${esc(d.event.typeLabel)}`:""}${d.event.journey?` · ${esc(d.event.journey)}`:""}${d.event.workflow?` (${esc(d.event.workflow)})`:""} · ${esc(d.event.label)} · ${esc(d.event.team)} · base P${d.event.basePriority}${d.event.order_number?` · order ${esc(d.event.order_number)}`:""}${d.event.acct_masked?` · acct ${esc(d.event.acct_masked)}`:""}${d.event.cust_masked?` · cust …${esc(d.event.cust_masked)}`:""}${d.event.dealer_name?` · ${esc(d.event.dealer_name)}`:""}</span>${d.event.serial_tail?`<span class="rl" style="color:var(--muted);font-size:11px;margin-left:8px">serial ${esc(d.event.serial_tail)}</span>`:""}
+        ${d.lane?`<div class="fe-lanenote">${esc(LANE_NOTE[d.lane.kind]||LANE_NOTE.sim)}</div>`:""}</div>
       <div id="feBodies">${(d.request!=null||d.response!=null)?draw(d.request,d.response,false):`<div style="color:var(--muted);font-size:12px">No captured request/response for this error (older event — re-ingest or backfill to populate).</div>`}</div>
       <div class="fe-sim"><b class="t">Similar cases <span class="rl" style="font-weight:400;color:var(--muted);font-size:10.5px">signature ${esc(d.event.signature||d.event.category)}</span></b>
-        <div class="f"><span><b>${fmt(sim.d30)}</b> in 30d <span>(${fmt(sim.d7)} in 7d · ${fmt(sim.all)} ever)</span></span><span>last seen <b>${esc(rel(sim.lastSeen))}</b></span><span>affected today <b>${fmt(sim.affectedToday)}</b></span><span>median resolve <b>${sim.medianResolveMins!=null?sim.medianResolveMins+"m":"—"}</b></span>${sim.biggestDay?`<span>biggest day <b>${esc(sim.biggestDay.day)}</b> (${fmt(sim.biggestDay.count)})</span>`:""}</div></div>
+        <div class="f"><span><b>${fmt(sim.d30)}</b> in 30d <span>(${fmt(sim.d7)} in 7d${d.lane?" · the 5G lane looks back 30 days":` · ${fmt(sim.all)} ever`})</span></span><span>last seen <b>${esc(rel(sim.lastSeen))}</b></span><span>affected today <b>${fmt(sim.affectedToday)}</b></span><span>median resolve <b>${sim.medianResolveMins!=null?sim.medianResolveMins+"m":"—"}</b></span>${sim.biggestDay?`<span>biggest day <b>${esc(sim.biggestDay.day)}</b> (${fmt(sim.biggestDay.count)})</span>`:""}</div></div>
       <div class="fe-actions">
         ${d.event.attempt_id?`<button id="feTrace" class="fe-btn">Open full trace → <span style="color:var(--muted);font-weight:500">(${tl.length} calls)</span></button>`:""}
         ${c.unmaskPII&&d.event.attempt_id?`<button id="feUnmask" class="fe-btn" style="border-color:#b7791f;color:var(--warn-fg)" ${d.unmaskAvailable?"":"disabled title='NEXUS_DATABASE_URL not configured'"}>🔓 Unmask (audited)</button>`:""}

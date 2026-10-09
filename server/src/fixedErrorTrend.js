@@ -21,7 +21,9 @@
  *   → { from, to, bucket, ticks:[iso…], series:[{ msg, cls, total, open, points:[n…] }…], other:{…}, all:{…},
  *       distinct, coverage:{ from, to, fresh_at }, note }
  * Filters the rollup cannot serve (identifier search, free-text response search) are reported in `note` and ignored —
- * the board hides the chart in that case. */
+ * the board hides the chart in that case.
+ * 5G journeys (alpha.158): the board's 5G lane (fixed5gLane.js — SIM checks without a sellable SIM, 5G e-purchase stops
+ * read from nexus) is rolled as src 'lane' in the same slices and read beside whichever read model serves the board. */
 'use strict';
 const db = require('./db');
 const fe = require('./fixedErrors');
@@ -89,7 +91,31 @@ async function roll(fromIso, toIso) {
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
     if (Date.now() - t0 > 5000) console.log(`[fixed-trend] ${s.src} ${fromIso.slice(0, 13)}→${toIso.slice(0, 13)} took ${Date.now() - t0} ms (${r.rows.length} rows)`);
   }
+  rows += await rollLane(fromIso, toIso);
   return { rows, sources: srcs.length };
+}
+/* the 5G lane: already aggregated per hour × channel × type × provider × category × message × auto class */
+async function rollLane(fromIso, toIso) {
+  let rows = 0;
+  if (typeof fe.laneRollup === 'function') {
+    try {
+      const lr = await fe.laneRollup(fromIso, toIso);
+      const c = await C().connect();
+      try {
+        await c.query('BEGIN');
+        await c.query(`DELETE FROM ${TABLE} WHERE src = 'lane' AND hour >= date_trunc('hour', $1::timestamptz) AND hour < $2`, [fromIso, toIso]);
+        for (let i = 0; i < lr.length; i += 500) {
+          const chunk = lr.slice(i, i + 500); const V = []; const P = [];
+          chunk.forEach((x, j) => { const b = j * 10; V.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10})`);
+            P.push(x.hour, 'lane', x.channel, x.type || 'unknown', x.provider || '-', x.category || '-', x.msg || '(no message)', x.cls_auto || 'technical', x.n, x.open); });
+          await c.query(`INSERT INTO ${TABLE} (hour, src, channel, type, provider, category, msg, cls_auto, n, open) VALUES ${V.join(',')}
+                         ON CONFLICT (hour, src, channel, type, provider, category, msg, cls_auto) DO UPDATE SET n = EXCLUDED.n, open = EXCLUDED.open`, P);
+        }
+        await c.query('COMMIT'); rows += lr.length;
+      } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+    } catch (e) { console.error(`[fixed-trend] 5G lane ${fromIso.slice(0, 13)}→${toIso.slice(0, 13)}: ${e.message}`); }
+  }
+  return rows;
 }
 
 let timer = null, busy = false, lastRun = null, lastErr = null, backfillDone = false;
@@ -119,6 +145,12 @@ async function tick() {
     }
     if (days) console.log(`[fixed-trend] backfilled ${days} day(s) — history now from ${new Date(lo).toISOString().slice(0, 10)}`);
     if (lo <= floor) backfillDone = true;
+    /* the 5G lane's own history (alpha.158): the board history above predates the lane — one day per pass, newest
+     * first, from 48 h back down to KEEP_DAYS (about 8 h for 92 days); the 48-h roll keeps the recent part */
+    if (typeof fe.laneRollup === 'function') {
+      const llo = st.lane_lo ? new Date(st.lane_lo).getTime() : now - 48 * 3600e3;
+      if (llo > floor) { const from = Math.max(floor, llo - 864e5); await rollLane(new Date(from).toISOString(), new Date(llo).toISOString()); st.lane_lo = new Date(from).toISOString(); }
+    }
     /* retention: the rollup is small, but keep it to KEEP_DAYS + 7 */
     await C().query(`DELETE FROM ${TABLE} WHERE hour < now() - ($1::int || ' days')::interval`, [KEEP_DAYS + 7]).catch(() => {});
     st.last_run = new Date().toISOString(); st.history_from = new Date(lo).toISOString(); st.keep_days = KEEP_DAYS;
@@ -157,8 +189,8 @@ async function trend(q = {}) {
   const t0 = bucket === 'day' ? (Math.floor((from.getTime() + 3 * 3600e3) / 864e5) * 864e5 - 3 * 3600e3) : Math.floor(from.getTime() / 3600e3) * 3600e3;
   const P = [new Date(t0).toISOString(), to.toISOString()];
   const parts = ['hour >= $1', 'hour < $2'];
-  if (split) parts.push(`((src = 'ops' AND channel = ANY('{${SRC_BUCKETS.ops.join(',')}}')) OR (src = 'beta' AND channel = ANY('{${SRC_BUCKETS.beta.join(',')}}')))`);
-  else parts.push(`src = '${(srcs[0] && srcs[0].src) || 'ops'}'`);
+  if (split) parts.push(`((src = 'ops' AND channel = ANY('{${SRC_BUCKETS.ops.join(',')}}')) OR (src = 'beta' AND channel = ANY('{${SRC_BUCKETS.beta.join(',')}}')) OR src = 'lane')`);
+  else parts.push(`src IN ('${(srcs[0] && srcs[0].src) || 'ops'}', 'lane')`);
   const ch = String(q.channel || '').toLowerCase();
   const buckets = !ch ? null : ch === 'epurchase' ? ['qr', 'web'] : ch === 'app' ? ['salamhome'] : ['sda', 'qr', 'web', 'salamhome'].includes(ch) ? [ch] : null;
   if (buckets) { P.push(buckets); parts.push(`channel = ANY($${P.length}::text[])`); }

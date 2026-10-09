@@ -35,7 +35,8 @@
  *  · Bounded everywhere: newest-N lines per file, 20 000 characters per line, output byte cap, ssh maxBuffer,
  *    ssh timeout > remote timeout. Errors travel with results (per-host `error` field — house rule).
  *  · CREDENTIALS MASKED AT SOURCE, before anything crosses the wire: Nafath iamAppToken JWTs, apiKey values,
- *    "password" / "authorization" values, SOAP wsse:Password. Those are secrets, not data.
+ *    "password" / "authorization" values, SOAP wsse:Password, and (alpha.158) the SIM keys BSS querySimCard
+ *    answers carry — ki, opc, pin / puk, adm. Those are secrets, not data; secretMask.js masks them again here.
  *  · CUSTOMER DATA IS NOT MASKED — the same decision as the DMS log grep (Yosri, 3 Sep): Troubleshoot is
  *    L2-gated, L2 reads this exact file raw on the node, and masking here only slows a live case down. The
  *    route is gated on the `fixed` view and EVERY search is written to the audit log.
@@ -48,6 +49,7 @@
 'use strict';
 const { execFile } = require('child_process');
 const crypto = require('crypto');
+const { maskSecrets } = require('./secretMask');   // SIM secrets in logged BSS answers (alpha.158)
 const MB = 1024 * 1024;
 const col = require('./fixedAppLogCollector');
 
@@ -92,7 +94,10 @@ const MASK_SED = `sed -e 's/eyJ[A-Za-z0-9_.\\-]\\{20,\\}/***JWT***/g' ` +
   `-e 's/"apiKey" *: *"[^"]*"/"apiKey":"***"/g' ` +
   `-e 's/"password" *: *"[^"]*"/"password":"***"/g' ` +
   `-e 's/"authorization" *: *"[^"]*"/"authorization":"***"/g' ` +
-  `-e 's/<wsse:Password[^>]*>[^<]*<\\/wsse:Password>/<wsse:Password>***<\\/wsse:Password>/g'`;
+  `-e 's/<wsse:Password[^>]*>[^<]*<\\/wsse:Password>/<wsse:Password>***<\\/wsse:Password>/g' ` +
+  /* SIM secrets in BSS querySimCard answers (ki, opc, pin / puk, adm …) — alpha.158; the console masks again (secretMask.js) */
+  `-e 's/"\\(ki\\|k\\|eki\\|opc\\|op\\|kic\\|kid\\|kik\\|pin\\|pin1\\|pin2\\|puk\\|puk1\\|puk2\\|adm\\|adm1\\)" *: *"[^"]*"/"\\1":"***"/gI' ` +
+  `-e 's/"\\(pin\\|pin1\\|pin2\\|puk\\|puk1\\|puk2\\)" *: *[0-9][0-9]*/"\\1":"***"/gI'`;
 
 /* ONE PASS PER FILE. grep streams into an awk ring buffer that holds only the newest N lines and counts
  * every match, so the total and the sample come out of the SAME read. This is the fix for v1's "219
@@ -164,7 +169,7 @@ const hash = line => crypto.createHash('sha1').update(line).digest('hex').slice(
 function parseLine(line, file) {
   /* a line that is not the app's JSON (a stack-trace continuation, a plain console line) is KEPT as-is —
    * it matched the operator's term, so hiding it would be lying about what the log holds. */
-  const plain = () => ({ at: null, ts: null, level: null, message: line.slice(0, 4000), unparsed: true, ids: {}, ok: null, key: hash(line), file });
+  const plain = () => ({ at: null, ts: null, level: null, message: maskSecrets(line.slice(0, 4000)), unparsed: true, ids: {}, ok: null, key: hash(line), file });
   const i = line.indexOf('{'); if (i < 0) return plain();
   let o; try { o = JSON.parse(line.slice(i)); } catch (e) { return plain(); }
   if (!o || typeof o !== 'object') return plain();
@@ -186,8 +191,8 @@ function parseLine(line, file) {
     channel: o.channel || null, request_id: o.requestId || null, staff_id: o.staffId || null,
     platform: o.platform || null, app_version: o.version || null, ip: o.ip || o.forwardedFor || null,
     ok, ms, status: status != null && Number.isFinite(Number(status)) ? Number(status) : null,
-    error: err || null, request: o.request != null ? o.request : null, response: o.response != null ? o.response : null,
-    input: o.rawInput != null ? o.rawInput : (o.input != null ? o.input : null),
+    error: err || null, request: o.request != null ? maskSecrets(o.request) : null, response: o.response != null ? maskSecrets(o.response) : null,
+    input: o.rawInput != null ? maskSecrets(o.rawInput) : (o.input != null ? maskSecrets(o.input) : null),
     ids: collectIds({ r: o.request, i: o.rawInput || o.input, p: o.response, t: o }),
     key: hash(line), file
   };

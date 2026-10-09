@@ -53,6 +53,13 @@ function wrapBoard(sigExpr, autoCase) {
   if (o.business.length) parts.push(`WHEN ${sigExpr} IN (${o.business.map(lit).join(',')}) THEN 'business'`);
   return `CASE ${parts.join(' ')} ELSE (${autoCase}) END`;
 }
+/* the 5G journey lane (fixed5gLane.js, alpha.158) classifies in JS: same board lists, same precedence as wrapBoard */
+function boardOverride(sig) {
+  const o = _ov.board; const k = String(sig == null ? '' : sig);
+  if (o.technical.includes(k)) return 'technical';
+  if (o.business.includes(k)) return 'business';
+  return null;
+}
 /* the collector asks for every failing line: an operator decision beats the regex */
 function classifyApp(reasonOrMessage) {
   const sig = sigOfText(reasonOrMessage);
@@ -94,6 +101,9 @@ async function sync() {
       } catch (e) { console.error(`[ERRCAT] board sync ${a.slice(0, 10)}: ${e.message}`); }
     }
   }
+  /* the 5G journey lane registers under 'board': its rows sit on the board and are classified the same way */
+  try { if (typeof fe.laneCatalog === 'function') { const rows = await fe.laneCatalog(since, now); await up(rows, 'board', r => r.auto); boardN += rows.length; } }
+  catch (e) { console.error('[ERRCAT] 5G lane sync: ' + e.message); }
   try {
     const rows = (await db.console.query(`SELECT ${SIG_APP} AS sig, (array_agg(coalesce(reason,message) ORDER BY ts DESC))[1] AS sample, (array_agg(kind ORDER BY ts DESC))[1] AS category,
           (array_agg(coalesce(channel,'?') || ' · ' || coalesce(path,kind) ORDER BY ts DESC))[1] AS step, count(*)::int AS n, min(ts) AS first, max(ts) AS last,
@@ -159,4 +169,4 @@ function mount(app, { requireView, audit } = {}) {
     } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
   });
 }
-module.exports = { mount, start, sync, list, classify, refresh, wrapBoard, classifyApp, sigOfText, SIG_APP };
+module.exports = { mount, start, sync, list, classify, refresh, wrapBoard, boardOverride, classifyApp, sigOfText, SIG_APP };
