@@ -1,3 +1,13 @@
+## 2.0.0-alpha.154 — 2026-10-09
+
+- **VP Operations cockpit — the Open challenges and Towers reported tiles show the details, not only the counts.**
+  - **Open challenges:** the most severe first (up to 4, then "N more in Challenges"): title, tower, status and day count; impact, next step and fix owner in the tooltip. A click opens the challenge.
+  - **Towers reported:** one row per tower — reported or checked in (time and first name; "checked in by … at …" with the note in the tooltip, plus the lead), what it has open (critical / high / blocked) and its changes tonight. A click filters the Challenges section on that tower and scrolls to it.
+  - On a phone both tiles take the full width.
+- **Mobile weekly · TCS is off the page and the morning brief.** The TCS figures reach the VP through the executive weekly report (Operations reports). The section, its form and `/api/cockpit/reports` stay; `SHOW_VENDOR_WEEKLY` (vpcockpit.js) and `BRIEF_VENDOR_WEEKLY` (opsCockpit.js) bring them back. The hero gets a **Weekly reports** door to `#opsreports` for whoever holds that view.
+- **Availability counts the time an incident spent at P1, not its whole life (Executive Dashboard, VP cockpit, morning brief).** An incident's severity moves while it is open — a twin rule crosses from the P2 anomaly into the P1 storm and back — and alertRunner records each move ("Severity P2 → P1: …"). The register used the severity a row has *now* for its whole life: a P2 anomaly open for a day counted as a day of P1 once it touched P1, and P1 periods of rows that stepped back to P2 were missed. Fixed read "0.00 % available · 44 service incidents (8 d 3 h)" on 9 Oct. The P1 periods are now rebuilt from the moves (`severityMoves()`, `p1Spans()` in `execBrief.js`); the VP drawer shows "at P1 1 h of its 2 d" and the columns read At P1 from / Until / P1 time this month.
+- **Header fits 1141–1600 px again.** With Operations reports in the nav (alpha.152) the full nav needs about 1,480 px, so on 1366–1512 px laptops the account chip was pushed off the screen. Between 1141 and 1600 px the nav icons step aside (the labels stay); below 1360 px the BETA badge and the "Operations console" wordmark too.
+
 ## 2.0.0-alpha.153 — 2026-10-08
 
 - **VP Operations cockpit — every number says what it counts, over which window, from which source.** Asked by the VP Operations after comparing the page with the Sales wall.

@@ -1741,6 +1741,16 @@
     .slo-admin-head{flex-direction:column}
     .slo-admin-actions{justify-content:flex-start}
   }
+  /* ---------- compact header (1141–1600) : with Operations reports (alpha.152) the full nav needs ~1480 px, so on a
+     1366–1512 px laptop it pushed the account chip off the screen (9 Oct 2026). The icons step aside, the labels stay. ---------- */
+  @media (min-width:1141px) and (max-width:1600px){
+    header>nav>.navtab,.navdrop-btn{padding:7px 10px;gap:6px}
+    header>nav>.navtab>.num,.navdrop-btn>.num{display:none}
+  }
+  @media (min-width:1141px) and (max-width:1360px){
+    .beta,.logo .brand-sub,.logo .brand-div{display:none}
+    header>nav>.navtab,.navdrop-btn{padding:6px 8px;font-size:12px}
+  }
   /* ---------- drawer mode (≤1140) : nav leaves the header (the full nav needs ~1125px) ---------- */
   @media (max-width:1140px){
     header{flex-wrap:nowrap;gap:8px;padding-left:14px;padding-right:12px}
@@ -2494,7 +2504,7 @@
 <script src="fixed-diagrams.js?v=20260911x"></script>
 <script src="execops.js?v=20261008a"></script>
 <script src="execbrief.js?v=20261008a"></script>
-<script src="vpcockpit.js?v=20261008d"></script>
+<script src="vpcockpit.js?v=20261009a"></script>
 <script src="opsreports.js?v=20261008a"></script>
 <script src="cst-remedy.js?v=20260918f"></script>
 <script src="cst-api.js?v=20260918f"></script>

@@ -95,7 +95,7 @@ const DEFS = {
     what: 'The customers that the open P1 / P2 incidents carry, added up. Most rules do not estimate customers; the tile then says "customer impact not estimated", never zero.',
     src: 'alerts.customers (execBrief.js)' },
   month: { label: 'This month', window: 'calendar month, KSA, up to now',
-    what: 'Service incidents are P1 incidents of a technical rule (the platform or a partner failing) that lasted 5 minutes or more, or are still open. Their time counts while they are open; two at the same time count once. Availability = 1 − service-incident time ÷ time elapsed this month. Two kinds of P1 are listed in the drill-down but are not downtime: business cases (card-decline storms, refunds missing, charged-but-failed orders) and monitoring incidents (the console unable to read one of its data feeds).',
+    what: 'Service incidents are P1 incidents of a technical rule (the platform or a partner failing) that spent 5 minutes or more at P1, or are at P1 now. Only their time at P1 counts: an incident often opens at P2 and crosses into P1, or steps back, and each move is recorded. Two at the same time count once. Availability = 1 − service-incident time ÷ time elapsed this month. Two kinds of P1 are listed in the drill-down but are not downtime: business cases (card-decline storms, refunds missing, charged-but-failed orders) and monitoring incidents (the console unable to read one of its data feeds).',
     src: 'Executive Dashboard › What did it cost us (execBrief.js)' },
   sales: { label: 'Dealer & QR sales today', window: 'today since 00:00 KSA, compared with yesterday at the same time',
     what: 'Mobile counts the SIM activations dealers completed, on the DMS app and on the dealer web portal (mobile.salammobile.sa). Fixed counts the orders completed on the SDA dealer app and through QR codes (e-purchase orders opened from a dealer or campaign QR code). The customers\' own app and web journeys are not in this number; they are in the KPIs below (last 24 h). The tile refreshes every minute; the Sales Operations wall every 30 seconds.',
@@ -130,7 +130,7 @@ const DEFS = {
   diff: [
     { a: 'Dealer & QR sales · Fixed', b: 'Fixed · Orders started · SDA & QR', why: 'The sales tile counts orders COMPLETED since 00:00 KSA; the KPI counts orders STARTED in the last 24 hours, completed or not.' },
     { a: 'Dealer & QR sales · Mobile', b: 'Activation success · app & web', why: 'Different customers: the sales tile counts the activations dealers make (DMS app, dealer portal); the KPI is the success rate of the customers\' own activations in the app and on the website.' },
-    { a: 'Payment reliability · platform', b: 'TCS weekly · Payments (UPG) success', why: 'Payment reliability leaves card declines out (it judges our platform); the TCS figure counts every payment attempt, declines included.' },
+    { a: 'Payment reliability · platform', b: 'Payment success in the TCS weekly report', why: 'Payment reliability leaves card declines out (it judges our platform); the payment success rate TCS reports every week counts every payment attempt, declines included.' },
     { a: 'Mobile / Fixed state', b: 'Executive Dashboard · Active critical signals', why: 'The state reads only what is open now. The critical-signals tile adds up the P1 alerts open or fired in the last 7 days and the objectives breached now (Fixed also counts an order pile-up of 1,000 or more), so it is not a count of open incidents.' },
     { a: 'This page', b: 'Sales Operations wall', why: 'The same source and the same count; the wall refreshes every 30 seconds, the sales tile here every minute and the rest of the page every 5 minutes. The sales tile says the time of its numbers ("as of").' }
   ]
@@ -917,8 +917,10 @@ async function buildDigest(deps, opts) {
         <div style="font-weight:700;margin-top:3px">${esc(c.title)}</div>${c.fixOwner ? `<div style="font-size:12px;color:#475569">Fix: ${esc(c.fixOwner)}</div>` : ''}
         ${c.nextStep ? `<div style="font-size:12.5px;color:#334155;margin-top:3px">Next: ${esc(cutText(c.nextStep, 320))}</div>` : ''}</div>`).join('')
     : '<div style="color:#64748b">No open challenge.</div>';
-  /* the vendor's week in four lines (TCS for Mobile) */
-  const tcs = (o.reports || []).find(r => r.vendor === 'TCS' && r.latest);
+  /* the vendor's week in four lines (TCS for Mobile) — off the brief and the page since 9 Oct 2026: the TCS figures reach
+   * the VP through the executive weekly report (Operations reports). BRIEF_VENDOR_WEEKLY brings the block back. */
+  const BRIEF_VENDOR_WEEKLY = false;
+  const tcs = BRIEF_VENDOR_WEEKLY ? (o.reports || []).find(r => r.vendor === 'TCS' && r.latest) : null;
   let tcsHtml = '';
   if (tcs) { const d = tcs.latest.data || {}, av = (d.availability || {}).apps || [], pay = d.payments || {}, dg = d.digital || {}, dm = d.dms || {}, tk = d.tickets || {}, dep = d.deployments || {};
     const fmtD = k => { const x = new Date(Date.parse(k + 'T12:00:00Z')); return `${x.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][x.getUTCMonth()]}`; };

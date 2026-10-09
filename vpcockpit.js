@@ -64,6 +64,7 @@
   const svg = (d, s) => `<svg viewBox="0 0 24 24" width="${s || 16}" height="${s || 16}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const IC = {
     change: '<circle cx="12" cy="12" r="4"/><path d="M12 2v6M12 16v6"/>',
+    report: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 17v-3M12 17v-5M16 17v-2"/>',
     fix: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
     incident: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
     milestone: '<path d="M5 21V4"/><path d="M5 4h12l-2 4 2 4H5"/>',
@@ -135,8 +136,9 @@
     }
     const v = views();
     const doors = [['exec', '#exec', 'Executive', IC.exec], ['noc', '#noc', 'NOC wall', IC.noc], ['salesops', '#salesops', 'Sales wall', IC.sales],
-      ['dashboard', '#dashboard', 'Mobile', IC.mobile], ['fixed', '#fixed', 'Fixed', IC.fixed], ['noc', '#infra?tab=map&diagram=mvno', 'Infrastructure', IC.infra], ['tickets', '#tickets', 'Tickets', IC.tickets]]
-      .filter(x => v.includes(x[0])).map(x => `<a class="vp-door" href="${x[1]}">${svg(x[3], 15)}<span>${esc(x[2])}</span></a>`).join('');
+      ['dashboard', '#dashboard', 'Mobile', IC.mobile], ['fixed', '#fixed', 'Fixed', IC.fixed], ['noc', '#infra?tab=map&diagram=mvno', 'Infrastructure', IC.infra], ['tickets', '#tickets', 'Tickets', IC.tickets],
+      ['opsreports', '#opsreports', 'Weekly reports', IC.report, 'Operations reports: the weekly report of every team and vendor (TCS included) and the report for management']]
+      .filter(x => v.includes(x[0])).map(x => `<a class="vp-door" href="${x[1]}"${x[4] ? ` title="${esc(x[4])}"` : ''}>${svg(x[3], 15)}<span>${esc(x[2])}</span></a>`).join('');
     const dg = d.digest || {};
     const at2 = `${String(dg.hour).padStart(2, '0')}:${String(dg.minute || 0).padStart(2, '0')}`;
     const sentToday = dg.lastDay === today() && dg.lastSentAt;
@@ -216,14 +218,40 @@
         <div class="vp-tl">Changes tonight<span class="vp-tw2">until 08:00</span></div><div class="vp-tv">${cnt(s.tonight)}</div>
         <div class="vp-ts">${s.awaiting ? `<b>${s.awaiting}</b> ended with no result recorded · ` : ''}${s.pirDue ? `<b>${s.pirDue}</b> PIR to record · ` : ''}<b>${num(s.weekDone)}</b> of ${num(s.weekLive)} done this CAB</div>
         <div class="vp-prog"><i style="width:${s.weekLive ? Math.round(s.weekDone / s.weekLive * 100) : 0}%"></i></div><span class="vp-go">${svg(IC.arrow, 14)}</span></button>` : '';
-    const chTile = S.d ? `<button type="button" class="vp-tile vp-tile-${s.critical ? 'bad' : s.high ? 'warn' : 'ok'}" data-act="goto" data-to="vpChallenges" title="Daily challenges by tower">
-        <div class="vp-tl">Open challenges<span class="vp-tw2">now</span></div><div class="vp-tv">${cnt(s.openChallenges)}</div>
-        <div class="vp-ts"><span class="vp-sevdots">${s.critical ? `<b class="c">${s.critical} critical</b>` : ''}${s.high ? `<b class="h">${s.high} high</b>` : ''}${s.blocked ? `<b class="b">${s.blocked} blocked</b>` : ''}${!s.critical && !s.high && !s.blocked ? 'nothing critical or blocked' : ''}</span></div><span class="vp-go">${svg(IC.arrow, 14)}</span></button>` : '';
+    /* Open challenges and Towers reported name what they count (9 Oct 2026, the VP asked for the details, not only the
+     * numbers): the most severe challenges, each opening its drawer, and every tower with what it has open and whether
+     * someone reported today. The tile head still jumps to the Challenges section; the rows are buttons of their own. */
+    const SEVR = { critical: 0, high: 1, medium: 2, low: 3 };
     const tws = (D().towers) || [];
-    const twTile = S.d ? `<button type="button" class="vp-tile vp-tile-${s.towersReported === s.towers ? 'ok' : 'none'}" data-act="goto" data-to="vpChallenges" title="Which towers reported today">
-        <div class="vp-tl">Towers reported<span class="vp-tw2">today</span></div><div class="vp-tv">${cnt(s.towersReported)}<small> / ${num(s.towers)}</small></div>
-        <div class="vp-twdots">${tws.map(t => { const r = t.report; const who = r ? `${r.checkin ? 'checked in' : 'reported'} by ${r.byName || String(r.by || '').split('@')[0]} at ${hm(r.at)}` : 'no report yet today'; return `<span class="${t.reportedToday ? 'on' : ''}" style="--tw:${t.color}" title="${esc(t.label)} — ${esc(who)}">${esc(t.label)}</span>`; }).join('')}</div>
-        <div class="vp-tfoot">${s.towersReported ? esc(tws.filter(t => t.report).map(t => `${t.label}: ${t.report.byName || String(t.report.by || '').split('@')[0]}`).join(' · ')) : 'no tower has posted today yet'}</div><span class="vp-go">${svg(IC.arrow, 14)}</span></button>` : '';
+    const twOf = k => tws.find(t => t.key === k) || (TW[k] ? { key: k, label: TW[k].label, color: TW[k].color } : null);
+    const openCh = (D().challenges || []).filter(c => c.status !== 'resolved')
+      .sort((a, b) => ((SEVR[a.severity] != null ? SEVR[a.severity] : 9) - (SEVR[b.severity] != null ? SEVR[b.severity] : 9)) || ((b.ageDays || 0) - (a.ageDays || 0)));
+    const CH_MAX = 4;
+    const chItem = c => { const tw = twOf(c.tower);
+      const tip = [c.title, c.impact ? 'Impact: ' + c.impact : '', c.nextStep ? 'Next: ' + c.nextStep : '', c.fixOwner ? 'Fix: ' + c.fixOwner : ''].filter(Boolean).join('\n');
+      return `<button type="button" class="vp-pli vp-pli-${esc(c.severity)}" data-act="ch" data-id="${c.id}" title="${esc(tip)}"><i></i><span class="vp-pli-b"><span class="vp-pli-t">${esc(c.title)}</span>
+        <span class="vp-pli-m">${tw ? `<em style="--tw:${tw.color}">${esc(tw.label)}</em>` : ''}<span>${esc(c.statusLabel || c.status)}${c.ageDays != null ? ` · day ${c.ageDays + 1}` : ''}</span></span></span></button>`; };
+    const chTile = S.d ? `<div class="vp-tile vp-tlist vp-tile-${s.critical ? 'bad' : s.high ? 'warn' : 'ok'}">
+        <button type="button" class="vp-thd" data-act="goto" data-to="vpChallenges" title="Daily challenges by tower">
+          <div class="vp-tl">Open challenges<span class="vp-tw2">now</span></div><div class="vp-tv">${cnt(s.openChallenges)}</div>
+          <div class="vp-ts"><span class="vp-sevdots">${s.critical ? `<b class="c">${s.critical} critical</b>` : ''}${s.high ? `<b class="h">${s.high} high</b>` : ''}${s.blocked ? `<b class="b">${s.blocked} blocked</b>` : ''}${!s.critical && !s.high && !s.blocked ? 'nothing critical or blocked' : ''}</span></div><span class="vp-go">${svg(IC.arrow, 14)}</span></button>
+        ${openCh.length ? `<div class="vp-plist">${openCh.slice(0, CH_MAX).map(chItem).join('')}</div>` : ''}
+        ${openCh.length > CH_MAX ? `<button type="button" class="vp-tmore" data-act="goto" data-to="vpChallenges">${openCh.length - CH_MAX} more in Challenges ${svg(IC.arrow, 12)}</button>` : ''}
+      </div>` : '';
+    const twRow = t => { const r = t.report;
+      const lead = t.leads && t.leads.length ? t.leads.map(l => l.name || String(l.email || '').split('@')[0]).join(', ') : 'no lead named yet';
+      const by = r ? (r.byName || String(r.by || '').split('@')[0]) : '';
+      const status = r ? hm(r.at) : 'no report yet';                                  // the full "checked in by … at …" is the tooltip
+      const what = [t.open ? `${t.open} open${t.critical ? ` · ${t.critical} critical` : ''}${t.high ? ` · ${t.high} high` : ''}${t.blocked ? ` · ${t.blocked} blocked` : ''}` : 'no open challenge',
+        t.changesTonight ? `${t.changesTonight} change${t.changesTonight > 1 ? 's' : ''} tonight` : ''].filter(Boolean).join(' · ');
+      const tip = `${t.label} — ${r ? `${r.checkin ? 'checked in' : 'reported'} by ${by} at ${hm(r.at)}${r.checkin && t.checkin && t.checkin.note ? ': ' + t.checkin.note : ''}` : 'no report yet today'} · lead: ${lead}`;
+      return `<button type="button" class="vp-twl${t.reportedToday ? ' on' : ''}" data-act="towergo" data-k="${esc(t.key)}" style="--tw:${t.color}" title="${esc(tip)}">
+        <span class="vp-twl-n">${esc(t.label)}</span><span class="vp-twl-s">${t.reportedToday ? svg(IC.check, 11) : ''}${esc(status)}${by ? ` · ${esc(String(by).split(/[\s.]+/)[0])}` : ''}</span><span class="vp-twl-w">${esc(what)}</span></button>`; };
+    const twTile = S.d ? `<div class="vp-tile vp-tlist vp-tile-${s.towersReported === s.towers ? 'ok' : 'none'}">
+        <button type="button" class="vp-thd" data-act="goto" data-to="vpChallenges" title="Daily challenges by tower">
+          <div class="vp-tl">Towers reported<span class="vp-tw2">today</span></div><div class="vp-tv">${cnt(s.towersReported)}<small> / ${num(s.towers)}</small></div><span class="vp-go">${svg(IC.arrow, 14)}</span></button>
+        <div class="vp-plist vp-twlist">${tws.map(twRow).join('')}</div>
+      </div>` : '';
     return `<div class="vp-pulse">${bizTile('mobile')}${bizTile('fixed')}${salesTile()}${changeTile}${chTile}${twTile}</div>`;
   }
 
@@ -323,7 +351,10 @@
       ${upcoming.length ? `<div class="vp-minis">${upcoming.slice(0, 3).map(c => chMini(c, 'week')).join('')}</div>${upcoming.length > 3 ? `<button type="button" class="vp-more" data-act="goto" data-to="vpCab">+ ${upcoming.length - 3} more this week on the CAB board</button>` : ''}` : '<div class="vp-empty sm">Nothing planned in the next 7 days.</div>'}`;
   }
 
-  /* ---------- vendor weekly: Mobile · TCS (template tcs_mvno_weekly) ---------- */
+  /* ---------- vendor weekly: Mobile · TCS (template tcs_mvno_weekly) ----------
+   * Off the page since 9 Oct 2026: the TCS figures reach the VP through the executive weekly report (Operations reports,
+   * #opsreports). The section, its form and /api/cockpit/reports stay; set this to true to bring them back. */
+  const SHOW_VENDOR_WEEKLY = false;
   const dlt = (cur, prev) => { if (cur == null || prev == null || !prev) return ''; const p = Math.round((cur - prev) / prev * 100); return `<span class="vp-dl ${p >= 0 ? 'up' : 'down'}">${p >= 0 ? '▲' : '▼'} ${Math.abs(p)}%</span>`; };
   const gradeCls = g => /^[AB]/i.test(g || '') ? 'good' : /^C/i.test(g || '') ? 'mid' : 'bad';
   function tcsSec() {
@@ -546,9 +577,11 @@
     const openRows = open.length ? `<ul class="vp-inc">${open.map(a => `<li><span class="vp-psev vp-psev-${esc(String(a.severity).toLowerCase())}">${esc(a.severity)}</span><div><b>${esc(a.name)}</b>${a.kind && a.kind !== 'service' ? ` <span class="vp-kind vp-kind-${esc(a.kind)}">${esc((P1KIND[a.kind] || [a.kind])[0])}</span>` : ''}
         <div class="vp-dim">open ${esc(durTxt(a.ageMin))} · ${a.owner ? 'owner ' + esc(String(a.owner).split('@')[0]) : 'nobody has taken it'}${a.acked ? ' · acknowledged' : ''}${a.ticket ? ' · ' + esc(a.ticket) : ''}${a.customers != null ? ` · ${num(a.customers)} customers` : ''}</div></div></li>`).join('')}</ul>` : '<div class="vp-empty">No P1 / P2 incident open.</div>';
     const list = (imp.list || []).slice().sort((a, b) => (b.minutes || 0) - (a.minutes || 0));
-    const reg = list.length ? `<table class="vp-tbl vp-regtbl"><thead><tr><th>P1 incident</th><th>Started</th><th>Ended</th><th>Time this month</th><th>Kind</th></tr></thead><tbody>${list.slice(0, 15).map(a => { const k = P1KIND[a.kind] || P1KIND.service;
-        return `<tr class="${a.downtime === false ? 'vp-off' : ''}"><td data-l="P1 incident"><b>${esc(a.name)}</b></td><td data-l="Started">${esc(KT.md(a.started))}</td><td data-l="Ended">${a.ended ? esc(KT.md(a.ended)) : '<b class="vp-hot">still open</b>'}</td>
-          <td data-l="Time this month">${esc(durTxt(a.minutes))}</td><td data-l="Kind"><span class="vp-kind vp-kind-${esc(a.kind || 'service')}">${esc(k[0])}</span><div class="vp-dim">${esc(k[1])}</div></td></tr>`; }).join('')}</tbody></table>${list.length > 15 ? `<div class="vp-dim">${list.length - 15} more in the Executive Dashboard.</div>` : ''}`
+    /* the P1 time of each incident (alpha.154): an incident can open at P2 and cross into P1, or step back — only its P1 periods count */
+    const reg = list.length ? `<table class="vp-tbl vp-regtbl"><thead><tr><th>P1 incident</th><th>At P1 from</th><th>Until</th><th>P1 time this month</th><th>Kind</th></tr></thead><tbody>${list.slice(0, 15).map(a => { const k = P1KIND[a.kind] || P1KIND.service;
+        const part = a.lifeMin != null && a.lifetimeMin != null && a.lifeMin - a.lifetimeMin >= 5 ? `<div class="vp-dim">at P1 ${esc(durTxt(a.lifetimeMin))} of its ${esc(durTxt(a.lifeMin))}${a.p1Periods > 1 ? ` · ${a.p1Periods} periods` : ''}</div>` : '';
+        return `<tr class="${a.downtime === false ? 'vp-off' : ''}"><td data-l="P1 incident"><b>${esc(a.name)}</b>${part}</td><td data-l="At P1 from">${esc(KT.md(a.started))}</td><td data-l="Until">${a.ended ? esc(KT.md(a.ended)) : '<b class="vp-hot">still at P1</b>'}</td>
+          <td data-l="P1 time this month">${esc(durTxt(a.minutes))}</td><td data-l="Kind"><span class="vp-kind vp-kind-${esc(a.kind || 'service')}">${esc(k[0])}</span><div class="vp-dim">${esc(k[1])}</div></td></tr>`; }).join('')}</tbody></table>${list.length > 15 ? `<div class="vp-dim">${list.length - 15} more in the Executive Dashboard.</div>` : ''}`
       : '<div class="vp-empty">No P1 incident of 5 minutes or more this month.</div>';
     const svc = imp.service != null ? imp.service : imp.incidents;
     const other = [(imp.business ? `${imp.business} business case${imp.business === 1 ? '' : 's'}` : ''), (imp.monitoring ? `${imp.monitoring} monitoring` : '')].filter(Boolean).join(' · ');
@@ -573,7 +606,7 @@
       <p class="vp-dim">Every number on this page, the window it covers and where it comes from. The same definitions are used in the 08:00 morning brief.</p>
       <div class="vp-drsec"><div class="vp-drk">The top of the page</div>${top}</div>
       <div class="vp-drsec" id="vpDef-kpi"><div class="vp-drk">Customers' own journeys · last 24 h</div>${kp}</div>
-      <div class="vp-drsec"><div class="vp-drk">Mobile weekly · TCS</div>${one('tcs', d.tcs)}</div>
+      ${SHOW_VENDOR_WEEKLY ? `<div class="vp-drsec"><div class="vp-drk">Mobile weekly · TCS</div>${one('tcs', d.tcs)}</div>` : ''}
       ${(d.diff || []).length ? `<div class="vp-drsec" id="vpDef-diff"><div class="vp-drk">Why two numbers can differ</div>${d.diff.map(x => `<div class="vp-defi vp-diff"><div class="vp-defh"><b>${esc(x.a)}</b><span class="vp-vs">vs</span><b>${esc(x.b)}</b></div><p>${esc(x.why)}</p></div>`).join('')}</div>` : ''}</div>`);
     if (focus) { const el = dr.querySelector('#vpDef-' + focus); if (el) setTimeout(() => el.scrollIntoView({ block: 'start' }), 60); }
   }
@@ -780,6 +813,7 @@
       case 'goto': { const el = $('#' + t.dataset.to); if (el) el.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); return; }
       case 'feedtower': S.feedTower = t.dataset.k; return paint('vpUpdates', updates);
       case 'chtower': S.chTower = S.chTower === t.dataset.k ? '' : t.dataset.k; st.set('chTower', S.chTower); return paint('vpChallenges', challengesSec);
+      case 'towergo': { S.chTower = t.dataset.k; st.set('chTower', S.chTower); paint('vpChallenges', challengesSec); const el = $('#vpChallenges'); if (el) el.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); return; }
       case 'chstatus': S.chStatus = t.dataset.k; st.set('chStatus', S.chStatus); return paint('vpChallenges', challengesSec);
       case 'chseg': S.chSeg = t.dataset.k; return paint('vpChallenges', challengesSec);
       case 'cabfilter': S.cabFilter = t.dataset.f; st.set('cabFilter', S.cabFilter); paint('vpCab', cabSec); if (!t.closest('#vpCab')) { const el = $('#vpCab'); if (el) el.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); } return;
@@ -896,7 +930,7 @@
   function renderAll() {
     const host = $('#view-vpcockpit'); if (!host) return;
     if (!S.d && S.err) { host.innerHTML = `<div class="vp-wrap"><div class="vp-err"><b>The cockpit could not load</b><div>${esc(S.err)}</div></div></div>`; return; }
-    const tcs = tcsSec();
+    const tcs = SHOW_VENDOR_WEEKLY ? tcsSec() : '';
     const jump = [['vpKpis', 'KPIs'], ['vpUpdates', 'Last updates'], ['vpWeek', 'This week'], ['vpChallenges', 'Challenges'], ['vpTcs', 'Mobile weekly · TCS'], ['vpCab', 'CAB board']]
       .filter(([id]) => id !== 'vpTcs' || tcs).filter(([id]) => id !== 'vpKpis' || views().includes('dashboard') || views().includes('fixed'));
     host.innerHTML = `<div class="vp-wrap">
@@ -929,7 +963,7 @@
     ];
     try { S.d = await api('/api/cockpit/overview'); S.err = null; S.at = new Date().toISOString(); }
     catch (e) { S.err = e.message; }
-    try { const tr = (S.d && S.d.reports || []).find(r => r.vendor === 'TCS'); S.tcsWeeks = tr && tr.weeks > 1 ? (await api('/api/cockpit/reports?vendor=TCS')).reports : (tr && tr.latest ? [tr.latest] : []); } catch (e) { S.tcsWeeks = []; }
+    if (SHOW_VENDOR_WEEKLY) { try { const tr = (S.d && S.d.reports || []).find(r => r.vendor === 'TCS'); S.tcsWeeks = tr && tr.weeks > 1 ? (await api('/api/cockpit/reports?vendor=TCS')).reports : (tr && tr.latest ? [tr.latest] : []); } catch (e) { S.tcsWeeks = []; } }
     const y = window.scrollY; renderAll(); if (force) window.scrollTo(0, y);
     await Promise.all(side.filter(Boolean)).catch(() => {});
     S.loading = false; const u2 = $('#vpUpd'); if (u2) u2.textContent = S.at ? 'updated ' + hm(S.at) : '';
@@ -1049,6 +1083,26 @@
 .vp-stchip{display:inline-flex;align-items:center;gap:6px;margin-left:8px;font-size:12px;font-weight:800;padding:3px 10px 3px 8px;border-radius:999px;background:var(--line-soft);color:var(--ink-soft)}
 .vp-stchip i{width:7px;height:7px;border-radius:50%;background:currentColor}
 .vp-st-bad{background:var(--tint-red);color:var(--tint-red-fg)}.vp-st-warn{background:var(--tint-amber);color:var(--tint-amber-fg)}.vp-st-ok{background:var(--tint-green);color:var(--tint-green-fg)}
+.vp-tlist{cursor:default}.vp-tlist:hover{transform:none;box-shadow:0 1px 2px rgba(15,23,42,.05);border-color:var(--line)}
+.vp-thd{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:5px;cursor:pointer;border-radius:10px;min-width:0}
+.vp-thd:hover .vp-go{opacity:1;transform:translateX(2px)}.vp-thd:hover .vp-tv{color:var(--green)}
+.vp-thd:focus-visible,.vp-pli:focus-visible,.vp-twl:focus-visible,.vp-tmore:focus-visible{outline:2px solid var(--green);outline-offset:1px}
+.vp-plist{display:flex;flex-direction:column;gap:1px;margin:4px -8px 0;padding-top:6px;border-top:1px dashed var(--line)}
+.vp-pli{all:unset;box-sizing:border-box;display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border-radius:9px;cursor:pointer;min-width:0}
+.vp-pli:hover,.vp-twl:hover{background:var(--line-soft)}
+.vp-pli i{flex:none;width:8px;height:8px;border-radius:50%;margin-top:4px;background:var(--muted)}
+.vp-pli-critical i{background:var(--red)}.vp-pli-high i{background:var(--amber)}.vp-pli-medium i{background:var(--blue)}
+.vp-pli-b{display:flex;flex-direction:column;gap:3px;min-width:0}
+.vp-pli-t{font-size:12px;font-weight:700;line-height:1.3;color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vp-pli-m{display:flex;flex-wrap:wrap;align-items:center;gap:5px;font-size:10.5px;color:var(--muted)}
+.vp-pli-m em,.vp-twl-n{font-style:normal;font-size:9.5px;font-weight:800;letter-spacing:.02em;padding:1px 6px;border-radius:5px;color:#fff;background:var(--tw)}
+.vp-tmore{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin-top:auto;padding-top:6px;font-size:11px;font-weight:700;color:var(--green)}
+.vp-twl{all:unset;box-sizing:border-box;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"n s" "w w";align-items:center;gap:2px 8px;padding:5px 8px;border-radius:9px;cursor:pointer;min-width:0}
+.vp-twl-n{grid-area:n;justify-self:start;color:var(--muted);background:var(--card2);border:1px dashed var(--line)}
+.vp-twl.on .vp-twl-n{color:#fff;background:var(--tw);border:1px solid var(--tw)}
+.vp-twl-s{grid-area:s;justify-self:end;display:inline-flex;align-items:center;gap:3px;min-width:0;max-width:100%;font-size:10.5px;font-weight:700;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vp-twl.on .vp-twl-s{color:var(--green)}
+.vp-twl-w{grid-area:w;font-size:11px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vp-tnote{font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:-2px 0 5px}
 .vp-diff .vp-defh{flex-wrap:wrap;gap:6px}.vp-vs{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:1px 6px;border-radius:999px;background:var(--line-soft)}
 .vp-bars{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px}
@@ -1302,7 +1356,7 @@ textarea.vp-in{resize:vertical;line-height:1.5}
 @media (max-width:820px){
   #view-vpcockpit{padding:10px 10px 30px}
   .vp-hero{padding:20px 18px 18px;border-radius:18px}.vp-doors{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .vp-pulse{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.vp-tv{font-size:24px}.vp-tbiz .vp-tv-long{font-size:18px}
+  .vp-pulse{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.vp-tv{font-size:24px}.vp-tbiz .vp-tv-long{font-size:18px}.vp-tlist{grid-column:1/-1}
   .vp-jump{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.vp-jump button{white-space:nowrap}
   .vp-twrs{grid-template-columns:repeat(2,minmax(0,1fr))}
   .vp-sec{padding:14px 14px 16px;border-radius:16px}

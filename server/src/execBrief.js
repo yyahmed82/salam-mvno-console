@@ -124,30 +124,72 @@ function stateOf(open) {
   return { state: 'OK', kind: null, top: null, note: STATE_NOTE.OK };
 }
 
+/* ---------------------------------------------------------------- P1 time from the severity timeline (alpha.154)
+ * An incident's severity moves while it is open: a twin rule crosses from the P2 anomaly into the P1 storm and back, a
+ * customer floor lowers it, a re-fire raises it. alertRunner writes every move as a system comment
+ * "Severity P2 → P1: …". Counting the whole life of every row whose severity is P1 *now* made a P2 anomaly that was
+ * open for a day count as a day of P1 the moment it touched P1, and missed P1 periods of rows that stepped back to P2.
+ * Fixed read "0.00 % available · 44 service incidents (8 d 3 h)" on 9 Oct. Only the P1 periods count now. */
+const SEV_MOVE_RX = /^Severity (P\d) → (P\d)/;
+async function severityMoves(rows) {
+  const ids = [...new Set(rows.map(a => a.id).filter(Boolean).map(String))];
+  if (!ids.length) return new Map();
+  const r = await db.console.query(
+    `SELECT alert_id, created_at, body FROM incident_comments
+      WHERE alert_id = ANY($1::bigint[]) AND author = 'system' AND body LIKE 'Severity P_ → P_%' ORDER BY alert_id, created_at`, [ids])
+    .catch(e => { console.error('[execBrief] severity moves:', e.message); return { rows: [] }; });
+  const m = new Map();
+  for (const x of r.rows) { const mm = SEV_MOVE_RX.exec(x.body || ''); if (!mm) continue; const k = String(x.alert_id);
+    if (!m.has(k)) m.set(k, []); m.get(k).push({ at: new Date(x.created_at).getTime(), from: mm[1], to: mm[2] }); }
+  return m;
+}
+/* the periods an incident spent at P1 — [start, end] in ms; with no recorded move, its severity covers its whole life */
+function p1Spans(a, moves, now) {
+  const start = new Date(a.opened).getTime(), end = (a.resolved_at ? new Date(a.resolved_at) : now).getTime();
+  if (!(end > start)) return [];
+  const mv = ((moves && moves.get(String(a.id))) || []).filter(x => x.at > start && x.at < end);
+  let sev = mv.length ? mv[0].from : a.severity, t = start; const out = [];
+  for (const x of mv) { if (sev === 'P1' && x.at > t) out.push([t, x.at]); sev = x.to; t = x.at; }
+  if (sev === 'P1' && end > t) out.push([t, end]);
+  return out;
+}
+/* minutes covered by a set of spans inside [from, to] — overlaps counted once */
+function unionSpanMinutes(spans, from, to) {
+  const iv = spans.map(([s, e]) => [Math.max(s, from), Math.min(e, to)]).filter(([s, e]) => e > s).sort((x, y) => x[0] - y[0]);
+  let total = 0, cs = null, ce = null;
+  for (const [s, e] of iv) { if (cs == null || s > ce) { if (cs != null) total += ce - cs; cs = s; ce = e; } else ce = Math.max(ce, e); }
+  if (cs != null) total += ce - cs;
+  return Math.round(total / 60000);
+}
+
 /* ---------------------------------------------------------------- the register + impact totals */
-function register(rows, win, now, vend) {
+function register(rows, win, now, vend, moves) {
   const rcaOb = vend && vend.obligations.find(o => o.category === 'rca');
   const rcaT = rcaOb ? targetMinutes((rcaOb.target || {}).P1 || Object.values(rcaOb.target || {})[0]) : null;
-  const outages = rows.filter(a => a.severity === 'P1' && (a.status === 'open' || minutesOf(a, now) >= MIN_OUTAGE_MIN));
-  const list = outages.map(a => {
-    /* minutes CLIPPED to the month (an incident open since July counts only its September minutes here);
-       the raw lifetime is kept as `lifetimeMin` for the record */
-    const cs = Math.max(new Date(a.opened).getTime(), new Date(win.from).getTime());
-    const ce = Math.min((a.resolved_at ? new Date(a.resolved_at) : now).getTime(), new Date(win.to).getTime(), now.getTime());
-    const mins = Math.max(0, Math.round((ce - cs) / 60000)), lifetimeMin = minutesOf(a, now);
+  const F = new Date(win.from).getTime(), T = Math.min(new Date(win.to).getTime(), now.getTime());
+  const spanMin = sp => Math.round(sp.reduce((t, [p, q]) => t + (q - p), 0) / 60000);
+  /* an incident is in the register when it spent ≥ 5 min at P1, or is open at P1 right now */
+  const outages = rows.map(a => ({ a, spans: p1Spans(a, moves, now) }))
+    .filter(({ a, spans }) => spans.length && ((a.status === 'open' && a.severity === 'P1') || spanMin(spans) >= MIN_OUTAGE_MIN));
+  const list = outages.map(({ a, spans }) => {
+    /* minutes = its P1 time CLIPPED to the month (an incident open since July counts only its September minutes here);
+       lifetimeMin = its whole P1 time, lifeMin = its whole life at any severity, for the record */
+    const openAtP1 = a.status === 'open' && a.severity === 'P1';
+    const mins = unionSpanMinutes(spans, F, T), lifetimeMin = spanMin(spans), lifeMin = minutesOf(a, now);
     let rca = { status: 'n/a', text: 'no RCA clause in this contract' };
-    if (rcaT && ['P1', 'P2'].includes(a.severity)) {
+    if (rcaT) {                                                          // every row here spent time at P1
       if (!a.resolved_at) rca = { status: 'pending', text: `due ${rcaT.text} after restoration` };
       else { const due = new Date(new Date(a.resolved_at).getTime() + rcaT.minutes * 60000); rca = { status: due < now ? 'overdue' : 'due', due: due.toISOString(), text: 'not recorded' }; }
     }
     const kind = kindOf(a);
-    return { id: a.id, rule_key: a.rule_key, name: a.name || a.rule_key, severity: a.severity, status: a.status, started: a.opened, ended: a.resolved_at, minutes: mins, lifetimeMin,
-      kind, downtime: kind === 'service',
+    return { id: a.id, rule_key: a.rule_key, name: a.name || a.rule_key, severity: 'P1', severityNow: a.severity, status: openAtP1 ? 'open' : 'resolved', incidentStatus: a.status,
+      started: new Date(spans[0][0]).toISOString(), ended: openAtP1 ? null : new Date(spans[spans.length - 1][1]).toISOString(), opened: a.opened, minutes: mins, lifetimeMin, lifeMin,
+      p1Periods: spans.length, kind, downtime: kind === 'service',
       customers: a.customers == null ? null : n(a.customers), money: isMoney(a) ? n(a.peak_value || a.observed_value) : null,
       owner: a.assignee || a.ack_by || null, ticket: a.sn_number || null, team: a.team || null, cause: a.probable_cause || null, rca };
   });
-  const service = outages.filter(a => kindOf(a) === 'service');
-  return { list, incidents: list.length, minutes: unionMinutes(service, win.from, win.to, now), allMinutes: unionMinutes(outages, win.from, win.to, now),
+  const service = outages.filter(({ a }) => kindOf(a) === 'service');
+  return { list, incidents: list.length, minutes: unionSpanMinutes(service.flatMap(x => x.spans), F, T), allMinutes: unionSpanMinutes(outages.flatMap(x => x.spans), F, T),
     service: service.length, business: list.filter(x => x.kind === 'business').length, monitoring: list.filter(x => x.kind === 'monitoring').length,
     customers: list.reduce((s, x) => s + n(x.customers), 0), money: Math.round(list.reduce((s, x) => s + n(x.money), 0)), open: list.filter(x => x.status === 'open').length };
 }
@@ -203,9 +245,10 @@ function penalty(cfg, contract, ob, breached) {
 async function business(seg, win, now, cfg, deps, q) {
   const B = BIZ[seg];
   const [rows, prevRows] = await Promise.all([alertsIn(seg, win.from, win.to), alertsIn(seg, win.prev.from, win.prev.to)]);
+  const moves = await severityMoves([...rows, ...prevRows]);                 // the P1 periods of every incident (alpha.154)
   const v = vendorFor(cfg, B.biz);
   const vend = v && { ...v, obligations: (cfg.obligations || []).filter(o => o.vendorId === v.vendor.id && ((o.appliesTo || {}).business || []).includes(B.biz)) };
-  const reg = register(rows, win, now, vend), prev = register(prevRows, win.prev, new Date(Math.min(now.getTime(), new Date(win.prev.to).getTime())), vend);
+  const reg = register(rows, win, now, vend, moves), prev = register(prevRows, win.prev, new Date(Math.min(now.getTime(), new Date(win.prev.to).getTime())), vend, moves);
   const availabilityPct = Math.round((1 - reg.minutes / win.elapsedMin) * 100000) / 1000;
   const prevElapsed = Math.max(1, Math.round((new Date(win.prev.to) - new Date(win.prev.from)) / 60000));
   const prevAvail = Math.round((1 - prev.minutes / prevElapsed) * 100000) / 1000;
@@ -252,10 +295,10 @@ function mount(app, deps) {
       const [mobile, fixed] = await Promise.all([wantM ? one('mvno') : null, wantF ? one('fixed') : null]);
       res.json({ generatedAt: now.toISOString(), month: { key: win.key, from: win.from, to: win.to, current: win.current, prevKey: win.prev.key, elapsedMin: win.elapsedMin },
         rules: { outage: `P1 incident open ≥ ${MIN_OUTAGE_MIN} min or still open`, kinds: 'service = technical rule (counts as downtime) · business = business rule (listed, not downtime) · monitoring = a console feed unread (listed, not downtime)',
-          minutes: 'union of SERVICE P1 intervals per business, clipped to the month', customers: 'sum of distinct customers per incident (contacts, not de-duplicated across incidents)', money: 'SAR from money-at-risk rules only',
+          minutes: 'union of the periods SERVICE incidents spent at P1 (from the severity moves), per business, clipped to the month', customers: 'sum of distinct customers per incident (contacts, not de-duplicated across incidents)', money: 'SAR from money-at-risk rules only',
           availability: '1 − service P1 minutes ÷ elapsed month minutes', state: 'OUTAGE = P1 service open · CASE = P1 business case open · DEGRADED = P2 open · BLIND = only monitoring open · OK' },
         mobile, fixed });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 }
-module.exports = { mount, monthWindow, targetMinutes, unionMinutes, register, measure, kindOf, stateOf };
+module.exports = { mount, monthWindow, targetMinutes, unionMinutes, register, measure, kindOf, stateOf, p1Spans, severityMoves };
