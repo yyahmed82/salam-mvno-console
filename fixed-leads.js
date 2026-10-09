@@ -629,6 +629,7 @@
         <table class="ld-tbl" style="margin-top:10px"><thead><tr><th>Member</th><th>SDA account (credits SDA orders)</th></tr></thead><tbody>${s.members.filter(m=>!m.notOcu).map(m=>`<tr><td>${esc(m.name)}<div class="ld-note">${esc(m.email)}</div></td><td><input class="ld-in" data-sc="${esc(m.email)}" value="${esc((d.staffCodes||{})[m.email]||"")}" placeholder="OCU_001" style="max-width:150px"></td></tr>`).join("")||`<tr><td colspan="2" class="ld-note">No user holds the OCU role yet — add them in User management (role OCU · Leads, business Fixed).</td></tr>`}</tbody></table></div>
       <div class="ld-card" style="margin-top:14px"><h4>${I.clock}Where leads come from</h4><div class="ld-check">${Object.entries(S.meta.sources).filter(([k])=>k!=="import").map(([k,l])=>chk("src",k,l,d.sources[k])).join("")}</div>
         <div class="ld-check" style="margin-top:8px">${chk("prd","ftth","Fiber (FTTH)",d.products.ftth)}${chk("prd","5g","5G HomeFi",d.products["5g"])}</div>
+        <div class="ld-check" style="margin-top:8px"><label title="Off: only the promoter leads a dealer rejected. Nexus holds tens of thousands of NEW promoter captures nobody updates."><input type="checkbox" id="stPnew" ${d.promoterNew?"checked":""}>Also promoter leads still NEW after ${n(d.staleLeadDays)} day(s)</label></div>
         <div class="ld-two" style="margin-top:10px">${num("stAge","Lead after (hours without finishing)",d.minAgeHours)}${num("stLook","History look-back (days)",d.lookbackDays)}</div>
         <div class="ld-two" style="margin-top:6px">${num("stMaxAge","New lead only if the journey is at most (days)",d.leadMaxAgeDays)}${num("stExp","Close a lead nobody called after (days)",d.expireDays)}</div>
         <div class="ld-two" style="margin-top:6px">${num("stStale","Promoter lead stale after (days)",d.staleLeadDays)}${num("stAttr","Credit an order within (days of the call)",d.attributionDays)}</div>
@@ -648,7 +649,7 @@
     el.querySelector("#stSave").onclick=async()=>{
       const body={ sources:{}, products:{}, staffCodes:{}, minAgeHours:v("stAge"), lookbackDays:v("stLook"), leadMaxAgeDays:v("stMaxAge"), expireDays:v("stExp"), staleLeadDays:v("stStale"), attributionDays:v("stAttr"), slaFirstContactMin:v("stSla"), maxOpenPerMember:v("stMax"),
         targets:{ dailyWins:v("stTd"), weeklyWins:v("stTw") }, points:Object.fromEntries(Object.keys(d.points).map(k=>[k,v("stP_"+k)])), digest:{ on:el.querySelector("#stDon").checked, hours:v("stDh") } };
-      el.querySelectorAll("[data-src]").forEach(x=>body.sources[x.dataset.src]=x.checked); el.querySelectorAll("[data-prd]").forEach(x=>body.products[x.dataset.prd]=x.checked);
+      el.querySelectorAll("[data-src]").forEach(x=>body.sources[x.dataset.src]=x.checked); el.querySelectorAll("[data-prd]").forEach(x=>body.products[x.dataset.prd]=x.checked); body.promoterNew=!!(el.querySelector("#stPnew")||{}).checked;
       el.querySelectorAll("[data-sc]").forEach(x=>{ if(x.value.trim()) body.staffCodes[x.dataset.sc]=x.value.trim(); });
       if(sup){ body.supervisors=v("stSup").split(/[,;\s]+/).filter(Boolean); body.revealPerHour=v("stRh"); body.revealPerDay=v("stRd"); }
       try{ await api("/api/fixed/leads/settings",{method:"PUT",body:JSON.stringify(body)}); toast("Settings saved",true); S.meta=await api("/api/fixed/leads/meta"); settingsView(el); }catch(e){ toast(e.message); } };

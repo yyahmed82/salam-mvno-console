@@ -41,7 +41,7 @@ async function contactOf(L) {
   }
   if (L.source === 'sda_promoter') {
     if (!db.nexus) throw bad(503, 'nexus is not configured — the number cannot be read');
-    const r = await db.nexus.query(`SELECT w.context->'customer' AS c FROM leads l LEFT JOIN workflow_states w ON w.id = l.lead_workflow_id WHERE l.id = $1`, [String(L.source_ref).replace(/^L/, '')]);
+    const r = await db.nexus.query(`SELECT w.context->'customer' AS c FROM leads l LEFT JOIN workflow_states w ON w.id = l."leadWorkflowId" WHERE l.id = $1`, [String(L.source_ref).replace(/^L/, '')]);
     const c = (r.rows[0] && r.rows[0].c) || null; if (!c) throw bad(404, 'The promoter lead has no customer block in nexus');
     return { name: nm(c), mobile: S.normMobile(c.mobilePhone) };
   }
@@ -513,6 +513,7 @@ function mount(app, deps = {}) {
     const bool = o => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k, !!v]));
     if (b.sources) patch.sources = { ...desk.sources, ...bool(b.sources) };
     if (b.products) patch.products = { ...desk.products, ...bool(b.products) };
+    if (b.promoterNew != null) patch.promoterNew = !!b.promoterNew;
     if (b.staffCodes && typeof b.staffCodes === 'object') patch.staffCodes = Object.fromEntries(Object.entries(b.staffCodes).map(([e, c]) => [String(e).toLowerCase(), String(c || '').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 20)]).filter(([, c]) => c));
     for (const k of ['minAgeHours', 'lookbackDays', 'leadMaxAgeDays', 'expireDays', 'staleLeadDays', 'slaFirstContactMin', 'maxOpenPerMember', 'attributionDays']) if (b[k] != null && Number.isFinite(Number(b[k]))) patch[k] = Math.max(0, Math.min(10000, Number(b[k])));
     if (b.targets) patch.targets = { dailyWins: Math.max(0, Number(b.targets.dailyWins) || 0), weeklyWins: Math.max(0, Number(b.targets.weeklyWins) || 0) };

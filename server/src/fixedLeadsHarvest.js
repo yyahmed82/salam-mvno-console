@@ -143,21 +143,26 @@ async function fromReadModel(desk, st, stats) {
   const pools = [['ops', db.ops], ['opsBeta', db.opsBeta]].filter(x => x[1]);
   if (!pools.length) { stats.notes.push('no read model configured (OPS_DATABASE_URL)'); return; }
   const now = Date.now(), minAge = Math.max(1, S.n(desk.minAgeHours) || 3) * 3600e3, look = Math.max(1, S.n(desk.lookbackDays) || 30) * 864e5;
-  let from = st.cursor ? Math.min(Date.parse(st.cursor), now - 26 * 3600e3) : now - look; from = Math.max(from, now - look);
-  const to = now - minAge, LIMIT = Math.max(200, Number(process.env.LEADS_HARVEST_ROWS) || 3000);
+  /* where a pass starts: after the last one, re-reading the last 26 h (journeys still running then, orders placed since) — except while
+   * catching up (the previous pass hit the row limit): then exactly where it stopped. Without that, a window holding more journeys
+   * than the limit is re-read from its first row on every pass and the newest journeys are never reached (alpha.167) */
+  let from = st.cursor ? (st.behind ? Date.parse(st.cursor) : Math.min(Date.parse(st.cursor), now - 26 * 3600e3)) : now - look; from = Math.max(from, now - look);
+  const to = now - minAge, LIMIT = Math.max(200, Number(process.env.LEADS_HARVEST_ROWS) || 5000);
   const leadAge = Math.max(1, S.n(desk.leadMaxAgeDays) || 14) * 864e5;   // older journeys: the person's history only, no new lead
-  const byId = new Map(); let hit = false, lastAt = null;
+  const byId = new Map(); let hitAt = null;
   for (const [name, pool] of pools) {
     try {
       const r = await pool.query(`SELECT a.id, a.workflow::text AS workflow, a.plan, a.plan_id, a.channel::text AS channel, a.referral_code, a.outcome::text AS outcome, a.step_reached,
           a.last_error_category, a.started_at, a.completed_at, a.region, a.customer_id, a.nafath_outcome, a.dealer_validation, a.order_number, d.staff_code, d.dealer_code
         FROM order_attempts a LEFT JOIN dealers d ON d.id = a.dealer_id
         WHERE a.started_at >= $1 AND a.started_at < $2 ORDER BY a.started_at LIMIT $3`, [new Date(from), new Date(to), LIMIT]);
-      if (r.rows.length >= LIMIT) hit = true;
-      for (const x of r.rows) { if (!byId.has(x.id)) byId.set(x.id, x); const t = Date.parse(x.started_at); if (!lastAt || t > lastAt) lastAt = t; }
+      let last = null;
+      for (const x of r.rows) { if (!byId.has(x.id)) byId.set(x.id, x); const t = Date.parse(x.started_at); if (!last || t > last) last = t; }
+      if (r.rows.length >= LIMIT && last) hitAt = hitAt == null ? last : Math.min(hitAt, last);   // cut short: the next pass resumes at its last row
     } catch (e) { stats.errors.push(`${name}: ${e.message.slice(0, 140)}`); }
   }
-  st.cursor = new Date(hit && lastAt ? lastAt : to).toISOString();
+  st.behind = hitAt != null; st.cursor = new Date(st.behind ? hitAt : to).toISOString();
+  if (st.behind) stats.behind = true;
   const rows = [...byId.values()]; stats.scanned += rows.length; if (!rows.length) return;
   /* journeys already handled are skipped — except one that has completed since */
   const known = new Map();
@@ -236,16 +241,33 @@ async function enrich(fresh, stats) {
 /* ------------------------------------------------------------------ 2. nexus promoter leads */
 async function fromPromoterLeads(desk, st, stats) {
   if (!db.nexus) return;
-  const now = Date.now(), look = Math.max(1, S.n(desk.lookbackDays) || 30) * 864e5;
-  let from = st.promoCursor ? Math.min(Date.parse(st.promoCursor), now - 26 * 3600e3) : now - look; from = Math.max(from, now - look);
-  let rows;
-  try {
-    rows = (await db.nexus.query(`SELECT l.id, l.customer_id, l.dealer_code, l.status::text AS status, l.reason, l.lead_workflow_id, l.created_at, l.updated_at,
+  const now = Date.now(), look = Math.max(1, S.n(desk.lookbackDays) || 30) * 864e5, leadAge = Math.max(1, S.n(desk.leadMaxAgeDays) || 14) * 864e5;
+  const stale = Math.max(1, S.n(desk.staleLeadDays) || 3) * 864e5, LIMIT = 3000;
+  /* nexus `leads` (prod, 9 Oct 2026): id, customer_id, staff_id, dealer_code, status (NEW · INPROGRESS · REJECTED · COMPLETED), "leadWorkflowId",
+   * created_at, updated_at, rejected_by, reason — about 53 000 rows, nearly all NEW (a promoter's capture nobody updates) */
+  const SEL = `SELECT l.id, l.customer_id, l.dealer_code, l.status::text AS status, l.reason, l."leadWorkflowId" AS lead_workflow_id, l.created_at, l.updated_at,
         w.plan_id, w.workflow_id, w.context->'customer' AS customer
-      FROM leads l LEFT JOIN workflow_states w ON w.id = l.lead_workflow_id WHERE l.updated_at >= $1 ORDER BY l.updated_at LIMIT 3000`, [new Date(from)])).rows;
-  } catch (e) { if (/does not exist|permission denied/i.test(e.message)) { stats.notes.push('nexus leads table not readable: ' + e.message.slice(0, 80)); return; } throw e; }
-  st.promoCursor = new Date(now).toISOString();
-  const stale = Math.max(1, S.n(desk.staleLeadDays) || 3) * 864e5;
+      FROM leads l LEFT JOIN workflow_states w ON w.id = l."leadWorkflowId"`;
+  const notReadable = e => { if (/does not exist|permission denied/i.test(e.message)) { stats.notes.push('nexus leads table not readable: ' + e.message.slice(0, 80)); return true; } return false; };
+  /* 1. what changed since the last pass: rejected by the dealer (a lead) or completed (an order). A pass cut short continues at its last row. */
+  let from = st.promoCursor ? (st.promoBehind ? Date.parse(st.promoCursor) : Math.min(Date.parse(st.promoCursor), now - 26 * 3600e3)) : now - look; from = Math.max(from, now - look);
+  let rows;
+  try { rows = (await db.nexus.query(`${SEL} WHERE l.updated_at >= $1 AND l.status::text IN ('REJECTED','COMPLETED') ORDER BY l.updated_at LIMIT ${LIMIT}`, [new Date(from)])).rows; }
+  catch (e) { if (notReadable(e)) return; throw e; }
+  const lastUpd = rows.length ? Date.parse(rows[rows.length - 1].updated_at) : null;
+  st.promoBehind = rows.length >= LIMIT && !!lastUpd; st.promoCursor = new Date(st.promoBehind ? lastUpd : now).toISOString();
+  /* 2. optional (Settings, off by default): promoter leads still NEW after staleLeadDays — nobody picked them up. Their own cursor on
+   * created_at: a NEW row is never updated, so the change reader above would never see it turn stale. */
+  if (desk.promoterNew) {
+    const until = now - stale; let f2 = Math.max(st.staleCursor ? Date.parse(st.staleCursor) : 0, now - leadAge);
+    if (f2 < until) {
+      let r2 = [];
+      try { r2 = (await db.nexus.query(`${SEL} WHERE l.status::text = 'NEW' AND l.created_at >= $1 AND l.created_at < $2 ORDER BY l.created_at LIMIT 1000`, [new Date(f2), new Date(until)])).rows; }
+      catch (e) { if (!notReadable(e)) stats.errors.push('promoter NEW: ' + e.message.slice(0, 140)); }
+      st.staleCursor = new Date(r2.length >= 1000 ? Date.parse(r2[r2.length - 1].created_at) : until).toISOString();
+      rows = rows.concat(r2);
+    }
+  }
   const fresh = [];
   for (const l of rows) {
     stats.promoter_scanned = (stats.promoter_scanned || 0) + 1;
@@ -262,10 +284,19 @@ async function fromPromoterLeads(desk, st, stats) {
     let kind = null;
     if (l.status === 'REJECTED') kind = 'lead_rejected';
     else if (l.status === 'NEW' && now - Date.parse(l.created_at) > stale) kind = 'lead_stale';
-    if (!kind || !desk.products[product] || !idn.has_mobile) continue;
-    if (now - Date.parse(l.created_at) > Math.max(1, S.n(desk.leadMaxAgeDays) || 14) * 864e5) { stats.skip.too_old = (stats.skip.too_old || 0) + 1; continue; }
+    if (!kind) continue;
+    const skip = why => { stats.skip[why] = (stats.skip[why] || 0) + 1; };
+    if (!desk.products[product]) { skip('product_off'); continue; }
+    if (!idn.has_mobile) { skip('no_contact'); continue; }
+    /* a rejected lead counts from the rejection, a stale one from its capture */
+    if (now - Date.parse(kind === 'lead_rejected' ? l.updated_at : l.created_at) > leadAge) { skip('too_old'); continue; }
     const exists = await C().query(`SELECT 1 FROM fixed_leads WHERE source = 'sda_promoter' AND source_ref = $1`, [ref]);
     if (exists.rowCount) continue;
+    const hs = [idn.ident_hash, idn.mobile_hash].filter(Boolean);
+    if (hs.length) {
+      const b = await C().query(`SELECT 1 FROM fixed_lead_journeys WHERE completed AND (ident_hash = ANY($1) OR mobile_hash = ANY($1)) AND coalesce(completed_at, started_at) >= $2 LIMIT 1`, [hs, l.created_at]).catch(() => ({ rowCount: 0 }));
+      if (b.rowCount) { skip('ordered_later'); continue; }
+    }
     const why = S.classify({ kind });
     const open = await openLeadOf(idn.ident_hash, idn.mobile_hash);
     if (open) { await S.event(open, 'system', 'attempt', { source: 'sda_promoter', product, reason: why.text + (l.reason ? ' — ' + String(l.reason).slice(0, 160) : ''), at: iso(l.created_at) }); stats.merged++; continue; }

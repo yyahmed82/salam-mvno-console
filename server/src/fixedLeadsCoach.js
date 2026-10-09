@@ -287,12 +287,15 @@ async function maybeBrief(force) {
   const day = S.ksaDay();
   if (!force) { const done = await C().query(`SELECT 1 FROM agent_reports WHERE kind = 'leads-brief' AND period_start = $1::date LIMIT 1`, [day]).catch(() => ({ rowCount: 1 })); if (done.rowCount) return null; }
   const f = await figures(); const y = f.yday, p = f.pipe;
+  /* nothing to say → no brief (alpha.167: on go-live day it wrote "a quiet day, a fresh start" over an empty desk at 14:03) */
+  if (!force && !S.n(p.open) && !S.n(y.calls) && !S.n(y.won) && !S.n(p.new_today)) return null;
+  const hr = S.ksaHour(), greet = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
   const best = f.reasons.filter(r => r.n >= 3).map(r => ({ ...r, rate: r.won / r.n })).sort((a, b) => b.rate - a.rate)[0];
   let text = `Yesterday: ${S.n(y.calls)} calls, ${S.n(y.contacts)} reached, ${S.n(y.offers)} offers, ${S.n(y.won)} won. Today ${S.n(p.open)} open leads (${S.n(p.hot)} hot, ${S.n(p.unassigned)} not assigned, ${S.n(p.overdue)} callbacks overdue), ${S.n(p.new_today)} new since midnight; ${S.n(p.won_week)} won this week.`
     + (best ? ` Best converting lately: ${S.REASON_LABEL[best.reason_class] || best.reason_class} (${best.won}/${best.n}) — call those first.` : '');
   try {
     const llm = require('./llm');
-    const a = await llm.chat({ system: 'You are Agent 2, coach of the OCU retention sales team at Salam (Fixed: FTTH, 5G). Write the morning brief for the team: 3 to 4 short sentences, motivating, concrete, no personal data, no invented numbers. Plain text only.',
+    const a = await llm.chat({ system: `You are Agent 2, coach of the OCU retention sales team at Salam (Fixed: FTTH, 5G). Write the team brief: 3 to 4 short sentences, motivating, concrete, no personal data, no invented numbers or facts — say only what the figures show. Open with "${greet}, team" (it is ${String(hr).padStart(2, '0')}:00 KSA). Plain text only.`,
       user: `Figures (use only these): ${text}\nLead reasons last 60 days: ${f.reasons.map(r => `${S.REASON_LABEL[r.reason_class] || r.reason_class} ${r.won}/${r.n}`).join(', ') || 'none'}.`, purpose: 'agent-leads.brief', caller: CALLER, maxTokens: 260, temperature: 0.5 });
     const t = String(a.text || '').replace(/\s+/g, ' ').trim(); if (t.length > 40) text = t.slice(0, 700);
   } catch (_) { /* rule text stands */ }

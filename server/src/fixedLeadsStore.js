@@ -97,6 +97,7 @@ const DESK_DEFAULT = {
   sources: { epurchase: true, salamhome: true, sda: true, sda_promoter: true, dashpro: true, qr: false },
   products: { ftth: true, '5g': true },
   minAgeHours: 3, lookbackDays: 30, staleLeadDays: 3,
+  promoterNew: false,                     // promoter leads still NEW after staleLeadDays — off: tens of thousands of captures nobody updates (alpha.167)
   leadMaxAgeDays: 14,                     // a journey older than this feeds the person's history (30 days back) but is not a new lead
   expireDays: 21,                         // a lead nobody called is closed after this many days on the desk (lost · expired, can be reopened)
   slaFirstContactMin: 120, maxOpenPerMember: 60,

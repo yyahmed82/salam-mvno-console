@@ -76,7 +76,9 @@ function narrate(agent, r) {
   if (agent === 'leads.harvest') {
     if (s.paused) return 'harvest paused — LEADS_PII_KEY is not set on the server';
     if (!n(s.scanned) && !n(s.created) && !n(s.expired)) return `harvest: no new journey${(s.errors || []).length ? ' · ' + s.errors[0] : ''}`;
-    const bits = [`harvest: ${n(s.scanned).toLocaleString()} journeys read`, `${n(s.created)} new lead(s)`];
+    const old = n((s.skip || {}).too_old);
+    const bits = [`harvest${s.behind ? ' · catching up' : ''}: ${n(s.scanned).toLocaleString()} journeys read`, `${n(s.created)} new lead(s)`];
+    if (old) bits.push(`${old.toLocaleString()} older than the lead window kept as customer history`);
     if (n(s.merged)) bits.push(`${n(s.merged)} added to an open lead`);
     if (n(s.won_auto)) bits.push(`${n(s.won_auto)} won by an order${n(s.credited) ? ` (${n(s.credited)} credited to OCU)` : ''}`);
     if (n(s.expired)) bits.push(`${n(s.expired)} closed — nobody called them in time`);
@@ -202,7 +204,7 @@ async function mission() {
       key: 'leads', name: 'Leads coach', short: 'Agent 2 · OCU', pm2: 'salam-agent-incident',
       role: 'Coaches the OCU retention team on Fixed › Leads (customers who did not finish an FTTH / 5G purchase or rejected the installation): scores every open lead, writes the offer path of the OCU offer (standard plans first, then the shortest discount), an opener in Arabic and English, the talking points and the objections, from the team\'s own history — never with a name or a number. Every morning it writes the team brief. The harvest (every 15 min, console process) turns stopped journeys into leads and closes a lead as Won when the person orders.',
       state: stateOf('leads', ENABLED.leads), enabled: ENABLED.leads, last: last('leads'), every: INTERVALS.leads,
-      did: [...byAgent('leads').filter(r => n((r.stats || {}).checked) || n((r.stats || {}).upgraded) || (r.stats || {}).brief || r.ok === false), ...byAgent('leads.harvest').filter(r => n((r.stats || {}).created) || n((r.stats || {}).won_auto) || n((r.stats || {}).expired) || (r.stats || {}).paused || r.ok === false)]
+      did: [...byAgent('leads').filter(r => n((r.stats || {}).checked) || n((r.stats || {}).upgraded) || (r.stats || {}).brief || r.ok === false), ...byAgent('leads.harvest').filter(r => n((r.stats || {}).created) || n((r.stats || {}).won_auto) || n((r.stats || {}).expired) || (r.stats || {}).paused || (r.stats || {}).behind || n(((r.stats || {}).skip || {}).too_old) || r.ok === false)]
         .sort((a, b) => new Date(b.started_at) - new Date(a.started_at)).slice(0, 12).map(r => ({ at: r.started_at, end: r.finished_at, ok: r.ok, text: narrate(r.agent, r), stats: r.stats })),
       quiet: byAgent('leads').filter(r => !n((r.stats || {}).checked) && !n((r.stats || {}).upgraded) && !(r.stats || {}).brief && r.ok !== false).length,
       outputs: { leads: { open: n(L.open), hot: n(L.hot), new24: n(L.new24), won_week: n(L.won_week), helpful: n(L.helpful), unhelpful: n(L.unhelpful), offers: leadOffers, brief: leadBrief[0] || null } },

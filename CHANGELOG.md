@@ -1,3 +1,17 @@
+## 2.0.0-alpha.167 — 2026-10-09
+
+- **Fixed › Leads — the harvest never gets stuck behind.** A pass reads up to 5,000 journeys (was 3,000; `LEADS_HARVEST_ROWS`). A pass cut short now continues from its last row on the next pass. Before, a pass that had caught up started again 26 h back, so a 26-hour window holding more journeys than the limit would have been re-read from its first row on every pass, and the newest journeys never reached. The read model holds about 2,500 journeys a day, close to the old limit.
+- **Go-live, 9 Oct:** the first passes read the oldest end of the 30-day history. 13 passes kept everything as customer history before reaching the 14-day lead window. The 15th pass created 348 leads, merged 693 repeat attempts and closed 39 as won by an order.
+- **SDA promoter leads work in production.** The nexus `leads` table calls its workflow column `"leadWorkflowId"`; the harvest and Reveal & call asked for `lead_workflow_id`, so this source was skipped.
+  - The reader takes only the promoter leads that changed: rejected by the dealer (a lead, counted from the rejection) or completed (an order).
+  - A pass cut short continues where it stopped, and a promoter lead the person ordered after is skipped.
+  - Leads still NEW after 3 days are a separate source, off by default (Leads › Settings): nexus holds about 53,000 NEW captures that nobody updates.
+- **Agent 2 team brief:**
+  - No brief when there is nothing to report. On go-live day it wrote "a quiet day, a fresh start" over an empty desk at 14:03.
+  - It opens with the greeting of the hour (Good morning / afternoon / evening, team) and says only what the figures show.
+- **Mission control:** catch-up harvest passes are listed ("catching up · 3,000 journeys read · 740 older than the lead window kept as customer history").
+- **Code:** `fixedLeadsHarvest.js`, `fixedLeads.js`, `fixedLeadsStore.js`, `fixedLeadsCoach.js`, `agentsMission.js`, `fixed-leads.js`, `index.html` (cache key), `deploy152/env.template`.
+
 ## 2.0.0-alpha.166 — 2026-10-09
 
 - **Fixed › Leads — the OCU retention desk (new, restricted).** Operate › Reports becomes **Operate › Leads**; Reports moves to the end of EXPLORE (still in the menu). A customer who started an FTTH or 5G purchase on any channel — website / e-purchase, Salam Home app, SDA dealer journey, SDA promoter lead, an imported batch (DashPro when configured) — and did not finish, or rejected the installation, becomes a lead for the OCU team to call and convert.
