@@ -134,6 +134,7 @@ async function mission() {
               count(*) FILTER (WHERE l.status IN ('new','assigned','contacted','callback','interested','offer') AND l.first_contact_at IS NULL AND l.created_at < now() - interval '2 hours')::int AS untouched,
               count(*) FILTER (WHERE l.created_at >= now() - interval '24 hours')::int AS new24,
               count(*) FILTER (WHERE l.status = 'won' AND l.won_at >= date_trunc('week', now() + interval '1 day' + interval '3 hours') - interval '1 day' - interval '3 hours')::int AS won_week,
+              count(*) FILTER (WHERE l.status = 'won' AND l.won_by IS NOT NULL AND l.won_at >= date_trunc('week', now() + interval '1 day' + interval '3 hours') - interval '1 day' - interval '3 hours')::int AS won_week_team,
               count(*) FILTER (WHERE a.helpful)::int AS helpful, count(*) FILTER (WHERE a.helpful = false)::int AS unhelpful
          FROM fixed_leads l LEFT JOIN fixed_lead_advice a ON a.lead_id = l.id`),
     /* every path starts with the standard plans — what tells the story is the OCU step the coach would reach for next (or none: 5G, fiber before) */
@@ -207,7 +208,7 @@ async function mission() {
       did: [...byAgent('leads').filter(r => n((r.stats || {}).checked) || n((r.stats || {}).upgraded) || (r.stats || {}).brief || r.ok === false), ...byAgent('leads.harvest').filter(r => n((r.stats || {}).created) || n((r.stats || {}).won_auto) || n((r.stats || {}).expired) || (r.stats || {}).paused || (r.stats || {}).behind || n(((r.stats || {}).skip || {}).too_old) || r.ok === false)]
         .sort((a, b) => new Date(b.started_at) - new Date(a.started_at)).slice(0, 12).map(r => ({ at: r.started_at, end: r.finished_at, ok: r.ok, text: narrate(r.agent, r), stats: r.stats })),
       quiet: byAgent('leads').filter(r => !n((r.stats || {}).checked) && !n((r.stats || {}).upgraded) && !(r.stats || {}).brief && r.ok !== false).length,
-      outputs: { leads: { open: n(L.open), hot: n(L.hot), new24: n(L.new24), won_week: n(L.won_week), helpful: n(L.helpful), unhelpful: n(L.unhelpful), offers: leadOffers, brief: leadBrief[0] || null } },
+      outputs: { leads: { open: n(L.open), hot: n(L.hot), new24: n(L.new24), won_week: n(L.won_week), won_week_team: n(L.won_week_team), helpful: n(L.helpful), unhelpful: n(L.unhelpful), offers: leadOffers, brief: leadBrief[0] || null } },
       queue: [{ label: 'open leads to coach', n: n(L.to_coach), hint: `of ${n(L.open)} open — new or changed since their last advice (rules first, the model on the next tick)`, link: '#fixed?tab=leads' },
               { label: 'new leads in 24 h', n: n(L.new24), hint: 'stopped journeys, promoter leads and imported batches harvested in the last day' }],
       human: [{ label: 'leads not called yet (2 h+)', n: n(L.untouched), hint: `first-contact target — ${n(L.pool)} still in the team pool`, link: '#fixed?tab=leads' },

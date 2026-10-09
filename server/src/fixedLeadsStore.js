@@ -84,12 +84,12 @@ const OFFER_RULES = [
 const offerOf = (desk, code) => (desk.offers || OFFERS_DEFAULT).find(o => o.code === code) || null;
 
 /* ------------------------------------------------------------------ desk settings (console_settings 'leads_desk') */
-const TERMS_DEFAULT = { version: '2026-10-09', title: 'Restricted section — customer leads', points: [
+const TERMS_DEFAULT = { version: '2026-10-09b', title: 'Restricted section — customer leads', points: [
   "These leads are Salam's commercial fuel: customers who chose us and did not finish. Every name and number here is confidential.",
   'Use them only to contact the customer about Salam offers, from your Salam workstation.',
   'Do not copy, export, photograph, print or forward a lead, a number or a list — inside or outside Salam.',
-  'Numbers are revealed one lead at a time, only for the leads you work. Every view, reveal and action is recorded with your name, the time and your device.',
-  'Unusual access — many reveals, leads outside your queue — is flagged to the console owners.',
+  'Names and numbers stay masked until you reveal one lead or unmask a page you are allowed to — only for a few minutes, only for the leads you work. Every view, reveal, unmask and action is recorded with your name, the time and your device.',
+  'Unusual access — many reveals or unmasks, leads outside your queue — is flagged to the console owners.',
 ] };
 const DESK_DEFAULT = {
   supervisors: [],                       // OCU team leads: assign, import, challenges (super admins always can)
@@ -102,6 +102,9 @@ const DESK_DEFAULT = {
   expireDays: 21,                         // a lead nobody called is closed after this many days on the desk (lost · expired, can be reopened)
   slaFirstContactMin: 120, maxOpenPerMember: 60,
   revealPerHour: 40, revealPerDay: 150,
+  /* unmask a page (alpha.168): who — 'members' (supervisors on any list, members on their own leads) · 'supervisors' · 'off';
+   * for how many minutes; how many leads a person may unmask a day (super admins: audited, not capped) */
+  unmaskWho: 'members', unmaskMinutes: 10, unmaskPerDay: 600,
   digest: { on: true, hours: [10, 14, 17, 20] },
   targets: { dailyWins: 2, weeklyWins: 10 },
   points: { contact: 1, fast: 2, interested: 3, offer: 2, won: 10, won_std: 15 },
@@ -178,8 +181,78 @@ const REASON_LABEL = { coverage: 'Coverage', stock: 'Device / SIM stock', appoin
   abandoned: 'Abandoned', lead_rejected: 'Lead rejected', lead_stale: 'Lead not picked up', campaign: 'Imported list', rejected_install: 'Rejected installation' };
 const SOURCE_LABEL = { epurchase: 'Website (e-purchase)', salamhome: 'Salam Home app', sda: 'SDA dealer journey', sda_promoter: 'SDA promoter lead', qr: 'QR code (dealer)', dashpro: 'DashPro web lead', import: 'Imported batch' };
 
+/* the table's short channel names (the long ones above stay for the drawer and the filters' titles) */
+const SOURCE_SHORT = { epurchase: 'Website', salamhome: 'Salam Home app', sda: 'SDA dealer', sda_promoter: 'SDA promoter', qr: 'QR code', dashpro: 'DashPro', import: 'Imported' };
+/* Type of line (alpha.168): from the journey's workflow first — the same mapping as Fixed › Errors (FIXED-ERRORS-CHANNELS.md) —,
+ * then the plan catalogue, then the plan's name, then the product */
+const SVC_LABEL = { ftth: 'FTTH', fttb: 'FTTB', '5g_homefi': '5G HomeFi', '5g_fwa': '5G FWA', '5g': '5G' };
+const PTYPE_LABEL = { postpaid: 'Postpaid', prepaid: 'Prepaid' };
+/* Fixed plan catalogue, from the nexus source (packages/api clients/plans.ts and e-purchase-plans.ts, apps e-purchase · SDA · Salam Home;
+ * snapshot of June 2026): id → [name, 'post' | 'pre', type]. nexus keeps only the id on a journey, so this names it; the plan type of a
+ * journey comes from nexus itself (workflow_states.plan_type) and this table types the rest (imports, journeys nexus no longer holds).
+ * Left out on purpose: 5302 · 5206 · 5003 (UAT ids in the SDA app, another plan in the BSS list), 5112 (two names), voice add-ons.
+ * An id missing here shows as "Plan <id>" until it is added. */
+const PLANS = {
+  10801: ['Salam Fiber Postpaid Open 300', 'post', 'ftth'], 10810: ['Salam Fiber Postpaid Open 300 Bundle', 'post', 'ftth'],
+  13603: ['Social Responsibility Postpaid 300 Open', 'post', 'ftth'], 13604: ['Social Responsibility Postpaid 300 Open Bundle', 'post', 'ftth'],
+  17002: ['Salam Fiber 300 Brown', 'post', 'ftth'], 18401: ['Salam Fiber Postpaid 300 A', 'post', 'ftth'], 18403: ['Salam Fiber Postpaid 300 A Bundle', 'post', 'ftth'],
+  16202: ['Salam Fiber Postpaid Open 100', 'post', 'ftth'], 12402: ['FTTHR Fiber 300Mbps PostPaid Open', 'post', 'ftth'],
+  11201: ['500 Mbps Streaming Postpaid Open', 'post', 'ftth'], 11301: ['500 Mbps Streaming Postpaid Open Bundle', 'post', 'ftth'],
+  11303: ['500 Mbps Gaming Postpaid Open', 'post', 'ftth'], 11402: ['500 Mbps Gaming Postpaid Open Bundle', 'post', 'ftth'],
+  12601: ['FTTHR Fiber 500Mbps PostPaid Open', 'post', 'ftth'], 10204: ['Salam Fiber Postpaid Open 1000', 'post', 'ftth'],
+  10205: ['Salam Fiber Postpaid 1000 Bundle Open', 'post', 'ftth'], 12602: ['FTTHR Fiber 1000Mbps PostPaid Open', 'post', 'ftth'],
+  12607: ['FTTHR Fiber 1000Mbps PostPaid Bundle Open', 'post', 'ftth'], 18203: ['GOSI 300Mbps', 'post', 'ftth'], 18406: ['GOSI 500Mbps', 'post', 'ftth'],
+  11001: ['Salam Fiber Prepaid Open 300', 'pre', 'ftth'], 11101: ['500 Mbps Streaming Prepaid Open', 'pre', 'ftth'], 10203: ['Salam Fiber Prepaid Open 1000', 'pre', 'ftth'],
+  3104: ['Salam Fiber Prepaid Open 500', 'pre', 'ftth'],
+  9107: ['Express Fiber Open 100 FTTB', 'post', 'fttb'], 9108: ['Express Fiber Open 240 FTTB', 'post', 'fttb'], 13701: ['Express Fiber Open 300 FTTB', 'post', 'fttb'],
+  9109: ['Express Fiber Open 500 FTTB', 'post', 'fttb'], 9113: ['Express Fiber 100 Bundle Open', 'post', 'fttb'], 9114: ['Express Fiber 240 Bundle Open', 'post', 'fttb'],
+  9115: ['Express Fiber 500 Bundle Open', 'post', 'fttb'],
+  12801: ['5G HomeFi 140 Mbps', 'post', '5g_homefi'], 16702: ['5G HomeFi 140', 'post', '5g_homefi'], 15703: ['5G HomeFi 200 Mbps', 'post', '5g_homefi'],
+  16402: ['5G HomeFi 200 Mbps 12M', 'pre', '5g_homefi'], 16104: ['5G HomeFi 12 months', 'pre', '5g_homefi'], 10502: ['Salam 5G HomeFi MAX', 'post', '5g_homefi'],
+  5901: ['Limited 5G FWA 250Mbps', 'post', '5g_fwa'], 7701: ['Salam 5G FWA', 'post', '5g_fwa'], 5802: ['Unlimited 5G FWA', 'post', '5g_fwa'], 5703: ['Unlimited 5G FWA', 'post', '5g_fwa'],
+  7501: ['5G Platinum', 'post', '5g'],
+  /* plans of existing Salam Home customers (BSS) — they reach a lead through a relocation, a renewal or an imported list */
+  605: ['Unlimited Fiber 30', 'pre', 'ftth'], 606: ['New Unlimited Fiber 300', 'pre', 'ftth'], 607: ['Unlimited Fiber 300', 'pre', 'ftth'], 1502: ['Unlimited Fiber 60 Advanced', 'pre', 'ftth'],
+  1801: ['Unlimited Fiber 60 Employee', 'pre', 'ftth'], 1802: ['Unlimited Fiber 300 Employee', 'pre', 'ftth'], 1902: ['New Salam Fiber Prepaid 500', 'pre', 'ftth'],
+  2701: ['Unlimited Fiber 240 Bundle', 'pre', 'ftth'], 3001: ['Unlimited Fiber 500 Plus Mbps', 'pre', 'ftth'], 3101: ['Salam Fiber Prepaid Open 100', 'pre', 'ftth'],
+  3103: ['Salam Fiber Prepaid Open 240', 'pre', 'ftth'], 3301: ['Salam Fiber Prepaid 300', 'pre', 'ftth'], 3402: ['Salam Fiber Prepaid 500', 'pre', 'ftth'],
+  3701: ['Fiber 300 Retention', 'pre', 'ftth'], 3902: ['Fiber 500 Retention', 'pre', 'ftth'], 4903: ['Salam Fiber Prepaid 1000', 'pre', 'ftth'], 11901: ['500 Mbps Streaming Prepaid', 'pre', 'ftth'],
+  4103: ['Salam Fiber Postpaid 300', 'post', 'ftth'], 4104: ['Salam Fiber 500 Postpaid', 'post', 'ftth'], 4105: ['Salam Fiber Postpaid 500', 'post', 'ftth'],
+  4109: ['Salam Fiber Postpaid Open 100', 'post', 'ftth'], 4110: ['Salam Fiber Postpaid Open 240', 'post', 'ftth'], 4111: ['Salam Fiber Postpaid Open 500', 'post', 'ftth'],
+  4407: ['Salam Fiber Postpaid 300 Employee', 'post', 'ftth'], 4408: ['New Salam Fiber Postpaid 300 Employee', 'post', 'ftth'], 4409: ['Salam Fiber Postpaid 500', 'post', 'ftth'],
+  4410: ['Salam Fiber Postpaid Open 100 Employee', 'post', 'ftth'], 4802: ['Unlimited Fiber 300 PostPaid', 'post', 'ftth'], 4904: ['Salam Fiber Postpaid 1000', 'post', 'ftth'],
+  5102: ['Salam Fiber Postpaid 300', 'post', 'ftth'], 5104: ['New Salam Fiber 500 Postpaid', 'post', 'ftth'], 5106: ['Salam Fiber Postpaid Open 100', 'post', 'ftth'],
+  5110: ['Salam Fiber Postpaid Open 240', 'post', 'ftth'], 5111: ['New Salam Fiber Postpaid 500', 'post', 'ftth'], 6101: ['New Gaming Postpaid 500', 'post', 'ftth'],
+  6903: ['ARPU 500 Postpaid', 'post', 'ftth'], 9601: ['100 Mbps FTTH for ADSL customers', 'post', 'ftth'], 9602: ['100 Mbps FTTH for ADSL customers Open', 'post', 'ftth'],
+  10201: ['Gaming Postpaid Open 300', 'post', 'ftth'], 11501: ['Salam Fiber Postpaid Open 300 Employee', 'post', 'ftth'], 11601: ['Gaming Postpaid 500', 'post', 'ftth'],
+  11801: ['500 Mbps Streaming Postpaid', 'post', 'ftth'], 12301: ['Salam Tamkeen 100Mbps', 'post', 'ftth'], 12302: ['Salam Tamkeen 500Mbps', 'post', 'ftth'],
+  12303: ['Salam Tamkeen 240Mbps', 'post', 'ftth'], 13301: ['100 Mbps Over TLS', 'post', 'ftth'],
+};
+const planOf = id => { const k = String(id == null ? '' : id).trim(); return /^\d{1,6}$/.test(k) ? PLANS[k] || null : null; };
+function svcType(workflow, planId, planText, product) {
+  const w = String(workflow || '');
+  if (w === 'fiveGFWA') return '5g_fwa';
+  if (['fiveGWhiteLabel', 'ePurchase5GWhiteLabel', 'salamHomeRelocationWL', 'salamHomeRelocationOwn'].includes(w)) return '5g_homefi';
+  if (w === 'fttb') return 'fttb';
+  if (['ftth', 'ePurchaseFTTH', 'salamHomeRelocationFTTH'].includes(w)) return 'ftth';
+  const c = planOf(planId); if (c) return c[2];
+  const p = String(planText || '');
+  if (/fwa/i.test(p)) return '5g_fwa'; if (/home ?fi/i.test(p)) return '5g_homefi'; if (/fttb|express fiber/i.test(p)) return 'fttb';
+  return product === '5g' || /\b5g\b/i.test(p) ? '5g' : 'ftth';
+}
+/* → { v: 'prepaid' | 'postpaid' | null, src: 'nexus' | 'catalogue' | 'name' | null } */
+function planTypeOf(nexusType, planId, planText) {
+  const t = String(nexusType || '').toUpperCase();
+  if (t === 'PRE_PAID') return { v: 'prepaid', src: 'nexus' }; if (t === 'POST_PAID') return { v: 'postpaid', src: 'nexus' };
+  const c = planOf(planId); if (c) return { v: c[1] === 'pre' ? 'prepaid' : 'postpaid', src: 'catalogue' };
+  const p = String(planText || '');
+  if (/pre-?paid|مسبق/i.test(p)) return { v: 'prepaid', src: 'name' }; if (/post-?paid|مفوتر/i.test(p)) return { v: 'postpaid', src: 'name' };
+  return { v: null, src: null };
+}
 function planLabel(planId, planText, product) {
+  const c = planOf(planId); if (c) return c[0];
   const p = String(planText || planId || '').trim(); if (!p) return product === '5g' ? '5G HomeFi' : 'Salam Fiber';
+  if (/^\d{1,6}$/.test(p)) return 'Plan ' + p;
   const f = /fiber[-_ ]?(\d{3,4})/i.exec(p); if (f) return `Salam Fiber ${f[1]}`;
   if (/5g/i.test(p)) { if (/fwa/i.test(p)) return '5G FWA'; const m = /(\d{3})/.exec(p); return /max/i.test(p) ? '5G HomeFi Max' : m ? `5G HomeFi ${m[1]}` : '5G HomeFi'; }
   return p.length > 40 ? p.slice(0, 40) + '…' : p;
@@ -202,6 +275,8 @@ function ensure() {
       first_contact_at timestamptz, last_contact_at timestamptz, offer_code text, offer_months int, remark text,
       won_at timestamptz, won_ref text, won_auto boolean NOT NULL DEFAULT false, won_by text, lost_reason text, closed_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (source, source_ref))`);
+    await q(`ALTER TABLE fixed_leads ADD COLUMN IF NOT EXISTS svc_type text`);    // alpha.168: FTTH · FTTB · 5G HomeFi · 5G FWA
+    await q(`ALTER TABLE fixed_leads ADD COLUMN IF NOT EXISTS plan_type text`);   // alpha.168: postpaid · prepaid
     await q(`CREATE INDEX IF NOT EXISTS fixed_leads_status_idx ON fixed_leads (status, assignee)`);
     await q(`CREATE INDEX IF NOT EXISTS fixed_leads_next_idx ON fixed_leads (assignee, next_action_at)`);
     await q(`CREATE INDEX IF NOT EXISTS fixed_leads_occ_idx ON fixed_leads (occurred_at DESC)`);
@@ -230,8 +305,32 @@ function ensure() {
     await q(`CREATE INDEX IF NOT EXISTS fixed_lead_journeys_ident_idx ON fixed_lead_journeys (ident_hash) WHERE ident_hash IS NOT NULL`);
     await q(`CREATE INDEX IF NOT EXISTS fixed_lead_journeys_mobile_idx ON fixed_lead_journeys (mobile_hash) WHERE mobile_hash IS NOT NULL`);
     await q(`CREATE TABLE IF NOT EXISTS agent_runs (id bigserial PRIMARY KEY, agent text NOT NULL, started_at timestamptz NOT NULL DEFAULT now(), finished_at timestamptz, ok boolean, stats jsonb NOT NULL DEFAULT '{}', error text)`);
+    if (!process.env.LEADS_NO_NORMALIZE) await normalize().catch(e => console.log('[leads] normalize', e.message));   // the check script stays read-only
   })().catch(e => { ensured = null; throw e; });
   return ensured;
+}
+/* leads written before alpha.168: the type of line, the plan's name in place of its id, the plan type from the catalogue (the harvest then
+ * confirms it from the lead's own journey in nexus — fixedLeadsHarvest.backfill). Idempotent; touches only what changes. */
+async function normalize() {
+  const r = await C().query(`SELECT id, source, product, workflow, plan_id, plan_label, plan_type, svc_type FROM fixed_leads
+      WHERE svc_type IS NULL OR (plan_type IS NULL AND coalesce(facts->>'pt', '') = '') OR plan_label ~ '^(Plan )?[0-9]+$' ORDER BY id DESC LIMIT 50000`);
+  const out = [];
+  for (const L of r.rows) {
+    const x = { id: L.id };
+    const svc = L.svc_type || svcType(L.workflow, L.plan_id, L.plan_label, L.product); if (svc !== L.svc_type) x.svc = svc;
+    /* promoter leads were all filed as fiber before alpha.168 — their plan id tells 5G apart */
+    if (L.source === 'sda_promoter' && /^5g/.test(svc) && L.product !== '5g') x.product = '5g';
+    if (/^(Plan )?\d+$/.test(String(L.plan_label || ''))) { const nm = planLabel(L.plan_id || String(L.plan_label).replace(/^Plan /, ''), null, L.product); if (nm !== L.plan_label) x.label = nm; }
+    if (!L.plan_type) { const t = planTypeOf(null, L.plan_id, x.label || L.plan_label); if (t.v) { x.pt = t.v; x.src = t.src; } else x.src = 'none'; }
+    if (x.svc || x.label || x.pt || x.src || x.product) out.push(x);
+  }
+  for (let i = 0; i < out.length; i += 1000) {
+    await C().query(`UPDATE fixed_leads l SET svc_type = coalesce(x.svc, l.svc_type), plan_label = coalesce(x.label, l.plan_label), plan_type = coalesce(x.pt, l.plan_type), product = coalesce(x.product, l.product),
+        facts = CASE WHEN x.src IS NULL OR coalesce(l.facts->>'pt', '') <> '' THEN l.facts ELSE jsonb_set(l.facts, '{pt}', to_jsonb(x.src)) END
+      FROM jsonb_to_recordset($1::jsonb) AS x(id bigint, svc text, label text, pt text, src text, product text) WHERE l.id = x.id`, [JSON.stringify(out.slice(i, i + 1000))]);
+  }
+  if (out.length) console.log(`[leads] normalize: ${out.length} lead(s) given a type / plan name / plan type`);
+  return out.length;
 }
 
 async function event(leadId, actor, kind, detail, points) {
@@ -254,6 +353,6 @@ module.exports = {
   C, KSA, n, ksaDay, ksaHour, dayStart, weekStart,
   piiReady, keySource, normMobile, normNid, hash, maskName, maskMobile, maskNid, nidKind, dial, enc, dec, identity,
   OFFER_SOURCE, OFFERS_DEFAULT, OFFER_RULES, offerOf, TERMS_DEFAULT, DESK_DEFAULT, getDesk, setDesk,
-  OPEN, CLOSED, STATUS_LABEL, RESULTS, LOST_REASONS, classify, REASON_LABEL, SOURCE_LABEL, planLabel,
+  OPEN, CLOSED, STATUS_LABEL, RESULTS, LOST_REASONS, classify, REASON_LABEL, SOURCE_LABEL, SOURCE_SHORT, SVC_LABEL, PTYPE_LABEL, PLANS, planOf, planLabel, svcType, planTypeOf, normalize,
   ensure, event, members, firstName,
 };

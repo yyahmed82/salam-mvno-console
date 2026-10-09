@@ -34,6 +34,7 @@ function productOf(wf, planId, plan) {
   if (/^salamHome/i.test(w) || /^promoters$/i.test(w)) return null;          // manage-line journeys (existing customers) · promoter capture
   if (/5g|fiveG/i.test(w) || /\b5g/i.test(p)) return '5g';
   if (/ftth|fttb|fiber/i.test(w) || /fiber|ftth/i.test(p)) return 'ftth';
+  if (!w) { const c = S.planOf(planId); if (c) return /^5g/.test(c[2]) ? '5g' : 'ftth'; }   // promoter leads: the plan id says it (alpha.168)
   return null;
 }
 function sourceOf(channel, nexusChannel, referral) {
@@ -43,7 +44,13 @@ function sourceOf(channel, nexusChannel, referral) {
   if (nc === 'SDA' || c === 'sda') return 'sda';
   return 'epurchase';
 }
-const nameOf = c => [c.englishFirstName || c.firstName, c.englishLastName || c.lastName].filter(Boolean).join(' ');
+/* the customer block of a journey: Yakeen's names (individuals) — other keys and a business's registered name as a fallback (alpha.168) */
+const nameOf = c => {
+  if (!c || typeof c !== 'object') return '';
+  const s = v => typeof v === 'string' ? v.trim() : '';
+  const p = [s(c.englishFirstName) || s(c.firstName) || s(c.first_name), s(c.englishLastName) || s(c.lastName) || s(c.last_name) || s(c.familyName)].filter(Boolean).join(' ');
+  return p || s(c.fullName) || s(c.englishFullName) || s(c.customerName) || s(c.name) || s(c.crName) || s(c.companyName);
+};
 const iso = v => { if (!v) return null; const d = v instanceof Date ? v : new Date(v); return isNaN(d) ? null : d.toISOString(); };
 
 /* ------------------------------------------------------------------ harvest state */
@@ -51,11 +58,22 @@ async function getState() { try { const r = await C().query(`SELECT value FROM c
 async function setState(v) { try { await C().query(`INSERT INTO console_settings (key, value) VALUES ('leads_harvest', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [JSON.stringify(v)]); } catch (_) {} }
 
 /* ------------------------------------------------------------------ nexus by primary key */
+/* workflow_states.plan_type (PRE_PAID · POST_PAID) and period (the contract months) — in the nexus schema since the start; should a nexus
+ * lack them, the reads fall back to the catalogue once and say so, they never stop the harvest (alpha.168) */
+let nxPlanCols = true;
+const ptCols = (a = '') => nxPlanCols ? `${a}plan_type::text AS plan_type, ${a}period::text AS period` : `NULL::text AS plan_type, NULL::text AS period`;
+async function nxQuery(sqlOf, params) {
+  try { return await db.nexus.query(sqlOf(), params); }
+  catch (e) {
+    if (nxPlanCols && /plan_type|period/.test(e.message) && /does not exist/i.test(e.message)) { nxPlanCols = false; log('nexus workflow_states has no plan_type / period — plan type from the catalogue'); return db.nexus.query(sqlOf(), params); }
+    throw e;
+  }
+}
 async function nexusRows(ids) {
   const out = new Map(); if (!db.nexus || !ids.length) return out;
   for (let i = 0; i < ids.length; i += 200) {
     const part = ids.slice(i, i + 200);
-    const r = await db.nexus.query(`SELECT id, workflow_id, channel::text AS channel, current_step, plan_id, created_at, expires_at, updated_at,
+    const r = await nxQuery(() => `SELECT id, workflow_id, channel::text AS channel, current_step, plan_id, ${ptCols()}, created_at, expires_at, updated_at,
         context->'customer' AS customer, context->'customerLocation' AS loc, context->>'referralCode' AS ref,
         coalesce(context->>'provider', context->'customer'->'address'->>'provider') AS provider, context->'invoice'->>'status' AS invoice,
         context->'nafath'->'customer'->>'status' AS nafath, context->>'leadId' AS lead_id, context->'order'->>'orderNbr' AS order_nbr
@@ -97,7 +115,10 @@ async function openLeadOf(identHash, mobileHash) {
   return r.rowCount ? r.rows[0].id : null;
 }
 async function insertLead(L) {
-  const cols = ['source', 'source_ref', 'product', 'workflow', 'plan_id', 'plan_label', 'channel', 'dealer', 'region', 'city', 'step', 'step_label', 'reason', 'reason_class',
+  /* the type of line and the plan type are worked out here when the caller did not (imports, DashPro) — alpha.168 */
+  if (!L.svc_type) L.svc_type = S.svcType(L.workflow, L.plan_id, L.plan_label, L.product);
+  if (L.plan_type === undefined) { const t = S.planTypeOf(null, L.plan_id, L.plan_label); L.plan_type = t.v; L.facts = { ...(L.facts || {}), pt: t.src || 'none' }; }
+  const cols = ['source', 'source_ref', 'product', 'workflow', 'plan_id', 'plan_label', 'svc_type', 'plan_type', 'channel', 'dealer', 'region', 'city', 'step', 'step_label', 'reason', 'reason_class',
     'customer_mask', 'mobile_mask', 'nid_mask', 'nid_kind', 'ident_hash', 'mobile_hash', 'pii_enc', 'has_mobile', 'relation', 'facts', 'occurred_at', 'stopped_at', 'batch_id', 'status', 'assignee', 'assigned_at', 'assigned_by'];
   const vals = cols.map(c => (c === 'relation' || c === 'facts') ? JSON.stringify(L[c] || {}) : (L[c] === undefined ? null : L[c]));
   if (vals[cols.indexOf('status')] == null) vals[cols.indexOf('status')] = 'new';
@@ -213,11 +234,12 @@ async function fromReadModel(desk, st, stats) {
       continue;
     }
     if (now - Date.parse(a.started_at) > leadAge) { await skip('too_old'); continue; }
-    const L = { source, source_ref: a.id, product, workflow: wf, plan_id: planId, plan_label: S.planLabel(planId, a.plan, product), channel: source,
+    const label = S.planLabel(planId, a.plan, product), pt = S.planTypeOf(x && x.plan_type, planId, label);
+    const L = { source, source_ref: a.id, product, workflow: wf, plan_id: planId, plan_label: label, svc_type: S.svcType(wf, planId, label, product), plan_type: pt.v, channel: source,
       dealer: source === 'sda' ? (a.dealer_code || a.staff_code || null) : referral || null, region: a.region || null, city: (cust.address && cust.address.city) || null,
       step: jr.step, step_label: stepLabel(jr.step, wf), reason: why.text, reason_class: why.cls, ...idn,
       facts: { attempts: 1, invoice: (x && x.invoice) || null, nafath: (x && x.nafath) || a.nafath_outcome || null, provider: (x && x.provider) || null, error: a.last_error_category || null,
-        journey: a.id, workflow: wf, expired_at: iso(x && x.expires_at), staff: a.staff_code || null },
+        journey: a.id, workflow: wf, expired_at: iso(x && x.expires_at), staff: a.staff_code || null, pt: x ? 'nexus' : (pt.src || 'none'), period: (x && x.period) ? String(x.period).slice(0, 4) : null },
       occurred_at: a.started_at, stopped_at: (x && x.expires_at) || null };
     delete L.has_mobile; L.has_mobile = true;
     const id = await insertLead(L);
@@ -245,14 +267,14 @@ async function fromPromoterLeads(desk, st, stats) {
   const stale = Math.max(1, S.n(desk.staleLeadDays) || 3) * 864e5, LIMIT = 3000;
   /* nexus `leads` (prod, 9 Oct 2026): id, customer_id, staff_id, dealer_code, status (NEW · INPROGRESS · REJECTED · COMPLETED), "leadWorkflowId",
    * created_at, updated_at, rejected_by, reason — about 53 000 rows, nearly all NEW (a promoter's capture nobody updates) */
-  const SEL = `SELECT l.id, l.customer_id, l.dealer_code, l.status::text AS status, l.reason, l."leadWorkflowId" AS lead_workflow_id, l.created_at, l.updated_at,
-        w.plan_id, w.workflow_id, w.context->'customer' AS customer
+  const SEL = () => `SELECT l.id, l.customer_id, l.dealer_code, l.status::text AS status, l.reason, l."leadWorkflowId" AS lead_workflow_id, l.created_at, l.updated_at,
+        w.plan_id, ${ptCols('w.')}, w.workflow_id, w.context->'customer' AS customer
       FROM leads l LEFT JOIN workflow_states w ON w.id = l."leadWorkflowId"`;
   const notReadable = e => { if (/does not exist|permission denied/i.test(e.message)) { stats.notes.push('nexus leads table not readable: ' + e.message.slice(0, 80)); return true; } return false; };
   /* 1. what changed since the last pass: rejected by the dealer (a lead) or completed (an order). A pass cut short continues at its last row. */
   let from = st.promoCursor ? (st.promoBehind ? Date.parse(st.promoCursor) : Math.min(Date.parse(st.promoCursor), now - 26 * 3600e3)) : now - look; from = Math.max(from, now - look);
   let rows;
-  try { rows = (await db.nexus.query(`${SEL} WHERE l.updated_at >= $1 AND l.status::text IN ('REJECTED','COMPLETED') ORDER BY l.updated_at LIMIT ${LIMIT}`, [new Date(from)])).rows; }
+  try { rows = (await nxQuery(() => `${SEL()} WHERE l.updated_at >= $1 AND l.status::text IN ('REJECTED','COMPLETED') ORDER BY l.updated_at LIMIT ${LIMIT}`, [new Date(from)])).rows; }
   catch (e) { if (notReadable(e)) return; throw e; }
   const lastUpd = rows.length ? Date.parse(rows[rows.length - 1].updated_at) : null;
   st.promoBehind = rows.length >= LIMIT && !!lastUpd; st.promoCursor = new Date(st.promoBehind ? lastUpd : now).toISOString();
@@ -262,7 +284,7 @@ async function fromPromoterLeads(desk, st, stats) {
     const until = now - stale; let f2 = Math.max(st.staleCursor ? Date.parse(st.staleCursor) : 0, now - leadAge);
     if (f2 < until) {
       let r2 = [];
-      try { r2 = (await db.nexus.query(`${SEL} WHERE l.status::text = 'NEW' AND l.created_at >= $1 AND l.created_at < $2 ORDER BY l.created_at LIMIT 1000`, [new Date(f2), new Date(until)])).rows; }
+      try { r2 = (await nxQuery(() => `${SEL()} WHERE l.status::text = 'NEW' AND l.created_at >= $1 AND l.created_at < $2 ORDER BY l.created_at LIMIT 1000`, [new Date(f2), new Date(until)])).rows; }
       catch (e) { if (!notReadable(e)) stats.errors.push('promoter NEW: ' + e.message.slice(0, 140)); }
       st.staleCursor = new Date(r2.length >= 1000 ? Date.parse(r2[r2.length - 1].created_at) : until).toISOString();
       rows = rows.concat(r2);
@@ -300,9 +322,11 @@ async function fromPromoterLeads(desk, st, stats) {
     const why = S.classify({ kind });
     const open = await openLeadOf(idn.ident_hash, idn.mobile_hash);
     if (open) { await S.event(open, 'system', 'attempt', { source: 'sda_promoter', product, reason: why.text + (l.reason ? ' — ' + String(l.reason).slice(0, 160) : ''), at: iso(l.created_at) }); stats.merged++; continue; }
-    const id = await insertLead({ source: 'sda_promoter', source_ref: ref, product, workflow: 'promoters', plan_id: l.plan_id, plan_label: S.planLabel(l.plan_id, null, product), channel: 'sda',
+    const label = S.planLabel(l.plan_id, null, product), pt = S.planTypeOf(l.plan_type, l.plan_id, label);
+    const id = await insertLead({ source: 'sda_promoter', source_ref: ref, product, workflow: 'promoters', plan_id: l.plan_id, plan_label: label, svc_type: S.svcType(l.workflow_id, l.plan_id, label, product), plan_type: pt.v, channel: 'sda',
       dealer: l.dealer_code || null, step: null, step_label: l.status === 'REJECTED' ? 'Rejected by the dealer' : 'Never picked up', reason: why.text + (l.reason ? ' — ' + String(l.reason).slice(0, 160) : ''),
-      reason_class: why.cls, ...idn, facts: { promoterLead: l.id, leadStatus: l.status, dealerReason: l.reason ? String(l.reason).slice(0, 300) : null, journey: l.lead_workflow_id || null },
+      reason_class: why.cls, ...idn, facts: { promoterLead: l.id, leadStatus: l.status, dealerReason: l.reason ? String(l.reason).slice(0, 300) : null, journey: l.lead_workflow_id || null,
+        pt: l.plan_type ? 'nexus' : (pt.src || 'none'), period: l.period ? String(l.period).slice(0, 4) : null },
       occurred_at: l.created_at, stopped_at: l.updated_at });
     if (id) { stats.created++; stats.promoter = (stats.promoter || 0) + 1; fresh.push({ id, nid, mob, idn, ref }); }
   }
@@ -362,6 +386,39 @@ async function expire(desk, stats) {
   if (r.rowCount) stats.expired = r.rowCount;
 }
 
+/* ------------------------------------------------------------------ backfill (alpha.168): the plan type of each lead from its own journey in
+ * nexus (workflow_states.plan_type — PRE_PAID / POST_PAID — and the contract period), once per lead; the name mask too where the first read
+ * found none. By primary key, 200 at a time, at most 2,000 leads a pass (open ones first). Leads from before alpha.168 carry the catalogue's
+ * plan type until then (fixedLeadsStore.normalize). */
+async function backfill(stats) {
+  if (!db.nexus) return;
+  const r = await C().query(`SELECT id, source, source_ref, facts->>'journey' AS journey, plan_id, plan_label, customer_mask IS NULL AS no_name
+      FROM fixed_leads WHERE source IN ('epurchase','salamhome','sda','qr','sda_promoter') AND coalesce(facts->>'pt','') NOT IN ('nexus','miss')
+      ORDER BY (status = ANY($1)) DESC, id DESC LIMIT 2000`, [S.OPEN]);
+  if (!r.rowCount) return;
+  const refOf = L => L.source === 'sda_promoter' ? L.journey : L.source_ref;
+  const ids = [...new Set(r.rows.map(refOf).filter(Boolean))], nx = new Map();
+  for (let i = 0; i < ids.length; i += 200) {
+    const q = await nxQuery(() => `SELECT id, ${ptCols()}, context->'customer' AS customer FROM workflow_states WHERE id = ANY($1::text[])`, [ids.slice(i, i + 200)]);
+    for (const x of q.rows) nx.set(x.id, x);
+  }
+  const out = [];
+  for (const L of r.rows) {
+    const x = nx.get(refOf(L));
+    if (!x) { out.push({ id: L.id, src: 'miss', gone: true }); continue; }
+    const t = S.planTypeOf(x.plan_type, L.plan_id, L.plan_label);
+    const o = { id: L.id, src: t.src === 'nexus' ? 'nexus' : 'miss', pt: t.src === 'nexus' ? t.v : null, period: x.period ? String(x.period).slice(0, 4) : null };   // miss: nexus cannot tell, the catalogue's answer stays
+    if (L.no_name) { const nm = nameOf(x.customer); if (nm) o.mask = S.maskName(nm); }
+    out.push(o);
+  }
+  for (let i = 0; i < out.length; i += 1000) {
+    await C().query(`UPDATE fixed_leads l SET plan_type = coalesce(x.pt, l.plan_type), customer_mask = coalesce(l.customer_mask, x.mask),
+        facts = l.facts || jsonb_strip_nulls(jsonb_build_object('pt', x.src, 'period', x.period))
+      FROM jsonb_to_recordset($1::jsonb) AS x(id bigint, src text, pt text, period text, mask text) WHERE l.id = x.id`, [JSON.stringify(out.slice(i, i + 1000))]);
+  }
+  stats.backfill = { leads: out.length, typed_by_nexus: out.filter(o => o.src === 'nexus').length, not_in_nexus: out.filter(o => o.gone).length, names: out.filter(o => o.mask).length };
+}
+
 /* ------------------------------------------------------------------ the pass */
 let busy = false, lastRun = null;
 async function harvest({ actor } = {}) {
@@ -381,6 +438,7 @@ async function harvest({ actor } = {}) {
     await fromReadModel(desk, st, stats);
     if (desk.sources.sda_promoter) await fromPromoterLeads(desk, st, stats).catch(e => stats.errors.push('promoter leads: ' + e.message.slice(0, 140)));
     if (desk.sources.dashpro && dashConfigured()) await fromDashpro(desk, st, stats).catch(e => stats.errors.push('dashpro: ' + e.message.slice(0, 140)));
+    await backfill(stats).catch(e => stats.errors.push('backfill: ' + e.message.slice(0, 140)));
     await expire(desk, stats).catch(e => stats.errors.push('expire: ' + e.message.slice(0, 140)));
     /* journeys older than 400 days are no longer needed for history */
     if (Math.random() < 0.05) await C().query(`DELETE FROM fixed_lead_journeys WHERE seen_at < now() - interval '400 days'`).catch(() => {});
@@ -394,6 +452,6 @@ async function harvest({ actor } = {}) {
     return stats;
   } finally { busy = false; lastRun = { at: new Date().toISOString(), stats }; }
 }
-function status() { return { busy, lastRun, readModel: !!db.ops, beta: !!db.opsBeta, nexus: !!db.nexus, mvno: !!db.source, dashpro: dashConfigured() }; }
+function status() { return { busy, lastRun, readModel: !!db.ops, beta: !!db.opsBeta, nexus: !!db.nexus, nexusPlanType: nxPlanCols, mvno: !!db.source, dashpro: dashConfigured() }; }
 
 module.exports = { harvest, status, nexusRows, dashRow, dashConfigured, productOf, sourceOf, insertLead, recordJourney, openLeadOf, resolveWins, mobileRelation, fixedHistory, getState };

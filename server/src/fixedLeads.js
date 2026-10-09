@@ -8,6 +8,9 @@
  *     version, with IP and device; audited leads.accept) — 403 accept_required otherwise;
  *   - lists and details are masked; POST /:id/reveal returns the name and number of ONE lead the member works, read live
  *     from its source, audited (leads.reveal) and capped per hour and per day — over the cap: 429, the console owners mailed;
+ *   - POST /unmask (alpha.168) shows the contacts of the leads on screen for a few minutes: supervisors and super admins on any
+ *     list, members on their own leads when Settings › Protection allows it; never a "do not call" lead; audited pii.unmask with
+ *     the lead ids, one 'unmask' event per lead, capped per person per day (super admins audited, not capped);
  *   - no export endpoint; demo mode never records or replays this namespace (demo.js SKIP); no response cache;
  *   - digits that look like a number or an id are masked in comments and remarks.
  * The harvester (fixedLeadsHarvest.js) and the 4-a-day digest run in this process (start()); Agent 2's coaching runs in
@@ -56,16 +59,49 @@ async function contactOf(L) {
   throw bad(400, 'unknown source');
 }
 
+/* the contacts of many leads at once (unmask): nexus by primary key, the imported batches decrypted, DashPro row by row */
+const nmOf = c => {
+  if (!c || typeof c !== 'object') return { en: null, ar: null };
+  const s = v => typeof v === 'string' ? v.trim() : '';
+  const en = [s(c.englishFirstName), s(c.englishLastName)].filter(Boolean).join(' ') || s(c.englishFullName) || s(c.fullName) || s(c.customerName) || s(c.crName) || s(c.companyName) || null;
+  const ar = [s(c.firstName), s(c.lastName)].filter(Boolean).join(' ') || null;
+  return { en, ar: ar && ar !== en ? ar : null };
+};
+async function contactsOf(leads) {
+  const out = new Map(), put = (L, c, why) => { const mob = c && S.normMobile(c.mobilePhone); out.set(L.id, mob ? { name: nmOf(c), mobile: mob } : { none: c ? 'no mobile number in the source' : why }); };
+  const jr = leads.filter(L => ['epurchase', 'salamhome', 'sda', 'qr'].includes(L.source)), pr = leads.filter(L => L.source === 'sda_promoter');
+  if (!db.nexus) [...jr, ...pr].forEach(L => out.set(L.id, { none: 'nexus is not configured' }));
+  else {
+    if (jr.length) { const r = await db.nexus.query(`SELECT id, context->'customer' AS c FROM workflow_states WHERE id = ANY($1::text[])`, [jr.map(L => String(L.source_ref))]);
+      const m = new Map(r.rows.map(x => [String(x.id), x.c])); jr.forEach(L => put(L, m.get(String(L.source_ref)), 'the journey is no longer in nexus')); }
+    if (pr.length) { const ref = L => String(L.source_ref).replace(/^L/, '');
+      const r = await db.nexus.query(`SELECT l.id, w.context->'customer' AS c FROM leads l LEFT JOIN workflow_states w ON w.id = l."leadWorkflowId" WHERE l.id = ANY($1::text[])`, [pr.map(ref)]);
+      const m = new Map(r.rows.map(x => [String(x.id), x.c])); pr.forEach(L => put(L, m.get(ref(L)), 'the promoter lead has no customer block')); }
+  }
+  for (const L of leads.filter(x => x.source === 'import')) { const p = S.dec(L.pii_enc); const mob = p && S.normMobile(p.mobile); out.set(L.id, mob ? { name: { en: p.name || null, ar: null }, mobile: mob } : { none: 'cannot be decrypted (LEADS_PII_KEY)' }); }
+  for (const L of leads.filter(x => x.source === 'dashpro')) {
+    try { const d = await H.dashRow(String(L.source_ref).replace(/^D/, '')); const mob = d && S.normMobile(d.mobile_number); out.set(L.id, mob ? { name: { en: [d.fname, d.lname].filter(Boolean).join(' ') || null, ar: null }, mobile: mob } : { none: 'the DashPro row is not readable' }); }
+    catch (e) { out.set(L.id, { none: 'DashPro: ' + e.message.slice(0, 60) }); }
+  }
+  return out;
+}
+const unmaskCfg = desk => ({ who: ['off', 'supervisors', 'members'].includes(desk.unmaskWho) ? desk.unmaskWho : 'members',
+  minutes: Math.max(1, Math.min(60, S.n(desk.unmaskMinutes) || 10)), perDay: Math.max(10, Math.min(5000, S.n(desk.unmaskPerDay) || 600)) });
+
 /* ------------------------------------------------------------------ rows */
-const ROW = `l.id, l.source, l.product, l.plan_label, l.channel, l.dealer, l.region, l.city, l.step_label, l.reason, l.reason_class, l.customer_mask, l.mobile_mask, l.nid_kind,
+const ROW = `l.id, l.source, l.product, l.plan_id, l.plan_label, l.svc_type, l.plan_type, l.channel, l.dealer, l.region, l.city, l.step_label, l.reason, l.reason_class, l.customer_mask, l.mobile_mask, l.nid_kind,
   l.relation, l.occurred_at, l.status, l.assignee, l.assigned_at, l.priority, l.score, l.temp, l.next_action_at, l.attempts, l.first_contact_at, l.last_contact_at,
-  l.offer_code, l.offer_months, l.won_at, l.won_auto, l.won_by, l.won_ref, l.lost_reason, l.batch_id, l.remark, l.created_at, l.updated_at, coalesce((l.facts->>'attempts')::int, 1) AS journeys`;
+  l.offer_code, l.offer_months, l.won_at, l.won_auto, l.won_by, l.won_ref, l.lost_reason, l.closed_at, l.batch_id, l.remark, l.created_at, l.updated_at,
+  coalesce((l.facts->>'attempts')::int, 1) AS journeys, l.facts->>'period' AS period`;
 async function getLead(id) { const r = await C().query(`SELECT * FROM fixed_leads WHERE id = $1`, [id]); return r.rows[0] || null; }
 function view(L) {
-  const out = {}; for (const k of ['id', 'source', 'product', 'plan_label', 'channel', 'dealer', 'region', 'city', 'step_label', 'reason', 'reason_class', 'customer_mask', 'mobile_mask', 'nid_kind',
+  const out = {}; for (const k of ['id', 'source', 'product', 'plan_id', 'plan_label', 'svc_type', 'plan_type', 'channel', 'dealer', 'region', 'city', 'step_label', 'reason', 'reason_class', 'customer_mask', 'mobile_mask', 'nid_kind',
     'relation', 'occurred_at', 'status', 'assignee', 'assigned_at', 'priority', 'score', 'temp', 'next_action_at', 'attempts', 'first_contact_at', 'last_contact_at', 'offer_code', 'offer_months',
-    'won_at', 'won_auto', 'won_by', 'won_ref', 'lost_reason', 'batch_id', 'remark', 'created_at', 'updated_at', 'journeys']) out[k] = L[k] === undefined ? null : L[k];
+    'won_at', 'won_auto', 'won_by', 'won_ref', 'lost_reason', 'closed_at', 'batch_id', 'remark', 'created_at', 'updated_at', 'journeys', 'period']) out[k] = L[k] === undefined ? null : L[k];
   if (out.journeys == null) out.journeys = S.n((L.facts || {}).attempts) || 1;
+  if (out.period == null && L.facts && L.facts.period) out.period = L.facts.period;
+  if (/^\d{1,6}$/.test(String(out.plan_label || ''))) out.plan_label = S.planLabel(out.plan_label, null, out.product);
+  if (!out.svc_type) out.svc_type = S.svcType(L.workflow, L.plan_id, L.plan_label, L.product);
   out.facts = L.facts ? { invoice: L.facts.invoice || null, nafath: L.facts.nafath || null, provider: L.facts.provider || null, error: L.facts.error || null, dealerReason: L.facts.dealerReason || null, leadStatus: L.facts.leadStatus || null } : {};
   return out;
 }
@@ -322,6 +358,51 @@ async function digestTick(force) {
   return { sent, slot };
 }
 
+/* ------------------------------------------------------------------ the lists (alpha.168: one WHERE builder for the rows and for the counts
+ * next to each filter — a filter's counts apply every other filter, not its own, so its options stay reachable) */
+function scopeOf(q, mgr, me, skip) {
+  const where = [], p = []; const add = (sql, v) => { p.push(v); where.push(sql.replace(/\$\?/g, '$' + p.length)); };
+  const vw = ['mine', 'pool', 'team', 'closed', 'all'].includes(q.view) ? q.view : 'mine';
+  if ((vw === 'team' || vw === 'all') && !mgr) return { denied: true, vw, where, p };
+  if (vw === 'mine') { add('l.assignee = $?', me); where.push(`l.status = ANY(${OPEN_SQL})`); }
+  else if (vw === 'pool') { where.push('l.assignee IS NULL', `l.status = ANY(${OPEN_SQL})`); }
+  else if (vw === 'team') where.push(`l.status = ANY(${OPEN_SQL})`);
+  else if (vw === 'closed') { where.push(`l.status = ANY(${CLOSED_SQL})`); if (!mgr) { p.push(me); where.push(`(l.assignee = $${p.length} OR l.won_by = $${p.length})`); } }
+  const on = k => skip !== k && q[k] != null && q[k] !== '';
+  if (on('status') && (S.OPEN.includes(q.status) || S.CLOSED.includes(q.status))) add('l.status = $?', q.status);
+  if (on('source') && S.SOURCE_LABEL[q.source]) add('l.source = $?', q.source);
+  if (on('product') && (q.product === 'ftth' || q.product === '5g')) add('l.product = $?', q.product);
+  if (on('svc') && S.SVC_LABEL[q.svc]) add('l.svc_type = $?', q.svc);
+  if (on('ptype')) { if (q.ptype === 'unknown') where.push('l.plan_type IS NULL'); else if (S.PTYPE_LABEL[q.ptype]) add('l.plan_type = $?', q.ptype); }
+  if (on('plan')) add('l.plan_label = $?', String(q.plan).slice(0, 160));
+  if (on('reason') && S.REASON_LABEL[q.reason]) add('l.reason_class = $?', q.reason);
+  if (on('temp')) { if (q.temp === 'none') where.push('l.temp IS NULL'); else if (['hot', 'warm', 'cold'].includes(q.temp)) add('l.temp = $?', q.temp); }
+  if (on('assignee') && mgr) { if (q.assignee === 'none') where.push('l.assignee IS NULL'); else add('l.assignee = $?', String(q.assignee).toLowerCase()); }
+  if (q.batch) add('l.batch_id = $?', Number(q.batch) || 0);
+  if (q.due === '1') where.push(`l.next_action_at <= now() + interval '15 minutes'`);
+  const term = String(q.q || '').trim(); let byNumber = false;
+  if (term) {
+    const m = S.normMobile(term), i = S.normNid(term);
+    if (m || i) { const hs = [S.hash('m', m), S.hash('n', i)].filter(Boolean); p.push(hs); where.push(`(l.mobile_hash = ANY($${p.length}) OR l.ident_hash = ANY($${p.length}))`); byNumber = true; }
+    else if (/^#?\d{1,9}$/.test(term)) add('l.id = $?', Number(term.replace('#', '')));
+    else { p.push('%' + term.toLowerCase() + '%'); where.push(`(lower(l.plan_label) LIKE $${p.length} OR lower(coalesce(l.city,'')) LIKE $${p.length} OR lower(coalesce(l.reason,'')) LIKE $${p.length} OR lower(coalesce(l.dealer,'')) LIKE $${p.length} OR lower(coalesce(l.step_label,'')) LIKE $${p.length})`); }
+  }
+  return { vw, where, p, byNumber };
+}
+/* sortable columns of the table; ?sort=<key>&dir=asc|desc (age: asc = newest first). smart · score · newest · oldest stay. */
+const SORT = { score: 'l.score', product: 'l.product', svc: 'l.svc_type', plan: 'lower(l.plan_label)', ptype: 'l.plan_type', source: 'l.source', reason: 'l.reason_class',
+  age: 'l.occurred_at', status: 'l.status', owner: 'l.assignee', journeys: `coalesce((l.facts->>'attempts')::int, 1)`, calls: 'l.attempts', next: 'l.next_action_at',
+  area: 'lower(coalesce(l.city, l.region))', closed: 'l.closed_at' };
+const FACETS = { product: 'l.product', svc: 'l.svc_type', ptype: `coalesce(l.plan_type, 'unknown')`, plan: 'l.plan_label', source: 'l.source', reason: 'l.reason_class',
+  temp: `coalesce(l.temp, 'none')`, assignee: `coalesce(l.assignee, 'none')` };
+async function facetsOf(q, mgr, me, vw) {
+  const keys = Object.keys(FACETS).filter(k => k !== 'assignee' || (mgr && vw === 'team'));
+  const res = await Promise.all(keys.map(k => { const sc = scopeOf(q, mgr, me, k);
+    return C().query(`SELECT ${FACETS[k]} AS k, count(*)::int AS n FROM fixed_leads l ${sc.where.length ? 'WHERE ' + sc.where.join(' AND ') : ''} GROUP BY 1 ORDER BY 2 DESC LIMIT ${k === 'plan' ? 40 : 30}`, sc.p)
+      .then(r => r.rows.filter(x => x.k != null)).catch(() => []); }));
+  return Object.fromEntries(keys.map((k, i) => [k, res[i]]));
+}
+
 /* ------------------------------------------------------------------ routes */
 function mount(app, deps = {}) {
   const audit = deps.audit || (async () => {});
@@ -353,47 +434,33 @@ function mount(app, deps = {}) {
   app.get(`${B}/meta`, gate, accepted, wrap(async (q, req) => {
     const desk = await S.getDesk(); const mgr = canManage(req, desk); const people = await S.members();
     return { offers: desk.offers, rules: S.OFFER_RULES, offerSource: S.OFFER_SOURCE, statuses: S.STATUS_LABEL, results: Object.fromEntries(Object.entries(S.RESULTS).map(([k, v]) => [k, v.label])),
-      lostReasons: S.LOST_REASONS, reasons: S.REASON_LABEL, sources: S.SOURCE_LABEL, targets: desk.targets, points: desk.points, sla: desk.slaFirstContactMin,
+      lostReasons: S.LOST_REASONS, reasons: S.REASON_LABEL, sources: S.SOURCE_LABEL, sourcesShort: S.SOURCE_SHORT, svc: S.SVC_LABEL, ptypes: S.PTYPE_LABEL,
+      targets: desk.targets, points: desk.points, sla: desk.slaFirstContactMin,
       reveal: { perHour: desk.revealPerHour, perDay: desk.revealPerDay },
+      unmask: (() => { const U = unmaskCfg(desk); return { ...U, can: !req.viewAs && (mgr || U.who === 'members') && U.who !== 'off', scope: mgr ? 'any' : 'own', capped: !(isRealSuper(req) && !req.viewAs) }; })(),
       me: { email: meOf(req), manager: mgr, super: isRealSuper(req) && !req.viewAs, viewAs: req.viewAs ? req.viewAs.email : null },
       members: people.map(p => ({ email: p.email, name: p.name, supervisor: p.supervisor })), piiReady: S.piiReady(), harvest: H.status() };
   }));
   app.get(`${B}/list`, gate, accepted, wrap(async (q, req) => {
     const desk = await S.getDesk(); const mgr = canManage(req, desk); const me = meOf(req);
-    const vw = ['mine', 'pool', 'team', 'closed', 'all'].includes(q.view) ? q.view : 'mine';
-    if ((vw === 'team' || vw === 'all') && !mgr) throw bad(403, 'Supervisors only');
-    const where = [], p = []; const add = (sql, v) => { p.push(v); where.push(sql.replace(/\$\?/g, '$' + p.length)); };
-    if (vw === 'mine') { add('l.assignee = $?', me); where.push(`l.status = ANY(${OPEN_SQL})`); }
-    else if (vw === 'pool') { where.push('l.assignee IS NULL', `l.status = ANY(${OPEN_SQL})`); }
-    else if (vw === 'team') where.push(`l.status = ANY(${OPEN_SQL})`);
-    else if (vw === 'closed') { where.push(`l.status = ANY(${CLOSED_SQL})`); if (!mgr) { p.push(me); where.push(`(l.assignee = $${p.length} OR l.won_by = $${p.length})`); } }
-    if (q.status && (S.OPEN.includes(q.status) || S.CLOSED.includes(q.status))) add('l.status = $?', q.status);
-    if (q.source && S.SOURCE_LABEL[q.source]) add('l.source = $?', q.source);
-    if (q.product === 'ftth' || q.product === '5g') add('l.product = $?', q.product);
-    if (q.reason && S.REASON_LABEL[q.reason]) add('l.reason_class = $?', q.reason);
-    if (q.temp && ['hot', 'warm', 'cold'].includes(q.temp)) add('l.temp = $?', q.temp);
-    if (q.assignee && mgr) { if (q.assignee === 'none') where.push('l.assignee IS NULL'); else add('l.assignee = $?', String(q.assignee).toLowerCase()); }
-    if (q.batch) add('l.batch_id = $?', Number(q.batch) || 0);
-    if (q.due === '1') where.push(`l.next_action_at <= now() + interval '15 minutes'`);
-    const term = String(q.q || '').trim();
-    if (term) {
-      const m = S.normMobile(term), i = S.normNid(term);
-      if (m || i) { const hs = [S.hash('m', m), S.hash('n', i)].filter(Boolean); p.push(hs); where.push(`(l.mobile_hash = ANY($${p.length}) OR l.ident_hash = ANY($${p.length}))`); audit(req, 'leads.search', 'by number', {}); }
-      else if (/^#?\d{1,9}$/.test(term)) add('l.id = $?', Number(term.replace('#', '')));
-      else { p.push('%' + term.toLowerCase() + '%'); where.push(`(lower(l.plan_label) LIKE $${p.length} OR lower(coalesce(l.city,'')) LIKE $${p.length} OR lower(coalesce(l.reason,'')) LIKE $${p.length} OR lower(coalesce(l.dealer,'')) LIKE $${p.length})`); }
-    }
-    const order = q.sort === 'newest' ? 'l.occurred_at DESC' : q.sort === 'oldest' ? 'l.occurred_at ASC' : q.sort === 'score' ? 'coalesce(l.score,0) DESC, l.occurred_at DESC'
+    const sc = scopeOf(q, mgr, me);
+    if (sc.denied) throw bad(403, 'Supervisors only');
+    if (sc.byNumber) audit(req, 'leads.search', 'by number', {});
+    const dir = q.dir === 'asc' ? 'ASC' : 'DESC';
+    const order = SORT[q.sort] ? `${SORT[q.sort]} ${q.sort === 'age' ? (dir === 'ASC' ? 'DESC' : 'ASC') : dir} NULLS LAST, l.occurred_at DESC, l.id DESC`
+      : q.sort === 'newest' ? 'l.occurred_at DESC' : q.sort === 'oldest' ? 'l.occurred_at ASC' : q.sort === 'score' ? 'coalesce(l.score,0) DESC, l.occurred_at DESC'
       : `CASE WHEN l.next_action_at <= now() + interval '15 minutes' THEN 0 ELSE 1 END, CASE WHEN l.next_action_at <= now() + interval '15 minutes' THEN l.next_action_at END ASC, l.priority DESC, coalesce(l.score,0) DESC, l.occurred_at DESC`;
     const limit = Math.min(200, Math.max(10, Number(q.limit) || 60)), offset = Math.max(0, Number(q.offset) || 0);
-    const W = where.length ? 'WHERE ' + where.join(' AND ') : '';
-    const [rows, total, counts] = await Promise.all([
-      C().query(`SELECT ${ROW} FROM fixed_leads l ${W} ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`, p),
-      C().query(`SELECT count(*)::int AS n FROM fixed_leads l ${W}`, p),
+    const W = sc.where.length ? 'WHERE ' + sc.where.join(' AND ') : '';
+    const [rows, total, counts, facets] = await Promise.all([
+      C().query(`SELECT ${ROW} FROM fixed_leads l ${W} ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`, sc.p),
+      C().query(`SELECT count(*)::int AS n FROM fixed_leads l ${W}`, sc.p),
       C().query(`SELECT count(*) FILTER (WHERE assignee = $1 AND status = ANY(${OPEN_SQL}))::int AS mine, count(*) FILTER (WHERE assignee IS NULL AND status = ANY(${OPEN_SQL}))::int AS pool,
           count(*) FILTER (WHERE status = ANY(${OPEN_SQL}))::int AS team, count(*) FILTER (WHERE assignee = $1 AND status = ANY(${OPEN_SQL}) AND next_action_at <= now() + interval '15 minutes')::int AS due,
           count(*) FILTER (WHERE status = ANY(${CLOSED_SQL}) AND (assignee = $1 OR won_by = $1 OR $2::boolean))::int AS closed FROM fixed_leads`, [me, mgr]),
+      q.facets === '1' ? facetsOf(q, mgr, me, sc.vw) : null,
     ]);
-    return { view: vw, rows: rows.rows.map(view), total: total.rows[0].n, counts: counts.rows[0], limit, offset, manager: mgr };
+    return { view: sc.vw, rows: rows.rows.map(view), total: total.rows[0].n, counts: counts.rows[0], limit, offset, manager: mgr, sort: SORT[q.sort] || ['newest', 'oldest', 'score'].includes(q.sort) ? q.sort : 'smart', dir: dir.toLowerCase(), facets };
   }));
   app.get(`${B}/board`, gate, accepted, wrap(async (q, req) => board(req, await S.getDesk())));
   app.get(`${B}/batches`, gate, accepted, wrap(async (q, req) => {
@@ -437,6 +504,30 @@ function mount(app, deps = {}) {
     await S.event(L.id, String(req.actor).toLowerCase(), 'reveal', { source: L.source }, 0);
     await audit(req, 'leads.reveal', String(L.id), { source: L.source, product: L.product });
     return { lead: L.id, name: c.name, mobile: S.dial(c.mobile), tel: '+966' + c.mobile, seconds: 90, used: { hour: cap.hour + 1, day: cap.day + 1, perHour: cap.ph, perDay: cap.pd } };
+  }));
+  app.post(`${B}/unmask`, gate, accepted, wrap(async (q, req) => {
+    const desk = await S.getDesk(); const mgr = canManage(req, desk), me = meOf(req), sup = isRealSuper(req) && !req.viewAs; const U = unmaskCfg(desk); const b = req.body || {};
+    if (req.viewAs) throw bad(403, 'Not while viewing the console as someone else.');
+    if (U.who === 'off' || (!mgr && U.who !== 'members')) throw bad(403, U.who === 'off' ? 'Unmasking is switched off (Leads › Settings › Protection).' : 'Only supervisors unmask a list — reveal one lead at a time from its row.');
+    const ids = [...new Set((Array.isArray(b.ids) ? b.ids : []).map(Number).filter(x => Number.isInteger(x) && x > 0))].slice(0, 200);
+    if (!ids.length) throw bad(400, 'no lead to unmask');
+    const r = await C().query(`SELECT id, source, source_ref, status, assignee, won_by, pii_enc, has_mobile FROM fixed_leads WHERE id = ANY($1)`, [ids]);
+    const ok = r.rows.filter(L => L.status !== 'dnc' && L.has_mobile !== false && (mgr || L.assignee === me || L.won_by === me));
+    if (!ok.length) { audit(req, 'leads.unmask_refused', null, { asked: ids.length }); throw bad(403, 'You can unmask only your own leads — take a lead from the pool first. A customer who asked not to be called is never shown.'); }
+    const used = S.n((await C().query(`SELECT count(*)::int AS n FROM fixed_lead_events WHERE actor = $1 AND kind = 'unmask' AND at >= $2`, [me, S.dayStart()])).rows[0].n);
+    if (!sup && used + ok.length > U.perDay) {
+      audit(req, 'leads.unmask_blocked', null, { used, asked: ok.length, cap: U.perDay });
+      const k = `u|${req.actor}|${S.ksaDay()}`; if (!capMailed.has(k)) { capMailed.set(k, 1); mailOwners(`[Salam Ops · Fixed] Leads — unmask limit reached by ${req.actor}`, `<p style="font-family:Arial,sans-serif">${require('./notify').esc(req.actor)} reached the daily unmask limit (${used} leads unmasked today, ${ok.length} more asked; limit ${U.perDay}). Further unmasking is refused until tomorrow. Review in Audit log › pii.unmask.</p>`); }
+      throw bad(429, `Unmask limit reached — ${used} of ${U.perDay} leads today. The console owners were notified.`);
+    }
+    const c = await contactsOf(ok); const contacts = {}, shown = [];
+    for (const L of ok) { const x = c.get(L.id) || { none: 'not readable' }; if (x.mobile) { contacts[L.id] = { name: x.name, mobile: S.dial(x.mobile), tel: '+966' + x.mobile }; shown.push(L.id); } else contacts[L.id] = { none: x.none }; }
+    const view = ['mine', 'pool', 'team', 'closed'].includes(b.view) ? b.view : null;
+    if (shown.length) {
+      await C().query(`INSERT INTO fixed_lead_events (lead_id, actor, kind, detail) SELECT x, $2, 'unmask', $3::jsonb FROM unnest($1::bigint[]) AS x`, [shown, me, JSON.stringify({ view, minutes: U.minutes })]).catch(() => {});
+      await audit(req, 'pii.unmask', 'leads', { count: shown.length, view, minutes: U.minutes, ids: shown });
+    }
+    return { contacts, refused: ids.length - ok.length, minutes: U.minutes, until: new Date(Date.now() + U.minutes * 60e3).toISOString(), used: used + shown.length, perDay: sup ? null : U.perDay };
   }));
   app.post(`${B}/lead/:id/take`, gate, accepted, wrap(async (q, req) => {
     const desk = await S.getDesk(); const me = meOf(req);
@@ -522,6 +613,9 @@ function mount(app, deps = {}) {
     if (sup) {
       if (Array.isArray(b.supervisors)) patch.supervisors = [...new Set(b.supervisors.map(e => String(e).toLowerCase().trim()).filter(e => /@/.test(e)))].slice(0, 30);
       for (const k of ['revealPerHour', 'revealPerDay']) if (b[k] != null && Number.isFinite(Number(b[k]))) patch[k] = Math.max(1, Math.min(2000, Number(b[k])));
+      if (['off', 'supervisors', 'members'].includes(b.unmaskWho)) patch.unmaskWho = b.unmaskWho;
+      if (b.unmaskMinutes != null && Number.isFinite(Number(b.unmaskMinutes))) patch.unmaskMinutes = Math.max(1, Math.min(60, Number(b.unmaskMinutes)));
+      if (b.unmaskPerDay != null && Number.isFinite(Number(b.unmaskPerDay))) patch.unmaskPerDay = Math.max(10, Math.min(5000, Number(b.unmaskPerDay)));
       if (b.terms && Array.isArray(b.terms.points)) patch.terms = { version: S.ksaDay() + '-' + Date.now().toString(36).slice(-4), title: String(b.terms.title || S.TERMS_DEFAULT.title).slice(0, 120), points: b.terms.points.map(x => String(x).slice(0, 400)).filter(Boolean).slice(0, 10) };
       if (b.resetTerms) patch.terms = null;
       if (Array.isArray(b.offers)) patch.offers = b.offers.filter(o => o && o.code && o.label).map(o => ({ code: String(o.code).slice(0, 20), product: ['ftth', '5g', 'any'].includes(o.product) ? o.product : 'ftth', step: Number(o.step) || 2,
