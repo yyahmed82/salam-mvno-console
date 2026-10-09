@@ -13,9 +13,16 @@ const FIXED_ENABLED = /^(1|true|yes)$/i.test(String(process.env.FIXED_ENABLED ||
  * 'maps' / 'b2c' are translated (FIXED_LEGACY). */
 const FIXED_VIEWS = FIXED_ENABLED ? ['fixed','fixed_epurchase','fixed_salamhome','fixed_maps','fixed_reports','fixed_errors','fixed_alerts','fixed_explore'] : [];
 const FIXED_LEGACY = { maps: 'fixed_maps', b2c: 'fixed_salamhome' };
+/* LEADS (OCU, 9 Oct 2026) — Fixed › Leads is the OCU retention team's confidential workspace: customers who did not finish
+ * a Fixed purchase or rejected the installation, with their contact details on demand. It is NOT in FIXED_VIEWS on
+ * purpose: Admin and Fixed Ops take every Fixed page through `...FIXED_VIEWS`, and the matrix accepts any view for any
+ * role. PINNED_VIEWS below keeps it on exactly two roles — ocu and super_admin — whatever is saved in the matrix. */
+const LEADS_VIEWS = FIXED_ENABLED ? ['fixed_leads'] : [];
+const PINNED_VIEWS = { fixed_leads: ['ocu', 'super_admin'] };
 // which view each Fixed hub tab needs (shared with the frontend via /api/me → fixedTabViews)
 const FIXED_TAB_VIEW = { overview:'fixed', epurchase:'fixed_epurchase', salamhome:'fixed_salamhome', map:'fixed_maps', qr:'fixed_maps',
-  dash:'fixed_reports', report:'fixed_reports', errors:'fixed_errors', alerts:'fixed_alerts', playbook:'fixed_explore', diagrams:'fixed_explore', alertjourney:'fixed_explore' };
+  dash:'fixed_reports', report:'fixed_reports', errors:'fixed_errors', alerts:'fixed_alerts', playbook:'fixed_explore', diagrams:'fixed_explore', alertjourney:'fixed_explore',
+  ...(FIXED_ENABLED ? { leads:'fixed_leads' } : {}) };
 /* CROSS-BUSINESS PAGES (19 Sep 2026) — until now these were gated ad hoc in ops.js with style.display or a
  * realRole === 'super_admin' test, so they appeared in no matrix column and nobody could review who reached them:
  *   exec        Executive Dashboard (#exec)              — rode on 'dashboard', i.e. everyone
@@ -28,7 +35,7 @@ const FIXED_TAB_VIEW = { overview:'fixed', epurchase:'fixed_epurchase', salamhom
  * The remaining gear entries (Notifications, Navigation & tabs, Demo, Yusr, Agents) stay under 'settings':
  * they are settings panels, not destinations of their own. */
 const CROSS_VIEWS = ['exec','vp','opsreports','noc','salesops','governance','cst','audit','tickets'];   // vp (8 Oct 2026): the VP Operations cockpit
-const ALL_VIEWS = ['dashboard','monitoring','dms','alerts','errors','analytics','workbench', ...FIXED_VIEWS,
+const ALL_VIEWS = ['dashboard','monitoring','dms','alerts','errors','analytics','workbench', ...FIXED_VIEWS, ...LEADS_VIEWS,
   'exec','vp','opsreports','noc','salesops','governance','cst','audit','tickets', 'explore','settings','users'];   // salesops (5 Oct 2026): the Sales Operations wall — four sales channels, full screen   // grouped: mobile · fixed · cross · shared
 /* ---- Business scope (6 Sep 2026) ----------------------------------------------------------------
  * Every console user belongs to a BUSINESS: 'mobile' (MVNO team), 'fixed' (Fixed team) or 'both'. It is a
@@ -44,7 +51,7 @@ const MOBILE_VIEWS = ['monitoring', 'dms', 'workbench', 'alerts', 'errors', 'ana
 const normBusiness = b => (BUSINESSES.includes(String(b || '').toLowerCase()) ? String(b).toLowerCase() : 'both');
 function scopeViews(views, business) {
   const b = normBusiness(business);
-  if (b === 'mobile') return views.filter(v => !FIXED_VIEWS.includes(v));
+  if (b === 'mobile') return views.filter(v => !FIXED_VIEWS.includes(v) && !LEADS_VIEWS.includes(v));
   if (b === 'fixed') return views.filter(v => !MOBILE_VIEWS.includes(v));
   return views;
 }
@@ -64,11 +71,12 @@ const VIEW_LABELS = { dashboard:'Dashboard', monitoring:'Monitoring', dms:'DMS',
   errors:'Troubleshoot', analytics:'Reports', explore:'Explore & Customer 360', settings:'Settings', users:'User management',
   fixed:'Fixed · Overview', fixed_epurchase:'Fixed · Epurchase', fixed_salamhome:'Fixed · Salam Home app', fixed_maps:'Fixed · SDA map & QR codes',
   fixed_reports:'Fixed · Reports', fixed_errors:'Fixed · Troubleshoot', fixed_alerts:'Fixed · Alerts', fixed_explore:'Fixed · Playbook & Diagrams',
+  fixed_leads:'Fixed · Leads (OCU · confidential)',
   exec:'Executive Dashboard', vp:'VP Operations cockpit', opsreports:'Operations reports (weekly · ITSM)', noc:'NOC wall', salesops:'Sales Operations wall', governance:'IT Governance (SLA · vendors · SLO)', cst:'CST (Arqami · escalations)',
   audit:'Audit log', tickets:'Tickets & feedback' };
 /* which nav family each page belongs to — the matrix UI groups by this instead of guessing from the key */
 const VIEW_GROUP = Object.fromEntries(ALL_VIEWS.map(v => [v,
-  FIXED_VIEWS.includes(v) ? 'fixed' : CROSS_VIEWS.includes(v) ? 'cross' : ['explore','settings','users'].includes(v) ? 'shared' : 'mobile']));
+  (FIXED_VIEWS.includes(v) || LEADS_VIEWS.includes(v)) ? 'fixed' : CROSS_VIEWS.includes(v) ? 'cross' : ['explore','settings','users'].includes(v) ? 'shared' : 'mobile']));
 const CAP_LABELS = { editRules:'Edit rules', manageSync:'Manage sync', manageUsers:'Manage users & roles',
   adminTools:'Admin tools', unmaskPII:'Unmask PII', export:'Export data', ackErrors:'Ack incidents',
   useYusr:'Use Yusr AI', customizeDashboard:'Customize dashboards', sematiClear:'Semati clearance', postNotices:'Post wall notices' };
@@ -119,6 +127,15 @@ const ROLES = {
     views: ['dashboard','fixed','fixed_epurchase','fixed_salamhome','fixed_reports','fixed_errors','explore'],
     caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:true, ackErrors:false, useYusr:true, customizeDashboard:true, sematiClear:false },
     note: 'Salam Home app & e-purchase owners — the two channel dashboards, Reports, Errors and Customer 360. PII masked.'
+  },
+  /* OCU (9 Oct 2026) — the OCU retention sales team. One page: Fixed › Leads (fixed_leads), pinned to this role and Super
+   * Admin. The customer's mobile number is revealed one lead at a time, by the member working it, audited and capped — that
+   * is the Leads page's own rule, not the unmaskPII capability, which stays off. Set the user's business to Fixed. */
+  ocu: {
+    label: 'OCU · Leads', team: 'OCU', rank: 6, home: 'fixed_leads',
+    views: ['fixed_leads'],
+    caps: { editRules:false, manageSync:false, manageUsers:false, adminTools:false, unmaskPII:false, export:false, ackErrors:false, useYusr:false, customizeDashboard:false, sematiClear:false, postNotices:false },
+    note: 'OCU retention sales — Fixed › Leads only: the team queue, batches, call outcomes, offers and Agent 2 coaching. Confidential: a daily accept-to-view gate, numbers revealed one lead at a time (audited, capped), no export.'
   } } : {}),
   /* SALES OPERATIONS WALL (5 Oct 2026): the shared TV sign-in. One view, nothing else — a screen in a sales office must not
    * open dashboards, dealers or customers if someone picks up its keyboard. Sessions renew while the wall refreshes, so a
@@ -371,6 +388,8 @@ function mergeOverrides(overrides, custom) {
   // super_admin can never be reduced — always sees everything and keeps every capability
   out.super_admin.views = [...ALL_VIEWS];
   for (const c of CAPS) out.super_admin.caps[c] = true;
+  /* pinned views (Leads, 9 Oct 2026): only the roles named here may hold them, whatever the matrix saved */
+  for (const [v, keep] of Object.entries(PINNED_VIEWS)) for (const [name, r] of Object.entries(out)) if (!keep.includes(name)) r.views = r.views.filter(x => x !== v);
   return out;
 }
 
@@ -409,4 +428,4 @@ function maskDeep(obj, allowUnmask) {
   return walk(obj);
 }
 
-module.exports = { ROLES, LEGACY_VIEW, CROSS_VIEWS, VIEW_GROUP, CAP_NOTES, FIXED_LEGACY, FIXED_TAB_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS, FIXED_ENABLED, FIXED_VIEWS, BUSINESSES, BUSINESS_LABEL, MOBILE_VIEWS, normBusiness, scopeViews };
+module.exports = { LEADS_VIEWS, PINNED_VIEWS, ROLES, LEGACY_VIEW, CROSS_VIEWS, VIEW_GROUP, CAP_NOTES, FIXED_LEGACY, FIXED_TAB_VIEW, role, can, canView, effective, mergeOverrides, maskDeep, maskValue, PII_FIELDS, ALL_VIEWS, CAPS, VIEW_LABELS, CAP_LABELS, FIXED_ENABLED, FIXED_VIEWS, BUSINESSES, BUSINESS_LABEL, MOBILE_VIEWS, normBusiness, scopeViews };

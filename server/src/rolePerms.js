@@ -121,7 +121,8 @@ async function matrix() {
         caps: Object.fromEntries(roles.CAPS.map(c => [c, !!r.caps[c]]))
       };
     }),
-    overridden: Object.keys(overrides())
+    overridden: Object.keys(overrides()),
+    pinned: roles.PINNED_VIEWS || {}   // restricted pages (alpha.166): view → the only roles that may hold it
   };
 }
 

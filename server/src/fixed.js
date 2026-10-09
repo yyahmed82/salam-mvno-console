@@ -62,9 +62,10 @@ function mount(app, { requireView, audit } = {}) {
    * Optional: a missing file is simply a page that has not shipped yet. Keep this list in the hub's TAB_ORDER. */
   const deps = { gate, wrap, audit, requireCap: arguments[1] && arguments[1].requireCap, requireView, db, f360, roles };
   // page-level gates (matrix columns): each module answers to its own Fixed view; everything else stays on 'fixed'
-  const VIEW_OF = { fixedMap: 'fixed_maps', fixedErrors: 'fixed_errors', fixedErrorTrend: 'fixed_errors', fixedAlerts: 'fixed_alerts', fixedDash: 'fixed_reports', fixedReport: 'fixed_reports', fixedDocs: 'fixed_explore' };
+  const VIEW_OF = { fixedMap: 'fixed_maps', fixedErrors: 'fixed_errors', fixedErrorTrend: 'fixed_errors', fixedAlerts: 'fixed_alerts', fixedDash: 'fixed_reports', fixedReport: 'fixed_reports', fixedDocs: 'fixed_explore', fixedLeads: 'fixed_leads' };
   const gateFor = v => requireView ? requireView(v) : gate;
-  for (const m of ['fixedMap', 'fixedErrors', 'fixedErrorTrend', 'fixedDash', 'fixedAlerts', 'fixedDocs', 'fixedReport', 'fixedCustomer', 'fixedChannel', 'fixedEpWatch']) {
+  /* fixedLeads (9 Oct 2026, OCU): its own gate inside — the fixed_leads view AND the ocu / super_admin role, then the daily acceptance */
+  for (const m of ['fixedMap', 'fixedErrors', 'fixedErrorTrend', 'fixedDash', 'fixedAlerts', 'fixedDocs', 'fixedReport', 'fixedCustomer', 'fixedChannel', 'fixedEpWatch', 'fixedLeads']) {
     try { const mod = require('./' + m); if (typeof mod.mount === 'function') { mod.mount(app, VIEW_OF[m] ? { ...deps, gate: gateFor(VIEW_OF[m]) } : deps); console.log(`[fixed] mounted ${m}`); } }
     catch (e) { if (e.code === 'MODULE_NOT_FOUND' && String(e.message).includes(m)) continue; console.error(`[fixed] ${m} failed to mount:`, e.message); }
   }

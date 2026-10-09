@@ -271,6 +271,8 @@ async function main() {
   /* the refund desk (26 Sep 2026): same process, same model budget — reviews the refund candidates, mails the team,
    * builds the daily approval batch and its incident, reconciles with the proxycms register */
   try { const desk = require('./refundDesk'); await desk.ensureSchema(); desk.start(); } catch (e) { log('refund desk', e.message); }
+  /* the OCU leads coach (9 Oct 2026, Fixed › Leads): scores every open lead and writes the offer path, the opener and the objections — unified console only */
+  try { if (require('./roles').FIXED_ENABLED) { await require('./fixedLeadsStore').ensure(); require('./fixedLeadsCoach').start(); } } catch (e) { log('leads coach', e.message); }
   /* rule → team proposals: once shortly after boot, then every 6 h (only rules that changed or were never mapped) */
   setTimeout(() => mapRules().catch(e => log('map', e.message)), 60000); setInterval(() => mapRules().catch(e => log('map', e.message)), 6 * 3600e3);
 }

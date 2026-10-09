@@ -13,6 +13,8 @@
     /* the two pages the Fixed Operations agent used to generate as static HTML — live since 12 Sep 2026 */
     ["exec","Executive","north-star KPIs · SLOs · top issues"],["ops","Operations","health · trends · pipeline · alerts"],["epurchase","Epurchase","web / QR channel · journeys · payments · findings"],["salamhome","Salam Home","app channel · buy + manage-line · payments · findings"],["epwatch","Payments watch","5G e-purchase · stock locks · card holds · webhooks"],["map","SDA map","dealers · pins · trace"],["qr","QR codes","referral orders · consent"],
     ["dash","Reports","KPIs · trends · dealers & QR"],["errors","Troubleshoot","error control board · live failures"],["alerts","Alerts","rules · history"],
+    /* OCU · restricted (alpha.166): customers who did not finish an FTTH / 5G purchase — own view fixed_leads, OCU + Super Admin only */
+    ["leads","Leads","OCU retention desk · restricted"],
     ["playbook","Playbook","SLA / OLA / action plans"],["diagrams","Diagrams","payments · journeys"],["alertjourney","Alert journey","trigger → history · clocks · credits"],
     /* own pages since 11 Sep 2026 — they used to be cards inside Diagrams */
     ["bsstopo","Topology","digital / BSS HLD — channels → 3Scale/OSB → Oracle BSS"],["journeys","Journeys","every dealer & QR journey, step by step"],
@@ -164,8 +166,8 @@
     host.innerHTML=`<div class="fx-hub" style="padding:0 var(--fx-pad,18px) 40px;max-width:1440px;margin:0 auto">
       <div class="fx-hubbar" style="position:sticky;top:var(--hdr);z-index:26;background:var(--card);border-bottom:1px solid var(--line);box-shadow:0 4px 14px rgba(15,23,42,.05);margin:0 calc(-1*var(--fx-pad,18px)) 14px;padding:10px var(--fx-pad,18px);display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <div><h2 style="margin:0;font-size:16px"><span style="color:var(--muted);font-weight:600">Fixed ›</span> ${esc(cur[1])}</h2>
-            <div class="rl" style="font-size:10.5px;color:var(--muted)">${esc(cur[2])} · FTTH · 5G home · e-purchase / QR · Salam Home app — Operations Console data, stage 1 · other pages: <b>Fixed ▾</b> menu</div></div>
+          <div><h2 style="margin:0;font-size:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span><span style="color:var(--muted);font-weight:600">Fixed ›</span> ${esc(cur[1])}</span>${curTab==="leads"?`<span title="Restricted section — every view, reveal and change is recorded" style="display:inline-flex;align-items:center;gap:6px;font-size:9.5px;font-weight:800;letter-spacing:.12em;color:#fff;background:linear-gradient(135deg,#b91c1c,#7f1d1d);border-radius:999px;padding:4px 10px 3px 8px"><i style="width:7px;height:7px;border-radius:50%;background:#fca5a5;box-shadow:0 0 0 3px rgba(252,165,165,.25)"></i>RESTRICTED · RECORDED</span>`:""}</h2>
+            <div class="rl" style="font-size:10.5px;color:var(--muted)">${curTab==="leads"?`${esc(cur[2])} · FTTH · 5G · every channel — <b style="color:#b91c1c">confidential customer data: every view, reveal and change is audited</b>`:`${esc(cur[2])} · FTTH · 5G home · e-purchase / QR · Salam Home app — Operations Console data, stage 1 · other pages: <b>Fixed ▾</b> menu`}</div></div>
         </div>
       </div>
       <div id="fxPage"></div>

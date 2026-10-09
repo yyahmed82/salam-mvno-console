@@ -41,7 +41,7 @@
       <div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px"><div class="ft" style="margin:0 0 2px">model server · ${esc(m.kind||"?")}${m.error?` · <span style="color:#dc2626">${esc(m.error)}</span>`:""}</div>${models||`<div class="ft">no model resident (loads on the next call — first answer slower)</div>`}</div>
       <div class="ft">7 d: ${n(u.calls)} calls · ${n(u.tokens)} tokens · avg ${u.avg_ms?Math.round(u.avg_ms/1000)+" s":"—"} · up ${esc(up(h.uptimeSec))}</div></div>`;
   }
-  const COLOR={ log:"#2563eb", incident:"#0e9f5a", map:"#7c3aed", refund:"#dc2626", yusr:"#d97706" };
+  const COLOR={ log:"#2563eb", incident:"#0e9f5a", map:"#7c3aed", refund:"#dc2626", leads:"#0891b2", yusr:"#d97706" };   // leads = Agent 2 · OCU coach (alpha.166)
   const STATE={ working:{label:"working",fg:"#0e9f5a"}, idle:{label:"idle · waiting for the next tick",fg:"#2563eb"}, stale:{label:"stale — no run when one was due",fg:"#d97706"}, error:{label:"last run failed",fg:"#dc2626"}, disabled:{label:"disabled",fg:"#64748b"}, never:{label:"never ran yet",fg:"#64748b"} };
   const S={ data:null, timer:null, tick:null, sel:null, play:{steps:[],i:-1,auto:null,speed:1}, open:false, tab:"live", pin:null, plan:{target:"onprem",model:"14b",conc:null} };
 
@@ -88,6 +88,12 @@
   @keyframes amFlow{0%{offset-distance:0%;opacity:0}10%{opacity:1}90%{opacity:1}100%{offset-distance:100%;opacity:0}}
   /* ---- detail cards ---- */
   #view-agentsmission .am-cards{display:grid;grid-template-columns:1fr;gap:14px}
+  #view-agentsmission .am-ld{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:4px 0 8px} #view-agentsmission .am-ld>div{border:1px solid var(--line);border-radius:10px;padding:7px 9px;background:var(--card2,#f8fafc)}
+  #view-agentsmission .am-ld b{display:block;font-size:18px;line-height:1.1;color:var(--ink)} #view-agentsmission .am-ld span{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  #view-agentsmission .am-ld .hot b{color:#dc2626} #view-agentsmission .am-ld .won b{color:var(--green,#0e9f5a)}
+  #view-agentsmission .am-ldo small{display:block;font-size:10.5px;color:var(--muted);margin-bottom:3px} #view-agentsmission .am-ldb{display:grid;grid-template-columns:96px 1fr 34px;gap:8px;align-items:center;font-size:11.5px;margin:3px 0}
+  #view-agentsmission .am-ldb i{display:block;height:7px;border-radius:4px;background:#0891b2;min-width:3px} #view-agentsmission .am-ldb b{text-align:right}
+  @media (max-width:520px){#view-agentsmission .am-ld{grid-template-columns:1fr 1fr}}
   #view-agentsmission .am-card{background:var(--card,#fff);border:1px solid var(--line);border-radius:16px;padding:16px 18px;box-shadow:0 1px 3px rgba(2,6,23,.05);border-top:4px solid var(--ac);scroll-margin-top:90px}
   #view-agentsmission .am-card.sel{box-shadow:0 0 0 3px rgba(14,159,90,.18)}
   #view-agentsmission .am-ch{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px} #view-agentsmission .am-ch h2{margin:0;font-size:16px;font-weight:800;letter-spacing:-.2px} #view-agentsmission .am-ch .tag{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--ac);color:#fff}
@@ -188,7 +194,7 @@
     const st=document.createElement("style"); st.textContent=CSS; document.head.appendChild(st);
     const main=document.querySelector("main")||document.body;
     v=document.createElement("section"); v.id="view-agentsmission"; v.className="view";
-    v.innerHTML=`<div class="page-head"><div class="am-head"><div><h1 style="margin:0">AI agents · Mission control</h1><div class="sub">Four autonomous services on the on-prem model — what each one <b>did</b>, is <b>doing now</b>, and <b>should do next</b>. Nothing leaves the network; nothing is applied without a human.</div></div>
+    v.innerHTML=`<div class="page-head"><div class="am-head"><div><h1 style="margin:0">AI agents · Mission control</h1><div class="sub"><span id="amCount">Five</span> autonomous services on the on-prem model — what each one <b>did</b>, is <b>doing now</b>, and <b>should do next</b>. Nothing leaves the network; nothing is applied without a human.</div></div>
       <div class="sp"><span class="am-live"><i></i>live · <span id="amAge">—</span></span><button class="am-btn" id="amReplay">▶ Replay last 24 h</button><button class="am-btn" id="amRefresh">↻ Refresh</button></div></div></div><div class="am-tabs"><button class="am-tab on" data-tab="live">🤖 Mission control</button><button class="am-tab" data-tab="plan">🚀 Move to vLLM / GPU — effort &amp; options</button></div><div id="amHost" class="am-wrap" style="margin-top:12px"><div class="sub" style="padding:24px">${window.salamLoader?window.salamLoader("Waking the robots…"):"Loading…"}</div></div>`;
     main.appendChild(v);
     v.querySelector("#amRefresh").onclick=()=>load(true); v.querySelector("#amReplay").onclick=()=>toggleReplay();
@@ -214,6 +220,7 @@
   function render(){
     const d=S.data; if(!d) return; const h=host(); if(!h) return;
     const ageEl=document.getElementById("amAge"); if(ageEl) ageEl.textContent=ksa(d.at,true);
+    const cnt=document.getElementById("amCount"); if(cnt){ const k=d.agents.filter(a=>a.key!=="yusr").length; cnt.textContent=["No","One","Two","Three","Four","Five","Six","Seven","Eight","Nine"][k]||String(k); }
     const br=d.brain||{}; const hp=br.health||{}; const okBrain=hp.ok!==false&&!br.error; const prim=br.primary||{};
     const calls5=d.agents.reduce((a,x)=>a+(x.calls||[]).reduce((s,c)=>s+c.calls,0),0);
     const stage=`<div class="am-stage">
@@ -247,6 +254,12 @@
     if(o.signatures&&o.signatures.length) outputs+=`<div class="am-out"><h5>Latest signatures explained</h5>${o.signatures.slice(0,6).map(s=>`<div class="am-row"><span class="am-pill ${s.class==="technical"?"r":"b"}">${esc(s.class||"?")}</span><span class="k" title="${esc(s.pattern||"")}">${esc(s.endpoint||s.source||"")}${s.code?` · ${esc(s.code)}`:""}</span><span class="am-pill">${esc(s.owner_team||s.category||"")}</span><span class="am-pill ${s.segment==="fixed"?"a":"v"}">${esc(s.segment)}</span><span class="am-pill">${n(s.last_24h)} / 24 h</span></div>`).join("")}</div>`;
     if(o.proposals&&o.proposals.length) outputs+=`<div class="am-out"><h5>Latest team proposals</h5>${o.proposals.slice(0,6).map(p=>`<div class="am-row"><span class="am-pill ${p.status==="proposed"?"a":p.status==="approved"?"g":"r"}">${esc(p.status)}</span><span class="k" title="${esc(p.reason||"")}">${esc(p.rule_key)}</span><span>→ <b>${esc(p.suggested_team)}</b></span><span class="am-pill">${esc(p.method)} · ${Math.round((p.confidence||0)*100)} %</span></div>`).join("")}</div>`;
     if(o.report) outputs+=`<div class="am-out"><h5>Last daily report · ${esc(ksa(o.report.created_at))} · mailed to ${n(o.report.mailed_to)}</h5><div style="font-size:12px;line-height:1.45;color:var(--ink)">${esc(o.report.narrative||"")}${o.report.narrative&&o.report.narrative.length>=300?"…":""}</div></div>`;
+    if(o.leads){ const L=o.leads; const mx=Math.max(1,...(L.offers||[]).map(x=>x.n||0));
+      outputs+=`<div class="am-out"><h5>OCU desk · counts only — customer data stays in Fixed › Leads</h5>
+        <div class="am-ld"><div><b>${n(L.open)}</b><span>open</span></div><div class="hot"><b>${n(L.hot)}</b><span>hot</span></div><div><b>${n(L.new24)}</b><span>new · 24 h</span></div><div class="won"><b>${n(L.won_week)}</b><span>won · this week</span></div></div>
+        ${(L.offers||[]).length?`<div class="am-ldo"><small>after the standard plans, the OCU step the coach would offer next · open leads</small>${L.offers.map(x=>`<div class="am-ldb"><span class="mono">${esc(x.code||"STD")}</span><i style="width:${Math.round((x.n||0)/mx*100)}%"></i><b>${n(x.n)}</b></div>`).join("")}</div>`:""}
+        <div class="sub" style="font-size:11px;margin-top:6px">advice rated by the team · helpful <b>${n(L.helpful)}</b> · not helpful <b>${n(L.unhelpful)}</b> — ratings shape the next advice</div></div>`;
+      if(L.brief) outputs+=`<div class="am-out"><h5>Morning brief · ${esc(ksa(L.brief.created_at))}</h5><div style="font-size:12px;line-height:1.45;color:var(--ink)">${esc(L.brief.narrative||"")}${L.brief.narrative&&L.brief.narrative.length>=300?"…":""}</div></div>`; }
     if(a.key==="yusr"){ const y=o.yusr||{}; outputs+=`<div class="am-kv"><b class="am-big">${n(y.calls24)}</b> questions in 24 h<br><span>people</span> ${n(y.people24)} · <span>median answer</span> ${y.avg_ms?n(y.avg_ms)+" ms":"—"} · <span>refused by budget</span> ${n(y.blocked)}<br><span>last question</span> ${esc(ago(y.last_at))}</div>`; }
     const tk=a.tokens||{};
     const now=`<div class="am-kv"><div class="am-big" style="color:${sm.fg}">${esc(sm.label)}</div>
@@ -255,10 +268,11 @@
       <div><span>model calls · last 5 min</span> ${(a.calls||[]).length?a.calls.map(x=>`<b>${n(x.calls)}</b> ${esc(x.purpose)}${x.failed?` <span style="color:#dc2626">(${x.failed} failed)</span>`:""}`).join(", "):"none"}</div>
       <div><span>today</span> <b>${n(tk.calls)}</b> calls · <b>${n(tk.tokens)}</b> tokens${tk.avg_ms?` · ${n(tk.avg_ms)} ms avg`:""}${tk.blocked?` · <span style="color:#dc2626">${n(tk.blocked)} refused by budget</span>`:""}</div></div>${spark(a)}`;
     const nx=a.next||{};
+    const canLead=a.key!=="leads"||(window.FIXED_VIEWS_HELD||[]).includes("fixed_leads"); const lk=q=>canLead?q.link:null;   // the leads desk is OCU + Super Admin only
     const next=`${nx.tick?`<div class="am-cd" data-until="${nx.tick}">${esc(until(nx.tick))}</div><div class="sub" style="font-size:11px;margin-bottom:8px">next tick · ${esc(hm(nx.tick))} KSA${st==="stale"?` · <span style="color:#d97706;font-weight:700">overdue — check pm2 ${esc(a.pm2)}</span>`:""}</div>`:a.key==="yusr"?`<div class="am-cd">on demand</div><div class="sub" style="font-size:11px;margin-bottom:8px">answers when someone asks</div>`:`<div class="am-cd">—</div>`}
       ${nx.report?`<div class="am-q"><span class="num">${String(nx.reportHour).padStart(2,"0")}:00</span><span class="lb">daily report<small>${esc(ksa(nx.report))} KSA · <span data-until="${nx.report}">${esc(until(nx.report))}</span></small></span></div>`:""}
-      ${(a.queue||[]).map(q=>`<div class="am-q"><span class="num${q.n?"":" z"}">${n(q.n)}</span><span class="lb">${esc(q.label)}<small>${esc(q.hint||"")}</small></span>${q.link&&q.n?`<a href="${q.link}">open</a>`:""}</div>`).join("")}
-      ${(a.human||[]).length?`<h4 style="margin-top:10px">🙋 needs a human</h4>${a.human.map(q=>`<div class="am-q hu"><span class="num${q.n?"":" z"}">${n(q.n)}</span><span class="lb">${esc(q.label)}<small>${esc(q.hint||"")}</small></span>${q.link&&q.n?`<a href="${q.link}">go</a>`:""}</div>`).join("")}`:""}
+      ${(a.queue||[]).map(q=>`<div class="am-q"><span class="num${q.n?"":" z"}">${n(q.n)}</span><span class="lb">${esc(q.label)}<small>${esc(q.hint||"")}</small></span>${lk(q)&&q.n?`<a href="${lk(q)}">open</a>`:""}</div>`).join("")}
+      ${(a.human||[]).length?`<h4 style="margin-top:10px">🙋 needs a human</h4>${a.human.map(q=>`<div class="am-q hu"><span class="num${q.n?"":" z"}">${n(q.n)}</span><span class="lb">${esc(q.label)}<small>${esc(q.hint||"")}</small></span>${lk(q)&&q.n?`<a href="${lk(q)}">go</a>`:""}</div>`).join("")}`:""}
       ${a.key==="yusr"?`<div class="sub" style="font-size:12px">Ask it from the ✦ button — every answer is logged in Settings › Agents › LLM calls.</div>`:""}`;
     return `<div class="am-card${S.sel===a.key?" sel":""}" data-k="${a.key}" style="--ac:${c}"><div class="am-ch"><span class="tag">${esc(a.short)}</span><h2>${esc(a.name)}</h2><span class="pm2">${esc(a.pm2)}</span><span class="stt" style="color:${sm.fg}"><i></i>${esc(sm.label)}</span></div>
       <div class="am-role">${esc(a.role)}</div>
@@ -277,7 +291,7 @@
     return `<div class="am-player"><div class="ctl"><b style="font-size:13px">Replay · last 24 h</b><span class="cnt" id="amCnt">${p.i+1} / ${st.length}</span><button class="am-btn" id="amPrev" title="←">‹ Prev</button><button class="am-btn p" id="amAuto">${p.auto?"❚❚ Pause":"▶ Auto-play"}</button><button class="am-btn" id="amNext" title="→">Next ›</button>
         <select id="amSpeed" title="seconds per step"><option value="4"${p.speed===4?" selected":""}>slow · 4 s</option><option value="2.5"${p.speed===2.5?" selected":""}>2.5 s</option><option value="1"${p.speed===1?" selected":""}>fast · 1 s</option></select><button class="am-btn x" id="amClose">✕ Close</button></div>
       <div class="am-narr" id="amNarr">${st.length?(p.i>=0?narr(st[p.i]):"Press <b>Next</b> or <b>Auto-play</b> — each step is one run of one agent, the robot on the stage works while its step is shown."):"No run in the last 24 h to replay."}</div>
-      <div class="am-track" id="amTrack">${lanes.map((a,li)=>`<div class="lane" style="top:${4+li*13}px">${st.map((s,i)=>s.agent===a.key?`<i data-i="${i}" class="${i===p.i?"on":""}" style="left:${X(s.at)}%;background:${s.ok===false?"#dc2626":COLOR[a.key]}" title="${esc(hm(s.at))} · ${esc(a.name)}"></i>`:"").join("")}</div>`).join("")}
+      <div class="am-track" id="amTrack" style="height:${Math.max(56,20+lanes.length*13)}px">${lanes.map((a,li)=>`<div class="lane" style="top:${4+li*13}px">${st.map((s,i)=>s.agent===a.key?`<i data-i="${i}" class="${i===p.i?"on":""}" style="left:${X(s.at)}%;background:${s.ok===false?"#dc2626":COLOR[a.key]}" title="${esc(hm(s.at))} · ${esc(a.name)}"></i>`:"").join("")}</div>`).join("")}
         ${[0,6,12,18,24].map(k=>`<span class="hr" style="left:${k/24*100}%">${esc(hm(new Date(since+k*3600e3).toISOString()))}</span>`).join("")}${p.i>=0?`<div class="cur" style="left:${X(st[p.i].at)}%"></div>`:""}</div></div>`;
   }
   const narr=s=>`<span class="t">${esc(hm(s.at))} KSA</span><b class="w" style="--ac:${COLOR[s.agent]}">${esc(s.name)}</b> — ${esc(s.text)}${s.end?` <span class="t">(${esc(dur(s.at,s.end))})</span>`:""}${s.ok===false?` <span style="color:#dc2626;font-weight:700">✗</span>`:" ✓"}`;

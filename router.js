@@ -44,7 +44,9 @@
     tapdocs:"explore", salamdocs:"explore", dmsdocs:"explore", dmsflows:"explore", alertjourney:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
   const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed", errors:"Troubleshoot", alerts:"Alerts", fixed_alerts:"Fixed › Alerts",
     analytics:"Reports", explore:"Explore & Customer 360", workbench:"L2 Workbench", settings:"Settings",
-    exec:"Executive Dashboard", vp:"VP Operations cockpit", opsreports:"Operations reports", noc:"NOC wall", salesops:"Sales Operations wall", governance:"IT Governance", cst:"CST", audit:"Audit log", tickets:"Tickets & feedback", users:"User management" };
+    exec:"Executive Dashboard", vp:"VP Operations cockpit",
+    fixed_epurchase:"Fixed › Epurchase", fixed_salamhome:"Fixed › Salam Home", fixed_maps:"Fixed › SDA map & QR codes", fixed_reports:"Fixed › Reports",
+    fixed_errors:"Fixed › Troubleshoot", fixed_explore:"Fixed › Playbook & Diagrams", fixed_leads:"Fixed › Leads (restricted · OCU and Super Admins)", opsreports:"Operations reports", noc:"NOC wall", salesops:"Sales Operations wall", governance:"IT Governance", cst:"CST", audit:"Audit log", tickets:"Tickets & feedback", users:"User management" };
   /* WHERE A ROLE STARTS (19 Sep 2026) — #'' and #home resolve to the landing page, which needs 'dashboard'.
    * Every role had that view, so it never mattered; the CIO role does not, and a narrow custom role need not
    * either, so signing in used to end on ACCESS DENIED. This is the first page the session can actually open,
@@ -52,7 +54,7 @@
   const HOME_ORDER=[["dashboard","home"],["exec","exec"],["vp","vp"],["opsreports","opsreports"],["fixed","fixed"],["monitoring","monitoring"],["alerts","alerts"],
     ["errors","troubleshoot"],["dms","dms"],["analytics","analytics"],["fixed_epurchase","fixed?tab=epurchase"],
     ["fixed_salamhome","fixed?tab=salamhome"],["fixed_alerts","fixed-alerts"],["fixed_errors","fixed?tab=errors"],
-    ["fixed_reports","fixed?tab=dash"],["fixed_maps","fixed?tab=map"],["noc","noc"],["salesops","salesops"],["explore","subscriber"],
+    ["fixed_reports","fixed?tab=dash"],["fixed_maps","fixed?tab=map"],["fixed_leads","fixed?tab=leads"],["noc","noc"],["salesops","salesops"],["explore","subscriber"],
     ["tickets","tickets"],["governance","sla"],["cst","arqami"],["workbench","workbench"],["users","settings-users"],["settings","settings"]];
   function homeHash(){ const me=sess().me; if(!me||!Array.isArray(me.views)) return "dashboard";
     /* a role can name its own landing page (roles.js `home`, 8 Oct 2026: VP Operations → the VP cockpit) */
@@ -62,8 +64,17 @@
   function sess(){ try{ return (window.opsSession&&window.opsSession())||{}; }catch(e){ return {}; } }
   function lacks(need){ const me=sess().me; if(!me||!Array.isArray(me.views)) return false;  // session not ready → don't block boot
     return !me.views.includes(need); }
-  function neededFor(r){
+  /* a Fixed hub page answers to its own view (alpha.166): #fixed?tab=leads needs fixed_leads, not the hub's 'fixed' —
+   * the OCU role holds Leads only, and l1_oss-type roles hold one Fixed page without the Operations Dashboard */
+  function fixedTab(qs){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); let t=m?m[1]:""; if(t==="exec"||t==="ops") t="overview"; return t; }
+  function fixedTabViews(){ return window.FIXED_TAB_VIEWS||((sess().me||{}).fixedTabViews)||{}; }
+  /* the first Fixed page a role without the Operations Dashboard can open — a bare #fixed lands there */
+  function firstFixedHash(){ const me=sess().me; if(!me||!Array.isArray(me.views)) return null; const ftv=fixedTabViews();
+    const k=Object.keys(ftv).find(t=>t!=="overview"&&me.views.includes(ftv[t])&&(!window.FIXED_PAGES||window.FIXED_PAGES[t]));
+    return k ? (k==="alerts"?"fixed-alerts":"fixed?tab="+k) : null; }
+  function neededFor(r,qs){
     if(r.seg==="fixed") return "fixed_alerts";                 // Fixed incident view = the Fixed › Alerts permission
+    if(r.view==="fixed"){ const t=fixedTab(qs); return t ? (fixedTabViews()[t]||"fixed") : "fixed"; }
     if(r.view) return VIEW_REQ[r.view]||null;
     if(r.home) return "dashboard";
     if(r.workbench) return "workbench";
@@ -110,7 +121,7 @@
   function routeOf(base){ let r=ROUTES[base]; if(!r && /^settings-[a-z0-9_-]+$/.test(base)) r={settings:base.slice(9)}; return r||null; }
   window.consoleRouteInfo=function(h){
     const [base,qs]=String(h||"").replace(/^#/,"").split("?"); const r=routeOf(base); if(!r) return null;
-    const out={ view:r.view||null, need:neededFor(r), biz:bizOf(r) };
+    const out={ view:r.view||null, need:neededFor(r,qs), biz:bizOf(r) };
     if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); if(m) out.fxtab=m[1]; }
     return out;
   };
@@ -145,7 +156,8 @@
     if((r.audit||r.assistClone||r.sla||r.sloSettings||r.agents) && notRoot()){ window.opsGoHome && window.opsGoHome(); setHash(homeHash()); return; }
     // role guard — before any renderer runs (the API 403s regardless; this makes it CLEAR)
     hideDenied();
-    const need=neededFor(r);
+    if(r.view==="fixed" && !fixedTab(qs) && lacks("fixed")){ const alt=firstFixedHash(); if(alt){ setHash(alt); return; } }
+    const need=neededFor(r,qs);
     if(need && lacks(need)){
       /* arriving at the default route (no hash, #home, #dashboard) with no right to it means the role simply
        * starts somewhere else — send them there instead of greeting them with ACCESS DENIED at sign-in */

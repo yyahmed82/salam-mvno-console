@@ -36,7 +36,7 @@
     ["Mobile ▾", [["dashboard","Operations Dashboard"],["monitoring","Monitoring › Connectivity & APIs"],["dms","Monitoring › DMS"],
       ["errors","Troubleshoot"],["alerts","Alerts"],["analytics","Reports"],["explore","Explore — topology, docs, journeys"]]],
     ["Fixed ▾", [["fixed","Operations Dashboard"],["fixed_epurchase","Monitoring › Epurchase"],["fixed_salamhome","Monitoring › Salam Home app"],
-      ["fixed_maps","Monitoring › SDA map & QR codes"],["errors_placeholder",null],["fixed_errors","Troubleshoot"],["fixed_alerts","Alerts"],
+      ["fixed_maps","Monitoring › SDA map & QR codes"],["errors_placeholder",null],["fixed_errors","Troubleshoot"],["fixed_alerts","Alerts"],["fixed_leads","Leads · OCU (restricted)"],
       ["fixed_reports","Reports"],["fixed_explore","Playbook & Diagrams"]]],
     ["⚙ Settings", [["settings","Settings panels"],["noc","NOC wall"],["tickets","Tickets & feedback"],["audit","Audit log"],
       ["governance","IT Governance — SLA, vendors, SLO"],["cst","Regulatory — CST Arqami & escalations"],["users","User management"]]],
@@ -195,6 +195,9 @@
     }).join("");
   }
 
+  /* restricted pages (alpha.166): Fixed › Leads belongs to the OCU role and Super Admin only — the server drops it from any
+   * other role on every merge (roles.PINNED_VIEWS), so the box is locked here instead of saving a tick that never applies */
+  const pinnedOff=(view,role)=>{ const p=DATA&&DATA.pinned&&DATA.pinned[view]; return !!p && !p.includes(role); };
   function optRow(kind,key,label,on,ro,note){
     return `<label class="rp-opt ${on?"on":""} ${ro?"ro":""}">
       <input type="checkbox" data-k="${kind}" data-key="${esc(key)}" ${on?"checked":""} ${ro?"disabled":""}>
@@ -221,8 +224,8 @@
       const onN=vs.filter(v=>d.views[v.key]).length;
       return `<div class="rp-grp"><div class="rp-grp-h"><b>${GROUP_LABEL[g]}</b><small>${GROUP_NOTE[g]}</small>
         <span style="font-size:10.5px;color:var(--muted);font-weight:700">${onN}/${vs.length}</span>
-        ${ro?"":`<button type="button" class="rp-all" data-all="${g}">${onN===vs.length?"none":"all"}</button>`}</div>
-        <div class="rp-opts">${vs.map(v=>optRow("view",v.key,v.label,!!d.views[v.key],ro,"")).join("")}</div></div>`;
+        ${ro?"":`<button type="button" class="rp-all" data-all="${g}">${vs.filter(v=>!pinnedOff(v.key,SEL)).every(v=>d.views[v.key])?"none":"all"}</button>`}</div>
+        <div class="rp-opts">${vs.map(v=>{ const lock=pinnedOff(v.key,SEL); return optRow("view",v.key,v.label,!!d.views[v.key],ro||lock,lock?"OCU and Super Admin only — restricted section":""); }).join("")}</div></div>`;
     }).join("");
     return `<div class="rp-ed">
       <div class="rp-hd">
@@ -294,7 +297,7 @@
         const d=DRAFT[SEL]; (i.dataset.k==="view"?d.views:d.caps)[i.dataset.key]=i.checked; paint(); });
       ed.addEventListener("click",e=>{ const b=e.target.closest("[data-all]"); if(!b||!SEL) return;
         const g=b.dataset.all, vs=DATA.views.filter(v=>(v.group||"shared")===g), d=DRAFT[SEL];
-        const turnOn=vs.some(v=>!d.views[v.key]); vs.forEach(v=>{ d.views[v.key]=turnOn; }); paint(); });
+        const free=vs.filter(v=>!pinnedOff(v.key,SEL)); const turnOn=free.some(v=>!d.views[v.key]); free.forEach(v=>{ d.views[v.key]=turnOn; }); paint(); });
     }
     const s=host.querySelector("#rpSave"); if(s) s.addEventListener("click",confirmSave);
     const a=host.querySelector("#rpAdd"); if(a) a.addEventListener("click",addRole);

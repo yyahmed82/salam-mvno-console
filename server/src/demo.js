@@ -24,7 +24,8 @@ const db = require('./db');
 const C = () => db.console;
 
 const OFF = { mode: 'off', set: null };
-const SKIP = /^\/api\/(demo|auth|session|stream|version|health|ready|cache-stats|me\/dashboard)(\/|$)/;
+/* fixed/leads (9 Oct 2026): the OCU leads are never recorded nor replayed — a snapshot would keep confidential answers outside their gate */
+const SKIP = /^\/api\/(demo|auth|session|stream|version|health|ready|cache-stats|me\/dashboard|fixed\/leads)(\/|$)/;
 const VOLATILE = new Set(['_', 't', 'ts', 'nocache', 'token', 'cb']);
 const stateCache = new Map();          // email → { mode, set }
 let ready = null;

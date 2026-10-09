@@ -105,7 +105,36 @@ function stats(items) {
   return { top: items.length, menus, pages, links, labels: heads, restricted };
 }
 
+/* MIGRATION (9 Oct 2026, OCU Leads): "replace Fixed › OPERATE › Reports by Leads". A layout saved before this release keeps
+ * Reports in OPERATE and would receive Leads after Alerts (pages unknown to a layout land where the default puts them).
+ * Once, on a saved layout only: Leads takes the Reports entry's place, Reports moves to the end of EXPLORE (still in the
+ * menu — a supervisor can remove it in Settings › Navigation). Flag: console_settings 'ui_menu_migrations'.leads. */
+async function migrateLeads(settings) {
+  let FIXED = false; try { FIXED = require('./roles').FIXED_ENABLED; } catch (_) {}
+  if (!FIXED) return { skipped: 'fixed off' };
+  const done = (await settings.getSetting('ui_menu_migrations')) || {};
+  if (done.leads) return { skipped: 'done' };
+  const menu = await settings.getSetting('ui_menu');
+  let moved = false;
+  if (menu && Array.isArray(menu.items) && !JSON.stringify(menu.items).includes('"fx:leads"')) {
+    for (const m of menu.items) {
+      if (m.t !== 'menu' || !Array.isArray(m.items)) continue;
+      const i = m.items.findIndex(x => x && x.t === 'page' && x.key === 'fx:dash'); if (i < 0) continue;
+      const dash = m.items[i]; m.items[i] = { t: 'page', key: 'fx:leads' };
+      const ex = m.items.findIndex(x => x && x.t === 'head' && /explore/i.test(x.label || ''));
+      let at = m.items.length; if (ex >= 0) { at = m.items.findIndex((x, j) => j > ex && x && x.t === 'head'); if (at < 0) at = m.items.length; }
+      m.items.splice(at, 0, dash); moved = true; break;
+    }
+    /* no Reports entry to replace: leave 'known' alone, so the layout treats Leads as a new page and shows it where the default puts it */
+    if (moved && Array.isArray(menu.known) && !menu.known.includes('fx:leads')) menu.known.push('fx:leads');
+    if (moved) { menu.updatedAt = new Date().toISOString(); menu.updatedBy = 'release: Fixed › Leads'; await settings.setSetting('ui_menu', menu); }
+  }
+  await settings.setSetting('ui_menu_migrations', { ...done, leads: new Date().toISOString(), leadsMoved: moved });
+  return { moved };
+}
+
 function mount(app, { settings, audit, requireSuper, roleKeys }) {
+  setTimeout(() => migrateLeads(settings).then(r => { if (r && r.moved) console.log('[ui-nav] saved menu layout: Fixed › Leads placed in OPERATE, Reports moved to EXPLORE'); }).catch(e => console.error('[ui-nav] leads migration:', e.message)), 4000);
   app.get('/api/ui-nav/menu', async (req, res) => {
     try { res.json({ menu: (await settings.getSetting('ui_menu')) || null }); }
     catch (e) { res.status(500).json({ error: e.message }); }
@@ -130,4 +159,4 @@ function mount(app, { settings, audit, requireSuper, roleKeys }) {
   });
 }
 
-module.exports = { validate, cleanHref, cleanLabel, cleanRoles, stats, mount, LABEL_MAX };
+module.exports = { validate, cleanHref, cleanLabel, cleanRoles, stats, mount, migrateLeads, LABEL_MAX };

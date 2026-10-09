@@ -22,9 +22,11 @@ const INTERVALS = {
   incident: Math.max(1, Number(process.env.AGENT_INCIDENT_INTERVAL_MIN) || 3) * 60e3,
   'incident.map': 6 * 3600e3,
   refund: Math.max(2, Number(process.env.AGENT_REFUND_INTERVAL_MIN) || 15) * 60e3,
+  leads: Math.max(2, Number(process.env.AGENT_LEADS_INTERVAL_MIN) || 10) * 60e3,       // the OCU leads coach (9 Oct 2026, Fixed › Leads)
 };
 const REPORT_HOUR = Number.isFinite(Number(process.env.AGENT_LOG_REPORT_HOUR)) ? Number(process.env.AGENT_LOG_REPORT_HOUR) : 6;
-const ENABLED = { log: process.env.AGENT_LOG_ENABLED !== '0', incident: process.env.AGENT_INCIDENT_ENABLED !== '0' };
+const ENABLED = { log: process.env.AGENT_LOG_ENABLED !== '0', incident: process.env.AGENT_INCIDENT_ENABLED !== '0',
+  leads: process.env.AGENT_INCIDENT_ENABLED !== '0' && process.env.AGENT_LEADS_ENABLED !== '0' && (() => { try { return require('./roles').FIXED_ENABLED; } catch (_) { return false; } })() };
 
 /* one run → a sentence a human reads on the wall */
 function narrate(agent, r) {
@@ -62,6 +64,24 @@ function narrate(agent, r) {
     if (n(s.batches_closed)) bits.push(`${n(s.batches_closed)} batch(es) closed`);
     return bits.join(' · ');
   }
+  if (agent === 'leads') {
+    if (!n(s.checked) && !s.brief && !n(s.upgraded)) return 'every open lead already has its advice';
+    const bits = n(s.checked) ? [`coached ${n(s.advised)} lead(s)`] : [];
+    if (n(s.upgraded)) bits.push(`${n(s.upgraded)} worked lead(s) upgraded from the rules to the model`);
+    if (n(s.modelled)) bits.push(`${n(s.modelled)} with the model`); else if (s.model_down) bits.push('rules only (model unavailable)');
+    if (n(s.hot)) bits.push(`${n(s.hot)} hot`);
+    if (s.brief) bits.push('team brief written');
+    return bits.join(' · ');
+  }
+  if (agent === 'leads.harvest') {
+    if (s.paused) return 'harvest paused — LEADS_PII_KEY is not set on the server';
+    if (!n(s.scanned) && !n(s.created) && !n(s.expired)) return `harvest: no new journey${(s.errors || []).length ? ' · ' + s.errors[0] : ''}`;
+    const bits = [`harvest: ${n(s.scanned).toLocaleString()} journeys read`, `${n(s.created)} new lead(s)`];
+    if (n(s.merged)) bits.push(`${n(s.merged)} added to an open lead`);
+    if (n(s.won_auto)) bits.push(`${n(s.won_auto)} won by an order${n(s.credited) ? ` (${n(s.credited)} credited to OCU)` : ''}`);
+    if (n(s.expired)) bits.push(`${n(s.expired)} closed — nobody called them in time`);
+    return bits.join(' · ');
+  }
   if (agent === 'incident.map') {
     if (!n(s.rules)) return 'no rule to map';
     return `${n(s.rules)} rules → ${n(s.proposed)} proposal(s) (${n(s.deterministic)} by keywords · ${n(s.modelled)} by the model · ${n(s.lowConfidence)} weak) · ${n(s.unchanged)} unchanged${s.modelUnavailable ? ' · model unavailable' : ''}`;
@@ -77,7 +97,7 @@ function nextReport() {
 async function mission() {
   const q = async (sql, p) => { try { return (await C().query(sql, p)).rows; } catch (e) { return []; } };
   const now = Date.now();
-  const [runs, hourly, calls5, callsHour, tokensToday, triage, sigs, sigNew, proposals, reports, queue, feedback, yusr, refundRows] = await Promise.all([
+  const [runs, hourly, calls5, callsHour, tokensToday, triage, sigs, sigNew, proposals, reports, queue, feedback, yusr, refundRows, leadRows, leadOffers, leadBrief] = await Promise.all([
     q(`SELECT agent, started_at, finished_at, ok, stats, error FROM (SELECT *, row_number() OVER (PARTITION BY agent ORDER BY started_at DESC) rn FROM agent_runs WHERE started_at >= now() - interval '48 hours') x WHERE rn <= 40 ORDER BY started_at DESC`),
     q(`SELECT agent, date_trunc('hour', started_at) AS h, count(*)::int AS runs, count(*) FILTER (WHERE ok = false)::int AS failed FROM agent_runs WHERE started_at >= now() - interval '24 hours' GROUP BY 1,2`),
     q(`SELECT caller, purpose, count(*)::int AS calls, max(at) AS last_at, round(avg(ms))::int AS avg_ms, count(*) FILTER (WHERE NOT ok)::int AS failed FROM llm_calls WHERE at >= now() - interval '5 minutes' GROUP BY 1,2`),
@@ -103,6 +123,21 @@ async function mission() {
               coalesce(sum(c.amount) FILTER (WHERE c.status IN ('open','approved') AND c.batch_id IS NULL AND (c.status = 'approved' OR r.verdict = 'refund')),0)::float AS batchable_sar,
               (SELECT count(*)::int FROM refund_batches WHERE status = 'open') AS open_batches
          FROM refund_candidates c LEFT JOIN refund_reviews r ON r.candidate_id = c.id`),
+    /* the OCU leads coach — counts only: this page is read by every incident role, and leads are confidential */
+    q(`SELECT count(*) FILTER (WHERE l.status IN ('new','assigned','contacted','callback','interested','offer'))::int AS open,
+              count(*) FILTER (WHERE l.status IN ('new','assigned','contacted','callback','interested','offer') AND (a.lead_id IS NULL OR a.deterministic))::int AS to_coach,
+              count(*) FILTER (WHERE l.status IN ('new','assigned','contacted','callback','interested','offer') AND l.temp = 'hot')::int AS hot,
+              count(*) FILTER (WHERE l.status IN ('new','assigned','contacted','callback','interested','offer') AND l.assignee IS NULL)::int AS pool,
+              count(*) FILTER (WHERE l.status IN ('new','assigned','contacted','callback','interested','offer') AND l.next_action_at < now())::int AS overdue,
+              count(*) FILTER (WHERE l.status IN ('new','assigned','contacted','callback','interested','offer') AND l.first_contact_at IS NULL AND l.created_at < now() - interval '2 hours')::int AS untouched,
+              count(*) FILTER (WHERE l.created_at >= now() - interval '24 hours')::int AS new24,
+              count(*) FILTER (WHERE l.status = 'won' AND l.won_at >= date_trunc('week', now() + interval '1 day' + interval '3 hours') - interval '1 day' - interval '3 hours')::int AS won_week,
+              count(*) FILTER (WHERE a.helpful)::int AS helpful, count(*) FILTER (WHERE a.helpful = false)::int AS unhelpful
+         FROM fixed_leads l LEFT JOIN fixed_lead_advice a ON a.lead_id = l.id`),
+    /* every path starts with the standard plans — what tells the story is the OCU step the coach would reach for next (or none: 5G, fiber before) */
+    q(`SELECT coalesce((SELECT x FROM jsonb_array_elements_text(a.path) x WHERE x <> 'STD' LIMIT 1), 'STD only') AS code, count(*)::int AS n
+         FROM fixed_lead_advice a JOIN fixed_leads l ON l.id = a.lead_id WHERE l.status IN ('new','assigned','contacted','callback','interested','offer') GROUP BY 1 ORDER BY 2 DESC LIMIT 5`),
+    q(`SELECT created_at, left(narrative, 300) AS narrative FROM agent_reports WHERE kind = 'leads-brief' ORDER BY created_at DESC LIMIT 1`),
   ]);
   let guardQ = { open: 0, activated_no_inc: 0, activated: 0 }; try { guardQ = await require('./flowGuard').queue(); } catch (_) {}
   let learnQ = { ready: [], promoted: 0, at_risk: [], mode: 'advise' }; try { learnQ = await require('./agentLearn').summary(); } catch (_) {}
@@ -120,6 +155,8 @@ async function mission() {
   };
   const callsOf = caller => calls5.filter(c => c.caller === caller);
   const hoursOf = k => hourly.filter(h => h.agent === k).map(h => ({ h: h.h, runs: h.runs, failed: h.failed }));
+  /* one bar per hour when a lane folds two run kinds (the leads coach + its harvest) — the sparkline reads the first match only */
+  const sumHours = (...lists) => { const m = new Map(); for (const l of lists) for (const x of l) { const k = new Date(x.h).getTime(); const o = m.get(k) || { h: x.h, runs: 0, failed: 0 }; o.runs += n(x.runs); o.failed += n(x.failed); m.set(k, o); } return [...m.values()]; };
   const tokOf = caller => tokensToday.find(t => t.caller === caller) || { calls: 0, ok: 0, blocked: 0, tokens: 0, avg_ms: null };
   const qz = queue[0] || {};
   const refundQ = (refundRows && refundRows[0]) || {};
@@ -142,7 +179,7 @@ async function mission() {
       queue: [{ label: 'open incidents without a note', n: n(qz.open_untriaged), hint: `of ${n(qz.open_total)} open — picked up on the next tick`, link: '#alerts' }, { label: 'flow-guard cases activated, no INC', n: n(guardQ.activated_no_inc), hint: `of ${n(guardQ.activated)} activated non-approved onboardings — the triage note names the case, the incident sits with Mobile digital L2 (TCS)`, link: '#flowguard?status=activated' }],
       human: [{ label: 'triage notes to review', n: n(fb.awaiting), hint: `helpful ${n(fb.helpful)} · not helpful ${n(fb.unhelpful)} · ${n(fb.auto24)} rated from the outcome in 24 h — the Review tab suggests a verdict from how each incident ended; confirm in one click. Ratings shape the next note.`, link: '#agents?tab=review' },
               { label: 'rules ready to promote', n: n(learnQ.ready.length), hint: learnQ.ready.length ? `${learnQ.ready.slice(0, 4).map(r => r.name).join(' · ')}${learnQ.ready.length > 4 ? ' · …' : ''} — earned assist mode on their own numbers; a person promotes` : `${n(learnQ.promoted)} rule(s) in assist mode · mode ${learnQ.mode}${learnQ.at_risk.length ? ' · at risk: ' + learnQ.at_risk.join(', ') : ''}`, link: '#agents?tab=policy' }],
-      calls: callsOf('salam-agent-incident').filter(c => c.purpose !== 'agent-incident.map'), hours: hoursOf('incident'), tokens: tokOf('salam-agent-incident'), tokensHourly: callsHour.filter(c => c.caller === 'salam-agent-incident'),
+      calls: callsOf('salam-agent-incident').filter(c => c.purpose !== 'agent-incident.map' && !/^agent-(refund|leads)\./.test(c.purpose || '')), hours: hoursOf('incident'), tokens: tokOf('salam-agent-incident'), tokensHourly: callsHour.filter(c => c.caller === 'salam-agent-incident'),
       next: { tick: nextTick(last('incident') && last('incident').started_at, INTERVALS.incident) } },
     { key: 'map', name: 'Team mapping', short: 'Agent 2 · mapper', pm2: 'salam-agent-incident', role: 'Proposes which responder team owns each alert rule — keywords first, the model for the ambiguous ones — and waits for a human to approve.',
       state: stateOf('incident.map', ENABLED.incident), enabled: ENABLED.incident, last: last('incident.map'), every: INTERVALS['incident.map'],
@@ -161,6 +198,20 @@ async function mission() {
       human: [{ label: 'open approval batches', n: n(refundQ.open_batches), hint: 'approve / refund / dismiss the cases on Refund exposure; the batch closes itself from the proxycms register', link: '#refunds?tab=desk' }],
       calls: callsOf('salam-agent-incident').filter(c => c.purpose === 'agent-refund.review'), hours: hoursOf('refund'), tokens: { calls: 0, tokens: 0 }, tokensHourly: [],
       next: { tick: nextTick(last('refund') && last('refund').started_at, INTERVALS.refund) } },
+    ...(ENABLED.leads || (leadRows[0] && n(leadRows[0].open)) ? [(() => { const L = leadRows[0] || {}; return {
+      key: 'leads', name: 'Leads coach', short: 'Agent 2 · OCU', pm2: 'salam-agent-incident',
+      role: 'Coaches the OCU retention team on Fixed › Leads (customers who did not finish an FTTH / 5G purchase or rejected the installation): scores every open lead, writes the offer path of the OCU offer (standard plans first, then the shortest discount), an opener in Arabic and English, the talking points and the objections, from the team\'s own history — never with a name or a number. Every morning it writes the team brief. The harvest (every 15 min, console process) turns stopped journeys into leads and closes a lead as Won when the person orders.',
+      state: stateOf('leads', ENABLED.leads), enabled: ENABLED.leads, last: last('leads'), every: INTERVALS.leads,
+      did: [...byAgent('leads').filter(r => n((r.stats || {}).checked) || n((r.stats || {}).upgraded) || (r.stats || {}).brief || r.ok === false), ...byAgent('leads.harvest').filter(r => n((r.stats || {}).created) || n((r.stats || {}).won_auto) || n((r.stats || {}).expired) || (r.stats || {}).paused || r.ok === false)]
+        .sort((a, b) => new Date(b.started_at) - new Date(a.started_at)).slice(0, 12).map(r => ({ at: r.started_at, end: r.finished_at, ok: r.ok, text: narrate(r.agent, r), stats: r.stats })),
+      quiet: byAgent('leads').filter(r => !n((r.stats || {}).checked) && !n((r.stats || {}).upgraded) && !(r.stats || {}).brief && r.ok !== false).length,
+      outputs: { leads: { open: n(L.open), hot: n(L.hot), new24: n(L.new24), won_week: n(L.won_week), helpful: n(L.helpful), unhelpful: n(L.unhelpful), offers: leadOffers, brief: leadBrief[0] || null } },
+      queue: [{ label: 'open leads to coach', n: n(L.to_coach), hint: `of ${n(L.open)} open — new or changed since their last advice (rules first, the model on the next tick)`, link: '#fixed?tab=leads' },
+              { label: 'new leads in 24 h', n: n(L.new24), hint: 'stopped journeys, promoter leads and imported batches harvested in the last day' }],
+      human: [{ label: 'leads not called yet (2 h+)', n: n(L.untouched), hint: `first-contact target — ${n(L.pool)} still in the team pool`, link: '#fixed?tab=leads' },
+              { label: 'callbacks overdue', n: n(L.overdue), hint: 'a member promised to call back and the time has passed', link: '#fixed?tab=leads' }],
+      calls: callsOf('salam-agent-incident').filter(c => /^agent-leads\./.test(c.purpose || '')), hours: sumHours(hoursOf('leads'), hoursOf('leads.harvest')), tokens: { calls: 0, tokens: 0 }, tokensHourly: [],
+      next: { tick: nextTick(last('leads') && last('leads').started_at, INTERVALS.leads) } }; })()] : []),
     { key: 'yusr', name: 'Yusr assistant', short: 'Assistant', pm2: 'salam-unified', role: 'Answers the people on the console — incidents, KPIs, customers — with the same on-prem model; rule-based when the budget is spent.',
       state: (yusr[0] && n(yusr[0].calls24)) ? ((now - new Date(yusr[0].last_at).getTime()) < 5 * 60e3 ? 'working' : 'idle') : 'idle', enabled: true, last: null, every: null,
       did: [], outputs: { yusr: yusr[0] || {} }, queue: [], human: [],
@@ -171,14 +222,17 @@ async function mission() {
   const [pf, usage] = await Promise.all([perf(), usage7d(q)]);
   const inflight = pulseInflight();
   for (const a of agents) { const mine = inflight.filter(x => x.agent === a.key); a.inflight = mine; if (mine.length) a.state = 'working'; }
-  const PROC = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', refund: 'salam-agent-incident', yusr: 'salam-unified' };
-  const CALLER = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', refund: 'salam-agent-incident', yusr: 'console' };
+  const PROC = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', refund: 'salam-agent-incident', leads: 'salam-agent-incident', yusr: 'salam-unified' };
+  const CALLER = { log: 'salam-agent-log', incident: 'salam-agent-incident', map: 'salam-agent-incident', refund: 'salam-agent-incident', leads: 'salam-agent-incident', yusr: 'console' };
   for (const a of agents) { a.proc = pf.procs[PROC[a.key]] || null; a.usage = usage.byCaller[CALLER[a.key]] || null; }
   return { at: new Date().toISOString(), agents, brain, budget, perf: pf, usage, timeline: { runs: hourly, calls: callsHour }, intervals: INTERVALS, reportHour: REPORT_HOUR };
 }
 
 /* ---------------- pulse: what the model is answering right now (llm.inflight) ---------------- */
-const AGENT_OF = x => x.purpose === 'agent-incident.map' ? 'map' : x.caller === 'salam-agent-incident' ? 'incident' : x.caller === 'salam-agent-log' ? 'log' : 'yusr';
+/* purpose before caller: the refund desk and the leads coach share Agent 2's process (caller salam-agent-incident) — their calls
+ * belong to their own robots, not to incident triage (the refund calls were drawn on the incident robot until alpha.166) */
+const AGENT_OF = x => x.purpose === 'agent-incident.map' ? 'map' : /^agent-refund\./.test(x.purpose || '') ? 'refund' : /^agent-leads\./.test(x.purpose || '') ? 'leads'
+  : x.caller === 'salam-agent-incident' ? 'incident' : x.caller === 'salam-agent-log' ? 'log' : 'yusr';
 function pulseInflight() {
   let list = []; try { list = require('./llm').inflight(); } catch (_) {}
   return list.map(x => ({ agent: AGENT_OF(x), purpose: x.purpose, caller: x.caller, actor: x.actor ? String(x.actor).replace(/@.*/, '') : null, ms: x.ms, at: new Date(x.at).toISOString() }));
@@ -192,7 +246,7 @@ async function pulse() {
   /* a deploy restarts the agents mid-tick and leaves the run row open forever — close such orphans (older than 20 min) */
   q(`UPDATE agent_runs SET finished_at = now(), ok = false, error = 'interrupted (process restarted before the tick finished)' WHERE finished_at IS NULL AND started_at < now() - interval '20 minutes'`).catch(() => {});
   const inflight = pulseInflight();
-  const runs = running.map(r => ({ agent: r.agent === 'incident.map' ? 'map' : r.agent, since: r.started_at }));
+  const runs = running.map(r => ({ agent: r.agent === 'incident.map' ? 'map' : r.agent === 'leads.harvest' ? 'leads' : r.agent, since: r.started_at }));
   const recentCalls = recent.map(x => ({ agent: AGENT_OF(x), purpose: x.purpose, actor: x.actor ? String(x.actor).replace(/@.*/, '') : null, at: x.at, ms: x.ms, ok: x.ok }));
   return { at: new Date().toISOString(), inflight, runs, recent: recentCalls };
 }

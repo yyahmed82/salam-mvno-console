@@ -71,6 +71,9 @@ app.use('/api/cst', (req, res, next) => req.method === 'POST' && /\/import$/.tes
 // Semati clearance: a pasted list or a base64 .xlsx/.csv (a 5,000-row workbook ≈ 300 KB) — same per-route large-body trick.
 app.use('/api/semati', (req, res, next) => req.method === 'POST' && /\/(parse|jobs)$/.test(req.path)
   ? express.json({ limit: process.env.SEMATI_BODY_LIMIT || '8mb' })(req, res, next) : next());
+// Fixed › Leads (9 Oct 2026): a supervisor's batch (.xlsx / .csv, base64, at most 6 MB of file) — same per-route trick.
+app.use('/api/fixed/leads', (req, res, next) => req.method === 'POST' && req.path === '/import'
+  ? express.json({ limit: process.env.LEADS_BODY_LIMIT || '9mb' })(req, res, next) : next());
 // Operations reports (8 Oct 2026): a weekly report in the team's own format, base64 (a 40-slide deck with screenshots ≈ 20 MB) — same per-route trick.
 app.use('/api/opsreports', (req, res, next) => req.method === 'POST' && /^\/(upload|drop\/[^/]+)$/.test(req.path)
   ? express.json({ limit: process.env.OPSR_BODY_LIMIT || '42mb' })(req, res, next) : next());
@@ -7222,6 +7225,8 @@ app.listen(PORT, async () => {
   try { require('./fixedChannelMetrics').start(); } catch (e) { console.error('Fixed channel metrics:', e.message); }
   try { require('./fixedErrorTrend').start(); } catch (e) { console.error('Fixed error trend rollup:', e.message); }
   try { require('./refundRadar').start(); } catch (e) { console.error('Refund radar:', e.message); }
+  /* Fixed › Leads (9 Oct 2026): the harvester (journeys → OCU leads, every 15 min) and the 4-a-day digest — Agent 2's coaching runs in salam-agent-incident */
+  if (roles.FIXED_ENABLED) { try { require('./fixedLeadsStore').ensure().then(() => require('./fixedLeads').start()).catch(e => console.error('Leads:', e.message)); } catch (e) { console.error('Leads:', e.message); } }
   try { require('./flowGuard').start(); } catch (e) { console.error('Flow guard:', e.message); }
   try { require('./infra').start(); } catch (e) { console.error('Infra:', e.message); }
   require('./customMetrics').load().catch(e => console.error('Custom metrics:', e.message));
