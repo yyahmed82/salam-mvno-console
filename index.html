@@ -132,9 +132,24 @@
   .navdrop-btn small{display:block;font-weight:400;color:var(--muted);font-size:10.5px;white-space:nowrap}
   .navdrop-btn .chev{font-style:normal;color:var(--muted);font-size:11px;margin-left:2px;transition:transform .2s ease}
   .navdrop.open>.navdrop-btn .chev{transform:rotate(180deg)}
-  .navdrop-cur{font-style:normal;font-size:10.5px;font-weight:700;color:#fff;background:linear-gradient(135deg,#0e9f5a,#019c20);padding:3px 9px;border-radius:999px;white-space:nowrap;box-shadow:0 2px 8px rgba(14,159,90,.35)}
   .navdrop.on>.navdrop-btn,.navdrop.open>.navdrop-btn{border-color:var(--green);background:var(--green-bg);box-shadow:inset 0 -3px 0 var(--green)}
   .navdrop.on>.navdrop-btn .num{background:var(--green);border-color:var(--green);color:#fff}
+  /* a menu's current page sits UNDER the menu's name, as a caption line (alpha.164 — it was a green pill beside the name,
+     which read as a second button and widened the menu). Only on the header row; the drawer lists the pages. */
+  .navdrop-cur{font-style:normal}
+  .navdrop-cur[hidden]{display:none}
+  @media (min-width:1141px){
+    .navdrop.on>.navdrop-btn>span:not(.num){display:flex;flex-direction:column;align-items:flex-start;text-align:start;white-space:nowrap;line-height:14px}
+    .navdrop-cur:not([hidden]){display:block;margin-top:2px;font-size:10.5px;line-height:12px;font-weight:600;letter-spacing:.01em;color:var(--green-dark);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    /* two lines in the same height as one: the row never jumps when you enter or leave a menu's page */
+    header:not(.fit3) .navdrop.on>.navdrop-btn{padding-top:5px;padding-bottom:5px}
+    header>nav>.navtab,header>nav>.navdrop>.navdrop-btn{min-height:40px}
+    /* the open section's icon is a tile, like its active row in the menu (it was the bare icon on a green strip) */
+    .navdrop.on>.navdrop-btn>.num{align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;flex:none;background:linear-gradient(135deg,#0e9f5a,#019c20);border:0;color:#fff}
+  }
+  @media (min-width:1601px){
+    header:not(.fit1) .navdrop.on>.navdrop-btn>.num{display:flex}   /* below 1601 px (and in fit1) the icons step aside */
+  }
   .navdrop-panel{display:none;position:absolute;left:0;top:calc(100% + 10px);z-index:1300;min-width:320px;background:color-mix(in srgb,var(--card) 88%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,.18),0 2px 8px rgba(15,23,42,.06);padding:10px;flex-direction:column;gap:2px;transform-origin:top left}
   .navdrop-panel::before{content:"";position:absolute;left:26px;top:-7px;width:12px;height:12px;background:var(--card);border-left:1px solid var(--line);border-top:1px solid var(--line);transform:rotate(45deg)}
   .navdrop.open>.navdrop-panel{display:flex;animation:navdropIn .18s cubic-bezier(.2,.8,.2,1)}
@@ -1691,7 +1706,6 @@
   :where(dialog){background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px}
   [data-theme="dark"] iframe{color-scheme:dark}
   [data-theme="dark"] .modal-head,[data-theme="dark"] .drawer-hd{border-bottom:1px solid var(--line)}
-  [data-theme="dark"] .navdrop-cur{box-shadow:none}
   [data-theme="dark"] .login-card{box-shadow:0 30px 80px rgba(0,0,0,.7)}
   [data-theme="dark"] .home-bar.stuck{box-shadow:0 6px 18px rgba(0,0,0,.45)}
   [data-theme="dark"] .beta{background:var(--tint-warn-bg);color:var(--tint-warn-fg)}
@@ -1760,19 +1774,18 @@
     .beta,.logo .brand-sub,.logo .brand-div{display:none}
     header>nav>.navtab,.navdrop-btn{padding:6px 8px;font-size:12px}
   }
-  /* a menu's current-page chip ("Fixed · Troubleshoot") adds ~95 px: on 1141–1600 px the BETA badge and the wordmark step
-     aside while one shows, and the chip never grows past 120 px (alpha.158 — the account chip was clipped at 1366–1440) */
+  /* the current-page line under a menu's name is at most 130 px wide here (alpha.164; the alpha.158 pill beside the name
+     needed the BETA badge and the wordmark to step aside, and was hidden below 1260 px) */
   @media (min-width:1141px) and (max-width:1600px){
-    header:has(.navdrop-cur:not([hidden])) .beta,header:has(.navdrop-cur:not([hidden])) .logo .brand-sub,header:has(.navdrop-cur:not([hidden])) .logo .brand-div{display:none}
-    .navdrop-cur{max-width:120px;overflow:hidden;text-overflow:ellipsis}
+    .navdrop-cur:not([hidden]){max-width:130px}
   }
-  @media (min-width:1141px) and (max-width:1260px){ .navdrop-cur{display:none} }   /* the menu stays highlighted; its name is in the page title */
   /* header fit (alpha.160, navdrop.js): the menus are managed, so when the header still overflows these steps apply in order */
   @media (min-width:1141px){
     header.fit1>nav>.navtab>.num,header.fit1 .navdrop-btn>.num{display:none}
     header.fit1>nav>.navtab,header.fit1 .navdrop-btn{padding:7px 10px;gap:6px}
     header.fit2 .beta,header.fit2 .logo .brand-sub,header.fit2 .logo .brand-div{display:none}
     header.fit3 .navdrop-cur{display:none}
+    header.fit3 .navdrop.on>.navdrop-btn>span:not(.num){display:block;white-space:normal;text-align:inherit;line-height:inherit}
     header.fit4>nav>.navtab,header.fit4 .navdrop-btn{padding:6px 8px;font-size:12px}
   }
   /* ---------- drawer mode (≤1140) : nav leaves the header (the full nav needs ~1125px) ---------- */
@@ -2484,7 +2497,7 @@
 <script src="base.js?v=20260910c"></script>
 <script src="person.js?v=20260911b"></script>   <!-- ONE person card for every screen -->
 <script src="navmenu.js?v=20261009a" defer></script>   <!-- managed header menus — must run before navdrop.js / adaptive.js -->
-<script src="navdrop.js?v=20261009a" defer></script>
+<script src="navdrop.js?v=20261009b" defer></script>
 <script src="adaptive.js?v=20261009a" defer></script>
 <script src="ksatime.js?v=20260910c"></script>
 <script src="data.js?v=20260910c"></script>
@@ -2534,8 +2547,8 @@
 <script src="fixed-playbook.js?v=20260910c"></script>
 <script src="fixed-diagrams.js?v=20260911x"></script>
 <script src="execops.js?v=20261008a"></script>
-<script src="execbrief.js?v=20261008a"></script>
-<script src="vpcockpit.js?v=20261009b"></script>
+<script src="execbrief.js?v=20261009c"></script>
+<script src="vpcockpit.js?v=20261009c"></script>
 <script src="opsreports.js?v=20261008a"></script>
 <script src="cst-remedy.js?v=20260918f"></script>
 <script src="cst-api.js?v=20260918f"></script>

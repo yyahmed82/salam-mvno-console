@@ -1,7 +1,7 @@
 /* navdrop.js — Mobile / Home dropdown groups in the top nav (salam.sa pattern, ops-console behaviour).
  *  · click to open (no hover); close on outside click, Esc, or after choosing an item; ← → moves between groups, ↑ ↓ inside
  *  · the group button mirrors its children: "on" when one of its pages is active, hidden when the role sees none,
- *    and shows the current page as a small chip ("Home · SDA map")
+ *    and shows the current page on a second line under its name ("Fixed" / "SDA map" — alpha.164; a pill beside it before)
  *  · Home items carry data-fxtab → deep-link #fixed?tab=<key>. Only TRUSTED clicks route: router.js's clickNav() fires a
  *    synthetic click on the first data-view="fixed" button (Overview), which must not rewrite the hash. */
 (function(){
@@ -51,7 +51,7 @@
       d.classList.toggle("hidden", visible.length===0);
       const act=tabs.find(t=>t.classList.contains("active"));
       d.classList.toggle("on", !!act);
-      const chip=d.querySelector(".navdrop-cur"); if(chip){ const t=act?pageName(act):""; if(chip.textContent!==t) chip.textContent=t; if(chip.hidden!==!act) chip.hidden=!act; }
+      const chip=curLine(d); if(chip){ const t=act?pageName(act):""; if(chip.textContent!==t) chip.textContent=t; if(chip.hidden!==!act) chip.hidden=!act; }
     });
     scheduleFit();
   }
@@ -76,12 +76,23 @@
   /* wiring is per dropdown and idempotent (alpha.160): navmenu.js builds menus after load from the managed layout,
    * so a menu can appear (or come back) at any time — navdropWire() wires whatever is new and re-syncs */
   let mo=null;
+  /* the current-page line lives INSIDE the name's <span>, after its <small> tip, so CSS can stack it under the name
+   * (alpha.164). Renaming a menu (navmenu.js setMenuLabel) rewrites that span's text and drops the line, so it is
+   * looked up — and put back — on every sync. Inserting nodes is not a class/style change: no observer loop. */
+  function curLine(d){
+    const btn=d.querySelector(".navdrop-btn"); if(!btn) return null;
+    const sp=btn.querySelector(":scope > span:not(.num)");
+    let c=btn.querySelector(".navdrop-cur");
+    if(!c){ c=document.createElement("em"); c.className="navdrop-cur"; c.hidden=true; }
+    if(sp&&c.parentNode!==sp) sp.appendChild(c); else if(!sp&&!c.parentNode) btn.insertBefore(c, btn.querySelector(".chev"));
+    return c;
+  }
   function wireDrop(d){
     if(d.dataset.wired) return;
     const btn=d.querySelector(".navdrop-btn"), panel=d.querySelector(".navdrop-panel"); if(!btn||!panel) return;
     d.dataset.wired="1";
     btn.setAttribute("aria-haspopup","true"); btn.setAttribute("aria-expanded","false");
-    if(!btn.querySelector(".navdrop-cur")){ const c=document.createElement("em"); c.className="navdrop-cur"; c.hidden=true; btn.insertBefore(c, btn.querySelector(".chev")); }
+    curLine(d);
     btn.addEventListener("click", e=>{ e.stopPropagation(); d.classList.contains("open")?closeAll():openOne(d); });
     /* one delegated listener: a trusted click on any entry (a page, a link added later) closes the menu after the entry's own handlers ran */
     panel.addEventListener("click", e=>{ e.stopPropagation(); if(e.isTrusted&&e.target.closest&&e.target.closest(".navtab")) setTimeout(closeAll,0); });
@@ -118,7 +129,7 @@
   window.navdropWire=function(){ drops().forEach(wireDrop); wireTips(); wireTabs(); sync(); };
   /* header fit (alpha.160): the menus are managed in Settings › Navigation, so fixed breakpoints cannot know how wide the
    * nav is. While the header row overflows, step down one level at a time (classes on <header>, CSS in index.html):
-   *   fit1 icons off · fit2 wordmark + BETA off · fit3 the current-page chip off · fit4 tighter labels
+   *   fit1 icons off · fit2 wordmark + BETA off · fit3 the current-page line under a menu's name off · fit4 tighter labels
    * Drawer mode (≤1140 px) needs none of it. Measured in the next frame after a sync, a resize or a menu change. */
   var fitQ=false;   // var: sync() can run before this line in theory (navdropSync is exported above)
   function fitHeader(){
@@ -134,6 +145,14 @@
   window.navFitHeader=scheduleFit;
   window.addEventListener("resize", scheduleFit);
   document.addEventListener("navmenuchange", scheduleFit);
+  /* late content (alpha.164): the account chip gets its name after /api/me, the live button its state — none of that
+   * syncs the nav, so the header could stay 3 px too wide (seen at 1680 px). Re-fit whenever a part of the header changes
+   * size. No loop: a fit that lands on the same classes leaves the same sizes, and the observer only reports changes. */
+  function watchHeader(){
+    const h=document.querySelector("header"); if(!h||!window.ResizeObserver||h.dataset.fitwatch) return;
+    h.dataset.fitwatch="1"; const ro=new ResizeObserver(()=>scheduleFit());
+    Array.from(h.children).forEach(c=>ro.observe(c));
+  }
   function wire(){
     mo=new MutationObserver(()=>sync());
     drops().forEach(wireDrop); wireTips(); wireTabs();
@@ -141,6 +160,7 @@
     document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeAll(); });
     window.addEventListener("hashchange", sync);
     document.addEventListener("click", ()=>setTimeout(sync,0), true);
+    watchHeader();
     sync();
   }
   if(document.readyState==="loading") document.addEventListener("DOMContentLoaded", wire); else wire();

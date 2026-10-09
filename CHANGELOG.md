@@ -1,3 +1,14 @@
+## 2.0.0-alpha.164 — 2026-10-09
+
+- **A menu's current page sits under its name.** The menu that holds the page you are on shows that page on a second line under its name — Fixed / Operations Dashboard, VP Operations / VP dashboard, VP Operations / Weekly Report — instead of the green pill beside the name, which read as a second button and widened the menu (Fixed on its dashboard: 198 px wide at 1920 px, was 249 px).
+  - The open section's icon is a green tile, like its row inside the menu.
+  - The two lines fit the height of one: the menu stays as tall as the other header buttons.
+  - The page line is at most 150 px wide (130 px at 1141–1600 px; a longer name ends with …). It now shows from 1141 px up (the pill was hidden below 1260 px), and the BETA badge and the wordmark no longer step aside for it. When the header is still too full it is the third thing to go, after the icons and the wordmark.
+  - A menu renamed in Settings › Navigation keeps its page line. Arabic (right to left) and dark mode follow; the phone and iPad drawer is unchanged (it lists the pages).
+- **Fix:** the header fit re-runs when a part of the header changes size after the page loads (the account chip gets its name after sign-in). The account chip could sit 3 px off the screen (seen at 1680 px).
+- **Cache keys:** `execbrief.js` and `vpcockpit.js` changed in alpha.162 under their old keys, and versioned scripts are cached for a day, so a browser that had them could keep the old copies; they have new keys now.
+- **Code:** `navdrop.js` (page line inside the menu name, header watched by a ResizeObserver), `index.html` (styles, cache keys).
+
 ## 2.0.0-alpha.163 — 2026-10-09
 
 - **An incident of a switched-off rule is closed** (`alertRunner.js`): the runner walks the enabled rules only, so an incident left open by a rule disabled in the console or retired by init.js stayed open for ever — `fixed_applog_volume_collapse_sda`, retired in alpha.162, fired once more during that deploy. It is now resolved on the next tick with reason `rule_disabled` and a comment saying why.
