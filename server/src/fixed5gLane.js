@@ -13,8 +13,10 @@
  * WHAT. Board-shaped events (the live board's row fields). fixedErrors.js merges them into summary / live / detail /
  * export, the error catalogue and the hourly trend. Alert metrics are NOT fed from here: the 5G conditions have their
  * own rules (fixed_ep5g_*), and the channel error rules keep counting what they always counted.
- *   SIM_NOT_AVAILABLE   one per querySimCard answer without a sellable SIM, from the board read model's api_calls
- *                       (resultCode 0 and HTTP < 400 — any other answer is already an error event).
+ *   SIM_NOT_AVAILABLE   one per querySimCard answer without a sellable SIM (resultCode 0 and HTTP < 400 — any other
+ *                       answer is already an error event). Read from nexus api_logs since alpha.159: each call with its
+ *                       own time and a stable id (the read model's api_calls all carry the last re-ingest time and get a
+ *                       new id at every re-ingest); the read model's copy only when nexus is not configured.
  *                       E-purchase: the serial is the one Naqeel reserved, so the cause is read from nexus
  *                       epurchase_5g_locks as it stood at the time of the check —
  *                         LEAKED_LOCK   held by an expired journey, never released          technical
@@ -32,16 +34,20 @@
  *                       step with a failure in context (nafath.customer.status, sematiResponse, sematiError).
  *   STOCK_LOCK_LEAK     SIM / landline locks still LOCKED on journeys expired > 2 h (snapshot). A serial that was also
  *                       sold carries SOLD_DO_NOT_RELEASE: releasing it would put a sold SIM back on sale.
- * Ids are 'g5-' + 29 hex of sha1(kind | journey | key | time) — stable, so acks (fixed_error_acks) work as on any row.
+ * Ids are 'g5-' + 29 hex of sha1(kind | journey | key) — key = the nexus api_log id for a SIM check — stable, so acks
+ * (fixed_error_acks) work as on any row. (alpha.158 keyed SIM checks on the read model's call id, which changes at every
+ * re-ingest: acks set on those rows before alpha.159 do not carry over.)
  * PII: full identifiers stay server-side (search only); rows carry masked tails; bodies go through secretMask and the
  * board's own masking (national id, name, mobile).
- * Cost: per board source one api_calls read (5G attempts by started_at, their calls by attempt id); in nexus one spot
- * lookup for the lock causes and the app channel, one for the Nafath-step stops, the shared 30-day Payments-watch
- * snapshot. Memoised per window (60 s up to 26 h, 5 min up to 8 d, 10 min beyond), single-flight. */
+ * Cost: in nexus one read for the SIM checks (the 5G journeys of the window by workflow and created_at, materialised,
+ * then their querySimCard calls by workflow_state_id), one spot lookup for the lock causes, one for the Nafath-step
+ * stops, and the shared 30-day Payments-watch snapshot; in the read model one PK lookup for dealer / region / referral.
+ * Memoised per window (60 s up to 26 h, 5 min up to 8 d, 10 min beyond), single-flight. */
 'use strict';
 const crypto = require('crypto');
 const db = require('./db');
-const { maskSecretsText, maskSecretsObj } = require('./secretMask');
+const { maskSecretsText, maskSecretsObj, maskBodyText } = require('./secretMask');
+const { isDone } = require('./fixedJourney');
 
 const EP5 = 'ePurchase5GWhiteLabel';
 const SDA5 = ['fiveGWhiteLabel', 'fiveGFWA'];             // the prod enum labels (5G e-purchase is stored as fiveGWhiteLabel)
@@ -124,6 +130,77 @@ async function simRows(sources, from, to, warnings) {
   return out;
 }
 
+/* ---- the SIM checks from nexus (alpha.159) — each call with its own time and a stable id ----
+ * The read model's api_calls cannot serve here: the dealer-ops sink deletes and re-creates an attempt's calls whenever the
+ * journey changes and never sets created_at, so every call of a journey carries the last re-ingest time (two "SIM not
+ * available" rows of one journey at the same second, 9 Oct) and a new id each time (an ack would not stick). nexus
+ * api_logs hold the real time; the 5G journeys are found first (workflow, created_at), then their querySimCard calls. */
+const SIM_WF = ['fiveGWhiteLabel', 'fiveGFWA', EP5];
+const SIM_SQL_NEXUS = `WITH w AS MATERIALIZED (
+    SELECT id, workflow_id AS wf, channel::text AS ch, current_step, updated_at, expires_at,
+           coalesce(context->>'referralCode', context->'urlParams'->>'ref') AS ref
+      FROM workflow_states
+     WHERE workflow_id = ANY($3::text[]) AND created_at >= $1::timestamptz - interval '1 day' AND created_at < $2)
+SELECT a.id AS log_id, a.workflow_state_id AS attempt_id, a.endpoint, a.method, a.status::text AS status, a.duration, a.created_at,
+       a.payload, a.response, w.wf, w.ch, w.current_step, w.updated_at AS w_updated, w.expires_at, w.ref
+  FROM w JOIN api_logs a ON a.workflow_state_id = w.id
+ WHERE a.created_at >= $1 AND a.created_at < $2
+   AND a.endpoint LIKE '%querySimCard%'
+   AND (a.status IS NULL OR a.status::text !~ '^[0-9]+$' OR a.status::text::int < 400)
+   AND coalesce(a.response->>'resultCode', '0') = '0'
+   AND NOT coalesce((SELECT bool_or(s->>'simState' = 'I') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(a.response->'simCardDtoList') = 'array'
+        THEN a.response->'simCardDtoList' ELSE '[]'::jsonb END) s), false)
+ ORDER BY a.created_at DESC LIMIT 5000`;
+async function simRowsNexus(from, to, warnings) {
+  try { return (await db.nexus.query(SIM_SQL_NEXUS, [from, to, SIM_WF])).rows; }
+  catch (e) { warnings.push(`SIM checks: ${/statement timeout/i.test(e.message) ? 'query too slow in nexus — narrow the period' : e.message}`); return null; }
+}
+const objOf = v => { if (v && typeof v === 'object') return v; if (typeof v !== 'string') return null; try { const p = JSON.parse(v); return p && typeof p === 'object' ? p : null; } catch (_) { return null; } };
+/* dealer, region, referral, order number and the search identifiers from the board read model (PK lookup per source) */
+async function attribution(ids, sources) {
+  const by = new Map(); const list = [...new Set(ids.filter(Boolean))];
+  if (!list.length) return by;
+  for (const s of sources) {
+    try { const r = await s.pool.query(`SELECT oa.id, oa.dealer_id, d.dealer_code, COALESCE(oa.region, d.region) AS region, oa.referral_code, oa.order_number,
+          oa.iccid, oa.msisdn, oa.cpe, oa.customer_id, oa.cust_code, oa.service_no, oa.odb, oa.plan
+        FROM order_attempts oa LEFT JOIN dealers d ON d.id = oa.dealer_id WHERE oa.id = ANY($1::text[])`, [list]);
+      for (const x of r.rows) if (!by.has(x.id)) by.set(x.id, x); }
+    catch (_) { /* attribution only */ }
+  }
+  return by;
+}
+function simEventsNexus(rows, locks, attrib) {
+  const out = [];
+  for (const r of rows) {
+    const isEp = r.wf === EP5 || (r.ch && r.ch !== 'SDA');
+    const body = objOf(r.payload) || {};
+    const serial = String(body.iccidBegin || body.iccid || '').trim() || null;
+    const resp = objOf(r.response);
+    const state = resp && Array.isArray(resp.simCardDtoList) && resp.simCardDtoList.length && resp.simCardDtoList[0] ? resp.simCardDtoList[0].simState || null : null;
+    const empty = r.response == null || (typeof r.response === 'string' && !r.response.trim());
+    const code = simCause(isEp, serial, state, empty ? '' : 'answered', r.created_at, r.attempt_id, locks);
+    const side = isEp ? 'ep' : 'sda';
+    const a = attrib.get(r.attempt_id) || {};
+    const ref = isEp && r.ch !== 'PULSE' ? (r.ref || a.referral_code || null) : null;
+    const chan = chanOf(r.ch === 'SDA' ? 'sda' : null, ref, r.ch);
+    const done = isDone(r.current_step);
+    const http = r.status != null && /^\d+$/.test(String(r.status)) ? Number(r.status) : null;
+    out.push({
+      id: gid('sim', r.attempt_id, r.log_id), call_id: String(r.log_id), kind: 'sim', category: 'SIM_NOT_AVAILABLE', code, cls_auto: SIM_BUSINESS[side].has(code) ? 'business' : 'technical',
+      message: '5G SIM not available', resp_text: SIM_TEXT[side][code] + (code === 'NOT_IDLE' && state ? ` (state ${state})` : ''), provider: null,
+      step: (() => { try { return new URL(r.endpoint).pathname; } catch (_) { return String(r.endpoint || 'querySimCard').split('?')[0]; } })(), method: r.method || null,
+      http, ms: r.duration == null ? null : Math.round(Number(r.duration)), occurred_at: iso(r.created_at), resolved: done, resolved_at: done ? iso(r.w_updated) : null,
+      attempt_id: r.attempt_id, order_number: a.order_number && a.order_number !== '11223344' ? a.order_number : null, acct_masked: null, cust_masked: null, client_side: false,
+      channel: r.ch === 'SDA' ? 'sda' : r.ch === 'PULSE' ? 'salamhome' : 'epurchase', chan, type: r.wf === 'fiveGFWA' ? '5gfwa' : '5gwl', workflow: r.wf, plan: a.plan || null,
+      dealer_id: a.dealer_id || null, dealer_code: a.dealer_code || null, referral_code: chan === 'qr' ? ref : null, region: a.region || null,
+      serial_tail: tail(serial, 6), src_model: 'nexus',
+      req: maskBodyText({ method: r.method || null, url: r.endpoint || null, body: objOf(r.payload) || r.payload || null }), res: maskBodyText(r.response),
+      ids: { iccid: serial || a.iccid || null, msisdn: a.msisdn || null, cpe: a.cpe || null, customerId: a.customer_id || null, custCode: a.cust_code || null, serviceNo: a.service_no || null, odb: a.odb || null },
+    });
+  }
+  return out;
+}
+
 /* nexus spot lookups: the journeys' real channel (the prod ingest files Salam Home app journeys under e-purchase),
  * the referral code, and every lock row of the serials Naqeel reserved */
 async function nexusFacts(ids, serials, warnings) {
@@ -178,7 +255,7 @@ function simEvents(rows, facts) {
     const text = SIM_TEXT[side][code] + (code === 'NOT_IDLE' && state ? ` (state ${state})` : '');
     const done = r.outcome === 'COMPLETED';
     out.push({
-      id: gid('sim', r.attempt_id, r.call_id), kind: 'sim', category: 'SIM_NOT_AVAILABLE', code, cls_auto: SIM_BUSINESS[side].has(code) ? 'business' : 'technical',
+      id: gid('sim', r.attempt_id, r.call_id), call_id: String(r.call_id), kind: 'sim', category: 'SIM_NOT_AVAILABLE', code, cls_auto: SIM_BUSINESS[side].has(code) ? 'business' : 'technical',
       message: '5G SIM not available', resp_text: text, provider: null, step: r.endpoint || 'querySimCard', method: r.method || null,
       http: r.status == null ? null : n(r.status), ms: r.duration_ms == null ? null : n(r.duration_ms),
       occurred_at: iso(r.created_at), resolved: done, resolved_at: done ? iso(r.completed_at) : null,
@@ -305,11 +382,23 @@ async function enrich(evs, sources) {
 async function compute(from, to, sources, custom) {
   const t0 = Date.now(), warnings = [];
   const F = from.toISOString(), T = to.toISOString();
-  const rows = sources.length ? await simRows(sources, F, T, warnings) : [];
-  const epIds = [...new Set(rows.filter(r => r.oa_channel !== 'sda').map(r => r.attempt_id))];
-  const serials = [...new Set(rows.filter(r => r.oa_channel !== 'sda').map(r => serialOf(r.req_body)).filter(Boolean))];
-  const facts = await nexusFacts(epIds, serials, warnings);
-  const sim = simEvents(rows, facts);
+  /* SIM checks: nexus when configured (real call times, stable ids); the read model's copy otherwise */
+  let sim = [], simSource = null;
+  if (db.nexus) {
+    const rows = await simRowsNexus(F, T, warnings);
+    if (rows) {
+      const serials = [...new Set(rows.filter(r => r.wf === EP5 || r.ch !== 'SDA').map(r => { const b = objOf(r.payload) || {}; return String(b.iccidBegin || b.iccid || '').trim(); }).filter(Boolean))];
+      const facts = await nexusFacts([], serials, warnings);
+      const attrib = await attribution(rows.map(r => r.attempt_id), sources);
+      sim = simEventsNexus(rows, facts.locks, attrib); simSource = 'nexus';
+    }
+  } else if (sources.length) {
+    const rows = await simRows(sources, F, T, warnings);
+    const epIds = [...new Set(rows.filter(r => r.oa_channel !== 'sda').map(r => r.attempt_id))];
+    const serials = [...new Set(rows.filter(r => r.oa_channel !== 'sda').map(r => serialOf(r.req_body)).filter(Boolean))];
+    const facts = await nexusFacts(epIds, serials, warnings);
+    sim = simEvents(rows, facts); simSource = 'read model';
+  }
   /* the paid / lock conditions come from the Payments-watch snapshot: the 30-day one (shared with the alert loop) for
    * recent windows; a board window reaching further back reads the 60-day one; the trend / catalogue slices older than
    * 31 days skip it (5G e-purchase is live since 17 Sep 2026 and those are current-state conditions anyway) */
@@ -326,9 +415,10 @@ async function compute(from, to, sources, custom) {
   await enrich(extra, sources);
   /* the partition: a context event belongs to the bucket its journey sits in; drop what no active source serves */
   const served = new Set(sources.flatMap(s => s.buckets || ['sda', 'qr', 'web', 'salamhome']));
-  const events = [...sim, ...extra.filter(e => !sources.length || served.has(e.chan))].sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at));
+  const events = [...sim, ...extra].filter(e => !sources.length || served.has(e.chan)).sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at));
   const parts = { sim: sim.length, paid: ctx.filter(e => e.kind === 'paid').length, lock: ctx.filter(e => e.kind === 'lock').length, identity: ident.length };
-  return { from: F, to: T, events, meta: { took_ms: Date.now() - t0, parts, warnings, nexus: !!db.nexus, latest: events[0] ? events[0].occurred_at : null } };
+  if (simSource === 'read model') warnings.push('SIM-check times are when the read model stored the journey (nexus not configured)');
+  return { from: F, to: T, events, meta: { took_ms: Date.now() - t0, parts, warnings, nexus: !!db.nexus, simSource, latest: events[0] ? events[0].occurred_at : null } };
 }
 
 const enabled = () => !!(db.ops || db.opsBeta || db.nexus);
@@ -350,6 +440,13 @@ async function find(id, sources) {
   const now = Date.now();
   const r = await events({ from: new Date(now - 30 * 864e5), to: new Date(now + 60e3), window: '30d', sources });
   return r.events.find(x => x.id === id) || null;
+}
+
+/* every cached lane event of one journey (the journey panel marks them on its calls) */
+async function forAttempt(attemptId) {
+  const out = new Map();
+  for (const h of memo.values()) { try { const r = await h.p; for (const e of r.events) if (e.attempt_id === attemptId && !out.has(e.id)) out.set(e.id, e); } catch (_) {} }
+  return [...out.values()];
 }
 
 /* "similar cases" for a lane event, over the lane's 30 days */
@@ -391,4 +488,4 @@ const ROW_KEYS = ['id', 'attempt_id', 'order_number', 'acct_masked', 'cust_maske
   'referral_code', 'region', 'step', 'occurred_at', 'resolved', 'resolved_at', 'chan', 'type', 'workflow', 'plan', 'resp_text', 'kind', 'serial_tail'];
 const toRow = e => { const o = {}; for (const k of ROW_KEYS) o[k] = e[k] === undefined ? null : e[k]; o.signature = `${e.category}${e.code ? ':' + e.code : ''}`; o.src = 'lane'; return o; };
 
-module.exports = { enabled, events, find, similar, raw, toRow, isLaneId, compute, simCause, serialOf, SIM_TEXT, EP5 };
+module.exports = { enabled, events, find, forAttempt, similar, raw, toRow, isLaneId, compute, simCause, serialOf, SIM_TEXT, EP5 };

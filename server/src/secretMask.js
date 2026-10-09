@@ -1,4 +1,5 @@
-/* secretMask.js — SIM secrets never leave the console (alpha.158, 9 Oct 2026).
+/* secretMask.js — SIM secrets never leave the console (alpha.158, 9 Oct 2026); customer-data masking for raw nexus
+ * bodies shown masked (alpha.159, maskPiiText / maskBodyText at the end).
  *
  * BSS querySimCard answers carry the SIM's authentication material next to its serial (ki, opc, pin / puk, adm …).
  * The dealer-ops ingest keeps the answer as it is in sda_ops api_calls.res_body (its maskPii covers national id,
@@ -49,4 +50,29 @@ function maskSecretsObj(v, depth = 0) {
 
 const maskSecrets = v => (v != null && typeof v === 'object') ? maskSecretsObj(v) : maskSecretsText(v);
 
-module.exports = { maskSecrets, maskSecretsText, maskSecretsObj, MASK, KEYS };
+/* ---- customer data, for bodies the console reads raw from nexus and shows MASKED (alpha.159: the journey view, the
+ * 5G lane). The dealer-ops ingest rules (national id, name, mobile; the same keys in a query string) plus the names,
+ * birth date and e-mail keys nexus journeys carry, and numbers written without quotes. Network ids (ICCID, CPE, ODB,
+ * plate) stay — operational, as on the board. Unmask (audited) skips this and keeps maskSecrets. ---- */
+const PII_ID = 'certNbr|nationalId|idNumber|custId|customerId|iqamaNumber|borderNumber|passportNumber';
+const PII_NAME = 'custName|customerName|name|fullName|firstName|lastName|middleName|englishFirstName|englishSecondName|englishThirdName|englishLastName|arabicFirstName|arabicSecondName|arabicThirdName|arabicLastName|arabicName|englishName|contactName';
+const PII_CONTACT = 'msisdn|mobilePhone|mobileNumber|mobile|phoneNumber|phone|contactNumber|alternativeNumber|email|emailAddress';
+const PII_DOB = 'dateOfBirth|birthDate|dob|hijriDateOfBirth|gregorianDateOfBirth';
+const PII_KEYS = [PII_ID, PII_NAME, PII_CONTACT, PII_DOB].join('|');
+const RX_PII_STR = new RegExp(`("(?:${PII_KEYS})"\\s*:\\s*")(?:[^"\\\\]|\\\\.)*(")`, 'gi');
+const RX_PII_NUM = new RegExp(`("(?:${PII_KEYS})"\\s*:\\s*)-?\\d[\\d.]*`, 'gi');
+const RX_PII_QS = /((?:certNbr|nationalId|nid|idNumber|msisdn|mobile|phone)=)[^&"\s]+/gi;
+function maskPiiText(s) {
+  if (s == null) return s;
+  return String(s).replace(RX_PII_STR, `$1${MASK}$2`).replace(RX_PII_NUM, `$1"${MASK}"`).replace(RX_PII_QS, `$1${MASK}`);
+}
+/* a body for the masked views: any value → JSON text, customer data + SIM secrets masked, cut at `max` characters */
+function maskBodyText(v, max = 4000) {
+  if (v == null) return null;
+  let t; try { t = typeof v === 'string' ? v : JSON.stringify(v); } catch (_) { return null; }
+  if (t == null) return null;
+  t = maskSecretsText(maskPiiText(t));
+  return t.length > max ? t.slice(0, max) + '…(truncated)' : t;
+}
+
+module.exports = { maskSecrets, maskSecretsText, maskSecretsObj, maskPiiText, maskBodyText, MASK, KEYS };

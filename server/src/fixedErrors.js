@@ -430,7 +430,7 @@ function mount(app, deps) {
     addFacet(provs, 'provider', e => e.provider || '-', 20); addFacet(chans, 'channel', e => e.chan, 10); addFacet(types, 'type', e => e.type || 'unknown', 10);
     addFacet(msgs, 'msg', laneSig, 80); addFacet(clss, 'cls', laneCls, 4);
     if (L.meta && !L.meta.disabled) fresh.push({ src: 'lane', buckets: CHANNELS.map(c => c.key), latest: L.meta.latest || null, parts: L.meta.parts || {}, matched: laneHit.length,
-      warnings: L.meta.warnings || [], nexus: !!L.meta.nexus, took_ms: L.meta.took_ms || null });
+      warnings: L.meta.warnings || [], nexus: !!L.meta.nexus, simSource: L.meta.simSource || null, took_ms: L.meta.took_ms || null });
     if (Date.now() - t0 > 3000 || warnings.length) console.log(`[FIXED-ERRORS] summary ${s.window} took ${Date.now() - t0} ms (${allParts.map(p => p.src + ':' + p.r.rows.length + ' rows').join(', ')})${warnings.length ? ' warnings ' + warnings.map(w => w.part).join(',') : ''}`);
     const byCategory = catRows.sort((a, b) => b.total - a.total).map(x => { const m = meta(x.category);
       return { category: x.category, label: m.label, team: m.team, tone: m.tone, clientSide: m.clientSide, moneyAtRisk: m.moneyAtRisk,
@@ -476,7 +476,8 @@ function mount(app, deps) {
     P.push(lim + 1);
     const parts = await each({ ...s, P }, (pool, where, src) => pool.query(`SELECT e.id, e.attempt_id, e.order_number, e.acct_masked, e.cust_masked, e.category, e.code, e.message, e.client_side,
         e.channel, e.dealer_id, e.dealer_code, e.referral_code, e.region, e.step, e.occurred_at, e.resolved, e.resolved_at, e.signature,
-        ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_SQL()} AS cls, ${RESP_EXPR} AS resp_text, oa.workflow::text AS workflow, oa.plan, '${src}'::text AS src
+        ${CHANNEL_EXPR} AS chan, ${TYPE_EXPR} AS type, ${CLASS_SQL()} AS cls, ${RESP_EXPR} AS resp_text, oa.workflow::text AS workflow, oa.plan, '${src}'::text AS src,
+        oa.outcome::text AS oa_outcome, oa.step_reached AS oa_step, oa.channel AS oa_channel
       FROM error_events e ${JOIN_OA} ${where} ${extra.length ? 'AND ' + extra.join(' AND ') : ''} ORDER BY e.occurred_at DESC LIMIT $${P.length}`, P));
     /* the 5G lane under the same filters, then one merge by time */
     const L = await laneP;
@@ -489,13 +490,61 @@ function mount(app, deps) {
     const laneRows = lr.slice(0, lim + 1).map(e => ({ ...lane.toRow(e), cls: laneCls(e) }));
     const all = [].concat(...parts.map(p => p.r.rows), laneRows).sort((a, b) => new Date(b.occurred_at) - new Date(a.occurred_at));
     const rows = all.slice(0, lim);
-    const acks = await acksFor(rows.map(x => x.id));
+    const [acks, js] = await Promise.all([acksFor(rows.map(x => x.id)), J.states(rows.map(x => x.attempt_id)).catch(() => new Map())]);
     if (audit && (q.find || q.anyId)) audit(req, 'fixed.errors.search', String(q.find || q.anyId).slice(0, 40), { rows: rows.length });
     return { window: s.window, from: s.from, to: s.to, nextCursor: all.length > lim && rows.length ? new Date(rows[rows.length - 1].occurred_at).toISOString() : null,
-      rows: rows.map(x => { const m = meta(x.category); const a = acks[x.id];
-        return { ...x, label: m.label, team: m.team, tone: m.tone, priority: eff[x.category] != null ? eff[x.category] : m.severity,
+      rows: rows.map(x => { const m = meta(x.category); const a = acks[x.id]; const { oa_outcome, oa_step, oa_channel, ...rest } = x;
+        return { ...rest, label: m.label, team: m.team, tone: m.tone, priority: eff[x.category] != null ? eff[x.category] : m.severity,
           chanLabel: (CHAN[x.chan] || {}).label || x.chan, typeLabel: (TYPE[x.type] || {}).label || x.type, journey: WF_LABEL[x.workflow] || '',
+          jstate: js.get(x.attempt_id) || rowJourney(x),
           acked: !!a, acked_by: a ? a.actor : null, acked_at: a ? a.at : null }; }) };
+  }
+
+  /* ---- the whole journey of an error (fixedJourney.js, alpha.159) ----
+   * The JOURNEY column: nexus state of each row's journey (completed · stopped · in progress, at which step); without
+   * nexus, the read model's outcome (it only knows COMPLETED — an expired journey stays IN_PROGRESS there). */
+  const J = require('./fixedJourney');
+  function rowJourney(x) {
+    if (!x.oa_outcome && !x.oa_step) return null;
+    const wf = x.workflow === 'fiveGWhiteLabel' && x.oa_channel && x.oa_channel !== 'sda' ? 'ePurchase5GWhiteLabel' : x.workflow;
+    if (x.oa_outcome === 'COMPLETED') return { state: 'completed', step: x.oa_step || null, label: J.stepLabel(x.oa_step, wf), source: 'read model' };
+    return { state: ['CANCELLED', 'EXPIRED', 'STALLED'].includes(x.oa_outcome) ? 'stopped' : 'unknown', step: x.oa_step || null, label: J.stepLabel(x.oa_step, wf), source: 'read model' };
+  }
+  /* GET /api/fixed/errors/journey?id=<event id>[&src=ops|beta|lane][&unmask=1] — the panel under an opened row */
+  async function journeyOf(q, req) {
+    const id = String(q.id || '').slice(0, 80); if (!id) { const e = new Error('id required'); e.status = 400; throw e; }
+    const isoOf = v => v instanceof Date ? v.toISOString() : v;
+    let ev = null, opsPool = null;
+    if (lane.isLaneId(id)) {
+      const srcs = await laneSources(); const le = await lane.find(id, srcs);
+      if (le) { ev = { id: le.id, attempt_id: le.attempt_id, category: le.category, code: le.code, step: le.step, occurred_at: le.occurred_at, kind: le.kind,
+        call_id: le.call_id || null, label: meta(le.category).label, cls: laneCls(le) }; opsPool = ((srcs.find(x => x.src === 'ops') || srcs[0]) || {}).pool || null; }
+    } else {
+      const order = sources().sort((a, b) => (a.src === q.src ? -1 : 0) - (b.src === q.src ? -1 : 0));
+      for (const x of order) {
+        const r = await x.pool.query(`SELECT e.id, e.attempt_id, e.category, e.code, e.step, e.occurred_at, ${CLASS_SQL()} AS cls FROM error_events e WHERE e.id = $1 LIMIT 1`, [id]);
+        if (r.rows.length) { const e = r.rows[0]; ev = { ...e, occurred_at: isoOf(e.occurred_at), label: meta(e.category).label, kind: 'board' }; opsPool = x.pool; break; }
+      }
+    }
+    if (!ev) { const e = new Error('event not found — a 5G journey condition that has cleared is no longer listed'); e.status = 404; throw e; }
+    if (!ev.attempt_id) { const e = new Error('this error carries no journey id'); e.status = 404; throw e; }
+    const unmask = !!(q.unmask === '1' && req && req.caps && req.caps.unmaskPII);
+    /* every error of the journey: the read models (bounded by the journey's time span — error_events has no attempt
+     * index) and the 5G lane events already computed for it */
+    const errorsFor = async (from, to) => {
+      const out = new Map();
+      await Promise.all(sources().map(async x => { try {
+        const r = await x.pool.query(`SELECT e.id, e.category, e.code, e.step, e.occurred_at, ${CLASS_SQL()} AS cls FROM error_events e
+          WHERE e.occurred_at >= $2 AND e.occurred_at <= $3 AND e.attempt_id = $1 ORDER BY e.occurred_at LIMIT 300`, [ev.attempt_id, from, to]);
+        for (const e of r.rows) if (!out.has(e.id)) out.set(e.id, { ...e, occurred_at: isoOf(e.occurred_at), label: meta(e.category).label, kind: 'board' });
+      } catch (_) { /* the panel still shows the calls */ } }));
+      for (const le of await lane.forAttempt(ev.attempt_id)) if (!out.has(le.id)) out.set(le.id, { id: le.id, category: le.category, code: le.code, step: le.step,
+        occurred_at: le.occurred_at, cls: laneCls(le), label: meta(le.category).label, kind: le.kind, call_id: le.call_id || null });
+      return [...out.values()];
+    };
+    const out = await J.journey({ attemptId: ev.attempt_id, event: ev, opsPool, errorsFor, unmask });
+    if (audit) await audit(req, unmask ? 'pii.unmask' : 'fixed.errors.journey', ev.attempt_id, { errorId: ev.id, page: 'fixed.errors.journey', calls: out.calls.length });
+    return out;
   }
 
   // ---- "Similar cases" (errors.ts history) ----
@@ -675,7 +724,8 @@ function mount(app, deps) {
         chan: r.chan || '', channel: r.chanLabel || r.chan || r.channel || '', type: r.typeLabel || r.type || '', journey: r.journey || '', workflow: r.workflow || '',
         dealer: r.chan === 'qr' && r.referral_code ? 'QR ' + r.referral_code : (r.dealer_code || (r.chan === 'web' ? 'consumer-direct' : r.chan === 'salamhome' ? 'app' : '')), region: r.region || '',
         order: r.order_number || '', attempt: r.attempt_id || '', status: r.resolved ? 'resolved' : (r.acked ? 'acked' : 'open'), acked_by: r.acked_by || '',
-        provider: (le ? le.provider : provOf(b.req_body)) || '', request: maskSecretsText(b.req_body || ''), response: maskSecretsText(b.res_body || ''), src: r.src }; });
+        provider: (le ? le.provider : provOf(b.req_body)) || '', request: maskSecretsText(b.req_body || ''), response: maskSecretsText(b.res_body || ''), src: r.src,
+        outcome: !r.jstate ? '' : r.jstate.state === 'completed' ? 'completed' : r.jstate.state === 'stopped' ? `stopped at ${r.jstate.label}` : r.jstate.state === 'in_progress' ? `in progress at ${r.jstate.label}` : (r.jstate.label ? `at ${r.jstate.label}` : '') }; });
     const laneN = flat.filter(r => r.src === 'lane').length;
     const filters = [
       ['Period', `${WIN_LABEL[sum.window] || sum.window} — ${ksaStr(sum.from)} → ${ksaStr(sum.to)} KSA`],
@@ -695,8 +745,8 @@ function mount(app, deps) {
 
   function exportXlsx(d) {
     const xlsx = require('./xlsx');
-    const HEAD = ['Time (KSA)', 'Priority', 'Class', 'Team', 'Category', 'Code', 'Message', 'Endpoint', 'Method', 'HTTP', 'Response time (ms)', 'Provider', 'Channel', 'Type', 'Journey', 'Workflow', 'Dealer / QR', 'Region', 'Order #', 'Workflow id (attempt)', 'Status', 'Acked by', 'Request', 'Response'];
-    const body = d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, r.cls, r.team, r.category, r.code, r.message, r.endpoint, r.method, r.http, r.ms, r.provider, r.channel, r.type, r.journey, r.workflow, r.dealer, r.region, r.order, r.attempt, r.status, r.acked_by, oneLine(r.request, 32000), oneLine(r.response, 32000)]);
+    const HEAD = ['Time (KSA)', 'Priority', 'Class', 'Team', 'Category', 'Code', 'Message', 'Endpoint', 'Method', 'HTTP', 'Response time (ms)', 'Provider', 'Channel', 'Type', 'Journey', 'Workflow', 'Dealer / QR', 'Region', 'Order #', 'Workflow id (attempt)', 'Status', 'Journey outcome', 'Acked by', 'Request', 'Response'];
+    const body = d.flat.map(r => [ksaStr(r.when), 'P' + r.priority, r.cls, r.team, r.category, r.code, r.message, r.endpoint, r.method, r.http, r.ms, r.provider, r.channel, r.type, r.journey, r.workflow, r.dealer, r.region, r.order, r.attempt, r.status, r.outcome, r.acked_by, oneLine(r.request, 32000), oneLine(r.response, 32000)]);
     const S = d.sum, sumRows = [['Live error control board — export'], []];
     d.filters.forEach(([k, v]) => sumRows.push([k, v]));
     sumRows.push([], ['Totals', 'Open', 'Total'], ['All', S.open, S.total], []);
@@ -709,7 +759,7 @@ function mount(app, deps) {
     sumRows.push([], ['By class (business = the API said no · technical = the platform failed)', 'Open', 'Total']); (S.byClass || []).forEach(c => sumRows.push([c.label, c.open, c.total]));
     sumRows.push([], ['By error message (digits masked)', 'Open', 'Total']); (S.byMessage || []).forEach(m => sumRows.push([m.msg, m.open, m.total]));
     return xlsx.build([
-      { name: 'Errors', rows: [HEAD, ...body], numericCols: [8, 9], widths: [19, 8, 10, 26, 14, 40, 44, 8, 7, 12, 10, 16, 11, 11, 20, 14, 10, 14, 22, 9, 22, 60, 60] },
+      { name: 'Errors', rows: [HEAD, ...body], numericCols: [9, 10], widths: [19, 8, 10, 10, 26, 14, 40, 44, 8, 7, 12, 10, 16, 11, 11, 20, 14, 10, 14, 22, 9, 28, 22, 60, 60] },
       { name: 'Summary', rows: sumRows, numericCols: [1, 2, 3], widths: [34, 30, 12, 10, 10, 12] },
     ]);
   }
@@ -760,6 +810,7 @@ function mount(app, deps) {
   app.get('/api/fixed/errors/summary', gate, wrap(q => summary(q)));
   app.get('/api/fixed/errors/live',    gate, wrap((q, req) => live(q, req)));
   app.get('/api/fixed/errors/detail',  gate, wrap((q, req) => detail(q, req)));
+  app.get('/api/fixed/errors/journey', gate, wrap((q, req) => journeyOf(q, req)));
   app.post('/api/fixed/errors/resolve', gate, wrap((q, req) => resolve(q, req)));
   app.get('/api/fixed/errors/taxonomy', gate, (req, res) => res.json({ taxonomy: TAXONOMY, teams: TEAMS, spike: SPIKE, channels: CHANNELS, types: TYPES }));
 }

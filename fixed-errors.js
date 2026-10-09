@@ -5,7 +5,10 @@
  * the hub chip only when the user changes it. Identifier searches apply live (debounced) or on Enter.
  * Identifiers arrive masked (last digits); "Unmask (audited)" only for caps.unmaskPII; "Ack" only for caps.ackErrors.
  * 5G journeys (alpha.158): rows with src "lane" come from the server's 5G lane (fixed5gLane.js) — SIM checks answered
- * without a sellable SIM and the 5G e-purchase stops only nexus records. Same chips, filters, acks and exports. */
+ * without a sellable SIM and the 5G e-purchase stops only nexus records. Same chips, filters, acks and exports.
+ * Journey (alpha.159): the JOURNEY column says whether each row's journey completed, stopped (and where) or is still open;
+ * an opened row shows the whole journey — steps, every API call in order with this error marked, and what happened after
+ * it (GET /api/fixed/errors/journey, server/src/fixedJourney.js). */
 (function(){
   "use strict";
   const FX=()=>window.FX;
@@ -42,6 +45,69 @@
     paid:"5G journey · a paid 5G HomeFi e-purchase journey, read from nexus (also on Payments watch). Open while the condition lasts.",
     lock:"5G journey · a SIM or landline lock still held by a journey that expired, read from nexus. Open until the lock is released.",
     identity:"5G journey · the journey expired at the Nafath / Semati step with this answer in nexus." };
+  /* ---- the whole journey of an error (alpha.159 · /api/fixed/errors/journey · server/src/fixedJourney.js) ---- */
+  const JST={ completed:["ok","✓ completed"], stopped:["stop","■ stopped"], in_progress:["run","● in progress"] };
+  const jcell=r=>{ const esc=FX().esc; const j=r.jstate; if(!j||!j.state) return `<span class="fe-jo none" title="Journey state not known">—</span>`;
+    const k=JST[j.state]; const at=j.at?fmtT(j.at):"";
+    if(!k) return `<span class="fe-jo none" title="Last step the read model knows">${j.label&&j.label!=="—"?"at "+esc(j.label):"—"}</span>`;
+    const tip=j.state==="completed"?`The journey reached its last step${at?" — "+at:""}`:j.state==="stopped"?`Expired${at?" "+at:""} without completing — at ${j.label||"?"}`:`Not expired yet${at?" — expires "+at:""} — at ${j.label||"?"}`;
+    return `<span class="fe-jo ${k[0]}" title="${esc(tip)}">${k[1]}</span>${j.state!=="completed"&&j.label?`<small class="fe-jos" title="${esc(j.label)}">at ${esc(j.label)}</small>`:""}`; };
+  const dur=ms=>{ if(ms==null||isNaN(ms)) return ""; const s=Math.max(0,Math.round(ms/1000)); if(s<60) return s+"s"; const m=Math.floor(s/60); if(m<60) return m+"m"+(s%60?" "+String(s%60).padStart(2,"0")+"s":""); const h=Math.floor(m/60); return h+"h"+(m%60?" "+String(m%60).padStart(2,"0")+"m":""); };
+  const hms=v=>{ if(!v) return "—"; const d=new Date(v); return isNaN(d)?"—":d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit",timeZone:"Asia/Riyadh"}); };
+  function journeyVerdict(j,row){
+    const V=j.verdict||{}, kind=row.kind||""; const parts=[];
+    if(j.thisCall>=0){
+      const nm=V.retryName?`the call ${V.retryName}`:"the call"; const times=V.retries===1?"once":`${V.retries} times`;
+      if(!V.retries) parts.push(`${nm} was not retried`);
+      else if(V.retryOk) parts.push(`${nm} was retried ${times} and succeeded${V.timesReliable!==false?" "+dur(Date.parse(V.retryOkAt)-Date.parse(row.occurred_at))+" later":""}`);
+      else parts.push(`${nm} was retried ${times} and failed each time`);
+      parts.push(!V.callsAfter?"no other call followed":`${V.callsAfter} call${V.callsAfter>1?"s":""} followed, ${V.failedAfter?`${V.okAfter} answered OK and ${V.failedAfter} did not`:V.callsAfter>1?"all answered OK":"answered OK"}`);
+    }
+    if(V.state==="completed") parts.push(kind==="paid"||kind==="lock"?`the journey had already reached its last step (${V.stepLabel}) — this problem comes after it`:`the journey went on and completed (${V.stepLabel})`);
+    else if(V.state==="stopped") parts.push(`${V.wentOn?"the journey went on, then stopped":"the journey stopped"} at ${V.stepLabel}${V.expiresAt?` — it expired at ${hms(V.expiresAt)}`:""}`);
+    else if(V.state==="in_progress") parts.push(`the journey is still open at ${V.stepLabel}${V.expiresAt?` — it expires at ${hms(V.expiresAt)}`:""}`);
+    else parts.push("the journey's state is not known");
+    const t=parts.join("; "); return t.charAt(0).toUpperCase()+t.slice(1)+".";
+  }
+  const VK={ completed:["ok","Recovered — the journey completed"], stopped_later:["warn","Got past this error — stopped later"], stopped:["stop","Not recovered — the journey stopped"], in_progress:["run","Still open"], unknown:["none","Journey state not known"] };
+  function renderJourney(fx,j,row,unmasked){
+    const esc=fx.esc, A=j.attempt||{}, V=j.verdict||{}, calls=j.calls||[];
+    let vk=VK[V.kind]||VK.unknown;
+    if(V.kind==="completed"&&(row.kind==="paid"||row.kind==="lock")) vk=["warn","Order step reached — the problem comes after it"];
+    const head=V.state==="completed"?`✓ Completed · ${esc(A.currentLabel||"")}`:V.state==="stopped"?`■ Stopped at ${esc(A.currentLabel||"?")}`:V.state==="in_progress"?`● In progress at ${esc(A.currentLabel||"?")}`:"Journey";
+    const t0=Date.parse(A.startedAt||(calls[0]&&calls[0].at)||""); const errN=(j.errors||[]).length;
+    let h=`<div class="fe-jhead"><span class="fe-jbadge ${vk[0]}">${head}</span><span class="fe-jmeta">Journey <span class="mono">${esc(A.id||"")}</span> · ${esc(A.workflowLabel||"")} · ${esc(A.channelLabel||"")}${A.dealer?` · dealer ${esc(A.dealer)}`:""}${A.region?` · ${esc(A.region)}`:""}${A.referral?` · QR ${esc(A.referral)}`:""} · started ${esc(fmtT(A.startedAt))} · last activity ${esc(fmtT(A.lastAt))} · ${calls.length} call${calls.length===1?"":"s"} · ${errN} error${errN===1?"":"s"} recorded</span></div>`;
+    h+=`<div class="fe-jverdict ${vk[0]}"><b>${esc(vk[1])}.</b> After this error: ${esc(journeyVerdict(j,row))}</div>`;
+    if((j.steps||[]).length) h+=`<ol class="fe-jrail" aria-label="Journey steps">${j.steps.map((s,i)=>`<li class="st-${esc(s.state)}${s.error?" err":""}" title="${esc(s.label)} — ${s.state==="done"?"done":s.state==="stopped"?"the journey stopped here":s.state==="current"?"the journey is here now":s.state==="reached"?"reached":"not reached"}${s.error?" · this error is here":""} · ${s.calls} call${s.calls===1?"":"s"}${s.failed?`, ${s.failed} not OK`:""}"><span class="n">${s.state==="done"||s.state==="reached"?"✓":s.state==="stopped"?"■":s.state==="current"?"●":i+1}</span><span class="l">${esc(s.label)}</span>${s.calls?`<span class="c">${s.calls}${s.failed?` · <b>${s.failed}✕</b>`:""}</span>`:""}${s.error?`<span class="e">error</span>`:""}</li>`).join("")}</ol>`;
+    if(calls.length){
+      let lastStep=null, list="";
+      calls.forEach((c,i)=>{
+        if(c.stepLabel&&c.step!==lastStep){ list+=`<div class="fe-jstep">${esc(String((c.step|0)+1))} · ${esc(c.stepLabel)}</div>`; lastStep=c.step; }
+        const isThis=i===j.thisCall;
+        const tags=(c.errors||[]).map(e=>`<span class="fe-jtag ${e.this?"this":"other"}" title="${esc(e.label||"")}${e.code?" · "+esc(e.code):""}">${e.this?"this error":esc(e.label||"error")}</span>`).join("");
+        const res=[c.code,c.desc].filter(x=>x!=null&&x!=="").join(" · ");
+        list+=`<button type="button" class="fe-jcall o-${esc(c.outcome)}${isThis?" is-this":""}" data-i="${i}" aria-expanded="false" title="Show the request and response"><span class="t">${esc(hms(c.at))}</span><span class="d">${V.timesReliable!==false&&!isNaN(t0)?"+"+esc(dur(Date.parse(c.at)-t0)):""}</span><span class="nm" title="${esc((c.method?c.method+" ":"")+(c.path||c.name||""))}">${c.method?`<i>${esc(c.method)}</i> `:""}${esc(c.name)}</span><span class="h ${esc(c.outcome)}">${c.http==null?"—":esc(c.http)}</span><span class="r" title="${esc(res)}">${esc(res||"—")}</span><span class="ms">${c.ms==null?"":esc(c.ms)+" ms"}</span><span class="g">${tags}</span></button><div class="fe-jbody" data-b="${i}" hidden></div>`;
+        if(isThis&&i<calls.length-1) list+=`<div class="fe-jafter">after this error</div>`;
+      });
+      h+=`<div class="fe-jcalls">${list}</div>`;
+    } else h+=`<div class="fe-jnone">No API call of this journey is logged in nexus — Naqeel, payments v2, Semati and Nafath are not logged there.</div>`;
+    const notes=(j.notes||[]).map(n=>`<span class="stale">${esc(n)}</span>`).join(" · ");
+    h+=`<div class="fe-jfoot"><span>${j.source==="nexus"?"Calls from nexus api_logs, each at its own time":"Calls from the read model"}${j.capped?" · first 300 calls":""}${unmasked?` · <span class="fe-pii">⚠ PII UNMASKED — audited</span>`:" · identifiers masked"}</span>${notes?`<span>${notes}</span>`:""}<span class="fe-jact"><button type="button" class="fe-btn" data-jre>↻ Refresh</button>${caps().unmaskPII&&!unmasked?`<button type="button" class="fe-btn" data-jum style="border-color:#b7791f;color:var(--warn-fg)">🔓 Raw bodies (audited)</button>`:""}</span></div>`;
+    return h;
+  }
+  async function loadJourney(fx,el,row,unmask){
+    const esc=fx.esc;
+    el.innerHTML=`<div class="fe-jload">${window.salamLoader?window.salamLoader("Reading the journey…"):"Reading the journey…"}</div>`;
+    let j; try{ j=await fx.api("/api/fixed/errors/journey?id="+encodeURIComponent(row.id)+(row.src?"&src="+encodeURIComponent(row.src):"")+(unmask?"&unmask=1":"")); }
+    catch(e){ if(el.isConnected) el.innerHTML=`<div class="fe-jnone">Journey not available — ${esc(e.message)}</div>`; return; }
+    if(!el.isConnected) return;
+    el.innerHTML=renderJourney(fx,j,row,!!j.unmasked);
+    el.querySelectorAll(".fe-jcall").forEach(b=>b.onclick=()=>{ const i=+b.dataset.i; const box=el.querySelector(`.fe-jbody[data-b="${i}"]`); if(!box) return;
+      const open=box.hidden; box.hidden=!open; b.setAttribute("aria-expanded",open?"true":"false"); b.classList.toggle("open",open);
+      if(open&&!box.innerHTML){ const c=j.calls[i]; box.innerHTML=`<div class="fe-io"><div><h5>Request</h5><pre>${renderReq(c.req,c.path)||"—"}</pre></div><div><h5>Response</h5><pre>${c.res==null?"—":esc(pretty(c.res))}</pre></div></div>`; } });
+    const re=el.querySelector("[data-jre]"); if(re) re.onclick=()=>loadJourney(fx,el,row,!!j.unmasked);
+    const um=el.querySelector("[data-jum]"); if(um) um.onclick=()=>{ if(!confirm("Show the RAW request / response bodies of this journey, read live from nexus? Customer data appears unmasked (SIM keys stay masked). This access is written to the audit log.")) return; loadJourney(fx,el,row,true); };
+  }
   const clsPill=r=>{ const k=r&&r.cls; const c=CLS[k]; if(!c) return ""; return `<span class="fe-clspill" style="background:${c.bg};color:${c.color}" title="${k==="technical"?"the platform or a provider failed to answer":"the API answered with a NO — the platform worked"}">${c.label}</span>`; };
   const prioBadge=p=>`<span class="fe-pri" style="background:${PRIO_COLOR[p]||"#7d8590"}">P${p}</span>`;
   const catBadge=(r)=>{ const esc=FX().esc; const t=TONE[r.tone]||TONE.muted; return `<span class="fe-cat"><span class="fe-catpill" style="background:${t.bg};color:${t.fg}">${esc(r.label||r.category)}</span><span class="fe-team" style="color:${TEAM_COLOR[r.team]||"var(--muted)"}">${esc(r.team||"")}</span></span>`; };
@@ -66,6 +132,51 @@
     #fxErr .fe-btn{cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card,#fff);color:var(--ink);transition:border-color .14s,color .14s,transform .14s} #fxErr .fe-btn:hover{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);transform:translateY(-1px)}
     #fxErr .fe-hint{font-size:11px;color:var(--muted)}
     #fxErr .fe-lanenote{margin-top:6px;font-size:11.5px;line-height:1.45;color:var(--muted);border-left:3px solid #2563eb;padding:2px 0 2px 9px}
+    #fxErr .fe-jo{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;white-space:nowrap;padding:2px 8px;border-radius:999px}
+    #fxErr .fe-jo.ok{color:var(--green,#0e9f5a);background:rgba(14,159,90,.12)} #fxErr .fe-jo.stop{color:#dc2626;background:rgba(220,38,38,.10)}
+    #fxErr .fe-jo.run{color:var(--warn-fg,#b45309);background:rgba(217,119,6,.13)} #fxErr .fe-jo.none{color:var(--muted);padding-left:0;font-weight:600}
+    #fxErr .fe-jos{display:block;font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+    #fxErr .fe-jp{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--card,#fff);display:grid;gap:10px;min-width:0}
+    #fxErr .fe-jload,#fxErr .fe-jnone{font-size:12px;color:var(--muted)}
+    #fxErr .fe-jhead{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+    #fxErr .fe-jbadge{font-size:12px;font-weight:800;padding:4px 11px;border-radius:999px;white-space:nowrap}
+    #fxErr .fe-jbadge.ok{color:var(--green,#0e9f5a);background:rgba(14,159,90,.13)} #fxErr .fe-jbadge.stop{color:#dc2626;background:rgba(220,38,38,.11)}
+    #fxErr .fe-jbadge.run,#fxErr .fe-jbadge.warn{color:var(--warn-fg,#b45309);background:rgba(217,119,6,.14)} #fxErr .fe-jbadge.none{color:var(--muted);background:var(--card2,#f1f5f9)}
+    #fxErr .fe-jmeta{font-size:11.5px;color:var(--muted);line-height:1.5;min-width:0;overflow-wrap:anywhere}
+    #fxErr .fe-jverdict{font-size:12.5px;line-height:1.5;padding:9px 12px;border-radius:10px;border-left:4px solid var(--line);background:var(--card2,#f8fafc)}
+    #fxErr .fe-jverdict.ok{border-left-color:var(--green,#0e9f5a)} #fxErr .fe-jverdict.stop{border-left-color:#dc2626} #fxErr .fe-jverdict.run,#fxErr .fe-jverdict.warn{border-left-color:#d97706}
+    #fxErr .fe-jrail{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+    #fxErr .fe-jrail li{display:flex;align-items:center;gap:6px;padding:4px 10px 4px 5px;border:1px solid var(--line);border-radius:999px;font-size:11.5px;background:var(--card,#fff);color:var(--ink)}
+    #fxErr .fe-jrail .n{min-width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;background:var(--card2,#eef2f7);color:var(--muted)}
+    #fxErr .fe-jrail li.st-done .n,#fxErr .fe-jrail li.st-reached .n{background:var(--green,#0e9f5a);color:#fff}
+    #fxErr .fe-jrail li.st-stopped{border-color:#dc2626} #fxErr .fe-jrail li.st-stopped .n{background:#dc2626;color:#fff}
+    #fxErr .fe-jrail li.st-current{border-color:#d97706} #fxErr .fe-jrail li.st-current .n{background:#d97706;color:#fff}
+    #fxErr .fe-jrail li.st-todo{opacity:.62}
+    #fxErr .fe-jrail li.err{box-shadow:0 0 0 2px rgba(220,38,38,.32)}
+    #fxErr .fe-jrail .c{color:var(--muted);font-size:10.5px} #fxErr .fe-jrail .c b{color:#dc2626;font-weight:800}
+    #fxErr .fe-jrail .e{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#fff;background:#dc2626;border-radius:999px;padding:1px 6px}
+    #fxErr .fe-jcalls{display:grid;gap:1px;max-height:480px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px 6px;background:var(--card,#fff)}
+    #fxErr .fe-jstep{font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:9px 8px 3px}
+    #fxErr .fe-jafter{font-size:10.5px;font-weight:700;color:#dc2626;text-align:center;padding:5px 0 3px;border-top:1px dashed rgba(220,38,38,.45);margin:3px 0}
+    #fxErr .fe-jcall{display:grid;grid-template-columns:66px 58px minmax(130px,1.3fr) 42px minmax(120px,2fr) 66px auto;gap:8px;align-items:center;width:100%;text-align:left;font:inherit;font-size:12px;color:var(--ink);background:transparent;border:0;border-left:3px solid transparent;border-radius:6px;padding:6px 8px;cursor:pointer;transition:background .12s}
+    #fxErr .fe-jcall:hover,#fxErr .fe-jcall.open{background:var(--card2,#f1f5f9)}
+    #fxErr .fe-jcall:focus-visible{outline:2px solid var(--green,#0e9f5a);outline-offset:1px}
+    #fxErr .fe-jcall.o-ok{border-left-color:rgba(14,159,90,.55)} #fxErr .fe-jcall.o-no{border-left-color:#d97706} #fxErr .fe-jcall.o-fail{border-left-color:#dc2626}
+    #fxErr .fe-jcall.is-this{background:rgba(220,38,38,.08)}
+    #fxErr .fe-jcall .t{font-variant-numeric:tabular-nums} #fxErr .fe-jcall .d,#fxErr .fe-jcall .ms{color:var(--muted);font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap}
+    #fxErr .fe-jcall .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} #fxErr .fe-jcall .nm i{font-style:normal;font-weight:600;color:var(--muted);font-size:10.5px}
+    #fxErr .fe-jcall .h{font-weight:800;font-variant-numeric:tabular-nums} #fxErr .fe-jcall .h.ok{color:var(--green,#0e9f5a)} #fxErr .fe-jcall .h.no{color:var(--warn-fg,#b45309)} #fxErr .fe-jcall .h.fail{color:#dc2626}
+    #fxErr .fe-jcall .r{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #fxErr .fe-jcall .g{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+    #fxErr .fe-jtag{font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;white-space:nowrap} #fxErr .fe-jtag.this{background:#dc2626;color:#fff} #fxErr .fe-jtag.other{background:rgba(220,38,38,.12);color:#dc2626}
+    #fxErr .fe-jbody{padding:4px 6px 10px 14px}
+    #fxErr .fe-jfoot{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:11px;color:var(--muted)} #fxErr .fe-jact{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+    @media (max-width:760px){
+      #fxErr .fe-jcall{grid-template-columns:62px minmax(0,1fr) auto;grid-template-areas:"t nm h" "d r ms" "g g g";row-gap:2px}
+      #fxErr .fe-jcall .t{grid-area:t} #fxErr .fe-jcall .d{grid-area:d} #fxErr .fe-jcall .nm{grid-area:nm} #fxErr .fe-jcall .h{grid-area:h;text-align:right}
+      #fxErr .fe-jcall .r{grid-area:r} #fxErr .fe-jcall .ms{grid-area:ms;text-align:right} #fxErr .fe-jcall .g{grid-area:g;justify-content:flex-start}
+      #fxErr .fe-jact{margin-left:0}
+    }
     #fxErr .fe-clsdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:0} #fxErr .fe-chip.fe-cls-business.on{background:#3b82f6;border-color:#3b82f6} #fxErr .fe-chip.fe-cls-technical.on{background:#ef4444;border-color:#ef4444}
     #fxErr .fe-clspill{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:1px}
     #fxErr .fe-msgrow{display:flex;align-items:center;gap:8px;margin:6px 0 4px;flex-wrap:wrap} #fxErr .fe-msg{flex:1 1 320px;max-width:760px;width:auto;padding:7px 34px 7px 12px;font-size:12.5px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
@@ -97,10 +208,12 @@
     #fxErr .fe-pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;line-height:1.4}
     #fxErr .fe-jr{display:block;font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap}
     #fxErr .fe-dim{font-size:12px;color:var(--muted);margin-right:2px;min-width:62px;display:inline-block}
-    #fxErr #feRows{overflow-x:auto;-webkit-overflow-scrolling:touch} #fxErr table.fe-tbl{min-width:760px}
+    #fxErr #feRows{overflow-x:auto;-webkit-overflow-scrolling:touch;container-type:inline-size} #fxErr table.fe-tbl{min-width:760px}
+    /* an opened row fits the visible width of the board and stays in view while the table scrolls sideways (iPad, narrow windows) */
+    #fxErr .fe-x .fe-xgrid{position:sticky;left:16px;width:calc(100cqw - 32px);max-width:calc(100cqw - 32px)}
     #fxErr .fe-src{font-size:11px;color:var(--muted)} #fxErr .fe-src b{font-weight:700;color:var(--ink)} #fxErr .fe-src .stale{color:#dc2626;font-weight:700}
     @media (max-width:700px){#fxErr table.fe-tbl{min-width:640px;font-size:12px} #fxErr .fe-tbl .c-region,#fxErr .fe-tbl th.c-region{display:none} #fxErr .fe-tbl th,#fxErr .fe-tbl td{padding-left:8px;padding-right:8px} #fxErr .fe-tbl td:nth-child(2){white-space:normal!important;min-width:64px}
-      #fxErr .fe-x td{padding:12px 10px 14px} #fxErr .fe-x .fe-xgrid{position:sticky;left:0;width:calc(100vw - 62px);max-width:calc(100vw - 62px)} #fxErr .fe-what{white-space:normal;word-break:break-word} #fxErr .fe-io pre{font-size:11px} #fxErr .fe-sim .f{gap:10px 14px}}
+      #fxErr .fe-x td{padding:12px 10px 14px} #fxErr .fe-x .fe-xgrid{position:sticky;left:10px;width:calc(100vw - 62px);max-width:calc(100vw - 62px);width:calc(100cqw - 20px);max-width:calc(100cqw - 20px)} #fxErr .fe-what{white-space:normal;word-break:break-word} #fxErr .fe-io pre{font-size:11px} #fxErr .fe-sim .f{gap:10px 14px}}
     #fxErr .fe-btn.fe-exp{border-color:var(--green,#0e9f5a);color:var(--green,#0e9f5a);font-weight:700} #fxErr .fe-btn.fe-exp:hover{background:var(--green,#0e9f5a);color:#fff} #fxErr .fe-btn.fe-exp:disabled{opacity:.6;cursor:progress}
   `;
   function applyRouteQuery(){
@@ -267,7 +380,7 @@
       const srcEl=$("#feSrc"); if(srcEl&&sum.sources&&sum.sources.length){ const SRC={ops:"sda_ops",beta:"sda_ops_beta"};
         srcEl.innerHTML=sum.sources.map(x=>{ const bk=(x.buckets||[]).map(k=>CH_LABEL[k]||k).join(" · ");
           if(x.src==="lane"){ const p=x.parts||{}; const w=(x.warnings||[]);
-            return `<span title="SIM checks: the 5G journeys' querySimCard answers without a sellable SIM (sda_ops api_calls). From nexus: paid 5G e-purchase journeys without an order or a refund, Naqeel order failures, Semati / Nafath stops, stock locks never released.${x.nexus?"":" nexus is not configured — SIM checks only."}"><b>5G journeys</b> ← SIM checks${x.nexus?" + nexus":""} · ${fmt(x.matched||0)} in this view${x.latest?` · newest ${esc(rel(x.latest))}`:""}${w.length?` · <span class="stale">${esc(w[0])}</span>`:""}</span>`; }
+            return `<span title="SIM checks: the 5G journeys' querySimCard answers without a sellable SIM — ${x.simSource==="nexus"?"from nexus api_logs, each at the time it ran":"from the read model's api_calls, at the time the read model stored the journey"}. From nexus: paid 5G e-purchase journeys without an order or a refund, Naqeel order failures, Semati / Nafath stops, stock locks never released.${x.nexus?"":" nexus is not configured — SIM checks only."}"><b>5G journeys</b> ← SIM checks${x.nexus?" + nexus":""} · ${fmt(x.matched||0)} in this view${x.latest?` · newest ${esc(rel(x.latest))}`:""}${w.length?` · <span class="stale">${esc(w[0])}</span>`:""}</span>`; }
           if(x.error) return `<span><b>${esc(bk||SRC[x.src]||x.src)}</b> — <span class="stale">source unavailable</span> (${esc(SRC[x.src]||x.src)})</span>`;
           if(x.stale) return `<span><span class="stale">${esc(SRC[x.src]||x.src)} stale</span> — last event ${esc(rel(x.latest))}; Epurchase + Salam Home app are read from sda_ops instead (app journeys appear under Epurchase until opsb-ingest-watch is back)</span>`;
           const age=x.latest?Date.now()-new Date(x.latest).getTime():null; const stale=age==null||age>2*3600e3; return `<span><b>${esc(bk)}</b> ← ${esc(SRC[x.src]||x.src)} · last event <span class="${stale?"stale":""}">${esc(rel(x.latest))}</span></span>`; }).join(" &nbsp;·&nbsp; ");
@@ -296,12 +409,12 @@
       if(r.chan==="salamhome") return `<span style="color:var(--muted)" title="Customer self-service in the Salam Home app — no dealer involved">customer (app)</span>`;
       return `<span style="color:var(--muted)" title="No dealer/staff captured for this journey">unattributed</span>`; };
     const status=r=>r.resolved?`<span class="fe-st resolved">resolved</span>`:r.acked?`<span class="fe-st acked" title="acked by ${esc(r.acked_by||"")}">acked</span>`:`<span class="fe-st open">open</span>`;
-    el.innerHTML=`<table class="fe-tbl"><thead><tr>${[["PRI"],["TIME"],["CATEGORY"],["CHANNEL"],["TYPE"],["DEALER / QR"],["REGION","c-region"],["STATUS"]].map(([h,c])=>`<th class="${c||""}">${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row${S.expanded.has(r.id)?" open":""}" data-id="${esc(r.id)}" tabindex="0" title="Open / close this row — several rows can stay open at once">
+    el.innerHTML=`<table class="fe-tbl"><thead><tr>${[["PRI"],["TIME"],["CATEGORY"],["CHANNEL"],["TYPE"],["DEALER / QR"],["REGION","c-region"],["JOURNEY","c-journey"],["STATUS"]].map(([h,c])=>`<th class="${c||""}">${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr class="fe-row${S.expanded.has(r.id)?" open":""}" data-id="${esc(r.id)}" tabindex="0" title="Open / close this row — several rows can stay open at once">
         <td>${prioBadge(r.priority)}</td><td style="white-space:nowrap">${fmtT(r.occurred_at)}</td>
         <td>${catBadge(r)}${clsPill(r)}${r.code?`<span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:8px">${esc(r.code)}</span>`:""}</td>
         <td>${chanPill(r)}</td><td>${typePill(r)}</td>
-        <td class="fe-nostop">${dealer(r)}</td><td class="c-region">${esc(r.region||"—")}</td><td style="white-space:nowrap">${status(r)}<span class="fe-caret" aria-hidden="true">›</span></td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="8"></td></tr>`).join("")
-      :`<tr><td colspan="8" class="fe-empty">${(S.find||S.ids.customerId||S.ids.msisdn||S.ids.iccid||S.ids.custCode)&&window.fixedGrep?`<button type="button" class="fe-btn fe-exp" id="feGrepGo2" style="float:right;margin-left:12px" title="Read the raw app log (combined.log on 146) — successes and failures, every field">🔎 Grep the app log</button>`:""}No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""||S.provider||S.channel||S.type?` (team / priority / provider / channel / type filter active)`:""}.</td></tr>`}</tbody></table>`;
+        <td class="fe-nostop">${dealer(r)}</td><td class="c-region">${esc(r.region||"—")}</td><td class="c-journey">${jcell(r)}</td><td style="white-space:nowrap">${status(r)}<span class="fe-caret" aria-hidden="true">›</span></td></tr><tr class="fe-x" data-id="${esc(r.id)}" hidden><td colspan="9"></td></tr>`).join("")
+      :`<tr><td colspan="9" class="fe-empty">${(S.find||S.ids.customerId||S.ids.msisdn||S.ids.iccid||S.ids.custCode)&&window.fixedGrep?`<button type="button" class="fe-btn fe-exp" id="feGrepGo2" style="float:right;margin-left:12px" title="Read the raw app log (combined.log on 146) — successes and failures, every field">🔎 Grep the app log</button>`:""}No errors match these filters${S.category?` (category <b>${esc(S.category)}</b> is selected — click the tile again or the ✕ chip to remove it)`:S.team||S.prio!==""||S.provider||S.channel||S.type?` (team / priority / provider / channel / type filter active)`:""}.</td></tr>`}</tbody></table>`;
     const g2=el.querySelector("#feGrepGo2"); if(g2) g2.onclick=()=>window.fixedGrep.searchFor(S.find||S.ids.customerId||S.ids.msisdn||S.ids.iccid||S.ids.custCode||"");
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); tr.click(); } });
     el.querySelectorAll(".fe-row").forEach(tr=>tr.onclick=e=>{ if(e.target.closest("a")) return; e.preventDefault();
@@ -331,17 +444,17 @@
         <span class="rl" style="color:var(--muted);font-size:11px;margin-left:10px">${esc(d.event.chanLabel||row.chanLabel||"")}${d.event.typeLabel?` · ${esc(d.event.typeLabel)}`:""}${d.event.journey?` · ${esc(d.event.journey)}`:""}${d.event.workflow?` (${esc(d.event.workflow)})`:""} · ${esc(d.event.label)} · ${esc(d.event.team)} · base P${d.event.basePriority}${d.event.order_number?` · order ${esc(d.event.order_number)}`:""}${d.event.acct_masked?` · acct ${esc(d.event.acct_masked)}`:""}${d.event.cust_masked?` · cust …${esc(d.event.cust_masked)}`:""}${d.event.dealer_name?` · ${esc(d.event.dealer_name)}`:""}</span>${d.event.serial_tail?`<span class="rl" style="color:var(--muted);font-size:11px;margin-left:8px">serial ${esc(d.event.serial_tail)}</span>`:""}
         ${d.lane?`<div class="fe-lanenote">${esc(LANE_NOTE[d.lane.kind]||LANE_NOTE.sim)}</div>`:""}</div>
       <div id="feBodies">${(d.request!=null||d.response!=null)?draw(d.request,d.response,false):`<div style="color:var(--muted);font-size:12px">No captured request/response for this error (older event — re-ingest or backfill to populate).</div>`}</div>
+      ${d.event.attempt_id?`<div class="fe-jp" data-jp></div>`:`<div class="fe-jnone">This error carries no journey id — no journey to show.</div>`}
       <div class="fe-sim"><b class="t">Similar cases <span class="rl" style="font-weight:400;color:var(--muted);font-size:10.5px">signature ${esc(d.event.signature||d.event.category)}</span></b>
         <div class="f"><span><b>${fmt(sim.d30)}</b> in 30d <span>(${fmt(sim.d7)} in 7d${d.lane?" · the 5G lane looks back 30 days":` · ${fmt(sim.all)} ever`})</span></span><span>last seen <b>${esc(rel(sim.lastSeen))}</b></span><span>affected today <b>${fmt(sim.affectedToday)}</b></span><span>median resolve <b>${sim.medianResolveMins!=null?sim.medianResolveMins+"m":"—"}</b></span>${sim.biggestDay?`<span>biggest day <b>${esc(sim.biggestDay.day)}</b> (${fmt(sim.biggestDay.count)})</span>`:""}</div></div>
       <div class="fe-actions">
-        ${d.event.attempt_id?`<button id="feTrace" class="fe-btn">Open full trace → <span style="color:var(--muted);font-weight:500">(${tl.length} calls)</span></button>`:""}
         ${c.unmaskPII&&d.event.attempt_id?`<button id="feUnmask" class="fe-btn" style="border-color:#b7791f;color:var(--warn-fg)" ${d.unmaskAvailable?"":"disabled title='NEXUS_DATABASE_URL not configured'"}>🔓 Unmask (audited)</button>`:""}
         ${c.ackErrors&&!d.event.resolved?`<button id="feAck" class="fe-btn">${d.event.acked?"Un-ack":"Ack"}</button>`:""}
         ${d.event.acked?`<span class="rl" style="font-size:10.5px;color:var(--muted)">acked by ${esc(d.event.acked_by||"")}</span>`:""}
         <span class="rl" style="font-size:10.5px;color:var(--muted);margin-left:auto">attempt <span class="mono">${esc(d.event.attempt_id||"—")}</span> · event <span class="mono">${esc(d.event.id)}</span></span></div>
-      <div id="feTl" hidden></div></div>`;
+      </div>`;
     const $=s=>cell.querySelector(s);
-    const tb=$("#feTrace"); if(tb) tb.onclick=()=>{ const t=$("#feTl"); t.hidden=!t.hidden; if(!t.innerHTML) t.innerHTML=fx.tbl(["TIME KSA","METHOD","ENDPOINT","STATUS","MS","ERROR","INFO"],tl.map(x=>[fmtT(x.created_at),esc(x.method||""),`<span class="mono">${esc(x.endpoint)}</span>`,`<b style="color:${x.status>=400?"#dc2626":x.status>=200?"var(--green,#0e9f5a)":"inherit"}">${esc(x.status==null?"—":x.status)}</b>`,esc(x.duration_ms==null?"—":x.duration_ms),esc(x.error_class||x.error_msg||""),esc(x.info||"")])); };
+    const jp=cell.querySelector("[data-jp]"); if(jp) loadJourney(fx,jp,row,false);
     const ub=$("#feUnmask"); if(ub) ub.onclick=async()=>{ if(!confirm("Fetch the RAW (unmasked) request/response for this failing step from nexus? This access is written to the audit log.")) return; ub.disabled=true; ub.textContent="fetching…";
       try{ const u=await fx.api("/api/fixed/errors/detail?unmask=1&id="+encodeURIComponent(row.id)+(row.src?"&src="+encodeURIComponent(row.src):"")); const um=u.unmask||{};
         if(!um.unmaskAvailable){ ub.textContent="Unmask unavailable"; ub.title=um.error||"nexus not configured"; return; }

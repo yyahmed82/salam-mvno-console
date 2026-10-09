@@ -1,3 +1,23 @@
+## 2.0.0-alpha.159 — 2026-10-09
+
+- **Fixed › Troubleshoot links every error to its whole journey.**
+  - **New JOURNEY column** — where the error's journey is now: completed, in progress at a step, or stopped at a step (expired). Read live from nexus `workflow_states` (current step and expiry), with the read model as fallback.
+  - **An opened row shows the journey panel** (it replaces the "Open full trace" list):
+    - the steps of that journey type (FTTH, 5G HomeFi e-purchase, SDA 5G HomeFi / FWA, Salam Home…): done, failed, where it stopped or where it waits now;
+    - every API call in order, from nexus `api_logs`, each at its own time — step, endpoint, HTTP, response time and result (OK, answered no, failed). This error and the journey's other errors are marked on their calls. Each call opens to its masked request and response;
+    - **after the error**: whether the call was retried and the retry succeeded (and how long after), how many calls followed and whether they answered OK, and whether the journey completed, stopped (with the time it expired) or is still open (with the time it expires). Headline: "Recovered — the journey completed", "Got past this error — stopped later", "Not recovered — the journey stopped" or "Still open".
+    - Naqeel, payments v2, Semati and Nafath are not logged in nexus `api_logs`. When a journey has no logged call (for example a lock or a payment condition), the panel says so.
+    - Customer identifiers (ID numbers, names, mobile, email, date of birth) are masked in the bodies, and long numbers in call URLs. "Raw bodies" needs the unmask capability and is audited (`pii.unmask`); SIM keys stay masked either way. Opening a journey is audited as `fixed.errors.journey`.
+  - **Export:** new "Journey outcome" column after Status.
+  - **iPad and narrow windows:** an opened row now fits the visible width of the board and stays in view while the table scrolls sideways. Before, its right part (here the verdict and the panel's buttons) sat outside the view until the table was scrolled.
+  - **API:** `GET /api/fixed/errors/journey?id=<event id>` (board and 5G rows).
+- **5G SIM checks are read from nexus, at the time each check ran.**
+  - The read model re-creates a journey's `api_calls` each time it re-reads the journey, with the ingest time and new ids. In alpha.158 a SIM check therefore showed the time the read model stored it — on 9 Oct two identical rows at 04:02 — and its id changed on every re-read.
+  - SIM checks now come from nexus `api_logs` (querySimCard answered OK without a sellable SIM), each at its own time, with an id built from the api_log id that stays the same. A SIM row resolves once its journey completes.
+  - Without nexus the board falls back to the read model and says the times are the read model's.
+  - Acks set on alpha.158 SIM rows do not carry over, because the row ids changed.
+- **Code:** new `server/src/fixedJourney.js`; `fixedErrors.js` (journey state per row, journey route, export column), `fixed5gLane.js` (nexus SIM source), `secretMask.js` (`maskPiiText`, `maskBodyText`), `fixed-errors.js`, `index.html`.
+
 ## 2.0.0-alpha.158 — 2026-10-09
 
 - **Fixed › Troubleshoot covers the 5G journeys.** The board lists the events the dealer-ops ingest writes. The ingest writes one only when an API call failed, meaning HTTP ≥ 400 or a resultCode other than 0. Two kinds of 5G failure never look like that. As a result, the 5G HomeFi e-purchase journey (web and Salam Home app) showed no errors at all, while about 9 in 10 of its journeys stop at the location step. On 9 Oct the Epurchase channel listed FTTH only.
