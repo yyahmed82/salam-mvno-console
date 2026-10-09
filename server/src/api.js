@@ -4565,6 +4565,9 @@ app.put('/api/ui-nav', requireCap('customizeDashboard'), async (req, res) => {
     res.json(next);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+/* ---- header menus (alpha.160): pages, links and dropdowns with one submenu level, managed in Settings › Navigation ----
+ * GET for every session (the header renders it), PUT / DELETE for super admins only — it changes everyone's menus. */
+require('./uiMenu').mount(app, { settings, audit, requireSuper, roleKeys: () => Object.keys(rolePerms.current()) });
 /* ---- Semati synthetic canary (read-only active probe) ---- */
 app.get('/api/probe/semati', requireCap('manageSync'), (req, res) => {
   try { res.json(require('./sematiProbe').status()); }

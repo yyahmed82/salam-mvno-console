@@ -1,3 +1,21 @@
+## 2.0.0-alpha.160 — 2026-10-09
+
+- **VP Operations is a menu:** VP dashboard (the cockpit, #vp) and Weekly Report (Operations reports › This week, where the weekly executive and complete decks are). Operations reports stays at the top level for the teams that report.
+- **The header menus are fully managed in Settings › Navigation** (super admins; `#settings-nav`, new "Header menus" panel above the in-page tabs).
+  - **One submenu level:** pages and links at the top level, and menus that open pages, links and plain labels — a menu never holds a menu (refused by the editor and by the server).
+  - **Every entry:** add (a page, a link, a menu, a label) · edit the label and the target · move ▲ ▼ among its neighbours · ◀ out of its menu · ▶ into the menu just above it — when the entry above is a page or a link, ▶ turns it into a menu holding both · remove.
+  - **Target:** any console page from a list, a console address with its filters (#fixed?tab=errors&range=24h — checked against the router, with the page it opens shown) or an https:// link, which opens in a new tab. A page already in the menus can be added again as a link.
+  - **Visible to:** each page, link or whole menu can be limited to chosen roles; no role selected = every role that can open the page. It only hides the entry — who may open a page is still its permissions. Super admins see every entry; View as user shows a role's menus.
+  - **Not in the menus:** a removed page waits there and can be added back (to the top level or a menu). A page that a later release adds appears where the default puts it, even in a saved layout; a page an admin removed stays out.
+  - **Preview in the header** (this browser only), **Discard changes**, **Save menus** (everyone, on their next page load) and **Reset to default**. Long menus fold in the editor. Saving is audited (`uinav.menu`).
+  - **Everywhere the same:** desktop dropdowns, the phone and iPad drawer (now in the managed order), role and business scoping, the current-page highlight and chip, deep links and the tour keep working — the editor moves the same nav buttons, it never copies them.
+- **Inside a menu, OPERATE / MONITORING / EXPLORE are plain labels.** They no longer fold, and the second level (Mobile › Operate › Monitoring, Fixed › Operate › Monitoring) became its own MONITORING label.
+- **The header fits whatever the menus hold.** On a desktop width, when the header row still overflows it steps down: icons off, then the wordmark and BETA, then the current-page chip, then tighter labels. Without it, the VP menu's current-page chip pushed the account chip off the screen at 1601–1780 px.
+- **On a deep link the router opens the page's own entry**, never a variant such as Weekly Report, so the link keeps its query (#opsreports?tab=actions still opens Actions).
+- **Fix:** Settings › Navigation re-read the server on every click inside the page, so an unsaved tab move was lost.
+- **API:** `GET /api/ui-nav/menu` (every session) · `PUT` / `DELETE` (super admin) — layout in `console_settings` key `ui_menu`. Check on 152: `server/scripts/navmenu-check.cjs`.
+- **Code:** new `navmenu.js` (catalogue + rendering), `navmenucfg.js` (editor), `server/src/uiMenu.js` (validation + routes), `server/scripts/navmenu-check.cjs`; `index.html`, `navdrop.js` (per-menu wiring, one current page, header fit), `adaptive.js` (plain labels), `ops.js` (scope by the entry's own business, roles, links), `router.js` (`consoleRouteInfo`, `clickNav`), `navcfg.js`, `server/src/api.js`.
+
 ## 2.0.0-alpha.159 — 2026-10-09
 
 - **Fixed › Troubleshoot links every error to its whole journey.**

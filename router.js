@@ -104,9 +104,25 @@
     const bt=d.querySelector("#adHome"); if(bt) bt.onclick=()=>{ hideDenied(); setHash(homeHash()); };
     window.audit && window.audit("ACCESS_DENIED", "#"+(_cur||"")+" needs "+need);
   }
+  const bizOf=r=>{ if(r.view==="fixed"||r.seg==="fixed") return "fixed"; if(r.view==="execops") return null; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","mvnohld","otodocs","tapdocs","salamdocs","dmsdocs","dmsflows","alertjourney","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
+  /* what a console address opens (alpha.160) — navmenu.js gives a link added in Settings › Navigation the view it opens
+   * (role scope, current-page highlight), the permission the route needs and its business; null = not a console page */
+  function routeOf(base){ let r=ROUTES[base]; if(!r && /^settings-[a-z0-9_-]+$/.test(base)) r={settings:base.slice(9)}; return r||null; }
+  window.consoleRouteInfo=function(h){
+    const [base,qs]=String(h||"").replace(/^#/,"").split("?"); const r=routeOf(base); if(!r) return null;
+    const out={ view:r.view||null, need:neededFor(r), biz:bizOf(r) };
+    if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); if(m) out.fxtab=m[1]; }
+    return out;
+  };
+  window.consoleViewHash=v=>VIEW_HASH[v]||null;
   function hideDenied(){ const d=document.getElementById("accessDenied"); if(d) d.style.display="none"; }
 
-  function clickNav(view){ const b=document.querySelector(`.navtab[data-view="${view}"].active`)||document.querySelector(`.navtab[data-view="${view}"]`); if(!b) return; if(!b.classList.contains("active")) b.click(); }
+  /* the entry to "click" for a view: the current one, else the page's own entry — never a variant that carries a query
+   * (VP ▾ Weekly Report = #opsreports?tab=week) or a link added in Settings › Navigation, whose own click would rewrite
+   * the hash and drop the deep link's query (alpha.160) */
+  function clickNav(view){ const all=Array.from(document.querySelectorAll(`.navtab[data-view="${view}"]`));
+    const b=all.find(x=>x.classList.contains("active"))||all.find(x=>!x.dataset.navlink&&!/\?/.test(x.dataset.hash||""))||all.find(x=>!x.dataset.navlink);
+    if(!b) return; if(!b.classList.contains("active")) b.click(); }
   // per-segment renderers that normally run on menu-button click — the router must call them too,
   // or a direct deep link (#settings-assist etc.) opens an empty segment
   const SEG_RENDER={assist:"renderAssistCfg",notify:"renderNotifyCfg",nav:"renderNavCfg"};
@@ -139,7 +155,6 @@
       showDenied(need); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (denied)"); return;
     }
     // business guard (6 Sep 2026): a Mobile-only user never lands on a Fixed page and vice-versa, deep link or not
-    const bizOf=r=>{ if(r.view==="fixed"||r.seg==="fixed") return "fixed"; if(r.view==="execops") return null; if(r.home||["monitoring","dms","analytics","alerts","errors","topology","topology2","apigw","mvnohld","otodocs","tapdocs","salamdocs","dmsdocs","dmsflows","alertjourney","explorer","integrations"].includes(r.view)||r.workbench||r.oncall) return "mobile"; return null; };
     const biz=(sess().me||{}).business||"both", rb=bizOf(r);
     if(rb && biz!=="both" && rb!==biz){ showDeniedBiz(rb,biz); window.audit && window.audit("VIEW_PAGE","#"+(base||"dashboard")+" (outside business)"); return; }
     if(r.home){ window.opsGoHome && window.opsGoHome(); }

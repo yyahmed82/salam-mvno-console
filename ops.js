@@ -312,10 +312,21 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   }
   window.opsApplyFeatureFlags = applyFeatureFlags;
   function can(c){ return SES.me && SES.me.caps && SES.me.caps[c]; }
+  window.opsApplyScope = () => applyScope();   // navmenu.js re-runs the role scope after it rebuilds the menus
   function applyScope(){
     const views = (SES.me&&SES.me.views)||[];
     const FTV = (SES.me&&SES.me.fixedTabViews)||{};
+    /* "visible to" roles set on a menu entry in Settings › Navigation (alpha.160): presentation only — the page's own
+     * permission still decides who can open it. Super admins see every entry; View as user shows a role's menus. */
+    const myRoles = (SES.me&&(SES.me.roles||[SES.me.role]))||[];
+    const rolesOk = b => { const r=b.dataset.roles; if(!r) return true; if(myRoles.includes("super_admin")) return true; return r.split(",").some(x=>myRoles.includes(x)); };
     document.querySelectorAll(".navtab").forEach(b=>{
+      /* entries added in Settings › Navigation (navmenu.js, alpha.160): an external link is for everyone; a console link
+       * follows the page it opens — the view router.js requires for it, or the Fixed hub tab's own view */
+      if(b.dataset.navlink){
+        let need = b.dataset.navlink==="hash" ? (b.dataset.fxt ? (FTV[b.dataset.fxt]||"fixed") : (b.dataset.need||"")) : "";
+        b.classList.toggle("hidden", (!!need && !views.includes(need)) || !rolesOk(b)); return;
+      }
       // Fixed sub-pages answer to their own view (matrix column); the hub itself to 'fixed'
       let v = b.dataset.fxtab ? (FTV[b.dataset.fxtab]||"fixed") : NAV_VIEW[b.dataset.view];
       /* Infrastructure ▾ › infra alerts open the Alerts view (#infra-alerts / #fixed-infra-alerts): a role holding the NOC walls
@@ -323,14 +334,15 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
       if(b.dataset.iftab==="alerts:mvno") v="alerts"; else if(b.dataset.iftab==="alerts:fixed") v="fixed_alerts";
       // Executive / Operations: the Home entries need either business, the Mobile entries need the Dashboard view
       const ok = b.dataset.view==="execops" ? (views.includes("dashboard")||views.includes("fixed")) : views.includes(v);
-      b.classList.toggle("hidden", !ok);   // Dashboard too — a real gated view since 2 Sep 2026
+      b.classList.toggle("hidden", !ok || !rolesOk(b));   // Dashboard too — a real gated view since 2 Sep 2026
     });
     window.FIXED_TAB_VIEWS = FTV; window.FIXED_VIEWS_HELD = views.filter(v=>/^fixed/.test(v));
     // business scope (6 Sep 2026): the server already intersected the views with the user's business; here the
     // whole Mobile ▾ / Fixed ▾ group is hidden for the other side (incl. shared-view items like docs / topology)
     const biz = (SES.me&&SES.me.business)||"both"; window.BUSINESS = biz;
-    document.querySelectorAll('.navdrop[data-drop="mobile"] .navtab').forEach(b=>{ if(biz==="fixed") b.classList.add("hidden"); });
-    document.querySelectorAll('.navdrop[data-drop="home"] .navtab[data-fxtab]').forEach(b=>{ if(biz==="mobile") b.classList.add("hidden"); });
+    /* by the entry's own business (data-biz, alpha.160), not by the menu it sits in — Settings › Navigation can move a page anywhere */
+    document.querySelectorAll('.navtab[data-biz="mobile"]').forEach(b=>{ if(biz==="fixed") b.classList.add("hidden"); });
+    document.querySelectorAll('.navtab[data-biz="fixed"]').forEach(b=>{ if(biz==="mobile") b.classList.add("hidden"); });
     document.documentElement.setAttribute("data-business", biz);
     const isSuper = SES.me && (SES.me.realRole==="super_admin" || (SES.me.realRoles||[]).includes("super_admin"));
     const show = (id, on) => { const el = document.getElementById(id); if(el) el.style.display = on ? "" : "none"; };

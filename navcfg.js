@@ -1,9 +1,9 @@
-/* Settings → Navigation & tabs — shared, super-admin-editable ordering + visibility
+/* Settings → Navigation — the header menus (navmenucfg.js) and, here, the shared super-admin-editable ordering + visibility
  * for the Analytics dashboards nav and the Troubleshoot error tiles.
  * Renders into #navCfg (segment data-seg="nav"). Reads/writes /api/ui-nav. */
 (function(){
   "use strict";
-  const $=s=>document.querySelector(s);
+  const $=(s,r)=>(r||document).querySelector(s);
   const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   const API = window.API_BASE;
   const api=(p,opts)=>fetch(API+p,Object.assign({headers:{"Content-Type":"application/json"}},opts)).then(r=>{if(!r.ok)return r.json().then(e=>{throw new Error(e.error||("HTTP "+r.status));});return r.json();});
@@ -63,10 +63,15 @@
   const mv=(arr,i,dir)=>{ const j=i+dir; if(j<0||j>=arr.length)return; const t=arr[i];arr[i]=arr[j];arr[j]=t; };
   const mvBtns=(du,dd)=>`<span class="nv-grip"><button class="nv-mv" data-mv="up" ${du?'disabled':''}>&#9650;</button><button class="nv-mv" data-mv="dn" ${dd?'disabled':''}>&#9660;</button></span>`;
 
+  /* Settings › Navigation (alpha.160): the header menus editor (navmenucfg.js) on top, the in-page tabs below —
+   * two containers, so repainting the tabs never resets a menu edit in progress */
   function render(){
-    const host=$("#navCfg"); if(!host) return;
+    const root=$("#navCfg"); if(!root) return;
     ensureCss();
-    if(!isSuper()){ host.innerHTML=`<div class="panel"><h2>Navigation &amp; tabs</h2><div class="albanner">Reordering and hiding tabs is available to Super Admins only. What you see is the shared layout set by an admin.</div></div>`; return; }
+    if(!$("#navMenuCfg",root)||!$("#navTabsCfg",root)) root.innerHTML=`<div id="navMenuCfg"></div><div id="navTabsCfg"></div>`;
+    if(window.renderNavMenuCfg) window.renderNavMenuCfg($("#navMenuCfg"));
+    const host=$("#navTabsCfg");
+    if(!isSuper()){ host.innerHTML=`<div class="panel"><h2>Tabs inside pages</h2><div class="albanner">Reordering and hiding tabs is available to Super Admins only. What you see is the shared layout set by an admin.</div></div>`; return; }
     host.innerHTML=`<div class="sub" style="padding:8px 2px">Loading…</div>`;
     Promise.all([
       api("/api/ui-nav").catch(()=>({})),
@@ -80,7 +85,7 @@
   }
 
   function paint(){
-    const host=$("#navCfg");
+    const host=$("#navTabsCfg"); if(!host) return;
     const errRows=S.errOrder.map((cat,i)=>{
       const off=S.errHidden.has(cat);
       return `<div class="nv-row ${off?'off':''}" data-kind="err" data-id="${esc(cat)}" data-i="${i}">
@@ -110,8 +115,8 @@
 
     host.innerHTML=`
       <div class="panel">
-        <h2>Navigation &amp; tabs <span class="rl" style="font-weight:400;color:var(--muted)">— shared for everyone</span></h2>
-        <div class="sub">Reorder with &#9650;&#9660; and untick <b>shown</b> to hide a tab. Changes apply to every console user. In Analytics, categories are the first level and the dashboards beneath each are the second.</div>
+        <h2>Tabs inside pages <span class="rl" style="font-weight:400;color:var(--muted)">— shared for everyone</span></h2>
+        <div class="sub">The tiles of Mobile › Troubleshoot and the dashboards of Mobile › Reports. Reorder with &#9650;&#9660; and untick <b>shown</b> to hide a tab. Changes apply to every console user. In Analytics, categories are the first level and the dashboards beneath each are the second.</div>
       </div>
       <div class="panel">
         <h3 style="margin:0 0 2px">Troubleshoot &mdash; error tabs</h3>
@@ -124,15 +129,15 @@
         <div class="nv-list" id="nvAna">${anaRows}</div>
       </div>
       <div class="nv-actions">
-        <button class="pill" id="nvSave" style="border-left-color:var(--green)">Save layout</button>
-        <button class="pill" id="nvReset" style="border-left-color:var(--muted,#94a3b8)">Reset to default</button>
+        <button class="pill" id="nvSave" style="border-left-color:var(--green)">Save tabs</button>
+        <button class="pill" id="nvReset" style="border-left-color:var(--muted,#94a3b8)">Reset tabs to default</button>
         <span id="nvStatus" class="rl"></span>
       </div>`;
     wire();
   }
 
   function wire(){
-    const host=$("#navCfg");
+    const host=$("#navTabsCfg");
     host.querySelectorAll(".nv-mv").forEach(btn=>btn.addEventListener("click",()=>{
       const row=btn.closest(".nv-row"); const dir=btn.dataset.mv==="up"?-1:1;
       const kind=row.dataset.kind, i=Number(row.dataset.i);
@@ -169,5 +174,7 @@
   }
 
   window.renderNavCfg=render;
-  document.querySelectorAll('[data-seg="nav"]').forEach(b=>b.addEventListener("click",()=>setTimeout(render,0)));
+  /* the gear-menu entry only (alpha.160): the settings segment itself is also [data-seg="nav"], so every click inside the
+   * page used to re-render it from the server — an unsaved tab move or a menu edit in progress was thrown away */
+  document.querySelectorAll('[data-seg="nav"]:not(.setseg)').forEach(b=>b.addEventListener("click",()=>setTimeout(render,0)));
 })();
