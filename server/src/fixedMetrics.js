@@ -305,7 +305,7 @@ async function histRows(C, now, cls) {
   const hit = HIST.get(key); if (hit) return hit.rows;
   const h0 = hourStart(now);
   const rows = (await C.query(`SELECT ${APPLOG_SIG} AS sig, date_trunc('hour', ts) AS h, count(*)::int AS n
-      FROM fixed_app_events WHERE ok IS NOT TRUE AND reason_class = $2 AND ts >= $1::timestamptz - interval '14 days' AND ts < $1::timestamptz - interval '60 minutes'
+      FROM fixed_app_events WHERE ok IS NOT TRUE AND reason_class = $2 AND kind <> 'payment_loop' AND ts >= $1::timestamptz - interval '14 days' AND ts < $1::timestamptz - interval '60 minutes'
       GROUP BY 1,2`, [h0, cls])).rows;
   HIST.set(key, { at: Date.now(), rows });
   for (const k of HIST.keys()) if (HIST.get(k).at < Date.now() - 3 * 3600e3) HIST.delete(k);   // keep the map small
@@ -327,10 +327,13 @@ async function seenSignatures(C, now) {
   const set = new Set(hit.set); for (const r of delta) set.add(r.sig);
   return set;
 }
+/* the hold-settlement loop (kind payment_loop) is left out (alpha.165): it re-logs the SAME stuck AUTHORIZED invoices every
+ * 10-min pass on each of 3 PM2 processes — 39 stuck invoices read "651 technical failures in the last hour vs typical 0" and
+ * kept this anomaly open for 45 h on 9 Oct. It is a backlog, not a spike: fixed_ep_auth_stuck counts it as one. */
 async function applogAnomaly(now, cls) {
   const C = consoleDb();
   const cur = (await C.query(`SELECT ${APPLOG_SIG} AS sig, count(*)::int AS n, count(DISTINCT request_id)::int AS requests, (array_agg(left(reason,90) ORDER BY ts DESC))[1] AS reason
-      FROM fixed_app_events WHERE ok IS NOT TRUE AND reason_class = $2 AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz
+      FROM fixed_app_events WHERE ok IS NOT TRUE AND reason_class = $2 AND kind <> 'payment_loop' AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz
       GROUP BY 1 HAVING count(*) >= 10 ORDER BY 2 DESC LIMIT 40`, [now, cls])).rows;
   if (!cur.length) return [];
   const hod = new Date(new Date(now).getTime() + 3 * 3600e3).getUTCHours();
@@ -379,7 +382,7 @@ Object.assign(FIXED_METRICS, {
         const cov = (await C.query(`SELECT min(ts) AS t FROM fixed_app_events`)).rows[0].t;
         if (!cov || (new Date(now) - new Date(cov)) < 24 * 3600e3) return [];   // needs a day of history before "never seen" means anything
         const cur = (await C.query(`SELECT ${APPLOG_SIG} AS sig, count(*)::int AS n, (array_agg(left(reason,80) ORDER BY ts DESC))[1] AS reason
-              FROM fixed_app_events WHERE ok IS NOT TRUE AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1 HAVING count(*) >= 5
+              FROM fixed_app_events WHERE ok IS NOT TRUE AND kind <> 'payment_loop' AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1 HAVING count(*) >= 5
               ORDER BY 2 DESC LIMIT 200`, [now])).rows;
         const seen = cur.length ? await seenSignatures(C, now) : new Set();
         /* novelty is the STEP (channel · step), not its class (alpha.162): when a refused step started taking the class of its

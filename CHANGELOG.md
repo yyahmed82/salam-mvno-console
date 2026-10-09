@@ -1,3 +1,7 @@
+## 2.0.0-alpha.165 — 2026-10-09
+
+- **"App log · technical failure anomaly" no longer reads the hold-settlement loop as a spike.** The anomaly stayed open for 45 h on 9 Oct with "651 in the last 60 min vs typical 0/h · other · payment_loop · Failed to process payment": the backend's 10-min hold-settlement loop re-logs the SAME stuck AUTHORIZED invoices every pass on each of 3 PM2 processes — 39 stuck invoices × 3 × ~5 passes ≈ 600 lines an hour. That is a backlog, already counted once by `fixed_ep_auth_stuck`, not a new failure. `kind = 'payment_loop'` is left out of the technical / business anomaly, its baseline, the "new signature" rule and the anomaly evidence (`fixedMetrics.js`, `alertCases.js`).
+
 ## 2.0.0-alpha.164 — 2026-10-09
 
 - **A menu's current page sits under its name.** The menu that holds the page you are on shows that page on a second line under its name — Fixed / Operations Dashboard, VP Operations / VP dashboard, VP Operations / Weekly Report — instead of the green pill beside the name, which read as a second button and widened the menu (Fixed on its dashboard: 198 px wide at 1920 px, was 249 px).
