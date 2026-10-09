@@ -90,7 +90,7 @@ const unmaskCfg = desk => ({ who: ['off', 'supervisors', 'members'].includes(des
 const ROW = `l.id, l.source, l.product, l.plan_id, l.plan_label, l.svc_type, l.plan_type, l.channel, l.dealer, l.region, l.city, l.step_label, l.reason, l.reason_class, l.customer_mask, l.mobile_mask, l.nid_kind,
   l.relation, l.occurred_at, l.status, l.assignee, l.assigned_at, l.priority, l.score, l.temp, l.next_action_at, l.attempts, l.first_contact_at, l.last_contact_at,
   l.offer_code, l.offer_months, l.won_at, l.won_auto, l.won_by, l.won_ref, l.lost_reason, l.closed_at, l.batch_id, l.remark, l.created_at, l.updated_at,
-  coalesce((l.facts->>'attempts')::int, 1) AS journeys, l.facts->>'period' AS period, l.facts->>'lang' AS lang, l.facts->>'bss' AS bss, l.facts->>'nm' AS name_from`;
+  coalesce((l.facts->>'attempts')::int, 1) AS journeys, l.facts->'conv' AS conv, l.facts->>'period' AS period, l.facts->>'lang' AS lang, l.facts->>'bss' AS bss, l.facts->>'nm' AS name_from`;
 async function getLead(id) { const r = await C().query(`SELECT * FROM fixed_leads WHERE id = $1`, [id]); return r.rows[0] || null; }
 function view(L) {
   const out = {}; for (const k of ['id', 'source', 'product', 'plan_id', 'plan_label', 'svc_type', 'plan_type', 'channel', 'dealer', 'region', 'city', 'step_label', 'reason', 'reason_class', 'customer_mask', 'mobile_mask', 'nid_kind',
@@ -101,6 +101,11 @@ function view(L) {
   if (out.period == null && F.period) out.period = F.period;
   if (out.lang == null && F.lang) out.lang = F.lang;
   if (out.name_from == null && F.nm) out.name_from = F.nm;
+  /* where the customer ordered after the lead, and who placed it (fixedLeadsConvert, alpha.174) */
+  const cv = L.conv || F.conv || null;
+  out.conv = cv && typeof cv === 'object' ? { at: cv.at || null, channel: cv.channel || null, workflow: cv.workflow || null, plan: cv.plan || null, order: cv.order || null, dealer: cv.dealer || null,
+    staff: cv.staff || null, referral: cv.referral || null, ocu: cv.ocu || null, how: cv.how || null, hours_after_contact: cv.hours_after_contact == null ? null : cv.hours_after_contact,
+    status_before: cv.status_before || null, checked: cv.checked || null } : null;
   out.bss = out.bss === true || out.bss === 'true' || F.bss === true;
   if (/^\d{1,6}$/.test(String(out.plan_label || ''))) out.plan_label = S.planLabel(out.plan_label, null, out.product);
   if (!out.svc_type) out.svc_type = S.svcType(L.workflow, L.plan_id, L.plan_label, L.product);
@@ -201,6 +206,8 @@ async function board(req, desk) {
     feed: feed.map(f => ({ at: f.at, who: f.actor === 'system' ? null : nameOf(f.actor), kind: f.kind, auto: !!(f.detail && f.detail.auto), product: f.product, plan: f.plan_label, source: f.source,
       offer: f.detail && (f.detail.offer || f.detail.code) || null })),
     self_won_7d: S.n((selfWon[0] || {}).n),
+    /* who converted the desk's leads, 30 days (alpha.174): channel, SDA dealer and staff, after our call or on their own */
+    conversions: await require('./fixedLeadsConvert').report(30).catch(() => null),
     /* a brief written over an empty desk (go-live day) is not shown once the desk has leads — the coach writes today's again */
     brief: brief && !(S.n(((brief.summary || {}).pipe || {}).open) === 0 && S.n(t.open) > 0) ? { at: brief.created_at, text: brief.narrative } : null,
     week: S.ksaDay(w0.getTime()),

@@ -566,6 +566,9 @@ async function harvest({ actor } = {}) {
     await fromReadModel(desk, st, stats);
     if (desk.sources.sda_promoter) await fromPromoterLeads(desk, st, stats).catch(e => stats.errors.push('promoter leads: ' + e.message.slice(0, 140)));
     if (desk.sources.dashpro && dashConfigured()) await fromDashpro(desk, st, stats).catch(e => stats.errors.push('dashpro: ' + e.message.slice(0, 140)));
+    /* conversions (alpha.174): orders completed since the last pass, by completion time, matched to the desk's leads — where,
+     * which dealer / staff, credited or not (fixedLeadsConvert.js) */
+    await require('./fixedLeadsConvert').sync(desk, st, stats).catch(e => stats.errors.push('conversions: ' + e.message.slice(0, 140)));
     await backfill(stats).catch(e => stats.errors.push('backfill: ' + e.message.slice(0, 140)));
     await backfillNames(stats).catch(e => stats.errors.push('names: ' + e.message.slice(0, 140)));
     await expire(desk, stats).catch(e => stats.errors.push('expire: ' + e.message.slice(0, 140)));
@@ -573,7 +576,7 @@ async function harvest({ actor } = {}) {
     if (Math.random() < 0.05) await C().query(`DELETE FROM fixed_lead_journeys WHERE seen_at < now() - interval '400 days'`).catch(() => {});
     stats.ms = Date.now() - t0; st.lastRun = new Date().toISOString(); st.lastStats = stats; await setState(st);
     if (run) await C().query(`UPDATE agent_runs SET finished_at = now(), ok = $2, stats = $3, error = $4 WHERE id = $1`, [run, !stats.errors.length, JSON.stringify(stats), stats.errors[0] || null]).catch(() => {});
-    if (stats.created || stats.won_auto || stats.errors.length) log(`harvest${actor ? ' (' + actor + ')' : ''}: ${stats.scanned} journeys · ${stats.created} new lead(s) · ${stats.merged} merged · ${stats.won_auto} won by an order${stats.errors.length ? ' · errors: ' + stats.errors.join(' | ') : ''}`);
+    if (stats.created || stats.won_auto || stats.conversions || stats.errors.length) log(`harvest${actor ? ' (' + actor + ')' : ''}: ${stats.scanned} journeys · ${stats.created} new lead(s) · ${stats.merged} merged · ${stats.won_auto} won by an order · ${S.n(stats.conversions)} conversion(s) recorded of ${S.n(stats.conv_orders)} orders${stats.conv_after_close ? ' (' + stats.conv_after_close + ' after the lead was closed)' : ''}${stats.errors.length ? ' · errors: ' + stats.errors.join(' | ') : ''}`);
     return stats;
   } catch (e) {
     stats.errors.push(e.message); log('harvest failed:', e.message);

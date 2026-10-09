@@ -356,6 +356,15 @@
 .ld-card h4{margin:0 0 10px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:flex;gap:8px;align-items:center}
 .ld-card h4 svg{width:14px;height:14px}
 .ld-kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.ld-conv{border-color:rgba(14,159,90,.45);background:linear-gradient(135deg,rgba(209,250,229,.55),rgba(255,255,255,0) 60%)}
+[data-theme="dark"] .ld-conv{border-color:rgba(52,211,153,.35);background:linear-gradient(135deg,rgba(6,78,59,.45),rgba(0,0,0,0) 60%)}
+.ld-conv.late{border-color:rgba(217,119,6,.45);background:linear-gradient(135deg,rgba(254,243,199,.6),rgba(255,255,255,0) 60%)}
+[data-theme="dark"] .ld-conv.late{border-color:rgba(251,191,36,.35);background:linear-gradient(135deg,rgba(120,53,15,.45),rgba(0,0,0,0) 60%)}
+.ld-cvb{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:999px;background:rgba(14,159,90,.12);color:#047857;white-space:nowrap}
+[data-theme="dark"] .ld-cvb{background:rgba(52,211,153,.16);color:#6ee7b7}
+.ld-cvb.late{background:rgba(217,119,6,.13);color:#b45309} [data-theme="dark"] .ld-cvb.late{background:rgba(251,191,36,.16);color:#fcd34d}
+.ld-cvt{width:100%;overflow-x:auto} .ld-cvt .ld-tbl td .mono{font-size:11.5px}
+@media (max-width:700px){.ld-cvt .ld-tbl th:nth-child(n+4),.ld-cvt .ld-tbl td:nth-child(n+4){display:none}}
 .ld-kv div{font-size:12.5px;color:var(--ink)} .ld-kv span{display:block;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
 .ld-call{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:14px 16px;border-radius:16px;border:1px solid #fecaca;background:linear-gradient(135deg,rgba(254,226,226,.7),rgba(255,255,255,0));}
 [data-theme="dark"] .ld-call{border-color:rgba(248,113,113,.35);background:linear-gradient(135deg,rgba(127,29,29,.35),rgba(0,0,0,0))}
@@ -587,6 +596,12 @@
   const unmaskable=x=>x.status!=="dnc"&&(((S.meta.unmask||{}).scope==="any")||x.assignee===S.meta.me.email||x.won_by===S.meta.me.email);
   const canRevealRow=x=>x.status!=="dnc"&&(S.meta.me.manager||x.assignee===S.meta.me.email);
   const CLOSED_ST=["won","lost","dnc","unreachable","duplicate"];
+  /* conversions (alpha.174): where the customer ordered after the lead, and who placed it */
+  const CV_CH={sda:"SDA dealer",epurchase:"Website",salamhome:"Salam Home app",qr:"QR code"};
+  const CV_HOW={sda_account:"placed by an OCU SDA account — credited",contacted:"after our call — credited to the caller",own:"on their own — no credit"};
+  const cvWhere=cv=>`${esc(CV_CH[cv.channel]||cv.channel||"an order")}${cv.dealer&&cv.dealer.code?" · "+esc(cv.dealer.code):cv.referral?" · QR "+esc(cv.referral):""}`;
+  const cvWho=cv=>cv.staff?[cv.staff.name,cv.staff.code&&cv.staff.code!==cv.staff.name?cv.staff.code:null].filter(Boolean).map(esc).join(" · "):"";
+  const cvBadge=x=>x.conv?`<span class="ld-cvb${x.status==="won"?"":" late"}" title="${esc((x.status==="won"?"Ordered ":"Ordered after the lead was closed ")+(CV_CH[x.conv.channel]||"")+(x.conv.dealer&&x.conv.dealer.name?" · "+x.conv.dealer.name:"")+(x.conv.staff&&x.conv.staff.name?" · by "+x.conv.staff.name:"")+(x.conv.at?" · "+md(x.conv.at)+" KSA":""))}">${I.trophy}${x.status==="won"?"":"ordered later · "}${cvWhere(x.conv)}</span>`:"";
   const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem("ld_"+k); localStorage.setItem("ld_"+k,String(v)); }catch(_){} return null; };
   const memberName=e=>((S.meta.members||[]).find(m=>m.email===e)||{}).name||String(e||"").split("@")[0];
   const initials=s=>String(s||"").split(/[\s.@_-]+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
@@ -624,7 +639,8 @@
   function statusHtml(x,due,wide){ const lb=(S.meta.statuses||{})[x.status]||x.status; const closed=CLOSED_ST.includes(x.status); const sub=[];
     if(n(x.attempts)) sub.push(n(x.attempts)+" call"+(n(x.attempts)>1?"s":""));
     if(x.next_action_at&&!closed){ const late=new Date(x.next_action_at).getTime()<Date.now(); sub.push(late?`<b class="late">overdue ${esc(ago(x.next_action_at).replace(" ago",""))}</b>`:`call back ${esc(ago(x.next_action_at))}`); }
-    if(x.status==="won") sub.push(x.won_auto?(x.won_by?"by an order · credited":"ordered on their own"):"by the team");
+    if(x.status==="won"&&!x.conv) sub.push(x.won_auto?(x.won_by?"by an order · credited":"ordered on their own"):"by the team");
+    if(x.conv) sub.push(cvBadge(x));
     if(x.status==="lost"&&x.lost_reason) sub.push(esc(x.lost_reason));
     if(closed&&x.closed_at) sub.push("closed "+esc(ago(x.closed_at)));
     if(x.offer_code&&x.offer_code!=="STD") sub.push(esc(x.offer_code));
@@ -882,13 +898,22 @@
       case "reveal": return "Revealed the number"; case "unmask": return `Contact unmasked in the list${x.view?" ("+esc(x.view)+")":""}`; case "view": return "Opened the lead";
       case "call": return `${esc(m.results[x.result]||x.result)}${x.callbackAt?" · call back "+esc(md(x.callbackAt)):""}${x.offer?" · "+esc(x.offer):""}${x.lost_reason?" · "+esc(x.lost_reason):""}${x.note?" — “"+esc(x.note)+"”":""}`;
       case "offer": return `Offer ${esc(x.offer)}${x.months?" · "+x.months+" months":""}`;
-      case "won": return x.auto?`Won — the customer ordered (${esc(x.how==="sda_account"?"SDA account "+(x.staff||""):x.how==="contacted"?"after our call":"on their own")}${x.ref?" · "+esc(x.ref):""})`:`Order placed${x.orderRef?" · "+esc(x.orderRef):""}${x.offer?" · "+esc(x.offer):""}`;
+      case "won": return x.auto?`Won — the customer ordered (${esc(x.how==="sda_account"?"SDA account "+(x.staff||""):x.how==="contacted"?"after our call":"on their own")}${x.dealer?" · dealer "+esc(x.dealer):""}${x.ref?" · "+esc(x.ref):""})`:`Order placed${x.orderRef?" · "+esc(x.orderRef):""}${x.offer?" · "+esc(x.offer):""}`;
       case "comment": return "“"+esc(x.text)+"”"; case "remark": return "Remark: "+esc(x.text||"(cleared)"); case "ai": return `Asked Agent 2 · score ${esc(x.score)}`;
       case "expired": return `Closed — nobody called it within ${esc(x.days)} days`;
+      case "converted": return `The customer ordered${x.after_close?" after the lead was closed":""} · ${esc(CV_CH[x.channel]||x.channel||"")}${x.dealer?" · dealer "+esc(x.dealer):""}${x.dealer_name?" ("+esc(x.dealer_name)+")":""}${x.staff?" · by "+esc(x.staff):""}${x.order?" · order "+esc(x.order):""}`;
       case "reopen": return "Reopened"; case "priority": return "Priority "+esc(x.priority); default: return esc(e.kind); } };
     const tl=`<div class="ld-card"><h4>${I.clock}Comments & timeline</h4><div class="ld-cmt" style="margin-bottom:10px"><textarea class="ld-in" id="ldCm" placeholder="Add a comment for the team"></textarea><button class="ld-btn s p" id="ldCmB">Post</button></div>
       <ul class="ld-tl">${(r.events||[]).map(e=>`<li><span class="w">${esc(md(e.at))}</span><span><b>${esc(e.who)}</b> · ${evLabel(e)}${e.points?`<span class="pt">+${e.points}</span>`:""}</span></li>`).join("")}</ul></div>`;
-    d.querySelector(".db").innerHTML=callCard+coach+outcomes+journey+relCard+remark+tl;
+    const cv=L.conv; const cvCard=cv?`<div class="ld-card ld-conv${L.status==="won"?"":" late"}"><h4>${I.trophy}${L.status==="won"?"Converted":"Ordered after the lead was closed"}</h4><div class="ld-kv">
+        <div><span>Ordered</span>${cv.at?esc(md(cv.at))+" KSA":"—"} · ${esc(CV_CH[cv.channel]||cv.channel||"")}</div>
+        <div><span>Dealer</span>${cv.dealer?`<b class="mono">${esc(cv.dealer.code||"")}</b>${cv.dealer.name?" · "+esc(cv.dealer.name):""}`:cv.referral?"QR "+esc(cv.referral):"— (no dealer: the customer ordered online)"}</div>
+        <div><span>Placed by</span>${cvWho(cv)||"—"}${cv.ocu?` · <b>OCU · ${esc(((m.members||[]).find(x=>x.email===cv.ocu)||{}).name||cv.ocu)}</b>`:""}</div>
+        <div><span>Order</span>${cv.order?`<span class="mono">${esc(cv.order)}</span>`:"not in BSS yet"}${cv.plan?" · "+esc(cv.plan):""}</div>
+        <div><span>Credit</span>${esc(CV_HOW[cv.how]||"—")}</div>
+        <div><span>Before the order</span>${esc(m.statuses[cv.status_before]||cv.status_before||"—")}${cv.hours_after_contact!=null?` · ${n(cv.hours_after_contact)} h after our last call`:""}</div></div>
+        <div class="ld-note" style="margin-top:8px">Matched by the same national ID or mobile · checked in the ${esc(cv.checked||"read model")}.</div></div>`:"";
+    d.querySelector(".db").innerHTML=callCard+cvCard+coach+outcomes+journey+relCard+remark+tl;
     /* bindings */
     const tk=d.querySelector("#ldTake"); if(tk) tk.onclick=async()=>{ tk.disabled=true; try{ await post(`/api/fixed/leads/lead/${L.id}/take`); toast("Taken — it is in your queue",true); fillLead(L.id); refreshList(); }catch(e){ toast(e.message); tk.disabled=false; } };
     const rv=d.querySelector("#ldReveal"); if(rv) rv.onclick=()=>reveal(L);
@@ -947,6 +972,15 @@
   function refreshList(){ if(["mine","pool","team","closed"].includes(S.tab)){ const el=document.getElementById("ldBody"); if(el) listView(el,true); } }
 
   /* ---------------------------------------------------------------- team & challenges */
+  /* who converted the desk's leads (alpha.174): the orders matched to a lead in 30 days — channel, SDA dealer and staff */
+  function convCard(c){ if(!c) return ""; const t=c.total||{};
+    const ch=(c.byChannel||[]).map(x=>`${esc(CV_CH[x.channel]||x.channel)} ${n(x.n)}`).join(" · ");
+    return `<div class="ld-card" style="margin-top:14px"><h4>${I.trophy}Who converted our leads · ${n(c.days)} days</h4>
+      ${n(t.n)?`<div class="ld-kv"><div><span>Leads that ordered</span><b>${n(t.n)}</b></div><div><span>OCU SDA account</span>${n(t.ocu)}</div><div><span>After our call</span>${n(t.contacted)}</div><div><span>On their own</span>${n(t.own)}</div><div><span>After we closed it</span>${n(t.after_close)}</div></div>
+      <div class="ld-note" style="margin-top:8px">${ch}</div>
+      ${(c.byDealer||[]).length?`<div class="ld-cvt" style="margin-top:10px"><table class="ld-tbl"><thead><tr><th>Dealer</th><th>Name</th><th>Orders</th><th>After our call</th><th>After we closed</th></tr></thead><tbody>${c.byDealer.map(x=>`<tr><td><span class="mono">${esc(x.code)}</span></td><td>${esc(x.name||"—")}</td><td><b>${n(x.n)}</b></td><td>${n(x.after_call)}</td><td>${n(x.after_close)}</td></tr>`).join("")}</tbody></table></div>`:""}
+      ${(c.byStaff||[]).length?`<div class="ld-cvt" style="margin-top:10px"><table class="ld-tbl"><thead><tr><th>Placed by</th><th>Staff</th><th>Orders</th><th>Dealer</th></tr></thead><tbody>${c.byStaff.map(x=>`<tr><td>${esc(x.name||"—")}${x.ocu?` <span class="ld-cvb">OCU</span>`:""}</td><td><span class="mono">${esc(x.code||"—")}</span></td><td><b>${n(x.n)}</b></td><td><span class="mono">${esc(x.dealer||"—")}</span></td></tr>`).join("")}</tbody></table></div>`:""}`
+      :`<div class="ld-note">No lead of the desk has ordered yet in ${n(c.days)} days — every harvest pass checks the completed orders (SDA, website, app) against the leads.</div>`}</div>`; }
   async function boardView(el){
     el.innerHTML=`<div class="ld-empty">Loading…</div>`;
     try{ S.board=await api("/api/fixed/leads/board"); }catch(e){ el.innerHTML=`<div class="ld-err">${esc(e.message)}</div>`; return; }
@@ -966,7 +1000,8 @@
           <div class="ld-two"><label>Who<select class="ld-sel" id="chS"><option value="team">The whole team</option><option value="member">Each member</option></select></label><label>Period<select class="ld-sel" id="chP"><option value="week">This week</option><option value="day">Today</option><option value="month">This month</option></select></label></div>
           <button class="ld-btn p" id="chGo">Start the challenge</button></div>`:""}</div>
         <div class="ld-card" style="margin-top:14px"><h4>${I.spark}Team feed</h4>${b.feed.length?`<ul class="ld-feed">${b.feed.map(f=>`<li>${feedIc(f)}<span><b>${esc(f.who||"A member")}</b> ${f.kind==="won"?(f.auto?"— the customer ordered after the call · ":"won ")+esc(PRODUCT[f.product]||"")+" · "+esc(f.plan||""):"offered "+esc(f.offer||"")}${f.offer&&f.kind==="won"?" · "+esc(f.offer):""}<br><span class="ld-note">${esc(ago(f.at))} · ${esc(S.meta.sources[f.source]||f.source)}</span></span></li>`).join("")}</ul>`:`<div class="ld-note">The team's wins and offers of the last 7 days appear here.</div>`}
-          ${n(b.self_won_7d)?`<div class="ld-note" style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)">+ ${n(b.self_won_7d)} customer(s) ordered on their own in 7 days, before anyone called — closed automatically, no points.</div>`:""}</div></div></div>`;
+          ${n(b.self_won_7d)?`<div class="ld-note" style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)">+ ${n(b.self_won_7d)} customer(s) ordered on their own in 7 days, before anyone called — closed automatically, no points.</div>`:""}</div>
+        ${convCard(b.conversions)}</div></div>`;
     const go=el.querySelector("#chGo"); if(go) go.onclick=async()=>{ const v=id=>el.querySelector(id).value; if(!v("#chT").trim()) return toast("Give the challenge a title");
       try{ await post("/api/fixed/leads/challenges",{title:v("#chT"),reward:v("#chR"),metric:v("#chM"),target:Number(v("#chN")),scope:v("#chS"),period:v("#chP")}); toast("Challenge started",true); boardView(el); }catch(e){ toast(e.message); } };
     el.querySelectorAll("[data-endch]").forEach(a=>a.onclick=async e=>{ e.preventDefault(); try{ await api(`/api/fixed/leads/challenges/${a.dataset.endch}`,{method:"DELETE"}); boardView(el); }catch(x){ toast(x.message); } });
@@ -1030,7 +1065,7 @@
         <div class="ld-two" style="margin-top:10px">${num("stAge","Lead after (hours without finishing)",d.minAgeHours)}${num("stLook","History look-back (days)",d.lookbackDays)}</div>
         <div class="ld-two" style="margin-top:6px">${num("stMaxAge","New lead only if the journey is at most (days)",d.leadMaxAgeDays)}${num("stExp","Close a lead nobody called after (days)",d.expireDays)}</div>
         <div class="ld-two" style="margin-top:6px">${num("stStale","Promoter lead stale after (days)",d.staleLeadDays)}${num("stAttr","Credit an order within (days of the call)",d.attributionDays)}</div>
-        <div class="ld-note" style="margin-top:10px">Last harvest: ${hv.state&&hv.state.lastRun?esc(md(hv.state.lastRun))+" KSA · "+n(st.scanned)+" journeys · "+n(st.created)+" new · "+n(st.won_auto)+" won by an order"+(n(st.expired)?" · "+n(st.expired)+" expired":"")+(st.paused?" · <b style='color:#b91c1c'>paused — no LEADS_PII_KEY</b>":""):"not yet"} · read model ${hv.readModel?"on":"off"} · nexus ${hv.nexus?"on":"off"} · MVNO ${hv.mvno?"on":"off"} · DashPro ${hv.dashpro?"connected":"not configured"}${(st.errors||[]).length?` · <b style="color:#b91c1c">${esc(st.errors[0])}</b>`:""}</div>
+        <div class="ld-note" style="margin-top:10px">Last harvest: ${hv.state&&hv.state.lastRun?esc(md(hv.state.lastRun))+" KSA · "+n(st.scanned)+" journeys · "+n(st.created)+" new · "+n(st.won_auto)+" won by an order · "+n(st.conversions)+" conversion(s) recorded"+(n(st.expired)?" · "+n(st.expired)+" expired":"")+(st.paused?" · <b style='color:#b91c1c'>paused — no LEADS_PII_KEY</b>":""):"not yet"} · read model ${hv.readModel?"on":"off"} · nexus ${hv.nexus?"on":"off"} · MVNO ${hv.mvno?"on":"off"} · DashPro ${hv.dashpro?"connected":"not configured"}${(st.errors||[]).length?` · <b style="color:#b91c1c">${esc(st.errors[0])}</b>`:""}</div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="ld-btn s" id="stHarv">Harvest now</button><button class="ld-btn s" id="stDig">Send the digest now</button></div></div>
     </div><div>
       <div class="ld-card"><h4>${I.trophy}Targets & points</h4><div class="ld-two">${num("stTd","Orders per member per day",d.targets.dailyWins)}${num("stTw","Orders per member per week",d.targets.weeklyWins)}</div>

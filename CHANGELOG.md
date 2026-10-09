@@ -1,3 +1,38 @@
+## 2.0.0-alpha.174 — 2026-10-09
+
+- **Fixed › Leads — conversion sync: did the customer order after the lead, where, and who placed it.** Runs on every harvest pass (`server/src/fixedLeadsConvert.js`).
+  - **Orders:** the orders completed since the last pass, read by completion time from the read model. The first pass reads 45 days back (`convLookbackDays`).
+    - **Sources:** `order_attempts` with outcome COMPLETED, the order number, and the dealer row (dealer code, dealer name, staff code), from prod and beta.
+    - **Why completion time:** the harvest reads journeys by start time (26 h back), so an SDA journey submitted days after it started was missed.
+  - **Confirmation in nexus, by primary key only:**
+    - the journey: national ID and mobile, the account behind it, `staff_id`, channel, QR referral, BSS order number (the 5G placeholder 11223344 is ignored);
+    - the SDA staff member: `staff.id`, keeping only the name, username / code and dealer columns the table has.
+  - **Matching:** by the same person (national-ID or mobile hash, never the number), for every lead source: stopped journeys, promoter leads, imported batches, DashPro. It takes the first order after the lead's journey started. The lead's own journey counts if it completed after the lead was created.
+  - **What it records** on the lead (`facts.conv`) and in the timeline:
+    - when and channel (SDA dealer, website, Salam Home app, QR);
+    - dealer code and name;
+    - the staff member who placed it, and whether that is an OCU member's SDA account;
+    - the order number and plan;
+    - the credit: OCU SDA account, after our call, or on their own;
+    - hours after our last call, and the lead's status before the order.
+  - **Outcome by lead status:**
+    - **Open lead:** it becomes Won, credited as before (the OCU member's SDA account, else the member who called within the attribution window, else nobody).
+    - **Already won:** the evidence is attached.
+    - **Already closed** (lost, unreachable, expired): it keeps its status and shows "ordered later via …".
+- **On the page:**
+  - the status cell carries a green "SDA dealer · D123" badge (amber "ordered later · …" on a closed lead);
+  - the lead drawer opens with a **Converted** card (ordered, dealer, placed by, order, credit, before the order);
+  - the timeline reads "The customer ordered · SDA dealer · dealer D123 (name) · by staff · order …";
+  - **Team & challenges** gains **Who converted our leads · 30 days**: totals (OCU account, after our call, on their own, after we closed it), by channel, top dealers and top staff;
+  - Settings shows the conversions of the last pass.
+- **Code:**
+  - `server/src/fixedLeadsConvert.js` (new);
+  - `fixedLeadsHarvest.js` (calls it, log line);
+  - `fixedLeads.js` (`conv` on every row and in the board);
+  - `fixedLeadsStore.js` (`convLookbackDays`);
+  - `fixed-leads.js`;
+  - `index.html` (cache key).
+
 ## 2.0.0-alpha.173 — 2026-10-09
 
 - **Fixed › Leads — 5G web and app journeys that stopped before the customer typed a number become leads, from the account that opened them.**

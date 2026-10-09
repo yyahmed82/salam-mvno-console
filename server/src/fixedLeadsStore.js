@@ -113,6 +113,7 @@ const DESK_DEFAULT = {
   targets: { dailyWins: 2, weeklyWins: 10 },
   points: { contact: 1, fast: 2, interested: 3, offer: 2, won: 10, won_std: 15 },
   attributionDays: 14,
+  convLookbackDays: 45,                   // conversions (alpha.174): how far back the first pass reads completed orders to match the desk's leads
   offers: null, terms: null,
 };
 let deskCache = { at: 0, v: null };
