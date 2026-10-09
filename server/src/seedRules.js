@@ -665,7 +665,17 @@ const bizTeam = ch => (ch === 'sda' || ch === 'qr' ? 'Sales Ops' : 'Digital Ops'
  *        Salam Home 7.9 / 12.5 s · SDA 10.4 / 15.1 s · Epurchase 11.8 / 14.3 s. P2 just above p99, P1 at 25 s.
  *      Latency is slowness, not downtime (execBrief.kindOf 'slow'): the P1 twin is kept for paging, it never reads Outage. */
 const TUNED = {
-  applog_tech:    { salamhome: [0.10, 0.25], web: [0.25, 0.45], sda: [0.20, 0.40], all: [0.20, 0.40] },
+  /* PER JOURNEY since alpha.169 — census section 18 (14 d to 9 Oct, hourly rate of journeys failed technically and not
+   * completed, hours with ≥ 30 journeys), p50 / p95 / p99: Salam Home 0.0 / 2.1 / 5.6 % · Epurchase 7.1 / 15.3 / 26.5 % ·
+   * SDA 1.5 / 5.0 / 8.6 % · all 4.7 / 10.5 / 21.2 %. At these thresholds the replay gives Salam Home 2 P2 episodes in 14 d
+   * (one P1, 5 Oct 21:00 KSA, 27 %), Epurchase 4 (28 Sep and 8 Oct — the Unifonic quota days), no P1 storm on any channel
+   * (they fired 18 times in 30 d on lines). SDA came down to 15 / 35 % (alpha.171): at 20 / 40 % it sat at 2.3× its p99
+   * and never fired — a dealer channel failing for one journey in six is worth knowing. */
+  applog_tech:    { salamhome: [0.10, 0.25], web: [0.25, 0.45], sda: [0.15, 0.35], all: [0.20, 0.40] },
+  /* business refusal rate per journey (P3), ≈ 1.5× p99 of 14 d: Salam Home 18 / 34 / 42 % · Epurchase 9 / 24 / 29 % ·
+   * SDA 12 / 23 / 45 % · all 13 / 22 / 26 %. At the old 65 % no channel reached it in 14 d — a refusal wall from a
+   * configuration or data change (plan rules, ODB, a provider rule) would not have been seen (alpha.171). */
+  applog_biz:     { salamhome: 0.60, web: 0.45, sda: 0.65, all: 0.40 },
   applog_tech_n:  50,
   applog_latency: { salamhome: [13000, 25000], web: [15000, 25000], sda: [15000, 25000], all: [15000, 25000] },
   applog_latency_n: 60,
@@ -736,8 +746,8 @@ for (const ch of APP_CH) {
       description: `${c.label}: ≥ ${Math.round(p1 * 100)} % of customer journeys hit a technical failure and did not complete — the channel is down or a core step (auth, subscriptions, feasibility, payment) is broken for everyone. Journeys whose order was processed are not counted.`,
       runbook: `1) Page Digital Ops L2 and the app team. 2) From the app log → ${c.page}: the dominant step; auth / me / subscriptions failing = login broken for all customers. 3) CX + Sales announcement. 4) Downgrades to the P2 twin as it recovers.` }),
     R({ key: `fixed_applog_biz_rate_${ch}`, name: `${c.label} · app steps refused (business)`, severity: 'P3', team: bizTeam(ch), alert_class: 'business', channel: ch,
-      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 0.65, min_sample: 50,
-      description: `${c.label}: ≥ 65 % of customer journeys in the last 60 min were REFUSED (wrong OTP, NIC mismatch, no coverage, plate not found, rate limit…) and did not complete, on ≥ 50 journeys — the platform answers, customers are being turned away. Per journey, orders processed apart (alpha.169).`,
+      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: TUNED.applog_biz[ch] || 0.65, min_sample: 50,
+      description: `${c.label}: ≥ ${Math.round((TUNED.applog_biz[ch] || 0.65) * 100)} % of customer journeys in the last 60 min were REFUSED (wrong OTP, NIC mismatch, no coverage, plate not found, rate limit…) and did not complete, on ≥ 50 journeys — the platform answers, customers are being turned away. Per journey, orders processed apart (alpha.169).`,
       runbook: `1) From the app log → ${c.page}: the refusing step. 2) OTP / identity refusals en masse = a provider rule or data change; feasibility = ODB / coverage data. 3) Sales Ops if it is dealer behaviour.` }),
     R({ key: `fixed_applog_latency_${ch}`, name: `${c.label} · step latency p95 over ${lat[0] / 1000} s (P2)`, severity: 'P2', alert_class: 'technical', channel: ch,
       metric_key: 'fixed_applog_latency_p95_ms', dim: { channel: ch }, operator: 'gte', threshold: lat[0], min_sample: TUNED.applog_latency_n,

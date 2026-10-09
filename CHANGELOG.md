@@ -1,3 +1,22 @@
+## 2.0.0-alpha.171 — 2026-10-09
+
+- **Fixed alert thresholds set on the journey counts (census section 18, 14 days to 9 Oct).** Hourly rate of journeys that failed and did not complete, hours with ≥ 30 journeys, p50 / p95 / p99:
+
+  | Channel | Technical | Business |
+  |---|---|---|
+  | Salam Home | 0.0 / 2.1 / 5.6 % | 18 / 34 / 42 % |
+  | Epurchase | 7.1 / 15.3 / 26.5 % | 9 / 24 / 29 % |
+  | SDA | 1.5 / 5.0 / 8.6 % | 12 / 23 / 45 % |
+  | all | 4.7 / 10.5 / 21.2 % | 13 / 22 / 26 % |
+
+  - **Technical P2 / P1 stay** for Salam Home (10 / 25 %), Epurchase (25 / 45 %) and all (20 / 40 %). The replay gives 2–4 P2 episodes in 14 days per channel: the 28 Sep and 8 Oct Unifonic quota hours on Epurchase, and 5 Oct 21:00 KSA on the app. The P1 storm rules fired 18 times in 30 days on lines; on journeys they reach no hour at all.
+  - **SDA technical: 15 / 35 %** (was 20 / 40 %). The old pair sat at 2.3× SDA's p99 and never fired.
+  - **Business refusal rate (P3): about 1.5× p99**, so a refusal wall from a plan, ODB or provider-rule change is seen. At the old 65 % no channel came near in 14 days. New values: Salam Home 60 %, Epurchase 45 %, SDA 65 %, all 40 %.
+  - **Traffic collapse replayed on the day-type baseline:** Epurchase 0 episodes (it fired 6 times in 30 days), Salam Home 1 (30 Sep 21:00 KSA, the collector gap of that night).
+  - **Board errors over 7 days:** 789 errors on 301 journeys whose order was completed are now errors to review, not triggers.
+- **Note:** the commit tagged alpha.169 also carries the alpha.170 Leads work (names from every Salam record). Both were deployed together.
+- **Code:** `server/src/seedRules.js`.
+
 ## 2.0.0-alpha.170 — 2026-10-09
 
 - **Fixed › Leads — customer names from every Salam record, when the journey has none.** The website and the Salam Home app check the identity (Yakeen) only after payment (nexus `ePurchaseCustomerProfileVerification`), so a customer who stopped at payment or before left no name in the journey: the unmasked list read "Name not in the source". The name is now looked for, same person only (the national id), names only, in this order:
