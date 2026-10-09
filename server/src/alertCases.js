@@ -160,6 +160,10 @@ const CASES = {
        GROUP BY d.id, d.dealer_code, d.dealer_name, d.region, b.bs, b.ws, b.t
       HAVING count(*) FILTER (WHERE oa.started_at >= b.bs AND oa.started_at < b.ws) >= $4 AND count(*) FILTER (WHERE oa.started_at >= b.ws AND oa.started_at <= b.t) >= $5 AND count(*) FILTER (WHERE oa.started_at >= b.ws AND oa.started_at <= b.t AND oa.outcome::text = 'COMPLETED') = 0) s`,
     cols: `dealer_code, dealer_name, region, baseline, win`, head: [['dealer_code', 'Dealer'], ['dealer_name', 'Name'], ['region', 'Region'], ['baseline', 'Attempts (baseline)'], ['win', 'Attempts (window)']], pop: 'TRUE', num: 'TRUE', params: [T, W, p.minDays, p.minBaseline, p.minWindowAttempts], order: 'win DESC', note: 'dealers active in the window with zero completions (one row per dealer)' }; },
+  /* the last full KSA hour before the evaluation — the hour fixedMetrics compares with its same-hour baseline */
+  fixed_workhours_activity_ratio: (a, T) => ({ pool: db.ops, from: OA_FROM, cols: OA_COLS, head: OA_HEAD,
+    pop: `oa.channel = 'sda' AND oa.started_at >= ((date_trunc('hour', $1::timestamptz AT TIME ZONE 'Asia/Riyadh') - interval '1 hour') AT TIME ZONE 'Asia/Riyadh') AND oa.started_at < (date_trunc('hour', $1::timestamptz AT TIME ZONE 'Asia/Riyadh') AT TIME ZONE 'Asia/Riyadh')`,
+    num: 'TRUE', params: [T], order: 'oa.started_at DESC', note: 'every SDA order attempt of the last full KSA hour before the evaluation — the alert divides their number by the same hour\'s average over the baseline days' }),
   fixed_incident_sla_breach_rate: (a, T, W, d) => ({ pool: db.ops, from: 'incident_log', cols: INC_COLS, head: INC_HEAD, pop: `submitted_at >= $1::timestamptz - ($2||' hours')::interval AND submitted_at <= $1::timestamptz AND ($3::text IS NULL OR theme ILIKE '%' || $3 || '%')`, num: 'sla_missed', params: [T, W, d && d.scope ? d.scope : null], order: 'submitted_at DESC', note: 'population = tickets submitted in the window · counted = SLA missed' }),
   fixed_incident_ticket_count: (a, T, W, d) => ({ pool: db.ops, from: 'incident_log', cols: INC_COLS, head: INC_HEAD, pop: `submitted_at >= $1::timestamptz - ($2||' hours')::interval AND submitted_at <= $1::timestamptz AND ($3::text IS NULL OR theme ILIKE '%' || $3 || '%')`, num: 'TRUE', params: [T, W, d && d.scope ? d.scope : null], order: 'submitted_at DESC', note: 'tickets submitted in the window' }),
 };
@@ -232,7 +236,7 @@ async function customSpec(a, T, W, d) {
   try { const cm = require('./customMetrics'); const spec = await cm.caseSpec(a.metric_key, T, W, d, Number(a.threshold)); return spec; } catch (e) { return { pool: null, head: [], error: e.message }; }
 }
 
-const NO_ROWS = { fixed_board_ingest_lag_min: 'freshness of the read model — see Alerts › Data sources', fixed_applog_collector_lag_min: 'freshness of the app-log collector — see Alerts › Data sources', apigw_nodes_unreachable: 'console TCP probe (apigw_probe_log) — see #apigw for the node map', dealer_activity: 'aggregate of dealer activity', offhours_orders: 'aggregate', sms_probe_fail_count: 'SMS probe events — see Monitoring › SMS', courier_backlog: 'derived from paid reseller orders without a delivery request', onboarding_created: 'count of orders created', fixed_workhours_activity_ratio: 'same-hour baseline ratio (SDA activity) — see Fixed › Dashboard', fixed_sms_balance: 'Unifonic balance reading' };
+const NO_ROWS = { fixed_board_ingest_lag_min: 'freshness of the read model — see Alerts › Data sources', fixed_applog_collector_lag_min: 'freshness of the app-log collector — see Alerts › Data sources', apigw_nodes_unreachable: 'console TCP probe (apigw_probe_log) — see #apigw for the node map', dealer_activity: 'aggregate of dealer activity', offhours_orders: 'aggregate', sms_probe_fail_count: 'SMS probe events — see Monitoring › SMS', courier_backlog: 'derived from paid reseller orders without a delivery request', onboarding_created: 'count of orders created', fixed_sms_balance: 'Unifonic balance reading' };
 
 /* ---- DMS flow rules (metric dms.flow.<id>) ----
  * These do not evaluate a source table the way a metric does. dmsFlowRules.js runs each rule's own SQL against the
@@ -286,12 +290,27 @@ async function dmsFlowCases(base, alert, T) {
       + (drift > 2 ? ` · nearest run is ${Math.round(drift)} min from the evaluation time` : '') };
 }
 
+/* ---- Fixed › Payments watch (fixedEpWatch.js, nexus) ----
+ * Nine metrics count journeys in a nexus snapshot held in memory, not in a table this machinery can scan — so their
+ * exports came out as a header and "not row-based" (alert 15854, 8 Oct 2026). fixedEpWatch.caseRows() hands back the very
+ * rows the metric counted; identifiers are cut unless the caller holds unmaskPII (the route audits pii.unmask). */
+async function epWatchCases(base, alert, T, opts) {
+  const no = reason => ({ ...base, supported: false, reason, head: [], rows: [], total: 0, counted: 0 });
+  const unmask = !!(opts.caps && opts.caps.unmaskPII);
+  let r; try { r = await require('./fixedEpWatch').caseRows(alert.metric_key, T, { unmask, cap: opts.cap || CAP }); }
+  catch (e) { return no(`the Payments watch could not be read — ${clip(e.message, 160)}`); }
+  if (!r || !r.supported) return no((r && r.reason) || 'no case list for this metric');
+  return { ...base, supported: true, head: r.head, rows: r.rows, total: r.rows.length, capped: !!r.capped || r.population > r.rows.length,
+    population: r.population, counted: r.counted, kind: r.kind, note: r.note, identities: r.identities, unmasked: unmask && r.rows.length > 0 };
+}
+
 async function casesFor(alert, opts = {}) {
   const key = alert.metric_key; const fn = CASES[key] || (/custom_/.test(key) ? customSpec : null);
   const at = opts.at === 'first' ? (alert.fired_at || alert.last_seen_at) : (alert.last_seen_at || alert.fired_at || new Date().toISOString());
   const T = new Date(at).toISOString(), W = Number(alert.window_hours) || 1, dim = alert.dim || {};
   const base = { alert, at: T, window_hours: W, dim, metric: key, segment: segOf(alert) };
   if (/^dms\.flow\./.test(key)) return dmsFlowCases(base, alert, T);   // rows live in dms_flow_findings.sample, not in a table
+  { const epw = require('./fixedEpWatch'); if (epw.CASE_METRICS && epw.CASE_METRICS.has(key)) return epWatchCases(base, alert, T, opts); }   // rows live in the nexus snapshot
   if (!fn) return { ...base, supported: false, reason: NO_ROWS[key] || 'this metric is computed from aggregates, not from individual rows', head: [], rows: [], total: 0, counted: 0 };
   const spec = await fn(alert, T, W, dim);
   if (!spec) return { ...base, supported: false, reason: 'the API-traffic source is the Grafana MySQL feed (no row store) — switch the collector on to get row-level cases', head: [], rows: [], total: 0, counted: 0 };
@@ -426,7 +445,8 @@ function mount(app, { audit }) {
     try {
       const a = req.alertRow; const q = req.query || {}; const format = q.format === 'xlsx' ? 'xlsx' : q.format === 'pdf' ? 'pdf' : 'json';
       if (format !== 'json' && !(req.caps && req.caps.export)) return res.status(403).json({ error: `role ${req.roleName} lacks export` });
-      const d = await casesFor(a, { at: q.at, cap: format === 'json' ? 300 : format === 'pdf' ? 120 : CAP });
+      const d = await casesFor(a, { at: q.at, cap: format === 'json' ? 300 : format === 'pdf' ? 120 : CAP, caps: req.caps });
+      if (d.unmasked && audit) audit(req, 'pii.unmask', `alert.${a.id}.cases`, { metric: a.metric_key, rows: d.total, format, source: 'nexus' });
       const from = new Date(new Date(d.at).getTime() - d.window_hours * 3600e3).toISOString();
       const meta = [['Alert', `${a.severity} · ${a.name}`], ['Rule', a.rule_key], ['Metric', `${a.metric_key} ${a.operator} ${a.threshold}`], ['Observed', `${a.observed_value} (sample ${a.sample})`],
         ['Evaluated at', `${ksa(d.at)} KSA (${q.at === 'first' ? 'first firing' : 'last evaluation'})`], ['Window', `${d.window_hours}h — ${ksa(from)} → ${ksa(d.at)} KSA`],

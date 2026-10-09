@@ -106,6 +106,12 @@ async function errorBudget() {
  * the same query Mobile uses. */
 const SEG_WHERE = () => segment.sqlWhere('a', 'rule_key', 'fixed');
 const cq = (sql, params) => db.console.query(sql, params).then(r => r.rows, e => { console.error('[fixedExec] alerts query failed:', e.message); return []; });
+/* severity counts over the WHOLE set (open, or fired in the window): the feed below is capped at 50 rows, and counting
+ * that list read "1 P1 · 34 P2 · 15 P3" — exactly 50 — whatever the real numbers were (8 Oct 2026) */
+async function sevCounts(fromIso) {
+  const r = await cq(`SELECT a.severity, count(*)::int AS n FROM alerts a WHERE ${SEG_WHERE()} AND a.rule_key NOT LIKE '%infra\\_%' AND (a.status='open' OR a.fired_at >= $1) GROUP BY 1`, [fromIso]);
+  return Object.fromEntries(r.map(x => [x.severity, x.n]));
+}
 async function firedAlerts(fromIso) {
   return cq(`SELECT a.rule_key, a.name AS rule_name, a.team, a.severity, a.status, a.observed_value AS metric_value,
                     a.threshold, a.message AS metric_text, a.fired_at
@@ -140,6 +146,7 @@ async function execRaw(q = {}) {
     both(ERR_DAY, [from, to]), both(ERR_CAT, [from, to]), both(ERR_CAT_DAY, [from, to]), both(STEPS, [from, to]),
     errorBudget(), firedAlerts(from), both(ERR_24(), [from24]),
   ]);
+  const sevAll = await sevCounts(from);
   const [radar, ident, yak] = await Promise.all([execRadar.radarRows('fixed'), identity(from, to), yakeen(from, to)]);
 
   // ---- day axis
@@ -186,7 +193,7 @@ async function execRaw(q = {}) {
   });
 
   // ---- alerts
-  const sev = { P1: 0, P2: 0, P3: 0 }; for (const a of alerts) sev[a.severity] = (sev[a.severity] || 0) + 1;
+  const sev = { P1: 0, P2: 0, P3: 0, ...sevAll };   // uncapped (the feed list stops at 50)
   const alerts24 = alerts.filter(a => new Date(a.fired_at) >= new Date(from24)).length;
 
   // ---- SLOs (measured ones from data; unmeasured ones honestly marked)

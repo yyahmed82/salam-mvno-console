@@ -23,6 +23,12 @@
   const sar = v => v == null ? '—' : 'SAR ' + Math.round(v).toLocaleString('en-US');
   const api = p => fetch((window.API_BASE || window.CONSOLE_BASE || '') + p, { headers: { 'Content-Type': 'application/json' } }).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; });
   const TONE = { OK: 'var(--green,#0e9f5a)', DEGRADED: 'var(--xo-p2,#d97706)', OUTAGE: 'var(--xo-p1,#dc2626)' };
+  /* the state right now (execBrief.stateOf, alpha.152): OUTAGE only for a P1 SERVICE incident; a P1 business case and a
+   * monitoring gap are said as such — same rule as the month's availability, so the two cannot disagree */
+  TONE.CASE = TONE.OUTAGE; TONE.BLIND = TONE.DEGRADED;
+  const PILL = { OK: 'OK', OUTAGE: 'OUTAGE · P1 service incident', CASE: 'P1 CASE OPEN · service up', DEGRADED: 'DEGRADED · P2 open', BLIND: 'MONITORING GAP · state not known' };
+  const KIND = { service: '', business: 'business case · not downtime', monitoring: 'monitoring · not downtime' };
+  const kindTag = k => KIND[k] ? `<span class="xb-kind xb-kind-${esc(k)}">${esc(KIND[k])}</span>` : '';
 
   /* ---------- month state ---------- */
   const monthKey = off => { const d = new Date(Date.now() + KSA); const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + off, 1)); return `${m.getUTCFullYear()}-${String(m.getUTCMonth() + 1).padStart(2, '0')}`; };
@@ -71,26 +77,27 @@
   const BLOCK = {
     status: d => none(d, 'Status') + `<div class="xb-status">${halvesOf(d).map(h => { const s = h.status; return `
       <a href="${s.openP1 + s.openP2 ? L(h).alerts : L(h).dash}" class="topo-card xb-st xb-s-${s.state.toLowerCase()}" title="${s.openP1 + s.openP2 ? 'open the incidents' : 'open the ' + L(h).dashLabel}">
-        <div class="xb-sth">${badge(h)}${pill(s.state, s.state === 'OK' ? 'OK' : s.state === 'DEGRADED' ? 'DEGRADED · P2 open' : 'OUTAGE · P1 open')}</div>
-        <div class="xb-stv"><b>${cnt(s.affectedNow)}</b><span>customers affected now</span></div>
+        <div class="xb-sth">${badge(h)}${pill(s.state, PILL[s.state] || s.state)}</div>
+        <div class="xb-stv">${s.openP1 + s.openP2 && s.estimated === false ? '<b class="xb-na">not estimated</b><span>customers affected now — the open rules do not count customers</span>' : `<b>${cnt(s.affectedNow)}</b><span>customers affected now</span>`}</div>
         <div class="xb-sts">${s.state === 'OK' ? 'no P1 / P2 incident open' : `${esc(s.what || '')}${s.since ? ` · since ${ksa(s.since).slice(11)} KSA` : ''}${s.owner ? ` · ${esc(s.owner)}` : ' · <b>nobody has taken it</b>'}`}${s.vendor ? `<span class="xo-dim"> · ${esc(s.vendor)}</span>` : ''}</div>
         <div class="xb-stl">${s.openP1 + s.openP2 ? 'Open the incidents →' : 'Open the ' + L(h).dashLabel + ' →'}</div>
       </a>`; }).join('')}</div>`,
 
     impact: d => none(d, 'Outage register') + cols(halvesOf(d).map(h => { const i = h.impact, p = i.prev || {};
-      const headline = i.incidents ? `<b style="color:${TONE.OUTAGE}">${num(i.incidents)}</b> incident${i.incidents === 1 ? '' : 's'} · ${dur(i.minutes)} customer-facing · ${num(i.customers)} customer contacts` : `<b style="color:${TONE.OK}">no customer-facing incident</b> this month`;
+      const svc = i.service != null ? i.service : i.incidents, other = [(i.business ? `${num(i.business)} business case${i.business === 1 ? '' : 's'}` : ''), (i.monitoring ? `${num(i.monitoring)} monitoring` : '')].filter(Boolean).join(' · ');
+      const headline = (svc ? `<b style="color:${TONE.OUTAGE}">${num(svc)}</b> service incident${svc === 1 ? '' : 's'} · ${dur(i.minutes)} customer-facing` : `<b style="color:${TONE.OK}">no service incident</b> this month`) + (other ? ` · ${other} listed, not downtime` : '') + (i.incidents ? ` · ${num(i.customers)} customer contacts` : '');
       return grp(h, `
       <div class="xb-tiles">
-        ${tile('Incidents', cnt(i.incidents), delta(i.incidents, p.incidents, true), L(h).alerts, i.incidents ? TONE.OUTAGE : TONE.OK)}
-        ${tile('Customer-facing time', dur(i.minutes), delta(i.minutes, p.minutes, true, dur), L(h).alerts, i.minutes ? TONE.DEGRADED : TONE.OK)}
+        ${tile('P1 incidents', cnt(i.incidents), (i.incidents ? `<span class="xb-d" style="color:var(--muted)">${num(svc)} service${other ? ' · ' + other : ''}</span>` : '') + delta(i.incidents, p.incidents, true), L(h).alerts, svc ? TONE.OUTAGE : i.incidents ? TONE.DEGRADED : TONE.OK)}
+        ${tile('Customer-facing time', dur(i.minutes), (delta(i.minutes, p.minutes, true, dur) || '') + '<span class="xb-d" style="color:var(--muted)">service incidents only</span>', L(h).alerts, i.minutes ? TONE.DEGRADED : TONE.OK)}
         ${tile('Customer contacts', cnt(i.customers), delta(i.customers, p.customers, true), L(h).c360)}
         ${tile('Money at risk', sar(i.money), delta(i.money, p.money, true, sar), L(h).money)}
-        ${tile('Availability', `${i.availabilityPct == null ? '—' : i.availabilityPct.toFixed(2) + '%'}`, (delta(i.availabilityPct, p.availabilityPct, false, v => v.toFixed(2) + '%') || '') + '<span class="xb-d" style="color:var(--muted)">from P1 minutes</span>', L(h).slo, i.availabilityPct >= 99.9 ? TONE.OK : TONE.DEGRADED)}
+        ${tile('Availability', `${i.availabilityPct == null ? '—' : i.availabilityPct.toFixed(2) + '%'}`, (delta(i.availabilityPct, p.availabilityPct, false, v => v.toFixed(2) + '%') || '') + '<span class="xb-d" style="color:var(--muted)">from service-incident time</span>', L(h).slo, i.availabilityPct >= 99.9 ? TONE.OK : TONE.DEGRADED)}
       </div>
-      <div class="xb-list">${i.list.length ? (() => { const g = groupBy(i.list, x => x.name).map(x => ({ name: x.key, n: x.items.length, minutes: x.items.reduce((s2, y) => s2 + (y.minutes || 0), 0), customers: x.items.reduce((s2, y) => s2 + (y.customers || 0), 0), open: x.items.some(y => y.status === 'open'), last: x.items.map(y => y.started).sort().slice(-1)[0], cause: (x.items.find(y => y.cause) || {}).cause, rca: x.items.some(y => y.rca.status === 'overdue') ? 'overdue' : x.items.some(y => y.rca.status === 'due') ? 'due' : x.items.some(y => y.rca.status === 'pending') ? 'pending' : x.items[0].rca.status, overdue: x.items.filter(y => y.rca.status === 'overdue').length })).sort((a, b) => b.open - a.open || b.minutes - a.minutes);
+      <div class="xb-list">${i.list.length ? (() => { const g = groupBy(i.list, x => x.name).map(x => ({ name: x.key, n: x.items.length, minutes: x.items.reduce((s2, y) => s2 + (y.minutes || 0), 0), customers: x.items.reduce((s2, y) => s2 + (y.customers || 0), 0), open: x.items.some(y => y.status === 'open'), last: x.items.map(y => y.started).sort().slice(-1)[0], kind: x.items[0].kind || 'service', cause: (x.items.find(y => y.cause) || {}).cause, rca: x.items.some(y => y.rca.status === 'overdue') ? 'overdue' : x.items.some(y => y.rca.status === 'due') ? 'due' : x.items.some(y => y.rca.status === 'pending') ? 'pending' : x.items[0].rca.status, overdue: x.items.filter(y => y.rca.status === 'overdue').length })).sort((a, b) => b.open - a.open || b.minutes - a.minutes);
         return g.slice(0, TOP).map(x => `
         <a href="${L(h).alerts}" class="xb-inc ${x.open ? 'open' : ''}" title="open in ${h.label} alerts">
-          <div class="xb-inc-l"><span class="xb-n">${x.n}×</span><b>${esc(x.name)}</b><span class="xb-when">last ${ksa(x.last).slice(5)}</span>${x.cause ? `<span class="xb-cause">${esc(x.cause)}</span>` : ''}</div>
+          <div class="xb-inc-l"><span class="xb-n">${x.n}×</span><b>${esc(x.name)}</b>${kindTag(x.kind)}<span class="xb-when">last ${ksa(x.last).slice(5)}</span>${x.cause ? `<span class="xb-cause">${esc(x.cause)}</span>` : ''}</div>
           <div class="xb-inc-r"><span class="xb-m ${x.open ? 'hot' : ''}">${x.open ? 'open · ' : ''}${dur(x.minutes)}</span><span class="xb-m">${num(x.customers)} cust.</span>${rcaPill({ status: x.rca, text: x.overdue ? `${x.overdue} RCA overdue` : '' })}${x.overdue > 1 ? `<span class="xb-m">${x.overdue} overdue</span>` : ''}</div>
         </a>`).join('') + (g.length > TOP ? `<div class="xo-dim xb-more">${g.length - TOP} more problem${g.length - TOP === 1 ? '' : 's'} · ${i.list.length} incidents in total — see Alerts</div>` : `<div class="xo-dim xb-more">${g.length} problem${g.length === 1 ? '' : 's'} · ${i.list.length} incident${i.list.length === 1 ? '' : 's'}</div>`); })() : `<div class="xo-empty">No P1 incident of 5 minutes or more this month.</div>`}</div>`, headline, lnk(L(h).alerts, 'Alerts') + lnk(L(h).errors, L(h).errLabel) + lnk(L(h).dash, L(h).dashLabel)); }).join('')),
 
@@ -101,7 +108,7 @@
         let actual = '';
         if (o.category === 'incident_response' || o.category === 'restoration') actual = r.samples ? `median <b>${dur(r.median)}</b> · p90 ${dur(r.p90)} · ${r.met} / ${r.samples} on time` : 'no incident at this priority';
         else if (o.category === 'rca') actual = r.samples ? `${r.samples} due · <b>${r.overdue} overdue</b> · ${r.recorded} recorded` : 'no P1 / P2 restored';
-        else actual = r.actualPct == null ? '—' : `<b>${r.actualPct.toFixed(2)}%</b> from P1 minutes`;
+        else actual = r.actualPct == null ? '—' : `<b>${r.actualPct.toFixed(2)}%</b> from service-incident time`;
         return `<a href="${o.category === 'availability' ? L(h).slo : L(h).alerts}" class="xb-ob" title="${o.category === 'availability' ? 'open SLO / SLA' : 'open the ' + h.label + ' incidents'}"><div class="xb-ob-k">${esc(kind)}<span>${esc(r.sev)}</span></div><div class="xb-ob-t">${esc(r.target)}${r.business ? '<i title="business days compared as calendar days"> *</i>' : ''}</div><div class="xb-ob-a">${actual}</div><div class="xb-ob-m">${mark(r)}</div></a>`;
       };
       const unmeasured = v.obligations.filter(o => !o.measured);
@@ -112,20 +119,20 @@
         <div class="xb-obs"><div class="xb-ob xb-ob-h"><div>Obligation</div><div>Contract</div><div>Measured this month</div><div></div></div>
           ${v.obligations.filter(o => o.measured).flatMap(o => o.rows.filter(r => r.samples || o.category === 'availability').map(r => row(o, r))).join('') || `<div class="xo-empty">No incident this month to measure against.</div>`}
         </div>
-        <div class="xb-foot">${unmeasured.length ? `Not measured by this console: ${unmeasured.map(o => esc(o.title)).join(' · ')}. ` : ''}${v.obligations.some(o => o.category === 'rca' && o.measured) ? 'RCA records are not tracked yet (Step B). ' : ''}Availability = 1 − P1 minutes ÷ month minutes. * business-day targets compared as calendar days.</div>`, head, lnk(L(h).contracts, 'Contract &amp; penalty model') + lnk(L(h).slo, 'SLO / SLA') + lnk(L(h).alerts, 'Incidents')); }).join('')),
+        <div class="xb-foot">${unmeasured.length ? `Not measured by this console: ${unmeasured.map(o => esc(o.title)).join(' · ')}. ` : ''}${v.obligations.some(o => o.category === 'rca' && o.measured) ? 'RCA records are not tracked yet (Step B). ' : ''}Availability = 1 − service P1 minutes ÷ month minutes (business cases and monitoring gaps are listed, not downtime). * business-day targets compared as calendar days.</div>`, head, lnk(L(h).contracts, 'Contract &amp; penalty model') + lnk(L(h).slo, 'SLO / SLA') + lnk(L(h).alerts, 'Incidents')); }).join('')),
 
     actions: d => none(d, 'Follow-up') + cols(halvesOf(d).map(h => { const a = h.actions;
       const head = a.open.length ? `<b style="color:${a.open.some(x => x.severity === 'P1') ? TONE.OUTAGE : TONE.DEGRADED}">${a.open.length}</b> open at P1 / P2${a.rca.overdue ? ` · <b style="color:${TONE.OUTAGE}">${groupBy(a.rca.items.filter(x => x.status === 'overdue'), x => x.name).length}</b> RCA overdue` : ''}` : `<b style="color:${TONE.OK}">nothing open</b> at P1 / P2${a.rca.overdue ? ` · <b style="color:${TONE.OUTAGE}">${groupBy(a.rca.items.filter(x => x.status === 'overdue'), x => x.name).length}</b> RCA overdue` : ''}`;
       return grp(h, `
         <div class="xb-ah">Open incidents</div>
         <div class="xb-list">${a.open.length ? a.open.map(x => `<a href="${L(h).alerts}" class="xb-inc ${x.severity === 'P1' ? 'open' : ''}" title="open in ${h.label} alerts">
-          <div class="xb-inc-l"><span class="xo-sev ${x.severity === 'P1' ? 'critical' : 'warning'}">${x.severity}</span><b>${esc(x.name)}</b>${x.cause ? `<span class="xb-cause">${esc(x.cause)}</span>` : ''}</div>
+          <div class="xb-inc-l"><span class="xo-sev ${x.severity === 'P1' ? 'critical' : 'warning'}">${x.severity}</span><b>${esc(x.name)}</b>${kindTag(x.kind)}${x.cause ? `<span class="xb-cause">${esc(x.cause)}</span>` : ''}</div>
           <div class="xb-inc-r"><span class="xb-m hot">${dur(x.ageMin)}</span><span class="xb-m">${x.customers != null ? num(x.customers) + ' cust.' : ''}</span><span class="xb-m">${x.owner ? esc(x.owner) : (x.acked ? 'acknowledged' : `<b style="color:${TONE.OUTAGE}">unassigned</b>`)}</span>${x.ticket ? `<span class="xb-m">${esc(x.ticket)}</span>` : ''}</div></a>`).join('') : `<div class="xo-empty">Nothing open at P1 / P2.</div>`}</div>
         <div class="xb-ah">RCAs owed <span class="xo-dim">${a.rca.due + a.rca.overdue + a.rca.pending ? `${groupBy(a.rca.items, x => x.name).length} problem${groupBy(a.rca.items, x => x.name).length === 1 ? '' : 's'} · ${a.rca.overdue + a.rca.due} incidents · ${a.rca.pending} still open · ${a.rca.recorded} RCA recorded` : 'none due this month'}</span></div>
         <div class="xb-list">${a.rca.items.length ? (() => { const g = groupBy(a.rca.items, x => x.name).map(x => ({ name: x.key, n: x.items.length, overdue: x.items.filter(y => y.status === 'overdue').length, due: x.items.map(y => y.due).sort()[0], last: x.items.map(y => y.ended).sort().slice(-1)[0], vendor: x.items[0].vendor })).sort((a2, b2) => b2.overdue - a2.overdue || b2.n - a2.n);
           return g.slice(0, TOP).map(x => `<a href="${L(h).alerts}" class="xb-inc" title="open in ${h.label} alerts"><div class="xb-inc-l"><span class="xb-rca ${x.overdue ? 'red' : 'amber'}">${x.overdue ? 'overdue' : 'due'}</span><b>${esc(x.name)}</b><span class="xb-when">${x.n} incident${x.n === 1 ? '' : 's'} · one RCA owed</span></div><div class="xb-inc-r"><span class="xb-m">first due ${ksa(x.due).slice(5)}</span><span class="xb-m">last restored ${ksa(x.last).slice(5)}</span>${x.vendor ? `<span class="xb-m">${esc(x.vendor)}</span>` : ''}</div></a>`).join('') + (g.length > TOP ? `<div class="xo-dim xb-more">${g.length - TOP} more problem${g.length - TOP === 1 ? '' : 's'} with an RCA owed</div>` : ''); })() : `<div class="xo-empty">No RCA due.</div>`}</div>`, head); }).join('')),
 
-    kpis: d => none(d, 'Key indicators') + halvesOf(d).map(h => h.kpis.length ? grp(h, `<div class="xo-grid">${h.kpis.map(k => `<a href="${esc(k.href || '#')}" class="xo-kpi xo-t-${k.tone || 'none'}"><div class="xo-kh"><span class="xo-kt">${esc(k.title)}</span><span class="xo-win">${esc(k.window || '')}</span></div><div class="xo-kv">${num(k.value)}</div><div class="xo-ks">${esc(k.sub || '')}</div>${k.delta ? `<div class="xo-kd" style="color:${k.delta.pct === 0 ? 'var(--muted)' : k.delta.good ? TONE.OK : TONE.OUTAGE}">${k.delta.pct > 0 ? '+' : ''}${k.delta.pct}% vs previous 24 h</div>` : ''}</a>`).join('')}</div>`, null, lnk(L(h).dash, L(h).dashLabel) + lnk(L(h).slo, 'SLO / SLA')) : '').join(''),
+    kpis: d => none(d, 'Key indicators') + halvesOf(d).map(h => h.kpis.length ? grp(h, `<div class="xo-grid">${h.kpis.map(k => `<a href="${esc(k.href || '#')}" class="xo-kpi xo-t-${k.tone || 'none'}"><div class="xo-kh"><span class="xo-kt">${esc(k.title)}</span><span class="xo-win">${esc(k.window || '')}</span></div><div class="xo-kv">${num(k.value)}</div><div class="xo-ks">${esc(k.sub || '')}</div>${k.delta ? `<div class="xo-kd" style="color:${k.delta.pct === 0 ? 'var(--muted)' : k.delta.good ? TONE.OK : TONE.OUTAGE}">${k.delta.of ? esc(k.delta.of) + ' ' : ''}${k.delta.pct > 0 ? '+' : ''}${k.delta.pct}% vs previous 24 h</div>` : ''}</a>`).join('')}</div>`, null, lnk(L(h).dash, L(h).dashLabel) + lnk(L(h).slo, 'SLO / SLA')) : '').join(''),
   };
   /* [question, what it answers in plain words, window / method on the right] — the NUMBER in front of
    * each question is its position in V2, computed by qnum(), so reordering the page renumbers it. It used
@@ -133,7 +140,7 @@
   const TITLES = {
     status: ['Are we OK right now?', 'Live status per business from open P1 / P2 incidents only — never from chronic SLOs — and how many customers are affected at this minute.', 'live · open P1 / P2'],
     kpis: ['Are the north-star KPIs moving?', 'The business indicators that matter, measured ones only, versus the previous day — each opens its operational page.', '24 h · measured only'],
-    impact: ['What did it cost us?', 'Customer-facing incidents this month, the time customers were impacted, contacts touched and money at risk — against last month.', () => `${monthLabel(curKey())} · P1 ≥ 5 min · vs last month`],
+    impact: ['What did it cost us?', 'P1 incidents this month, the time customers were impacted, contacts touched and money at risk — against last month. Only service incidents count as downtime; business cases and monitoring gaps are listed apart.', () => `${monthLabel(curKey())} · P1 ≥ 5 min · vs last month`],
     vendors: ['Are the vendors delivering?', 'Each contract obligation (TCS for Mobile, Sigma for Fixed) with its contractual target against what the console measured, and the candidate penalty.', () => `${monthLabel(curKey())} · contract target vs measured`],
     actions: ['What are we doing about it?', 'Who holds each open incident and for how long, and which RCAs the vendors owe us by the contract clause.', 'owner · age · RCA due dates'],
   };
@@ -179,9 +186,11 @@
       .xb-status{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:14px}
       .xb-st{display:block;text-decoration:none;color:inherit;padding:16px 18px;border-left:6px solid var(--c,var(--line));transition:transform .15s,box-shadow .15s}
       .xb-st:hover{transform:translateY(-1px);box-shadow:var(--shadow,0 8px 22px rgba(15,23,42,.12))}
-      .xb-st.xb-s-ok{--c:${TONE.OK}} .xb-st.xb-s-degraded{--c:${TONE.DEGRADED}} .xb-st.xb-s-outage{--c:${TONE.OUTAGE}}
+      .xb-st.xb-s-ok{--c:${TONE.OK}} .xb-st.xb-s-degraded{--c:${TONE.DEGRADED}} .xb-st.xb-s-outage{--c:${TONE.OUTAGE}} .xb-st.xb-s-case{--c:${TONE.OUTAGE}} .xb-st.xb-s-blind{--c:${TONE.DEGRADED}}
+      .xb-kind{font-size:10.5px;font-weight:800;letter-spacing:.02em;padding:1px 7px;border-radius:999px;white-space:nowrap;background:color-mix(in srgb,var(--muted) 14%,transparent);color:var(--muted)}
+      .xb-kind-business{background:color-mix(in srgb,${TONE.DEGRADED} 14%,transparent);color:${TONE.DEGRADED}}
       .xb-sth{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-      .xb-stv{display:flex;align-items:baseline;gap:10px;margin:12px 0 4px}.xb-stv b{font-size:40px;line-height:1;font-weight:900;font-variant-numeric:tabular-nums;color:var(--c)}.xb-stv span{color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+      .xb-stv{display:flex;align-items:baseline;gap:10px;margin:12px 0 4px}.xb-stv b{font-size:40px;line-height:1;font-weight:900;font-variant-numeric:tabular-nums;color:var(--c)}.xb-stv > span{color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px}.xb-stv b.xb-na{font-size:20px;font-weight:800;white-space:nowrap}
       .xb-sts{font-size:13px;margin-top:6px}
       .xb-q{display:flex;align-items:flex-start;gap:14px;margin:26px 0 12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
       .xb-qn{flex:none;width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;color:#fff;background:linear-gradient(135deg,#0e9f5a,#019c20);box-shadow:0 6px 16px rgba(14,159,90,.28)}

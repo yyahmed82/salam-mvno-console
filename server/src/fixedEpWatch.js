@@ -303,6 +303,104 @@ const METRICS = {
       return [{ dim: { note: `${st} of ${e} ended journeys stopped at location · stock lock` }, value: e ? Math.round((st / e) * 1000) / 1000 : 0, sample: e }]; }) },
 };
 
+/* ---------------- the cases behind each alert (alertCases.js, 8 Oct 2026) ----------------
+ * The exporter had no row source for these nine metrics, so "5G e-purchase · paid, no BSS order" (observed 2) exported a
+ * header and nothing else. The rows come from the SAME snapshot the metric counted (alertSnap, refreshed every 10 min),
+ * filtered the same way — so the file lists exactly the journeys behind the number. Webhooks and the location-step rate
+ * are read live from nexus over the alert's own window. Identifiers stay cut to their last digits unless the caller holds
+ * unmaskPII (then they are re-read from nexus and the route audits pii.unmask). */
+const CASE_METRICS = new Set(Object.keys(METRICS));
+const tsOf = v => v ? new Date(v) : null;
+const ksaTxt = v => v ? new Date(new Date(v).getTime() + 3 * 3600e3).toISOString().slice(0, 16).replace('T', ' ') + ' KSA' : '—';
+const refText = o => o && typeof o === 'object' ? Object.entries(o).map(([k, v]) => `${k}: ${v}`).join(' · ') : (o == null ? null : String(o));
+const PAID_HEAD = [['created_at', 'Started (KSA)'], ['id', 'Journey id'], ['naqeel', 'Naqeel order'], ['amount_sar', 'Amount (SAR)'], ['customer', 'Customer'],
+  ['mobile', 'Mobile'], ['status', 'Status'], ['channel', 'Channel'], ['invoice', 'Invoice'], ['updated_at', 'Last update (KSA)'], ['step', 'Step'], ['order_nbr', 'BSS order'],
+  ['order_err', 'Order error'], ['naqeel_event', 'Naqeel event'], ['iccid', 'ICCID'], ['landline', 'Landline'], ['plan', 'Plan']];   // the PDF prints the first 7: what L1 acts on
+async function raw5g(ids) {
+  if (!ids.length || !db.nexus) return {};
+  return withClient(async c => {
+    const r = await c.query(`SELECT id, concat_ws(' ', coalesce(context->'customer'->>'englishFirstName', context->'customer'->>'firstName'), coalesce(context->'customer'->>'englishLastName', context->'customer'->>'lastName')) AS name,
+        context->'customer'->>'mobilePhone' AS mobile, context->'extraFields'->>'iccid' AS iccid, context->'extraFields'->'landline'->>'number' AS landline,
+        context->'naqeel'->'order' AS nq_order, context->'naqeel'->'webhook' AS nq_hook, context->'customer'->>'id' AS cid, context->'invoice'->>'id' AS invoice_id
+      FROM workflow_states WHERE id = ANY($1::text[])`, [ids]);
+    const out = {}; for (const x of r.rows) out[x.id] = x; return out;
+  });
+}
+/* the short scalar fields of a Naqeel object, NOT masked (unmask path only) */
+const naqeelRaw = o => { o = objOf(o); if (!o) return null; const out = []; for (const [k, v] of Object.entries(o)) if (/waybill|awb|orderno|order_?number|refno|tracking|result|issuccess|message|error/i.test(k) && v != null && typeof v !== 'object') out.push(`${k}: ${String(v).slice(0, 120)}`); return out.join(' · ') || null; };
+async function caseRows(key, T, opts = {}) {
+  if (!CASE_METRICS.has(key)) return null;
+  if (!db.nexus) return { supported: false, reason: 'nexus not configured (NEXUS_DATABASE_URL) — the Payments watch cannot be read' };
+  const unmask = !!opts.unmask, cap = opts.cap || 10000;
+  const ids = unmask ? 'unmasked — re-read from nexus for a caller holding Unmask PII (audited pii.unmask)' : 'cut to their last digits — the Unmask PII capability shows them in full';
+  /* live windows: webhooks (60 min) and the location-step rate (24 h) end at the alert's evaluation time */
+  if (key === 'fixed_ep_webhook_fail') {
+    const rows = await withClient(c => c.query(`SELECT id::text AS id, source, created_at, retries, CASE WHEN is_success = false THEN 'failed' ELSE 'unfinished (> 10 min)' END AS state,
+        left(coalesce(reason->>'message', reason::text, ''), 300) AS reason
+      FROM webhook_requests WHERE created_at > $1::timestamptz - interval '60 minutes' AND created_at <= $1::timestamptz
+        AND (is_success = false OR (is_success IS NULL AND created_at < $1::timestamptz - interval '10 minutes')) ORDER BY created_at DESC LIMIT ${cap}`, [T])).then(r => r.rows);
+    return { supported: true, kind: 'count', population: rows.length, counted: rows.length, identities: ids,
+      head: [['created_at', 'Received (KSA)'], ['source', 'Source'], ['state', 'State'], ['retries', 'Retries'], ['reason', 'Reason'], ['id', 'Row id']],
+      rows: rows.map(r => ({ ...r, reason: unmask ? r.reason : maskDigits(r.reason), counted: true })),
+      note: 'every payment webhook (all sources) that failed, or is still unfinished after 10 min, in the 60 min ending at the evaluation — the alert value is the worst source' };
+  }
+  if (key === 'fixed_ep5g_location_stop_rate') {
+    const rows = await withClient(c => c.query(`SELECT id, channel::text AS ch, created_at, expires_at, current_step, current_step = 'ePurchaseGeoFeasibilityCheck' AS counted
+      FROM workflow_states WHERE workflow_id = $1 AND created_at > $2::timestamptz - interval '24 hours' AND created_at <= $2::timestamptz AND expires_at < $2::timestamptz
+      ORDER BY (current_step = 'ePurchaseGeoFeasibilityCheck') DESC, created_at DESC LIMIT ${cap}`, [W5, T])).then(r => r.rows);
+    return { supported: true, kind: 'rate', population: rows.length, counted: rows.filter(r => r.counted).length, identities: ids,
+      head: [['created_at', 'Started (KSA)'], ['expires_at', 'Ended (KSA)'], ['id', 'Journey id'], ['channel', 'Channel'], ['step', 'Last step']],
+      rows: rows.map(r => ({ created_at: r.created_at, expires_at: r.expires_at, id: r.id, channel: CH_LABEL[r.ch] || r.ch, step: STEP_LABEL[r.current_step] || r.current_step, counted: !!r.counted })),
+      note: 'population = 5G e-purchase journeys started in the 24 h before the evaluation that have ended · counted = those that ended at the location / stock-lock step' };
+  }
+  /* snapshot-based: the same rows the metric counted */
+  const s = await alertSnap();
+  const at = ksaTxt(s.generated_at);
+  const base = { supported: true, kind: 'count', identities: ids, snapshotAt: s.generated_at };
+  const CLS_OF = { fixed_ep5g_paid_no_bss_order: ['no_bss', 'bss_failed'], fixed_ep5g_naqeel_fail_charged: ['naqeel_fail_charged'], fixed_ep5g_rto_refund_missing: ['rto_no_refund'], fixed_ep5g_paid_stopped: ['paid_stopped'] };
+  if (CLS_OF[key]) {
+    let list = s.fiveG.paid.filter(p => CLS_OF[key].includes(p.cls) && !p.test);
+    if (key === 'fixed_ep5g_paid_stopped') list = list.filter(p => (Date.now() - new Date(p.updated_at)) > 3600e3);
+    const raw = unmask ? await raw5g(list.map(p => p.id)) : {};
+    const rows = list.slice(0, cap).map(p => { const x = raw[p.id] || {};
+      return { created_at: tsOf(p.created_at), updated_at: tsOf(p.updated_at), id: p.id, channel: p.chLabel, status: p.clsLabel, step: STEP_LABEL[p.step] || p.step, invoice: p.inv,
+        amount_sar: p.amount_sar, order_nbr: p.order_nbr || (p.placeholder ? 'placeholder 11223344 (no real order)' : null), order_err: p.order_err,
+        naqeel: unmask ? naqeelRaw(x.nq_order) : refText(p.naqeel), naqeel_event: unmask ? naqeelRaw(x.nq_hook) : refText(p.naqeel_event),
+        customer: unmask ? (x.name || p.customer) : p.customer, mobile: unmask ? (x.mobile || p.mobile) : p.mobile, iccid: unmask ? (x.iccid || p.iccid) : p.iccid,
+        landline: unmask ? (x.landline || p.landline) : p.landline, plan: p.plan, counted: true }; });
+    return { ...base, head: PAID_HEAD, rows, population: list.length, counted: list.length, capped: list.length > rows.length,
+      note: `every paid 5G e-purchase journey the Payments watch classifies as "${CLS_OF[key].map(k => CLS[k].label).join('" or "')}" (1-SAR test orders left out, as in the alert) · snapshot of ${at}, refreshed every 10 min — the one the evaluation read` };
+  }
+  if (key === 'fixed_ep5g_lock_leak') {
+    const list = s.locks.leaked;
+    return { ...base, population: list.length, counted: list.length,
+      head: [['created_at', 'Locked at (KSA)'], ['expired_at', 'Journey expired (KSA)'], ['goods', 'Goods'], ['sn', 'Serial'], ['wf', 'Journey id'], ['channel', 'Channel'], ['step', 'Step']],
+      rows: list.slice(0, cap).map(r => ({ created_at: tsOf(r.created_at), expired_at: tsOf(r.expired_at), goods: r.goods, sn: unmask ? r.sn_raw : r.sn, wf: r.wf, channel: r.chLabel, step: r.stepLabel, counted: true })),
+      note: `every SIM / landline lock still LOCKED on a 5G journey that expired more than 2 h ago (nothing in nexus releases them) · snapshot of ${at} · the alert value is the total of every goods type (the snapshot lists up to 300)` };
+  }
+  if (key === 'fixed_ep_auth_stuck') {
+    const list = s.holds.rows;
+    let inv = {};
+    if (unmask && list.length) inv = await withClient(c => c.query(`SELECT workflow_state_id AS wf, invoice_id FROM epurchase_payments WHERE workflow_state_id = ANY($1::text[]) AND invoice_status::text = 'AUTHORIZED'`, [list.map(r => r.wf)]))
+      .then(r => Object.fromEntries(r.rows.map(x => [x.wf, x.invoice_id])), () => ({}));
+    return { ...base, population: list.length, counted: list.length,
+      head: [['expired_at', 'Journey expired (KSA)'], ['updated_at', 'Payment updated (KSA)'], ['type', 'Journey type'], ['wf', 'Journey id'], ['channel', 'Channel'], ['step', 'Step'], ['invoice', 'Invoice'], ['has_order', 'Has an order']],
+      rows: list.slice(0, cap).map(r => ({ expired_at: tsOf(r.expired_at), updated_at: tsOf(r.updated_at), type: r.type, wf: r.wf, channel: r.chLabel, step: STEP_LABEL[r.step] || r.step,
+        invoice: unmask ? (inv[r.wf] || r.invoice) : r.invoice, has_order: r.has_order ? 'yes' : 'no', counted: true })),
+      note: `every e-purchase card authorisation still AUTHORIZED on a journey that expired more than 60 min ago (neither captured nor voided) · snapshot of ${at}` };
+  }
+  if (key === 'fixed_ep_ftth_paid_no_order') {
+    const list = s.ftth.list;
+    const raw = unmask ? await raw5g(list.map(r => r.id)) : {};
+    return { ...base, population: s.ftth.summary.no_later_charged, counted: s.ftth.summary.no_later_charged, capped: s.ftth.summary.no_later_charged > list.length,
+      head: [['created_at', 'Started (KSA)'], ['expired_at', 'Expired (KSA)'], ['id', 'Journey id'], ['channel', 'Channel'], ['step', 'Stopped at'], ['invoice', 'Invoice'], ['amount_sar', 'Amount (SAR)'], ['customer', 'Customer id']],
+      rows: list.slice(0, cap).map(r => ({ created_at: tsOf(r.created_at), expired_at: tsOf(r.expired_at), id: r.id, channel: r.chLabel, step: r.stepLabel, invoice: r.inv, amount_sar: r.amount_sar,
+        customer: unmask ? ((raw[r.id] || {}).cid || r.customer) : r.customer, counted: true })),
+      note: `every e-purchase FTTH journey charged (a real invoice, PAID or CAPTURED) that expired at verification / OTP before the order, with no later order by the same customer · zero-fee (PAID_BY_ZERO) journeys left out, as in the alert · snapshot of ${at} (lists up to 200)` };
+  }
+  return { supported: false, reason: 'no case list for this Payments-watch metric yet' };
+}
+
 function mount(app, { gate, wrap, audit }) {
   app.get('/api/fixed/epwatch/overview', gate, wrap(async (q, req) => {
     const r = await overview(q, req);
@@ -311,4 +409,4 @@ function mount(app, { gate, wrap, audit }) {
   }));
 }
 
-module.exports = { mount, overview, snapshot, METRICS, classify5g, STEPS_5G, STEPS_P2P, PLACEHOLDER };
+module.exports = { mount, overview, snapshot, METRICS, caseRows, CASE_METRICS, classify5g, STEPS_5G, STEPS_P2P, PLACEHOLDER };

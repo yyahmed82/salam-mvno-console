@@ -3,10 +3,12 @@
  *   GET /api/exec/brief?month=YYYY-MM     any signed-in user; each business only if the caller holds its view
  *
  * Five questions, one block each, calendar month (KSA) with the previous month beside it:
- *   status    are we OK right now — per business: state from OPEN P1/P2 only (never from chronic SLOs),
- *             customers affected now (alerts.customers of the open P1/P2), since when, who has it
+ *   status    are we OK right now — per business: state from OPEN P1/P2 only (never from chronic SLOs) — OUTAGE only for
+ *             a service P1, CASE / DEGRADED / BLIND otherwise (stateOf, alpha.152) — customers affected now
+ *             (alerts.customers of the open P1/P2), since when, who has it
  *   impact    what did it cost us — the OUTAGE REGISTER: every P1 incident of the month (≥ 5 min or still open),
- *             minutes (union per business, so two overlapping P1s are not counted twice), customer contacts,
+ *             minutes (union per business, so two overlapping P1s are not counted twice) of SERVICE incidents only —
+ *             business cases and monitoring-blind P1s are listed but are not downtime (alpha.152), customer contacts,
  *             SAR at risk (money rules only), the probable cause Agent 2 recorded, RCA due / overdue / not recorded
  *   vendors   are the vendors delivering — per contract (vendorContracts.js: Sigma ↔ Fixed, TCS ↔ Mobile) and per
  *             obligation, target from the contract vs actual from the alerts table:
@@ -90,6 +92,38 @@ function unionMinutes(rows, from, to, now) {
   return Math.round(total / 60000);
 }
 
+/* ---------------------------------------------------------------- what counts as downtime (alpha.152)
+ * Every P1 of the month stays in the register, but only a SERVICE incident counts toward customer-facing time and
+ * availability: a technical-class rule, i.e. the platform or a partner failing. Two kinds are listed and NOT counted:
+ *   business    alert_class 'business' — card-decline / refusal storms, refunds missing, charged-but-failed cases. They
+ *               hurt customers and are followed as cases, but the service was up.
+ *   monitoring  the console blind to one of its own feeds (read model / collector stale) — nobody can say the service
+ *               was down, only that we could not see it.
+ * Before this, one P1 case left open across the month read "Fixed 0% available" on the Executive and VP pages. */
+const MONITORING_RX = /(^|_)(ingest|collector)_stale|read model stale|board blind|collector stale/i;
+const kindOf = a => (MONITORING_RX.test(a.rule_key || '') || MONITORING_RX.test(a.name || '')) ? 'monitoring' : a.rule_class === 'business' ? 'business' : 'service';
+
+/* ---------------------------------------------------------------- the state right now (alpha.152)
+ * Read from the open P1 / P2 incidents with the same three kinds, so the state and the month's availability cannot
+ * disagree ("Outage" while 99.9 % available). Real customer impact first, blindness last:
+ *   OUTAGE    a P1 service incident is open — the platform or a partner is failing (this is what counts as downtime)
+ *   CASE      a P1 business case is open — charged-but-failed, refunds missing, decline storms… the service is up
+ *   DEGRADED  a P2 is open (service or business)
+ *   BLIND     only monitoring incidents are open — the console cannot read a feed, so the state is not known
+ *   OK        nothing open at P1 / P2
+ * Before alpha.152 any open P1 read OUTAGE, a business case or a stale read model included. */
+const STATE_ORDER = [['P1', 'service', 'OUTAGE'], ['P1', 'business', 'CASE'], ['P2', 'service', 'DEGRADED'], ['P2', 'business', 'DEGRADED'], ['P1', 'monitoring', 'BLIND'], ['P2', 'monitoring', 'BLIND']];
+const STATE_NOTE = { OUTAGE: 'a P1 service incident is open', CASE: 'a P1 business case is open — the service is up', DEGRADED: 'a P2 incident is open',
+  BLIND: 'only a monitoring incident is open — the console cannot read one of its feeds, so the state is not known', OK: 'no P1 / P2 incident open' };
+function stateOf(open) {
+  for (const [sev, kind, state] of STATE_ORDER) {
+    const hit = open.filter(a => a.severity === sev && kindOf(a) === kind);
+    if (hit.length) { const top = hit.slice().sort((a, b) => n(b.customers) - n(a.customers) || new Date(a.opened || a.fired_at) - new Date(b.opened || b.fired_at))[0];
+      return { state, kind, top, note: STATE_NOTE[state] }; }
+  }
+  return { state: 'OK', kind: null, top: null, note: STATE_NOTE.OK };
+}
+
 /* ---------------------------------------------------------------- the register + impact totals */
 function register(rows, win, now, vend) {
   const rcaOb = vend && vend.obligations.find(o => o.category === 'rca');
@@ -106,11 +140,15 @@ function register(rows, win, now, vend) {
       if (!a.resolved_at) rca = { status: 'pending', text: `due ${rcaT.text} after restoration` };
       else { const due = new Date(new Date(a.resolved_at).getTime() + rcaT.minutes * 60000); rca = { status: due < now ? 'overdue' : 'due', due: due.toISOString(), text: 'not recorded' }; }
     }
+    const kind = kindOf(a);
     return { id: a.id, rule_key: a.rule_key, name: a.name || a.rule_key, severity: a.severity, status: a.status, started: a.opened, ended: a.resolved_at, minutes: mins, lifetimeMin,
+      kind, downtime: kind === 'service',
       customers: a.customers == null ? null : n(a.customers), money: isMoney(a) ? n(a.peak_value || a.observed_value) : null,
       owner: a.assignee || a.ack_by || null, ticket: a.sn_number || null, team: a.team || null, cause: a.probable_cause || null, rca };
   });
-  return { list, incidents: list.length, minutes: unionMinutes(outages, win.from, win.to, now),
+  const service = outages.filter(a => kindOf(a) === 'service');
+  return { list, incidents: list.length, minutes: unionMinutes(service, win.from, win.to, now), allMinutes: unionMinutes(outages, win.from, win.to, now),
+    service: service.length, business: list.filter(x => x.kind === 'business').length, monitoring: list.filter(x => x.kind === 'monitoring').length,
     customers: list.reduce((s, x) => s + n(x.customers), 0), money: Math.round(list.reduce((s, x) => s + n(x.money), 0)), open: list.filter(x => x.status === 'open').length };
 }
 
@@ -148,7 +186,7 @@ function measure(rows, ob, now, availabilityPct) {
   } else if (ob.category === 'availability') {
     const tgt = pctOf((ob.target || {}).availability) || pctOf(ob.attainmentTarget) || pctOf(Object.values(ob.target || {})[0]);
     out.rows.push({ sev: 'month', target: tgt != null ? `${tgt}%` : '—', targetPct: tgt, actualPct: availabilityPct, ok: tgt != null && availabilityPct != null ? availabilityPct >= tgt : null });
-    out.note = 'customer-facing availability from P1 incident minutes (union) ÷ elapsed month minutes — not a synthetic probe';
+    out.note = 'customer-facing availability from SERVICE P1 incident minutes (union) ÷ elapsed month minutes — business cases and monitoring gaps are not downtime; not a synthetic probe';
   } else { out.measured = false; out.note = 'not measured by this console (needs ticket / performance / governance evidence)'; }
   return out;
 }
@@ -175,10 +213,12 @@ async function business(seg, win, now, cfg, deps, q) {
   const open = rows.filter(a => a.status === 'open' && ['P1', 'P2'].includes(a.severity));
   const openP1 = open.filter(a => a.severity === 'P1'), openP2 = open.filter(a => a.severity === 'P2');
   const since = open.length ? open.map(a => a.opened).sort()[0] : null;
-  const status = { biz: B.biz, label: B.label, state: openP1.length ? 'OUTAGE' : openP2.length ? 'DEGRADED' : 'OK',
-    affectedNow: open.reduce((s, a) => s + n(a.customers), 0), openP1: openP1.length, openP2: openP2.length, since,
-    what: open.length ? (open.sort((a, b) => (a.severity > b.severity ? 1 : -1) || (n(b.customers) - n(a.customers)))[0].name) : null,
-    owner: open.length ? (open[0].assignee || open[0].ack_by || null) : null, vendor: vend ? vend.vendor.name : null };
+  const st = stateOf(open);
+  const kinds = { service: 0, business: 0, monitoring: 0 }; open.forEach(a => { kinds[kindOf(a)]++; });
+  const status = { biz: B.biz, label: B.label, state: st.state, stateKind: st.kind, stateNote: st.note, openKinds: kinds,
+    affectedNow: open.reduce((s, a) => s + n(a.customers), 0), estimated: open.some(a => a.customers != null), openP1: openP1.length, openP2: openP2.length, since,
+    what: st.top ? (st.top.name || st.top.rule_key) : null,
+    owner: st.top ? (st.top.assignee || st.top.ack_by || null) : null, vendor: vend ? vend.vendor.name : null };
 
   const obligations = vend ? vend.obligations.map(ob => { const m = measure(rows, ob, now, availabilityPct); const breached = m.measured && m.rows.some(r => r.ok === false); return { ...m, breached, penalty: penalty(cfg, vend.contract, ob, breached) }; }) : [];
   const capPct = vend && vend.contract && vend.contract.monthlyPenaltyCapPercent != null ? Number(vend.contract.monthlyPenaltyCapPercent) : null;
@@ -188,7 +228,7 @@ async function business(seg, win, now, cfg, deps, q) {
     obligations, exposureSar: fee == null ? null : (capPct != null ? Math.min(raw, Math.round(fee * capPct / 100)) : raw), breaches: obligations.filter(o => o.breached).length, measured: obligations.filter(o => o.measured).length } : null;
 
   const actions = { open: open.sort((a, b) => (a.severity > b.severity ? 1 : a.severity < b.severity ? -1 : new Date(a.opened) - new Date(b.opened))).slice(0, 5)
-      .map(a => ({ id: a.id, name: a.name || a.rule_key, severity: a.severity, ageMin: Math.round((now - new Date(a.opened)) / 60000), owner: a.assignee || a.ack_by || null, acked: !!a.ack_at, ticket: a.sn_number || null, customers: a.customers == null ? null : n(a.customers), cause: a.probable_cause || null })),
+      .map(a => ({ id: a.id, name: a.name || a.rule_key, severity: a.severity, kind: kindOf(a), ageMin: Math.round((now - new Date(a.opened)) / 60000), owner: a.assignee || a.ack_by || null, acked: !!a.ack_at, ticket: a.sn_number || null, customers: a.customers == null ? null : n(a.customers), cause: a.probable_cause || null })),
     rca: { due: reg.list.filter(x => x.rca.status === 'due').length, overdue: reg.list.filter(x => x.rca.status === 'overdue').length, pending: reg.list.filter(x => x.rca.status === 'pending').length, recorded: 0,
       items: reg.list.filter(x => ['due', 'overdue'].includes(x.rca.status)).map(x => ({ id: x.id, name: x.name, ended: x.ended, due: x.rca.due, status: x.rca.status, vendor: vend ? vend.vendor.name : null })) } };
 
@@ -198,7 +238,7 @@ async function business(seg, win, now, cfg, deps, q) {
     kpis = (h.kpis || []).filter(k => k.exec && k.value !== '—' && k.value != null).map(k => ({ key: k.key, title: k.title, value: k.value, sub: k.sub, tone: k.tone, delta: k.delta, href: k.href, window: k.window }));
   } catch (e) { console.error('[execBrief] kpis', seg, e.message); }
 
-  return { biz: B.biz, label: B.label, status, impact: { ...reg, availabilityPct, prev: { incidents: prev.incidents, minutes: prev.minutes, customers: prev.customers, money: prev.money, availabilityPct: prevAvail } }, vendor, actions, kpis };
+  return { biz: B.biz, label: B.label, status, impact: { ...reg, availabilityPct, prev: { incidents: prev.incidents, service: prev.service, minutes: prev.minutes, customers: prev.customers, money: prev.money, availabilityPct: prevAvail } }, vendor, actions, kpis };
 }
 
 function mount(app, deps) {
@@ -211,9 +251,11 @@ function mount(app, deps) {
       const one = seg => business(seg, win, now, cfg, deps).catch(e => { console.error(`[execBrief] ${seg} failed:`, e.message); return { configured: false, biz: BIZ[seg].biz, label: BIZ[seg].label, reason: e.message }; });
       const [mobile, fixed] = await Promise.all([wantM ? one('mvno') : null, wantF ? one('fixed') : null]);
       res.json({ generatedAt: now.toISOString(), month: { key: win.key, from: win.from, to: win.to, current: win.current, prevKey: win.prev.key, elapsedMin: win.elapsedMin },
-        rules: { outage: `P1 incident open ≥ ${MIN_OUTAGE_MIN} min or still open`, minutes: 'union of P1 intervals per business, clipped to the month', customers: 'sum of distinct customers per incident (contacts, not de-duplicated across incidents)', money: 'SAR from money-at-risk rules only', availability: '1 − P1 minutes ÷ elapsed month minutes' },
+        rules: { outage: `P1 incident open ≥ ${MIN_OUTAGE_MIN} min or still open`, kinds: 'service = technical rule (counts as downtime) · business = business rule (listed, not downtime) · monitoring = a console feed unread (listed, not downtime)',
+          minutes: 'union of SERVICE P1 intervals per business, clipped to the month', customers: 'sum of distinct customers per incident (contacts, not de-duplicated across incidents)', money: 'SAR from money-at-risk rules only',
+          availability: '1 − service P1 minutes ÷ elapsed month minutes', state: 'OUTAGE = P1 service open · CASE = P1 business case open · DEGRADED = P2 open · BLIND = only monitoring open · OK' },
         mobile, fixed });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 }
-module.exports = { mount, monthWindow, targetMinutes, unionMinutes, register, measure };
+module.exports = { mount, monthWindow, targetMinutes, unionMinutes, register, measure, kindOf, stateOf };

@@ -105,7 +105,7 @@
       <div class="xo-kh"><span class="xo-kt">${esc(k.title)}</span><span class="xo-win">${badge(h, unified)}${esc(k.window || '')}</span></div>
       <div class="xo-kv">${num(k.value)}</div>
       <div class="xo-ks">${esc(k.sub || '')}</div>
-      ${k.delta ? `<div class="xo-kd" style="color:${k.delta.pct === 0 ? TOK.muted : k.delta.good ? TOK.green : TOK.red}">${k.delta.pct > 0 ? '+' : ''}${k.delta.pct}% vs previous 24 h</div>` : ''}`, k.href ? 'open ' + k.title : '');
+      ${k.delta ? `<div class="xo-kd" style="color:${k.delta.pct === 0 ? TOK.muted : k.delta.good ? TOK.green : TOK.red}">${k.delta.of ? esc(k.delta.of) + ' ' : ''}${k.delta.pct > 0 ? '+' : ''}${k.delta.pct}% vs previous 24 h</div>` : ''}`, k.href ? 'open ' + k.title : '');
   const sloState = s => !s.measured ? 'nowire' : s.status === 'at_risk' ? 'warn' : s.ok ? 'ok' : 'breach';
   const sloMark = s => !s.measured ? '○' : s.status === 'at_risk' ? '!' : s.ok ? '✓' : '✕';
   const sloTile = (s, h, unified) => wrapA(s.href, `xo-slo ${sloState(s)}`, `

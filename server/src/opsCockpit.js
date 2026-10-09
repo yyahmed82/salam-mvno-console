@@ -84,6 +84,73 @@ const IMPL_LABEL = { scheduled: 'Scheduled', in_progress: 'In progress', complet
 const IMPL_DONE = ['completed', 'completed_issues', 'rolled_back', 'failed'];          // a result exists → PIR expected
 const IMPL_OFF = ['postponed', 'cancelled', 'rejected'];                                // not going in
 
+/* ---------------------------------------------------------------- how every number is counted (alpha.152)
+ * One dictionary for the page ("How we count" and the one-line definition under each tile) and for the morning brief,
+ * so the VP reads one definition everywhere. Each entry must stay true to the code named in `src`. */
+const DEFS = {
+  state: { label: 'Mobile / Fixed state', window: 'right now',
+    what: 'Read from the open P1 / P2 incidents, the most serious first. Outage: a P1 service incident is open (the platform or a partner is failing). P1 case open: a P1 business case is open (customers charged but not served, refunds missing, decline storms…) while the service itself is up. Degraded: a P2 incident is open. Monitoring gap: only a monitoring incident is open (the console cannot read one of its data feeds), so the state is not known. OK: nothing open at P1 / P2. The Executive Dashboard uses the same rule. Infrastructure alerts are not counted here; they are in Infrastructure.',
+    src: 'Console alerts of the application rules (execBrief.js)' },
+  affected: { label: 'Customers affected now', window: 'right now',
+    what: 'The customers that the open P1 / P2 incidents carry, added up. Most rules do not estimate customers; the tile then says "customer impact not estimated", never zero.',
+    src: 'alerts.customers (execBrief.js)' },
+  month: { label: 'This month', window: 'calendar month, KSA, up to now',
+    what: 'Service incidents are P1 incidents of a technical rule (the platform or a partner failing) that lasted 5 minutes or more, or are still open. Their time counts while they are open; two at the same time count once. Availability = 1 − service-incident time ÷ time elapsed this month. Two kinds of P1 are listed in the drill-down but are not downtime: business cases (card-decline storms, refunds missing, charged-but-failed orders) and monitoring incidents (the console unable to read one of its data feeds).',
+    src: 'Executive Dashboard › What did it cost us (execBrief.js)' },
+  sales: { label: 'Dealer & QR sales today', window: 'today since 00:00 KSA, compared with yesterday at the same time',
+    what: 'Mobile counts the SIM activations dealers completed, on the DMS app and on the dealer web portal (mobile.salammobile.sa). Fixed counts the orders completed on the SDA dealer app and through QR codes (e-purchase orders opened from a dealer or campaign QR code). The customers\' own app and web journeys are not in this number; they are in the KPIs below (last 24 h). The tile refreshes every minute; the Sales Operations wall every 30 seconds.',
+    src: 'Sales Operations wall, the same number per channel (salesOps.js)' },
+  changes: { label: 'Changes tonight', window: 'from now until 08:00 KSA tomorrow',
+    what: 'CAB changes still to run, or running, that start before 08:00 tomorrow; postponed, cancelled, rejected and finished changes are left out. "Ended with no result recorded": the change window is over and nobody has recorded the outcome yet (changes of the last 3 weeks). "PIR to record": a result is recorded but not the post-implementation review. "Done this CAB": changes of the latest CAB with a recorded outcome, out of those not postponed, cancelled or rejected.',
+    src: 'The weekly CAB import and the results the implementers record' },
+  challenges: { label: 'Open challenges', window: 'now',
+    what: 'Challenges raised by the towers that are not resolved yet, by severity, each with its owner, its next step and a dated journey.',
+    src: 'Posted by the tower leads and editors' },
+  towers: { label: 'Towers reported today', window: 'today since 00:00 KSA',
+    what: 'A tower has reported when a person posted for it today: a note, a challenge raised or edited, an update, or the "Nothing new today" check-in. The VP\'s comments and the seeded first content do not count.',
+    src: 'Notes, updates and check-ins of the day' },
+  tcs: { label: 'Mobile weekly · TCS', window: 'the week TCS reports',
+    what: 'The figures as TCS presented them in its weekly executive deck and the portals health check. The console does not recompute them.',
+    src: 'TCS weekly report, entered by IT Operations' },
+  kpi: {
+    'mobile.orders': { label: 'App & web orders', window: 'last 24 h',
+      what: 'Orders opened in the Salam Mobile app and website (new lines and port-ins), including those abandoned before payment. The line under it counts the checkouts. Dealer sales are in the sales tile.', src: 'Selfcare onboarding_orders and checkouts' },
+    'mobile.activations': { label: 'Activation success · app & web', window: 'last 24 h',
+      what: '', src: 'Selfcare activation_logs, objective "Activation success" (its Counts setting on the SLO page)' },
+    'mobile.payments': { label: 'Payment reliability · platform', window: 'last 24 h',
+      what: 'Payments settled, out of those the gateway approved. "Unconfirmed" means the gateway approved but our platform had not finalised the payment 30 min later. A card decline is the bank\'s answer and is not counted, so this is not the payment success rate (TCS reports that one in its weekly).', src: 'Selfcare payments, objective "Payment reliability"' },
+    'mobile.errors': { label: 'Technical errors · app & web', window: 'last 24 h',
+      what: 'Failed calls to the Salam Mobile app and web APIs caused by our systems or a partner, against the daily budget. Refusals caused by the customer or a business rule are counted apart (the line under the number).', src: 'API error log, technical class (errclass.js)' },
+    'fixed.attempts': { label: 'Orders started · SDA & QR', window: 'last 24 h, by start time',
+      what: 'Fixed orders started on the SDA dealer app and through QR codes in the last 24 h, whatever happened to them since. The line under it counts those completed and those that created a BSS order. Customer-direct web orders and the Salam Home app are not in this number.', src: 'sda_ops order_attempts (fixed360.js)' },
+    'fixed.errors': { label: 'API errors · all journeys', window: 'last 24 h',
+      what: '', src: 'sda_ops error_events, objective "API error budget" (its Counts setting on the SLO page)' }
+  },
+  /* the questions the VP asked first: two numbers that look alike and are not (8 Oct 2026) */
+  diff: [
+    { a: 'Dealer & QR sales · Fixed', b: 'Fixed · Orders started · SDA & QR', why: 'The sales tile counts orders COMPLETED since 00:00 KSA; the KPI counts orders STARTED in the last 24 hours, completed or not.' },
+    { a: 'Dealer & QR sales · Mobile', b: 'Activation success · app & web', why: 'Different customers: the sales tile counts the activations dealers make (DMS app, dealer portal); the KPI is the success rate of the customers\' own activations in the app and on the website.' },
+    { a: 'Payment reliability · platform', b: 'TCS weekly · Payments (UPG) success', why: 'Payment reliability leaves card declines out (it judges our platform); the TCS figure counts every payment attempt, declines included.' },
+    { a: 'Mobile / Fixed state', b: 'Executive Dashboard · Active critical signals', why: 'The state reads only what is open now. The critical-signals tile adds up the P1 alerts open or fired in the last 7 days and the objectives breached now (Fixed also counts an order pile-up of 1,000 or more), so it is not a count of open incidents.' },
+    { a: 'This page', b: 'Sales Operations wall', why: 'The same source and the same count; the wall refreshes every 30 seconds, the sales tile here every minute and the rest of the page every 5 minutes. The sales tile says the time of its numbers ("as of").' }
+  ]
+};
+/* the two definitions that depend on a setting: what a failure is follows the objective's Counts on the SLO page */
+async function defsNow() {
+  let actCls = 'all', errCls = 'all';
+  try { const slo = require('./slo'); const cfg = await slo.getConfig();
+    actCls = slo.effectiveClass(slo.findDef(cfg, 'mobile_activation_success'), cfg); errCls = slo.effectiveClass(slo.findDef(cfg, 'fixed_api_error_budget'), cfg); } catch (e) { /* defaults */ }
+  const act = actCls === 'technical' ? 'App and web SIM activations that succeeded, out of those that succeeded or failed for a technical reason (our systems or a partner). A refusal by a business rule (eligibility, …) is left out, per the SLO setting.'
+    : actCls === 'business' ? 'App and web SIM activations that succeeded, out of those that succeeded or were refused by a business rule; technical failures are left out, per the SLO setting.'
+    : 'App and web SIM activations that succeeded, out of all that ended: technical failures and business refusals (eligibility, …) both count as failed, per the SLO setting.';
+  const err = errCls === 'technical' ? 'Technical API errors on every Fixed journey (SDA, QR, web e-purchase and the Salam Home app), against the daily budget. Business errors are left out, per the SLO setting; the line under the number gives both.'
+    : errCls === 'business' ? 'Business API errors on every Fixed journey (SDA, QR, web e-purchase and the Salam Home app), against the daily budget; technical errors are left out, per the SLO setting.'
+    : 'API errors on every Fixed journey (SDA, QR, web e-purchase and the Salam Home app), technical and business together, against the daily budget. The line under the number splits them.';
+  const kpi = { ...DEFS.kpi, 'mobile.activations': { ...DEFS.kpi['mobile.activations'], what: act + ' The change under it is the volume of activations, not the rate. Dealer activations are in the sales tile.' },
+    'fixed.errors': { ...DEFS.kpi['fixed.errors'], what: err + ' Unlike the orders started, it includes the customers\' own web and app journeys.' } };
+  return { ...DEFS, kpi };
+}
+
 /* ---------------------------------------------------------------- settings (console_settings 'cockpit') */
 const DEFAULT_CFG = {
   towers: TOWERS.map(t => ({ key: t.key, label: t.label, leads: [] })),
@@ -657,7 +724,7 @@ const updateOut = (u, dir) => ({ id: Number(u.id), auto: false, tower: u.tower, 
 async function overview(req) {
   await ensure(); await loadCfg();
   const w = who(req), now = new Date(), today = ksaDay(now), dir = await people();
-  const [upd, chg, chs, chk, meetings, dg, pres, reps] = await Promise.all([
+  const [upd, chg, chs, chk, meetings, dg, pres, reps, rep] = await Promise.all([
     C().query(`SELECT * FROM cockpit_updates WHERE deleted_at IS NULL AND (pinned OR happened_at >= now() - interval '21 days') ORDER BY pinned DESC, happened_at DESC LIMIT 60`),
     C().query(`SELECT c.*, m.meeting_date FROM cab_changes c LEFT JOIN cab_meetings m ON m.id = c.meeting_id
                 WHERE c.chg IN (SELECT chg FROM cab_presentations WHERE meeting_id = (SELECT id FROM cab_meetings ORDER BY meeting_date DESC LIMIT 1))
@@ -674,7 +741,17 @@ async function overview(req) {
     C().query(`SELECT id, meeting_date, title, totals, notes, source, changes, imported_by, imported_at FROM cab_meetings ORDER BY meeting_date DESC LIMIT 12`),
     settings.getSetting('cockpit_digest_state').catch(() => null),
     C().query(`SELECT chg FROM cab_presentations WHERE meeting_id = (SELECT id FROM cab_meetings ORDER BY meeting_date DESC LIMIT 1)`),
-    C().query(`SELECT * FROM cockpit_reports WHERE deleted_at IS NULL ORDER BY vendor, period_to DESC LIMIT 40`)
+    C().query(`SELECT * FROM cockpit_reports WHERE deleted_at IS NULL ORDER BY vendor, period_to DESC LIMIT 40`),
+    /* "reported today" = a PERSON wrote for the tower since 00:00 KSA — a note (not the VP's comment), a challenge raised or
+     * edited, an update posted or edited. The seeded first content (authors like "IT Operations", no e-mail) and the
+     * machine are not a report: on 8 Oct the seed's 08:00 notes showed Digital and BSS as "reported". */
+    C().query(`SELECT tower, max(at) AS at, (array_agg(who ORDER BY at DESC))[1] AS who FROM (
+          SELECT c.tower, n.created_at AS at, n.created_by AS who FROM cockpit_notes n JOIN cockpit_challenges c ON c.id = n.challenge_id
+           WHERE n.created_at >= $1 AND n.kind <> 'comment' AND n.created_by LIKE '%@%' AND c.deleted_at IS NULL
+          UNION ALL SELECT tower, created_at, created_by FROM cockpit_challenges WHERE created_at >= $1 AND created_by LIKE '%@%' AND deleted_at IS NULL
+          UNION ALL SELECT tower, updated_at, updated_by FROM cockpit_challenges WHERE updated_at >= $1 AND updated_by LIKE '%@%' AND deleted_at IS NULL
+          UNION ALL SELECT tower, coalesce(updated_at, created_at), coalesce(updated_by, created_by) FROM cockpit_updates
+           WHERE coalesce(updated_at, created_at) >= $1 AND coalesce(updated_by, created_by) LIKE '%@%' AND deleted_at IS NULL) x GROUP BY tower`, [ksaMidnight(today).toISOString()])
   ]);
   const changes = chg.rows.map(c => changeOut(c, now));
   const challenges = chs.rows.map(c => challengeOut(c, dir));
@@ -710,12 +787,14 @@ async function overview(req) {
     const acts = [...challenges.filter(c => c.tower === t.key).flatMap(c => [c.updatedAt, c.lastNote && c.lastNote.at]), ...manual.filter(u => u.tower === t.key).map(u => u.at)]
       .filter(Boolean).map(x => new Date(x)).sort((a, b) => b - a);
     const last = acts[0] || null;
+    const rp = rep.rows.find(x => x.tower === t.key) || null;
     return { key: t.key, label: t.label, color: base.color, scope: base.scope,
       leads: t.leads.map(e => ({ email: e, name: nameOf(dir, e) })),
       open: mine.length, critical: mine.filter(c => c.severity === 'critical').length, high: mine.filter(c => c.severity === 'high').length,
       blocked: mine.filter(c => c.status === 'blocked').length,
       checkin: ci ? { at: ci.created_at, by: ci.created_by, byName: nameOf(dir, ci.created_by), note: ci.note } : null,
-      lastActivity: last, reportedToday: !!ci || !!(last && ksaDay(last) === today),
+      lastActivity: last, reportedToday: !!ci || !!rp,
+      report: ci ? { at: ci.created_at, by: ci.created_by, byName: nameOf(dir, ci.created_by), checkin: true } : rp ? { at: rp.at, by: rp.who, byName: nameOf(dir, rp.who), checkin: false } : null,
       changesTonight: tonight.filter(c => c.tower === t.key).length };
   });
   return {
@@ -735,7 +814,9 @@ async function overview(req) {
       weekDone: doneWeek.length, weekOk: okWeek.length, weekGaps: latestChanges.filter(c => live(c) && c.gaps.length).length,
       weekLive: latestChanges.filter(live).length },
     digest: { enabled: CFG.digest.enabled, hour: CFG.digest.hour, minute: CFG.digest.minute, weekdays: CFG.digest.weekdays,
-      lastDay: dg && dg.day || null, lastSentAt: dg && dg.sentAt || null, lastOk: dg ? dg.ok !== false : null, lastTo: dg && dg.to || null }
+      lastDay: dg && dg.day || null, lastSentAt: dg && dg.sentAt || null, lastOk: dg ? dg.ok !== false : null, lastTo: dg && dg.to || null,
+      lastError: dg && dg.ok === false ? (dg.error || 'not sent') : null, retry: !!(dg && dg.retry) },
+    defs: await defsNow()
   };
 }
 
@@ -770,33 +851,46 @@ async function buildDigest(deps, opts) {
       withTimeout(fx.exec({ range: '7d' }), 25000).catch(e => ({ configured: false, reason: e.message }))
     ]);
   }
-  /* the business state the page shows (the Executive brief's rule): OUTAGE = a P1 open, DEGRADED = a P2 open, OK otherwise —
+  /* the business state the page shows — the Executive brief's own rule (execBrief.stateOf, alpha.152): OUTAGE = a P1 service
+   * incident open, CASE = a P1 business case open, DEGRADED = a P2 open, BLIND = only monitoring open, OK otherwise;
    * the 24 h signal summary of the exec contract stays as the line under it */
-  const SEGM = require('./segment');
-  const openOf = async seg => { try { const r = await C().query(`SELECT a.severity, a.name, a.rule_key, COALESCE(a.customers,0)::int AS customers FROM alerts a
+  const SEGM = require('./segment'), EB = require('./execBrief');
+  const openOf = async seg => { try { const r = await C().query(`SELECT a.severity, a.name, a.rule_key, a.customers, a.fired_at, COALESCE(a.opened_wall, a.fired_at) AS opened, a.assignee, a.ack_by,
+          r.alert_class AS rule_class FROM alerts a LEFT JOIN alert_rules r ON r.key = a.rule_key
         WHERE a.status='open' AND a.severity IN ('P1','P2') AND ${SEGM.sqlWhere('a', 'rule_key', seg)}${SEGM.appOnly('a')} ORDER BY a.severity, COALESCE(a.opened_wall, a.fired_at)`);
-      return { p1: r.rows.filter(x => x.severity === 'P1').length, p2: r.rows.filter(x => x.severity === 'P2').length, what: r.rows[0] ? (r.rows[0].name || r.rows[0].rule_key) : null, customers: r.rows.reduce((t, x) => t + x.customers, 0) }; }
+      const st = EB.stateOf(r.rows);
+      return { state: st.state, note: st.note, p1: r.rows.filter(x => x.severity === 'P1').length, p2: r.rows.filter(x => x.severity === 'P2').length,
+        what: st.top ? (st.top.name || st.top.rule_key) : null, customers: r.rows.reduce((t, x) => t + (Number(x.customers) || 0), 0), estimated: r.rows.some(x => x.customers != null) }; }
     catch (e) { return null; } };
   const [openM, openF] = await Promise.all([openOf('mvno'), openOf('fixed')]);
   let sales = null;
   try { const so = require('./salesOps'); if (so.channel) sales = await withTimeout(Promise.all(so.ORDER.map(k => so.channel(k, 60))), 20000); } catch (e) { sales = null; }
   const statusCell = (label, h, op) => {
     if (!op && (!h || h.configured === false)) return `<td style="padding:10px 12px;border:1px solid #e3e7e5;border-radius:10px;vertical-align:top"><div style="font-size:11px;color:#64748b;font-weight:700;letter-spacing:.06em">${esc(label).toUpperCase()}</div><div style="font-size:14px;color:#64748b;margin-top:4px">not available</div></td>`;
-    const [col, txt] = op ? (op.p1 ? ['#dc2626', `Outage · ${op.p1} P1 open`] : op.p2 ? ['#d97706', `Degraded · ${op.p2} P2 open`] : ['#0e9f5a', 'OK']) : ['#64748b', '—'];
-    const line = op && (op.p1 || op.p2) ? `${esc(op.what || '')}${op.customers ? ` · ${op.customers.toLocaleString('en-US')} customers affected` : ''}` : `No P1 / P2 open${((h || {}).summary || [])[0] ? ' · ' + esc(h.summary[0]) : ''}`;
+    const open = op ? `${op.p1 ? op.p1 + ' P1' : ''}${op.p1 && op.p2 ? ' + ' : ''}${op.p2 ? op.p2 + ' P2' : ''} open` : '';
+    const [col, txt] = !op ? ['#64748b', '—'] : op.state === 'OUTAGE' ? ['#dc2626', `Outage · ${open}`] : op.state === 'CASE' ? ['#dc2626', `P1 case open · service up`]
+      : op.state === 'DEGRADED' ? ['#d97706', `Degraded · ${open}`] : op.state === 'BLIND' ? ['#d97706', 'Monitoring gap · state not known'] : ['#0e9f5a', 'OK'];
+    const line = op && (op.p1 || op.p2) ? `${esc(op.what || '')} · ${op.estimated ? `${op.customers.toLocaleString('en-US')} customers affected` : 'customer impact not estimated'}` : `No P1 / P2 open${((h || {}).summary || [])[0] ? ' · ' + esc(h.summary[0]) : ''}`;
     return `<td style="padding:10px 12px;border:1px solid #e3e7e5;vertical-align:top"><div style="font-size:11px;color:#64748b;font-weight:700;letter-spacing:.06em">${esc(label).toUpperCase()}</div>
       <div style="font-size:17px;font-weight:800;color:${col};margin-top:3px">● ${esc(txt)}</div><div style="font-size:12px;color:#475569;margin-top:2px">${line}</div></td>`;
   };
   const tile = (label, value, sub, col) => `<td style="padding:10px 12px;border:1px solid #e3e7e5;vertical-align:top"><div style="font-size:11px;color:#64748b;font-weight:700;letter-spacing:.06em">${esc(label).toUpperCase()}</div>
       <div style="font-size:22px;font-weight:800;color:${col || '#14352a'};margin-top:2px">${esc(value)}</div><div style="font-size:12px;color:#475569">${sub || ''}</div></td>`;
-  const salesTot = sales ? sales.reduce((s, c) => s + (c && c.activations ? Number(c.activations.yesterday) || 0 : 0), 0) : null;
-  const salesSub = sales ? sales.map(c => `${esc(c.short || c.label || c.key)} ${c && c.activations ? Number(c.activations.yesterday || 0).toLocaleString('en-US') : '—'}`).join(' · ') : 'not available';
+  /* dealer & QR channels, yesterday (DEFS.sales): Mobile = SIM activations (DMS app, dealer portal), Fixed = orders completed (QR code, SDA app) */
+  const CHN = { dms: 'DMS app', selfact: 'dealer portal', qr: 'QR code', sda: 'SDA app' };
+  const yOf = c => c && c.activations ? Number(c.activations.yesterday) || 0 : 0;
+  const part = keys => { const xs = (sales || []).filter(c => c && keys.includes(c.key)); return { n: xs.reduce((t, c) => t + yOf(c), 0), txt: xs.map(c => `${CHN[c.key] || c.short || c.key} ${yOf(c).toLocaleString('en-US')}`).join(' · ') }; };
+  const salesMob = part(['dms', 'selfact']), salesFix = part(['qr', 'sda']);
+  const salesTot = sales ? salesMob.n + salesFix.n : null;
+  const salesSub = sales ? `Mobile activations ${salesMob.n.toLocaleString('en-US')} (${esc(salesMob.txt)}) · Fixed orders completed ${salesFix.n.toLocaleString('en-US')} (${esc(salesFix.txt)})` : 'not available';
   const s = o.stats;
   const glance = `<table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="border-collapse:separate"><tr>${statusCell('Mobile', mobile, openM)}${statusCell('Fixed', fixed, openF)}</tr>
-    <tr>${tile('Activations yesterday', salesTot == null ? '—' : salesTot.toLocaleString('en-US'), salesSub)}${tile('Changes tonight', String(s.tonight), `${s.awaiting} awaiting a result · ${s.pirDue} PIR to record`, s.awaiting ? '#b45309' : null)}</tr>
-    <tr>${tile('Open challenges', String(s.openChallenges), `${s.critical} critical · ${s.high} high · ${s.blocked} blocked`, s.critical ? '#dc2626' : null)}${tile('Towers reported today', `${s.towersReported} / ${s.towers}`, 'Digital · BSS · OSS · ITSM · Infra')}</tr></table>`;
-  const kpiList = h => (h && h.configured !== false ? (h.kpis || []).filter(k => k.exec && k.value != null && k.value !== '—').slice(0, 4) : []);
-  const kpiCol = (label, h) => { const ks = kpiList(h); if (!ks.length) return ''; return `<td style="vertical-align:top;padding:0 6px;width:50%"><div style="font-size:11px;font-weight:800;color:#0b3d2b;letter-spacing:.06em;margin:4px 0 6px">${esc(label).toUpperCase()}</div>${ks.map(k => `<div style="border-left:3px solid #0e9f5a;padding:4px 10px;margin-bottom:6px"><div style="font-size:12px;color:#64748b">${esc(k.title)}${k.window ? ' · ' + esc(k.window) : ''}</div><div style="font-size:16px;font-weight:800;color:#14352a">${esc(typeof k.value === 'number' ? k.value.toLocaleString('en-US') : k.value)}</div>${k.sub ? `<div style="font-size:11.5px;color:#64748b">${esc(k.sub)}</div>` : ''}</div>`).join('')}</td>`; };
+    <tr>${tile('Dealer & QR sales yesterday', salesTot == null ? '—' : salesTot.toLocaleString('en-US'), salesSub)}${tile('Changes tonight', String(s.tonight), `until 08:00 · ${s.awaiting} ended with no result recorded · ${s.pirDue} PIR to record`, s.awaiting ? '#b45309' : null)}</tr>
+    <tr>${tile('Open challenges', String(s.openChallenges), `${s.critical} critical · ${s.high} high · ${s.blocked} blocked`, s.critical ? '#dc2626' : null)}${tile('Towers reported today', `${s.towersReported} / ${s.towers}`, o.towers.filter(t => t.reportedToday).map(t => esc(t.label + (t.report && t.report.byName ? ' (' + t.report.byName + ')' : ''))).join(' · ') || 'none yet today')}</tr></table>`;
+  const VPK = { Mobile: ['orders', 'activations', 'payments', 'errors'], Fixed: ['attempts', 'errors'] };
+  const kpiList = (h, biz) => (h && h.configured !== false ? VPK[biz].map(key => (h.kpis || []).find(k => k.key === key)).filter(k => k && k.value != null && k.value !== '—')
+    .map(k => { const d = DEFS.kpi[`${biz.toLowerCase()}.${k.key}`] || {}; return { ...k, title: d.label || k.title, window: d.window || k.window }; }) : []);
+  const kpiCol = (label, h) => { const ks = kpiList(h, label); if (!ks.length) return ''; return `<td style="vertical-align:top;padding:0 6px;width:50%"><div style="font-size:11px;font-weight:800;color:#0b3d2b;letter-spacing:.06em;margin:4px 0 6px">${esc(label).toUpperCase()}</div>${ks.map(k => `<div style="border-left:3px solid #0e9f5a;padding:4px 10px;margin-bottom:6px"><div style="font-size:12px;color:#64748b">${esc(k.title)}${k.window ? ' · ' + esc(k.window) : ''}</div><div style="font-size:16px;font-weight:800;color:#14352a">${esc(typeof k.value === 'number' ? k.value.toLocaleString('en-US') : k.value)}</div>${k.sub ? `<div style="font-size:11.5px;color:#64748b">${esc(k.sub)}</div>` : ''}</div>`).join('')}</td>`; };
   const kpis = kpiCol('Mobile', mobile) + kpiCol('Fixed', fixed);
   const h2 = t => `<div style="font-size:12px;font-weight:800;color:#0b3d2b;letter-spacing:.08em;margin:22px 0 8px;border-bottom:2px solid #e8f7f0;padding-bottom:5px">${esc(t).toUpperCase()}</div>`;
   const chip = tw => { const t = TOWERS.find(x => x.key === tw); return t ? `<span style="display:inline-block;font-size:10px;font-weight:800;letter-spacing:.04em;padding:1px 7px;border-radius:999px;color:#fff;background:${TOWER_HEX[tw]}">${esc(t.label.toUpperCase())}</span>` : ''; };
@@ -842,12 +936,13 @@ async function buildDigest(deps, opts) {
   const dayLabel = `${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dd.getUTCDay()]} ${dd.getUTCDate()} ${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][dd.getUTCMonth()]}`;
   const greet = opts && opts.name ? `Good morning ${esc(String(opts.name).split(/\s+/)[0])},` : 'Good morning,';
   const body = `<div style="font-size:15px">${greet}</div><div style="color:#475569;margin:4px 0 14px">Here is operations at ${esc(ksaHM(now))} KSA on ${esc(dayLabel)}.</div>
-    ${glance}${kpis ? h2('North-star KPIs · 7 days') + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${kpis}</tr></table>` : ''}${tcsHtml}
+    ${glance}${kpis ? h2('Key indicators · last 24 h') + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${kpis}</tr></table>` : ''}${tcsHtml}
     ${h2('Last updates')}${updHtml}${lastNightHtml ? h2('Last night’s changes') + lastNightHtml : ''}${h2('Changes today & tonight')}${tonightHtml}${awHtml}${h2('Open challenges')}${chHtml}
     <div style="text-align:center;margin:26px 0 6px"><a href="${esc(url)}" style="display:inline-block;background:#0e9f5a;color:#ffffff;font-weight:800;text-decoration:none;padding:12px 26px;border-radius:10px">Open the cockpit</a></div>
     <div style="font-size:11px;color:#94a3b8;text-align:center">Sent every day at ${String(CFG.digest.hour).padStart(2, '0')}:${String(CFG.digest.minute).padStart(2, '0')} KSA to the VP Operations · Settings › VP cockpit</div>`;
   const ops = [openM, openF].filter(Boolean);
-  const pill = ops.some(x => x.p1) ? ['OUTAGE', '#dc2626'] : ops.some(x => x.p2) ? ['DEGRADED', '#d97706'] : ops.length ? ['ALL OK', '#0e9f5a'] : null;
+  const has = s => ops.some(x => x.state === s);
+  const pill = has('OUTAGE') ? ['OUTAGE', '#dc2626'] : has('CASE') ? ['P1 CASE OPEN', '#dc2626'] : has('DEGRADED') ? ['DEGRADED', '#d97706'] : has('BLIND') ? ['MONITORING GAP', '#d97706'] : ops.length ? ['ALL OK', '#0e9f5a'] : null;
   const html = notify.shell({ title: 'Operations brief — ' + dayLabel, badge: 'VP OPERATIONS', pill: pill && pill[0], pillColor: pill && pill[1], bodyHtml: body });
   const subject = `[Salam Ops] VP brief — ${dayLabel} · ${s.openChallenges} open challenge${s.openChallenges === 1 ? '' : 's'} · ${s.tonight} change${s.tonight === 1 ? '' : 's'} tonight`;
   const text = `Operations brief — ${dayLabel}\nOpen challenges: ${s.openChallenges} (${s.critical} critical) · changes tonight: ${s.tonight} · awaiting result: ${s.awaiting}\n${url}`;

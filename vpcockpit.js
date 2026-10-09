@@ -79,6 +79,7 @@
     tickets: '<path d="M3 9a3 3 0 0 0 0 6v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3a3 3 0 0 0 0-6V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M13 4v16" stroke-dasharray="2 3"/>',
     arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>', comment: '<path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l2.1-5.6A8.4 8.4 0 1 1 21 11.5z"/>',
     people: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/>', cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/>',
     flag: '<path d="M5 21V4"/><path d="M5 4h12l-2 4 2 4H5"/>', bolt: '<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>', upload: '<path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 20h16"/>'
   };
   const twChip = (k, extra) => { const t = TW[k]; return t ? `<span class="vp-tw" style="--tw:${t.color}"${extra || ''}>${esc(t.label)}</span>` : `<span class="vp-tw vp-tw-none">Unassigned</span>`; };
@@ -108,7 +109,9 @@
   const halves = () => { const e = S.exec || {}; return [e.mobile, e.fixed].filter(h => h && h.configured !== false); };
   const briefOf = biz => { const b = S.brief || {}; const h = biz === 'mobile' ? b.mobile : b.fixed; return h && h.status ? h : null; };
   const execOf = biz => { const e = S.exec || {}; const h = biz === 'mobile' ? e.mobile : e.fixed; return h && h.configured !== false ? h : null; };
-  const BIZ_STATE = { OK: ['ok', 'OK'], DEGRADED: ['warn', 'Degraded'], OUTAGE: ['bad', 'Outage'] };
+  /* the Executive brief's state (execBrief.stateOf, alpha.152): Outage only for a P1 SERVICE incident — a P1 business case
+   * and a monitoring gap say what they are, so the tile and "This month: 99.9 % available" cannot disagree */
+  const BIZ_STATE = { OK: ['ok', 'OK'], DEGRADED: ['warn', 'Degraded'], OUTAGE: ['bad', 'Outage'], CASE: ['bad', 'P1 case'], BLIND: ['warn', 'Monitoring gap'] };
   const EXEC_STATE = { HEALTHY: ['ok', 'Healthy'], WARNING: ['warn', 'Warning'], CRITICAL: ['bad', 'Critical'] };
   function bizState(biz) {
     const b = briefOf(biz); if (b) { const [cls, label] = BIZ_STATE[b.status.state] || ['', b.status.state]; return { cls, label, b }; }
@@ -121,8 +124,9 @@
     const d = D(), s = d.stats || {}, m = me();
     const chips = [];
     ['mobile', 'fixed'].forEach(biz => { const x = bizState(biz); if (!x) return;
-      const p = x.b ? (x.b.status.openP1 + x.b.status.openP2 ? ` · ${x.b.status.openP1 ? x.b.status.openP1 + ' P1' : ''}${x.b.status.openP1 && x.b.status.openP2 ? ' + ' : ''}${x.b.status.openP2 ? x.b.status.openP2 + ' P2' : ''} open` : '') : '';
-      chips.push(`<a class="vp-hchip ${x.cls}" href="${biz === 'mobile' ? '#dashboard' : '#fixed'}"><i></i>${biz === 'mobile' ? 'Mobile' : 'Fixed'} · ${esc(x.label)}${esc(p)}</a>`); });
+      const st = x.b ? x.b.status.state : null;
+      const p = st === 'CASE' ? ' · service up' : st === 'BLIND' ? ' · state not known' : x.b ? (x.b.status.openP1 + x.b.status.openP2 ? ` · ${x.b.status.openP1 ? x.b.status.openP1 + ' P1' : ''}${x.b.status.openP1 && x.b.status.openP2 ? ' + ' : ''}${x.b.status.openP2 ? x.b.status.openP2 + ' P2' : ''} open` : '') : '';
+      chips.push(`<button type="button" class="vp-hchip ${x.cls}" data-act="biz" data-biz="${biz}" title="What is open now, and this month's incidents"><i></i>${biz === 'mobile' ? 'Mobile' : 'Fixed'} · ${esc(x.label)}${esc(p)}</button>`); });
     if (S.d) {
       chips.push(`<button type="button" class="vp-hchip" data-act="goto" data-to="vpWeek">${svg(IC.clock, 14)}${num(s.tonight)} change${s.tonight === 1 ? '' : 's'} tonight</button>`);
       if (s.critical || s.high) chips.push(`<button type="button" class="vp-hchip ${s.critical ? 'bad' : 'warn'}" data-act="goto" data-to="vpChallenges">${svg(IC.flag, 14)}${s.critical ? `${s.critical} critical` : ''}${s.critical && s.high ? ' · ' : ''}${s.high ? `${s.high} high` : ''} challenge${(s.critical + s.high) === 1 ? '' : 's'}</button>`);
@@ -134,7 +138,11 @@
       ['dashboard', '#dashboard', 'Mobile', IC.mobile], ['fixed', '#fixed', 'Fixed', IC.fixed], ['noc', '#infra?tab=map&diagram=mvno', 'Infrastructure', IC.infra], ['tickets', '#tickets', 'Tickets', IC.tickets]]
       .filter(x => v.includes(x[0])).map(x => `<a class="vp-door" href="${x[1]}">${svg(x[3], 15)}<span>${esc(x[2])}</span></a>`).join('');
     const dg = d.digest || {};
-    const briefChip = dg.enabled ? `<button type="button" class="vp-tool" data-act="brief" title="The morning brief e-mailed at ${String(dg.hour).padStart(2, '0')}:${String(dg.minute || 0).padStart(2, '0')} KSA">${svg(IC.mail, 14)}<span>Morning brief${dg.lastDay === today() && dg.lastSentAt ? ` · sent ${hm(dg.lastSentAt)}` : ` · ${String(dg.hour).padStart(2, '0')}:${String(dg.minute || 0).padStart(2, '0')}`}</span></button>` : '';
+    const at2 = `${String(dg.hour).padStart(2, '0')}:${String(dg.minute || 0).padStart(2, '0')}`;
+    const sentToday = dg.lastDay === today() && dg.lastSentAt;
+    const chipTxt = sentToday ? (dg.lastOk === false ? (dg.retry ? ' · retrying' : ' · not sent today') : ` · sent ${hm(dg.lastSentAt)}`) : ` · ${at2}`;
+    const chipTitle = sentToday && dg.lastOk === false ? `Not sent today — ${dg.lastError || 'error'}${dg.retry ? ' (tried again 15 min later)' : ''}` : `The morning brief e-mailed at ${at2} KSA`;
+    const briefChip = dg.enabled ? `<button type="button" class="vp-tool${sentToday && dg.lastOk === false ? ' warn' : ''}" data-act="brief" title="${esc(chipTitle)}">${svg(IC.mail, 14)}<span>Morning brief${esc(chipTxt)}</span></button>` : '';
     return `<div class="vp-hero">
       <div class="vp-hero-mark" aria-hidden="true"></div>
       <div class="vp-hero-l">
@@ -148,6 +156,7 @@
           <span class="vp-upd" id="vpUpd">${S.loading ? 'updating…' : S.at ? 'updated ' + esc(hm(S.at)) : ''}</span>
           <button type="button" class="vp-tool vp-icon" data-act="refresh" title="Refresh (auto every 5 min)">${svg(IC.refresh, 15)}</button>
           ${briefChip}
+          <button type="button" class="vp-tool" data-act="defs" title="What every number on this page counts, over which window, from which source">${svg(IC.info, 14)}<span>How we count</span></button>
           <button type="button" class="vp-tool vp-icon" data-act="print" title="Print or save as PDF">${svg(IC.print, 15)}</button>
           ${m.canSettings ? `<button type="button" class="vp-tool vp-icon" data-act="settings" title="Towers, leads, editors, change managers and the morning brief">${svg(IC.gear, 15)}</button>` : ''}
         </div>
@@ -158,65 +167,89 @@
 
   /* ---------- pulse ---------- */
   const cnt = (v, txt) => (typeof v === 'number' && isFinite(v)) ? `<span class="vp-cnt" data-v="${v}">${txt != null ? txt : num(v)}</span>` : (txt != null ? txt : num(v));
+  /* durations / times for the incident lines */
+  const durTxt = m => { m = Math.max(0, Math.round(Number(m) || 0)); if (m < 60) return `${m} min`; const h = Math.floor(m / 60), r = m % 60; if (h < 48) return `${h} h${r ? ' ' + r + ' min' : ''}`; const d = Math.floor(h / 24); return `${d} d ${h % 24} h`; };
+  const sinceTxt = v => { if (!v) return ''; return dkey(v) === today() ? hm(v) : `${KT.md(v).slice(0, 6)} ${hm(v)}`; };
+  const pctTxt = v => v == null ? '—' : (v >= 100 ? '100' : v >= 99.995 ? '99.99' : v.toFixed(2)) + '%';
   function bizTile(biz) {
     const label = biz === 'mobile' ? 'Mobile' : 'Fixed', href = biz === 'mobile' ? '#dashboard' : '#fixed';
     const x = bizState(biz);
     if (!x) return `<a class="vp-tile vp-skel" href="${href}"><div class="vp-tl">${label}</div><div class="vp-tv">…</div><div class="vp-ts">${S.brief || S.exec ? 'not available for this account' : 'reading the incidents'}</div></a>`;
     let sub = '';
-    if (x.b) { const st = x.b.status, imp = x.b.impact || {};
-      sub = `${st.affectedNow ? `<b>${num(st.affectedNow)}</b> customers affected now` : 'no customer affected now'}${imp.availabilityPct != null ? ` · <b>${esc(imp.availabilityPct)}%</b> available this month` : ''}`;
-      if (st.what) sub += `<div class="vp-ts2">${esc(st.what)}${st.since ? ' · since ' + esc(hm(st.since)) : ''}</div>`; }
+    if (x.b) { const st = x.b.status, imp = x.b.impact || {}, open = (st.openP1 || 0) + (st.openP2 || 0);
+      const kinds = [st.openP1 ? `${st.openP1} P1` : '', st.openP2 ? `${st.openP2} P2` : ''].filter(Boolean).join(' + ');
+      const now1 = open ? `<b>${open}</b> incident${open === 1 ? '' : 's'} open (${kinds})${st.since ? ` · since ${esc(sinceTxt(st.since))}` : ''}` : 'No P1 / P2 incident open';
+      const cust = open ? (st.estimated ? `<b>${num(st.affectedNow)}</b> customers affected` : 'customer impact not estimated') : '';
+      const svc = imp.service != null ? imp.service : imp.incidents;
+      const month = `This month: <b>${pctTxt(imp.availabilityPct)}</b> available · ${num(svc || 0)} service incident${svc === 1 ? '' : 's'}${imp.minutes ? ` (${esc(durTxt(imp.minutes))})` : ''}`;
+      const note = st.state === 'CASE' ? 'A P1 business case is open — the service is up' : st.state === 'BLIND' ? 'The console cannot read a data feed — state not known' : '';
+      sub = `${note ? `<div class="vp-tnote">${esc(note)}</div>` : ''}<div class="vp-tline1">${now1}</div>${cust ? `<div class="vp-ts2">${cust}</div>` : ''}${st.what ? `<div class="vp-ts2" title="${esc(st.what)}">${esc(st.what)}</div>` : ''}<div class="vp-tmon">${month}</div>`; }
     else if (x.e) sub = esc((x.e.summary || [])[0] || '');
-    return `<a class="vp-tile vp-tbiz vp-tile-${x.cls}" href="${href}" title="Open the ${label} operations dashboard">
-      <div class="vp-tl">${label}<span class="vp-tdot"></span></div><div class="vp-tv">${esc(x.label)}</div><div class="vp-ts">${sub}</div><span class="vp-go">${svg(IC.arrow, 14)}</span></a>`;
+    return `<button type="button" class="vp-tile vp-tbiz vp-tile-${x.cls}" data-act="biz" data-biz="${biz}" title="What is open now, and this month's incidents">
+      <div class="vp-tl">${label}<span class="vp-tw2">now</span><span class="vp-tdot"></span></div><div class="vp-tv${x.label.length > 9 ? ' vp-tv-long' : ''}">${esc(x.label)}</div><div class="vp-ts">${sub}</div><span class="vp-go">${svg(IC.arrow, 14)}</span></button>`;
   }
   function salesTile() {
     const so = S.sales; if (!views().includes('salesops')) return '';
-    if (!so || !so.channels) return `<a class="vp-tile vp-skel" href="#salesops"><div class="vp-tl">Activations today</div><div class="vp-tv">…</div><div class="vp-ts">DMS · self-activation · QR · SDA</div></a>`;
-    const order = so.order || Object.keys(so.channels); const rows = order.map(k => so.channels[k]).filter(Boolean);
-    const tot = rows.reduce((t, c) => t + (c.activations ? Number(c.activations.today) || 0 : 0), 0);
-    const ys = rows.reduce((t, c) => t + (c.activations ? Number(c.activations.ySame) || 0 : 0), 0);
-    const max = Math.max(1, ...rows.map(c => c.activations ? Number(c.activations.today) || 0 : 0));
-    const delta = ys ? Math.round((tot - ys) / ys * 100) : null;
-    const COL = { dms: '#2563eb', selfact: '#7c3aed', qr: '#0d9488', sda: '#0e9f5a' }, AB = { dms: 'DMS', selfact: 'Self', qr: 'QR', sda: 'SDA' };
-    return `<a class="vp-tile vp-tile-sales" href="#salesops" title="Open the Sales Operations wall">
-      <div class="vp-tl">Activations today</div>
+    if (!so || !so.channels) return `<a class="vp-tile vp-skel" href="#salesops"><div class="vp-tl">Dealer &amp; QR sales today</div><div class="vp-tv">…</div><div class="vp-ts">DMS app · dealer portal · QR code · SDA app</div></a>`;
+    const NAME = { dms: 'DMS app', selfact: 'Dealer portal', qr: 'QR code', sda: 'SDA app' };
+    const COL = { dms: '#2563eb', selfact: '#7c3aed', qr: '#0d9488', sda: '#0e9f5a' };
+    const v = c => c && c.activations ? Number(c.activations.today) || 0 : 0, ys = c => c && c.activations ? Number(c.activations.ySame) || 0 : 0;
+    const ch = k => so.channels[k] || null;
+    const groups = [['Mobile · activations', ['dms', 'selfact']], ['Fixed · orders completed', ['qr', 'sda']]];
+    const all = ['dms', 'selfact', 'qr', 'sda'].map(ch).filter(Boolean);
+    const tot = all.reduce((t, c) => t + v(c), 0), yTot = all.reduce((t, c) => t + ys(c), 0);
+    const max = Math.max(1, ...all.map(v));
+    const delta = yTot ? Math.round((tot - yTot) / yTot * 100) : null;
+    const rows = groups.map(([gl, keys]) => { const cs = keys.map(ch).filter(Boolean); if (!cs.length) return '';
+      return `<div class="vp-sgrp"><div class="vp-sgl"><span>${esc(gl)}</span><b>${num(cs.reduce((t, c) => t + v(c), 0))}</b></div>${cs.map(c => `<div class="vp-srow" title="${esc(c.label || NAME[c.key])}: ${v(c).toLocaleString('en-US')} today · ${ys(c).toLocaleString('en-US')} by this time yesterday"><span>${esc(NAME[c.key] || c.short || c.key)}</span><i><u style="width:${v(c) ? Math.max(3, Math.round(v(c) / max * 100)) : 0}%;background:${COL[c.key] || '#64748b'}"></u></i><b>${num(v(c))}</b></div>`).join('')}</div>`; }).join('');
+    return `<a class="vp-tile vp-tile-sales" href="#salesops" title="Open the Sales Operations wall — the same numbers per channel">
+      <div class="vp-tl">Dealer &amp; QR sales<span class="vp-tw2">today</span></div>
       <div class="vp-tv">${cnt(tot)}</div>
-      <div class="vp-ts vp-tsub">${delta == null ? 'DMS · self-activation · QR · SDA' : `<b class="${delta >= 0 ? 'up' : 'down'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}%</b> vs yesterday at this time (${num(ys)})`}</div>
-      <div class="vp-bars">${rows.map(c => { const v = c.activations ? Number(c.activations.today) || 0 : 0; return `<span class="vp-bar" title="${esc(c.label)}: ${v.toLocaleString('en-US')}"><i style="height:${Math.max(6, Math.round(v / max * 100))}%;background:${COL[c.key] || '#64748b'}"></i><em>${esc(AB[c.key] || c.short || c.key)}</em><b>${num(v)}</b></span>`; }).join('')}</div>
+      <div class="vp-ts vp-tsub">${delta == null ? 'since 00:00 KSA' : `<b class="${delta >= 0 ? 'up' : 'down'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}%</b> vs yesterday at this time (${num(yTot)})`}${so.at ? ` · as of ${esc(hm(so.at))}` : ''}</div>
+      <div class="vp-srows">${rows}</div>
+      <div class="vp-tfoot">Customers' own app &amp; web orders: see the KPIs below</div>
       <span class="vp-go">${svg(IC.arrow, 14)}</span></a>`;
   }
   function pulse() {
     const s = (D().stats) || {};
     const changeTile = S.d ? `<button type="button" class="vp-tile vp-tile-${s.awaiting ? 'warn' : 'none'}" data-act="goto" data-to="vpWeek" title="This week's changes">
-        <div class="vp-tl">Changes tonight</div><div class="vp-tv">${cnt(s.tonight)}</div>
-        <div class="vp-ts">${s.awaiting ? `<b>${s.awaiting}</b> past the window with no result · ` : ''}${s.pirDue ? `<b>${s.pirDue}</b> PIR to record · ` : ''}<b>${num(s.weekDone)}</b> of ${num(s.weekLive)} done this CAB</div>
+        <div class="vp-tl">Changes tonight<span class="vp-tw2">until 08:00</span></div><div class="vp-tv">${cnt(s.tonight)}</div>
+        <div class="vp-ts">${s.awaiting ? `<b>${s.awaiting}</b> ended with no result recorded · ` : ''}${s.pirDue ? `<b>${s.pirDue}</b> PIR to record · ` : ''}<b>${num(s.weekDone)}</b> of ${num(s.weekLive)} done this CAB</div>
         <div class="vp-prog"><i style="width:${s.weekLive ? Math.round(s.weekDone / s.weekLive * 100) : 0}%"></i></div><span class="vp-go">${svg(IC.arrow, 14)}</span></button>` : '';
     const chTile = S.d ? `<button type="button" class="vp-tile vp-tile-${s.critical ? 'bad' : s.high ? 'warn' : 'ok'}" data-act="goto" data-to="vpChallenges" title="Daily challenges by tower">
-        <div class="vp-tl">Open challenges</div><div class="vp-tv">${cnt(s.openChallenges)}</div>
+        <div class="vp-tl">Open challenges<span class="vp-tw2">now</span></div><div class="vp-tv">${cnt(s.openChallenges)}</div>
         <div class="vp-ts"><span class="vp-sevdots">${s.critical ? `<b class="c">${s.critical} critical</b>` : ''}${s.high ? `<b class="h">${s.high} high</b>` : ''}${s.blocked ? `<b class="b">${s.blocked} blocked</b>` : ''}${!s.critical && !s.high && !s.blocked ? 'nothing critical or blocked' : ''}</span></div><span class="vp-go">${svg(IC.arrow, 14)}</span></button>` : '';
     const tws = (D().towers) || [];
     const twTile = S.d ? `<button type="button" class="vp-tile vp-tile-${s.towersReported === s.towers ? 'ok' : 'none'}" data-act="goto" data-to="vpChallenges" title="Which towers reported today">
-        <div class="vp-tl">Towers reported today</div><div class="vp-tv">${cnt(s.towersReported)}<small> / ${num(s.towers)}</small></div>
-        <div class="vp-twdots">${tws.map(t => `<span class="${t.reportedToday ? 'on' : ''}" style="--tw:${t.color}" title="${esc(t.label)} — ${t.reportedToday ? 'reported today' : 'no report yet today'}">${esc(t.label)}</span>`).join('')}</div><span class="vp-go">${svg(IC.arrow, 14)}</span></button>` : '';
+        <div class="vp-tl">Towers reported<span class="vp-tw2">today</span></div><div class="vp-tv">${cnt(s.towersReported)}<small> / ${num(s.towers)}</small></div>
+        <div class="vp-twdots">${tws.map(t => { const r = t.report; const who = r ? `${r.checkin ? 'checked in' : 'reported'} by ${r.byName || String(r.by || '').split('@')[0]} at ${hm(r.at)}` : 'no report yet today'; return `<span class="${t.reportedToday ? 'on' : ''}" style="--tw:${t.color}" title="${esc(t.label)} — ${esc(who)}">${esc(t.label)}</span>`; }).join('')}</div>
+        <div class="vp-tfoot">${s.towersReported ? esc(tws.filter(t => t.report).map(t => `${t.label}: ${t.report.byName || String(t.report.by || '').split('@')[0]}`).join(' · ')) : 'no tower has posted today yet'}</div><span class="vp-go">${svg(IC.arrow, 14)}</span></button>` : '';
     return `<div class="vp-pulse">${bizTile('mobile')}${bizTile('fixed')}${salesTile()}${changeTile}${chTile}${twTile}</div>`;
   }
 
-  /* ---------- north-star KPIs (the Executive Dashboard's own contract) ---------- */
+  /* ---------- KPIs: the Executive Dashboard's own contract, with the VP's selection and plain definitions ----------
+   * Mobile: app & web orders, activation success, payment reliability, technical errors. Fixed: dealer & QR orders, API errors.
+   * "Active critical signals" stays on the Executive Dashboard: it adds P1s fired over 7 days to breached objectives and
+   * read like a count of open incidents (Fixed showed 2 while 3 P2 were open). The Mobile / Fixed tiles above say what
+   * is open now. Every tile carries its window and one sentence on what it counts (DEFS in opsCockpit.js). */
+  const VPK = { mobile: ['orders', 'activations', 'payments', 'errors'], fixed: ['attempts', 'errors'] };
+  const kdef = (biz, key) => ((D().defs || {}).kpi || {})[`${biz}.${key}`] || null;
   function kpis() {
     const hs = halves(); const v = views();
     if (!v.includes('dashboard') && !v.includes('fixed')) return '';
     let tiles = '';
     if (!S.exec && !S.execErr) tiles = '<div class="vp-kgrid">' + Array.from({ length: 4 }, () => '<div class="vp-kpi vp-skel"><div class="vp-kt">…</div><div class="vp-kv">…</div></div>').join('') + '</div>';
     else if (!hs.length) tiles = `<div class="vp-empty">${esc(S.execErr || 'KPIs not available for this account')}</div>`;
-    else tiles = '<div class="vp-kgrid">' + hs.map(h => (h.kpis || []).filter(k => k.exec && k.value != null && k.value !== '—').slice(0, 4).map(k => `
+    else tiles = '<div class="vp-kgrid">' + hs.map(h => (VPK[h.biz] || []).map(key => (h.kpis || []).find(k => k.key === key)).filter(k => k && k.value != null && k.value !== '—').map(k => { const d = kdef(h.biz, k.key) || {};
+        return `
         <a class="vp-kpi vp-t-${esc(k.tone || 'none')}" href="${esc(k.href || (h.biz === 'fixed' ? '#fixed' : '#dashboard'))}">
-          <div class="vp-kh"><span class="vp-kbiz vp-kbiz-${esc(h.biz)}">${esc(h.label)}</span><span class="vp-kw">${esc(k.window || '')}</span></div>
-          <div class="vp-kt">${esc(k.title)}</div><div class="vp-kv">${typeof k.value === 'number' ? cnt(k.value) : esc(k.value)}</div>
+          <div class="vp-kh"><span class="vp-kbiz vp-kbiz-${esc(h.biz)}">${h.biz === 'fixed' ? 'Fixed' : 'Mobile'}</span><span class="vp-kw">${esc(d.window || k.window || '')}</span></div>
+          <div class="vp-kt">${esc(d.label || k.title)}</div><div class="vp-kv">${typeof k.value === 'number' ? cnt(k.value) : esc(k.value)}</div>
           <div class="vp-ks">${esc(k.sub || '')}</div>
-          ${k.delta && k.delta.pct != null ? `<div class="vp-kd ${k.delta.pct === 0 ? '' : k.delta.good ? 'good' : 'bad'}">${k.delta.pct > 0 ? '+' : ''}${esc(k.delta.pct)}% vs previous 24 h</div>` : ''}
-        </a>`).join('')).join('') + '</div>';
-    return `<section class="vp-sec" id="vpKpis">${secHead('North-star', 'The KPIs the CIO reads', `<a class="vp-link" href="#exec">Executive Dashboard ${svg(IC.arrow, 13)}</a>`)}${tiles}</section>`;
+          ${k.delta && k.delta.pct != null ? `<div class="vp-kd ${k.delta.pct === 0 ? '' : k.delta.good ? 'good' : 'bad'}">${k.delta.of ? esc(k.delta.of) + ' ' : ''}${k.delta.pct > 0 ? '+' : ''}${esc(k.delta.pct)}% vs the previous 24 h</div>` : ''}
+          ${d.what ? `<div class="vp-kdef">${esc(d.what)}</div>` : ''}
+        </a>`; }).join('')).join('') + '</div>';
+    return `<section class="vp-sec" id="vpKpis">${secHead('Key indicators · last 24 h', 'Mobile app &amp; web · Fixed orders and errors', `<button type="button" class="vp-link" data-act="defs" data-to="kpi">How we count ${svg(IC.info, 13)}</button><a class="vp-link" href="#exec">Executive Dashboard ${svg(IC.arrow, 13)}</a>`, 'The same numbers as the Executive Dashboard, over the last 24 hours. Today\'s dealer and QR sales, since midnight, are in the sales tile above.')}${tiles}</section>`;
   }
   const secHead = (kick, title, right, sub) => `<div class="vp-sh"><div><div class="vp-shk">${esc(kick)}</div><h2 class="vp-sht">${title}</h2>${sub ? `<div class="vp-shs">${sub}</div>` : ''}</div>${right ? `<div class="vp-shr">${right}</div>` : ''}</div>`;
 
@@ -504,6 +537,46 @@
   }
 
   /* ---------- the challenge drawer ---------- */
+  /* ---------- Mobile / Fixed: what is open now, and this month's P1 register (the Executive brief's own data) ---------- */
+  const P1KIND = { service: ['Service', 'counts as downtime'], business: ['Business case', 'not downtime'], monitoring: ['Monitoring', 'not downtime — the console could not see'] };
+  function openBiz(biz) {
+    const x = bizState(biz), label = biz === 'mobile' ? 'Mobile' : 'Fixed';
+    if (!x || !x.b) { location.hash = biz === 'mobile' ? '#dashboard' : '#fixed'; return; }
+    const st = x.b.status, imp = x.b.impact || {}, open = ((x.b.actions || {}).open) || [], defs = D().defs || {};
+    const openRows = open.length ? `<ul class="vp-inc">${open.map(a => `<li><span class="vp-psev vp-psev-${esc(String(a.severity).toLowerCase())}">${esc(a.severity)}</span><div><b>${esc(a.name)}</b>${a.kind && a.kind !== 'service' ? ` <span class="vp-kind vp-kind-${esc(a.kind)}">${esc((P1KIND[a.kind] || [a.kind])[0])}</span>` : ''}
+        <div class="vp-dim">open ${esc(durTxt(a.ageMin))} · ${a.owner ? 'owner ' + esc(String(a.owner).split('@')[0]) : 'nobody has taken it'}${a.acked ? ' · acknowledged' : ''}${a.ticket ? ' · ' + esc(a.ticket) : ''}${a.customers != null ? ` · ${num(a.customers)} customers` : ''}</div></div></li>`).join('')}</ul>` : '<div class="vp-empty">No P1 / P2 incident open.</div>';
+    const list = (imp.list || []).slice().sort((a, b) => (b.minutes || 0) - (a.minutes || 0));
+    const reg = list.length ? `<table class="vp-tbl vp-regtbl"><thead><tr><th>P1 incident</th><th>Started</th><th>Ended</th><th>Time this month</th><th>Kind</th></tr></thead><tbody>${list.slice(0, 15).map(a => { const k = P1KIND[a.kind] || P1KIND.service;
+        return `<tr class="${a.downtime === false ? 'vp-off' : ''}"><td data-l="P1 incident"><b>${esc(a.name)}</b></td><td data-l="Started">${esc(KT.md(a.started))}</td><td data-l="Ended">${a.ended ? esc(KT.md(a.ended)) : '<b class="vp-hot">still open</b>'}</td>
+          <td data-l="Time this month">${esc(durTxt(a.minutes))}</td><td data-l="Kind"><span class="vp-kind vp-kind-${esc(a.kind || 'service')}">${esc(k[0])}</span><div class="vp-dim">${esc(k[1])}</div></td></tr>`; }).join('')}</tbody></table>${list.length > 15 ? `<div class="vp-dim">${list.length - 15} more in the Executive Dashboard.</div>` : ''}`
+      : '<div class="vp-empty">No P1 incident of 5 minutes or more this month.</div>';
+    const svc = imp.service != null ? imp.service : imp.incidents;
+    const other = [(imp.business ? `${imp.business} business case${imp.business === 1 ? '' : 's'}` : ''), (imp.monitoring ? `${imp.monitoring} monitoring` : '')].filter(Boolean).join(' · ');
+    const def = k => defs[k] ? `<p class="vp-defl"><b>${esc(defs[k].label)}</b> — ${esc(defs[k].what)}</p>` : '';
+    drawer(drHead(`<b>${label}</b><span class="vp-stchip vp-st-${x.cls}"><i></i>${esc(x.label)}</span>`) + `<div class="vp-drb">
+      <div class="vp-drsec"><div class="vp-drk">Open now</div>
+        <div class="vp-ts">${(st.openP1 || 0) + (st.openP2 || 0) ? `${(st.openP1 || 0) + (st.openP2 || 0)} incident(s) open${st.since ? ' since ' + esc(sinceTxt(st.since)) : ''} · ${st.estimated ? `<b>${num(st.affectedNow)}</b> customers affected` : 'customer impact not estimated'}` : 'Nothing open.'}${st.stateNote && st.state !== 'OK' ? `<div class="vp-dim">${esc(x.label)}: ${esc(st.stateNote)}.</div>` : ''}</div>${openRows}</div>
+      <div class="vp-drsec"><div class="vp-drk">This month (KSA)</div>
+        <div class="vp-mstats"><div><b>${pctTxt(imp.availabilityPct)}</b><span>available</span></div><div><b>${num(svc || 0)}</b><span>service incidents</span></div><div><b>${esc(durTxt(imp.minutes || 0))}</b><span>service-incident time</span></div>${other ? `<div><b>${esc(other)}</b><span>listed, not downtime</span></div>` : ''}</div>
+        ${reg}</div>
+      <div class="vp-drsec"><div class="vp-drk">How it is counted</div>${def('state')}${def('affected')}${def('month')}</div>
+      <div class="vp-acts"><a class="vp-btn" href="${biz === 'mobile' ? '#alerts' : '#fixed-alerts'}">Open the ${label} alerts</a><a class="vp-btn" href="#exec">Executive Dashboard</a><a class="vp-btn" href="${biz === 'mobile' ? '#dashboard' : '#fixed'}">${label} dashboard</a></div>
+    </div>`);
+  }
+  /* ---------- How we count: every number of the page, its window and its source (DEFS from the server) ---------- */
+  function openDefs(focus) {
+    const d = D().defs || {};
+    const one = (key, x) => x ? `<div class="vp-defi${focus === key ? ' on' : ''}" id="vpDef-${esc(key)}"><div class="vp-defh"><b>${esc(x.label)}</b><span class="vp-tw2">${esc(x.window || '')}</span></div><p>${esc(x.what)}</p><div class="vp-dim">Source: ${esc(x.src || '—')}</div></div>` : '';
+    const top = ['state', 'affected', 'month', 'sales', 'changes', 'challenges', 'towers'].map(k => one(k, d[k])).join('');
+    const kp = Object.entries(d.kpi || {}).map(([k, x]) => one('kpi', { ...x, label: `${k.startsWith('fixed') ? 'Fixed' : 'Mobile'} · ${x.label}` })).join('');
+    const dr = drawer(drHead('<b>How we count</b>') + `<div class="vp-drb">
+      <p class="vp-dim">Every number on this page, the window it covers and where it comes from. The same definitions are used in the 08:00 morning brief.</p>
+      <div class="vp-drsec"><div class="vp-drk">The top of the page</div>${top}</div>
+      <div class="vp-drsec" id="vpDef-kpi"><div class="vp-drk">Customers' own journeys · last 24 h</div>${kp}</div>
+      <div class="vp-drsec"><div class="vp-drk">Mobile weekly · TCS</div>${one('tcs', d.tcs)}</div>
+      ${(d.diff || []).length ? `<div class="vp-drsec" id="vpDef-diff"><div class="vp-drk">Why two numbers can differ</div>${d.diff.map(x => `<div class="vp-defi vp-diff"><div class="vp-defh"><b>${esc(x.a)}</b><span class="vp-vs">vs</span><b>${esc(x.b)}</b></div><p>${esc(x.why)}</p></div>`).join('')}</div>` : ''}</div>`);
+    if (focus) { const el = dr.querySelector('#vpDef-' + focus); if (el) setTimeout(() => el.scrollIntoView({ block: 'start' }), 60); }
+  }
   async function openChallenge(id, editMode) {
     const dr = drawer(drHead('Challenge') + '<div class="vp-drb"><div class="vp-empty">Loading…</div></div>');
     let r; try { r = await api('/api/cockpit/challenges/' + id); } catch (e) { dr.querySelector('.vp-drb').innerHTML = `<div class="vp-err">${esc(e.message)}</div>`; return; }
@@ -702,6 +775,8 @@
       case 'print': return window.print();
       case 'settings': return settingsModal();
       case 'brief': return briefModal();
+      case 'biz': return openBiz(t.dataset.biz);
+      case 'defs': return openDefs(t.dataset.to);
       case 'goto': { const el = $('#' + t.dataset.to); if (el) el.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' }); return; }
       case 'feedtower': S.feedTower = t.dataset.k; return paint('vpUpdates', updates);
       case 'chtower': S.chTower = S.chTower === t.dataset.k ? '' : t.dataset.k; st.set('chTower', S.chTower); return paint('vpChallenges', challengesSec);
@@ -860,6 +935,15 @@
     S.loading = false; const u2 = $('#vpUpd'); if (u2) u2.textContent = S.at ? 'updated ' + hm(S.at) : '';
   }
 
+  /* the sales tile follows the Sales Operations wall more closely than the rest of the page: every minute, only that tile,
+   * no count-up (the wall refreshes every 30 s; the page every 5 min — the VP compared the two on 8 Oct) */
+  async function refreshSales() {
+    if (!S.open || document.hidden || !views().includes('salesops')) return;
+    try { S.sales = await api('/api/salesops/overview'); } catch (e) { return; }
+    const el = $('#vpPulse .vp-tile-sales'); if (!el) return;
+    const t = document.createElement('div'); t.innerHTML = salesTile(); const nw = t.firstElementChild; if (nw) el.replaceWith(nw);
+  }
+
   /* ---------- open / close ---------- */
   function parseQs(qs) { const o = {}; String(qs || '').split('&').forEach(kv => { const [k, v] = kv.split('='); if (k) o[k] = decodeURIComponent(v || ''); }); return o; }
   window.openVpCockpit = async function (qs) {
@@ -873,6 +957,7 @@
     if (!S.d) host.innerHTML = `<div class="vp-wrap"><div id="vpHero">${hero()}</div><div class="vp-pulse">${Array.from({ length: 6 }, () => '<div class="vp-tile vp-skel"><div class="vp-tl">…</div><div class="vp-tv">…</div></div>').join('')}</div></div>`;
     clearInterval(S.timer); S.timer = setInterval(() => { if (S.open && !document.hidden) load(); }, 5 * 60e3);
     clearInterval(S.clock); S.clock = setInterval(() => { const c = $('#vpClock'); if (c) c.textContent = hm(new Date()); }, 30e3);
+    clearInterval(S.salesT); S.salesT = setInterval(refreshSales, 60e3);
     await load(!S.d);
     const q = parseQs(qs);
     if (q.chg) openChange(q.chg.toUpperCase());
@@ -881,7 +966,7 @@
     else if (q.import === '1' && me().canImport) importModal();
     else if (q.tab && $('#vp' + q.tab.charAt(0).toUpperCase() + q.tab.slice(1))) $('#vp' + q.tab.charAt(0).toUpperCase() + q.tab.slice(1)).scrollIntoView();
   };
-  window.addEventListener('hashchange', () => { if (!/^#(vp|vp-operations|cockpit)(\?|$)/.test(location.hash || '')) { S.open = false; clearInterval(S.timer); clearInterval(S.clock); closeDrawer(); closeModal(); } });
+  window.addEventListener('hashchange', () => { if (!/^#(vp|vp-operations|cockpit)(\?|$)/.test(location.hash || '')) { S.open = false; clearInterval(S.timer); clearInterval(S.clock); clearInterval(S.salesT); closeDrawer(); closeModal(); } });
   /* the gear menu entry (TEAMS MANAGEMENT › VP cockpit) opens the people & brief settings */
   document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#vpCfgMenuItem'); if (!b) return; const sm = document.getElementById('settingsMenu'); if (sm) sm.classList.remove('open'); location.hash = '#vp?settings=1'; });
 
@@ -929,13 +1014,43 @@
 .vp-tl{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
 .vp-tsub b.up{color:var(--good)}.vp-tsub b.down{color:var(--bad-fg)}
 .vp-tv{font-size:29px;font-weight:800;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}.vp-tv small{font-size:15px;color:var(--muted);font-weight:700}
-.vp-tbiz .vp-tv{color:var(--tc)}
+.vp-tbiz .vp-tv{color:var(--tc)}.vp-tbiz .vp-tv-long{font-size:23px;line-height:1.2}
 .vp-tdot{width:9px;height:9px;border-radius:50%;background:var(--tc,var(--line));box-shadow:0 0 0 4px color-mix(in srgb,var(--tc,var(--line)) 18%,transparent)}
 .vp-ts{font-size:12px;color:var(--ink-soft);line-height:1.45}.vp-ts b{color:var(--ink)}.vp-ts2{font-size:11.5px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vp-go{position:absolute;right:12px;top:13px;color:var(--muted);opacity:0;transition:opacity .15s,transform .15s}.vp-tile:hover .vp-go{opacity:1;transform:translateX(2px)}
 .vp-tile .vp-tl+.vp-tv{margin-top:1px}
 .vp-skel .vp-tv,.vp-skel .vp-kv{color:transparent;background:linear-gradient(90deg,var(--line-soft),var(--card2),var(--line-soft));background-size:200% 100%;border-radius:8px;animation:vpShim 1.2s infinite;width:60%}
 @keyframes vpShim{0%{background-position:100% 0}100%{background-position:-100% 0}}
+/* alpha.152 — tiles that say their window, the sales rows (nothing clipped), the incident drawer, How we count */
+.vp-tw2{margin-left:auto;font-size:9.5px;font-weight:800;letter-spacing:.06em;padding:1px 7px;border-radius:999px;background:var(--line-soft);color:var(--muted);text-transform:uppercase;white-space:nowrap}
+.vp-tl .vp-tw2+.vp-tdot{margin-left:6px}
+.vp-tline1{font-size:12.5px;color:var(--ink)}.vp-tmon{font-size:11.5px;color:var(--ink-soft);margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}.vp-tmon b{color:var(--ink)}
+.vp-tfoot{font-size:11px;color:var(--muted);margin-top:auto;padding-top:6px;line-height:1.35}
+.vp-srows{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.vp-sgrp{display:flex;flex-direction:column;gap:3px}
+.vp-sgl{display:flex;justify-content:space-between;gap:6px;font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}.vp-sgl b{color:var(--ink);font-size:11.5px;letter-spacing:0}
+.vp-srow{display:grid;grid-template-columns:minmax(0,88px) minmax(0,1fr) auto;align-items:center;gap:7px;font-size:11.5px}
+.vp-srow span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-soft)}
+.vp-srow i{display:block;height:7px;border-radius:99px;background:var(--line-soft);overflow:hidden}.vp-srow i u{display:block;height:100%;border-radius:99px}
+.vp-srow b{font-variant-numeric:tabular-nums;font-size:12px;min-width:28px;text-align:right}
+.vp-kdef{font-size:11px;line-height:1.4;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
+.vp-tool.warn{border-color:var(--amber);color:var(--tint-amber-fg);background:var(--tint-amber)}
+.vp-inc{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.vp-inc li{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.vp-psev{flex:none;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:7px;color:#fff;background:var(--amber)}.vp-psev-p1{background:var(--red)}.vp-psev-p3,.vp-psev-p4{background:var(--muted)}
+.vp-mstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:8px 0 10px}
+.vp-mstats div{padding:9px 11px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.vp-mstats b{display:block;font-size:17px;font-weight:800}.vp-mstats span{font-size:11px;color:var(--muted)}
+.vp-regtbl td,.vp-regtbl th{font-size:12px}.vp-regtbl tr.vp-off td{opacity:.72}.vp-hot{color:var(--bad-fg)}
+.vp-kind{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:999px;background:var(--tint-red,rgba(220,38,38,.12));color:var(--bad-fg)}
+.vp-kind-business{background:var(--tint-amber);color:var(--tint-amber-fg)}.vp-kind-monitoring{background:var(--line-soft);color:var(--muted)}
+.vp-defi{padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--card);margin:8px 0}.vp-defi.on{border-color:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 18%,transparent)}
+.vp-defh{display:flex;align-items:center;gap:8px}.vp-defh .vp-tw2{margin-left:auto}.vp-defi p{margin:6px 0 4px;font-size:12.5px;line-height:1.5;color:var(--ink)}
+.vp-defl{font-size:12.5px;line-height:1.5;margin:6px 0;color:var(--ink-soft)}.vp-defl b{color:var(--ink)}
+.vp-stchip{display:inline-flex;align-items:center;gap:6px;margin-left:8px;font-size:12px;font-weight:800;padding:3px 10px 3px 8px;border-radius:999px;background:var(--line-soft);color:var(--ink-soft)}
+.vp-stchip i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.vp-st-bad{background:var(--tint-red);color:var(--tint-red-fg)}.vp-st-warn{background:var(--tint-amber);color:var(--tint-amber-fg)}.vp-st-ok{background:var(--tint-green);color:var(--tint-green-fg)}
+.vp-tnote{font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:-2px 0 5px}
+.vp-diff .vp-defh{flex-wrap:wrap;gap:6px}.vp-vs{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:1px 6px;border-radius:999px;background:var(--line-soft)}
 .vp-bars{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px}
 .vp-bar{display:flex;flex-direction:column;align-items:center;gap:2px;font-style:normal}
 .vp-bar i{display:block;width:100%;max-width:34px;border-radius:6px 6px 2px 2px;min-height:4px;align-self:center}
@@ -1187,7 +1302,7 @@ textarea.vp-in{resize:vertical;line-height:1.5}
 @media (max-width:820px){
   #view-vpcockpit{padding:10px 10px 30px}
   .vp-hero{padding:20px 18px 18px;border-radius:18px}.vp-doors{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .vp-pulse{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.vp-tv{font-size:24px}
+  .vp-pulse{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.vp-tv{font-size:24px}.vp-tbiz .vp-tv-long{font-size:18px}
   .vp-jump{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.vp-jump button{white-space:nowrap}
   .vp-twrs{grid-template-columns:repeat(2,minmax(0,1fr))}
   .vp-sec{padding:14px 14px 16px;border-radius:16px}

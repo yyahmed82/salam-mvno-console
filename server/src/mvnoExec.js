@@ -73,12 +73,14 @@ async function execRaw(q, { homeKpis, boardNow, segment }) {
   const to = nowIso, from = new Date(now.getTime() - days * D).toISOString(), from24 = new Date(now.getTime() - D).toISOString();
   const segWhere = segment.sqlWhere('a', 'rule_key', 'mvno');
 
-  const [h, roll, errDays, errCats, errCatDays, err24, bud, alerts, radar, snaps] = await Promise.all([
+  const [h, roll, errDays, errCats, errCatDays, err24, bud, alerts, sevRows, radar, snaps] = await Promise.all([
     homeKpis(nowIso, from24, to),
     safe(C().query(ROLLUP, [from, to]), []), safe(C().query(ERR_DAY, [from, to]), []), safe(C().query(ERR_CAT, [from, to]), []),
     safe(C().query(ERR_CAT_DAY, [from, to]), []), safe(C().query(ERR_24, [from24]), [{ n: 0 }]), budget(),
     safe(C().query(`SELECT a.severity, a.name, a.rule_key, a.team, a.status, a.message, a.observed_value, a.threshold, a.fired_at, a.last_seen_at
                       FROM alerts a WHERE ${segWhere} AND a.rule_key NOT LIKE '%infra\\_%' AND (a.status='open' OR a.fired_at >= $1) ORDER BY a.status='open' DESC, a.fired_at DESC LIMIT 50`, [from]), []),
+    /* severity counts over the whole set — the list above stops at 50 rows (8 Oct 2026) */
+    safe(C().query(`SELECT a.severity, count(*)::int AS n FROM alerts a WHERE ${segWhere} AND a.rule_key NOT LIKE '%infra\\_%' AND (a.status='open' OR a.fired_at >= $1) GROUP BY 1`, [from]), []),
     /* radar: the 12-hour clock face, shared query with Fixed (execRadar.radarRows) */
     execRadar.radarRows('mvno'),
     safe(C().query(SNAP, [['eligibility_deny_rate', 'semati_provider_error_rate', 'otp_verify_rate', 'api_technical_fail_rate']]), []),
@@ -147,7 +149,7 @@ async function execRaw(q, { homeKpis, boardNow, segment }) {
     return { category: key, label: `${c.category}${c.error_code == null ? '' : ' · ' + c.error_code}`, open: last2, total: n(c.total), first_seen: c.first_seen, daysOngoing: Math.max(1, Math.round((now.getTime() - new Date(c.first_seen)) / D)), trend: trendOf(spark), spark, sev: sevOf(last2), href: `#troubleshoot?cls=technical` }; });
 
   // ---- alerts
-  const sev = { P1: 0, P2: 0, P3: 0 }; for (const a of alerts) sev[a.severity] = (sev[a.severity] || 0) + 1;
+  const sev = { P1: 0, P2: 0, P3: 0, ...Object.fromEntries(sevRows.map(x => [x.severity, n(x.n)])) };   // uncapped (the alerts list stops at 50)
   const open = alerts.filter(a => a.status === 'open');
   const alerts24 = alerts.filter(a => new Date(a.fired_at) >= new Date(from24)).length;
 
@@ -184,7 +186,8 @@ async function execRaw(q, { homeKpis, boardNow, segment }) {
     kpis: [
       { key: 'orders', title: 'Orders', value: n(h.orders), sub: `${n(h.checkouts).toLocaleString('en-US')} checkouts · new SIM + MNP`, tone: 'green', delta: { pct: dOrders, good: dOrders >= 0 }, href: '#dashboard', exec: true, window: '24 h' },
       { key: 'payments', title: 'Payment reliability', value: fmtRate(payRelRate), sub: `${n(h.paidOk).toLocaleString('en-US')} settled · ${payStuck == null ? '—' : payStuck.toLocaleString('en-US')} unconfirmed · technical only · target ${payS.targetText}`, tone: payS.status === 'breached' ? 'red' : payS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#troubleshoot?cat=payment_stuck', exec: true, window: '24 h' },   // no delta: dPay is a PAID-VOLUME change, and under a reliability rate it reads as reliability moving. Volume trend lives on Orders and the Payments OK chart.
-      { key: 'activations', title: 'Activation success', value: fmtRate(actRate), sub: `${n(h.actOk).toLocaleString('en-US')} activated · ${actFailEff.toLocaleString('en-US')} failed${clsNote(actCls)} · target ${actS.targetText}`, tone: actS.status === 'breached' ? 'red' : actS.status === 'at_risk' ? 'amber' : 'green', delta: { pct: dAct, good: dAct >= 0 }, href: '#troubleshoot?cat=activation', exec: true, window: '24 h' },
+      /* the delta under the rate is the VOLUME of activations (dAct), so it says so: `of` (alpha.152) — read as the rate moving otherwise */
+      { key: 'activations', title: 'Activation success', value: fmtRate(actRate), sub: `${n(h.actOk).toLocaleString('en-US')} activated · ${actFailEff.toLocaleString('en-US')} failed${clsNote(actCls)} · target ${actS.targetText}`, tone: actS.status === 'breached' ? 'red' : actS.status === 'at_risk' ? 'amber' : 'green', delta: { pct: dAct, good: dAct >= 0, of: 'activations' }, href: '#troubleshoot?cat=activation', exec: true, window: '24 h' },
       { key: 'errors', title: 'Technical errors', value: errors24, sub: `budget ${errS.targetText} — ${errS.status === 'breached' ? 'exceeded' : errS.status === 'at_risk' ? 'near limit' : 'within budget'} · ${n(h.errorsBusiness).toLocaleString('en-US')} business refusals`, tone: errS.status === 'breached' ? 'red' : errS.status === 'at_risk' ? 'amber' : 'green', delta: null, href: '#troubleshoot?cls=technical', exec: true, window: '24 h' },
       { key: 'critical', title: 'Active critical signals', value: critical, sub: `${open.length} open alert(s) · ${sev.P1} P1 · ${sev.P2} P2 · ${sev.P3} P3`, tone: critical ? 'red' : 'green', delta: null, href: '#alerts', exec: true, window: `${days} d` },
       { key: 'revenue', title: 'Daily revenue', value: '—', sub: 'connect the billing feed to activate', tone: 'muted', delta: null, href: null, exec: true, window: '24 h' },
