@@ -262,7 +262,8 @@ async function ensureTable() {
       request_id text, state_id text, platform text, app_version text, duration_ms integer);
     CREATE INDEX IF NOT EXISTS idx_fixed_app_events_ts ON fixed_app_events (ts DESC);
     CREATE INDEX IF NOT EXISTS idx_fixed_app_events_kind_ts ON fixed_app_events (kind, ts DESC);
-    CREATE INDEX IF NOT EXISTS idx_fixed_app_events_req_fail ON fixed_app_events (request_id) WHERE ok IS FALSE AND request_id IS NOT NULL;`);
+    CREATE INDEX IF NOT EXISTS idx_fixed_app_events_req_fail ON fixed_app_events (request_id) WHERE ok IS FALSE AND request_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_fixed_app_events_state ON fixed_app_events (state_id) WHERE state_id IS NOT NULL;`);   /* journey lookups (fixedJourneyDone, alpha.169) */
   _tableOk = true;
 }
 const WM_KEY = 'fixed_applog_watermarks';

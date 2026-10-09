@@ -22,6 +22,8 @@ const CFG = {
   enabled: process.env.AGENT_LEADS_ENABLED !== '0',
   intervalMin: Math.max(2, Number(process.env.AGENT_LEADS_INTERVAL_MIN) || 10),
   maxPerTick: Math.max(1, Number(process.env.AGENT_LEADS_MAX_PER_TICK) || 150),   // rules are cheap: a first harvest of a month of stopped journeys is scored in a few ticks
+  /* leads never scored on top of that, by the rules only — a catch-up of thousands is scored in a few ticks, not hours (alpha.170) */
+  backlogPerTick: Math.max(0, Number(process.env.AGENT_LEADS_BACKLOG_PER_TICK ?? 850)),
   maxModelPerTick: Math.max(0, Number(process.env.AGENT_LEADS_MAX_MODEL_PER_TICK ?? 6)),
   briefHour: Number.isFinite(Number(process.env.AGENT_LEADS_BRIEF_HOUR)) ? Number(process.env.AGENT_LEADS_BRIEF_HOUR) : 8,
 };
@@ -60,6 +62,18 @@ function bestHours(h) {
 
 /* ------------------------------------------------------------------ the rules */
 const BASE = { payment: 72, otp: 66, appointment: 62, stock: 60, price: 56, identity: 55, lead_stale: 52, campaign: 48, rejected_install: 50, lead_rejected: 45, abandoned: 42, coverage: 36, early: 30 };
+/* the temperature bands — the Leads page explains them from here (meta.scoring), so the definition and the code cannot drift */
+const BANDS = { hot: 70, warm: 45 };
+const tempOf = score => score >= BANDS.hot ? 'hot' : score >= BANDS.warm ? 'warm' : 'cold';
+const ADJUST = [
+  'Recency: +15 when the customer stopped less than a day ago, +8 under 3 days, −10 after 14 days, −20 after 30.',
+  'Already a Salam Mobile customer: +10. Ordered Salam fiber before (not a new acquisition): −15. An earlier lead for this person was lost: −8.',
+  'Came back several times: +5 for each extra journey, up to +15.',
+  '3 calls without an answer: −10. Interested, offer made or call back agreed: +12.',
+  'How similar leads ended (same reason and product, last 120 days) compared with all leads: up to ±12.',
+  'The score stays between 5 and 98. When Agent 2\'s model rewrites the advice it may refine the score with the team\'s history, on the same scale.',
+];
+function scoring() { return { bands: BANDS, base: Object.entries(BASE).sort((a, b) => b[1] - a[1]).map(([cls, points]) => ({ cls, label: S.REASON_LABEL[cls] || cls, points })), defaultBase: 45, adjust: ADJUST }; }
 const PITCH = {
   payment: { en: 'You were one step from finishing your order — I can complete it with you now, it takes two minutes.', ar: 'كنت على بعد خطوة من إتمام طلبك — أقدر أكمله معك الحين، ياخذ دقيقتين بس.',
     points: ['They tried to pay: intent is high — confirm the plan and finish the order on SDA while on the call.', 'Ask whether the card step failed or they hesitated; offer to place it for them.', 'Remind them installation is booked as soon as the order is in.'] },
@@ -129,7 +143,7 @@ function rules(desk, L, h) {
   const sim = similar(h, L);
   if (sim.n >= 5 && h.overall.rate != null) { const delta = (sim.rate - h.overall.rate) * 60; score += Math.max(-12, Math.min(12, delta)); why.push(`similar leads: ${sim.won}/${sim.n} won`); }
   score = Math.max(5, Math.min(98, Math.round(score)));
-  const temp = score >= 70 ? 'hot' : score >= 45 ? 'warm' : 'cold';
+  const temp = tempOf(score);
   const path = offerPath(desk, L);
   /* standard plans only (5G, or fiber ordered before): no line may promise the OCU discount or a "special offer" */
   const stdOnly = path.length === 1 && path[0] === 'STD';
@@ -185,7 +199,7 @@ function check(desk, L, j, base) {
   const keep = t => !(stdOnly && PROMISES(t));
   const pts2 = pts.map(clean).filter(keep), obj2 = obj.map(o => keep(o.answer) ? o : { objection: o.objection, answer: STD_ANSWER });
   const oe = clean(str(j.opener_en, 300)), oa = clean(str(j.opener_ar, 300));
-  return { score, temp: score >= 70 ? 'hot' : score >= 45 ? 'warm' : 'cold', offer_path: path,
+  return { score, temp: tempOf(score), offer_path: path,
     opener_en: (keep(oe) && oe) || base.opener_en, opener_ar: (keep(oa) && oa) || base.opener_ar,
     points: pts2.length ? pts2 : base.points, objections: obj2.length ? obj2 : base.objections,
     best_time: str(j.best_time, 80) || base.best_time, next_action: str(j.next_action, 140) || base.next_action, why: clean(str(j.why, 300)) || base.why };
@@ -238,8 +252,9 @@ async function tick({ limit } = {}) {
     run = (await C().query(`INSERT INTO agent_runs (agent) VALUES ('leads') RETURNING id`)).rows[0].id;
     const rows = (await C().query(`SELECT l.id, l.status, l.attempts, l.offer_code, l.offer_months, l.updated_at, l.next_action_at, a.sig, a.at AS advised_at
         FROM fixed_leads l LEFT JOIN fixed_lead_advice a ON a.lead_id = l.id
-       WHERE l.status = ANY($1) ORDER BY (a.lead_id IS NULL) DESC, l.occurred_at DESC LIMIT 400`, [S.OPEN])).rows;
-    const todo = rows.filter(r => !r.sig || r.sig !== sig(r)).slice(0, limit || CFG.maxPerTick);
+       WHERE l.status = ANY($1) ORDER BY (a.lead_id IS NULL) DESC, l.occurred_at DESC LIMIT ${Math.max(400, CFG.maxPerTick + CFG.backlogPerTick + 50)}`, [S.OPEN])).rows;
+    const need = rows.filter(r => !r.sig || r.sig !== sig(r)), cap = limit || CFG.maxPerTick;
+    const todo = need.slice(0, cap).concat(limit ? [] : need.slice(cap).filter(r => !r.sig).slice(0, CFG.backlogPerTick));   // never scored: rules only, beyond the cap
     stats.checked = todo.length;
     let modelLeft = CFG.maxModelPerTick;
     for (const r of todo) {
@@ -285,7 +300,15 @@ async function figures() {
 async function maybeBrief(force) {
   if (!force && S.ksaHour() < CFG.briefHour) return null;
   const day = S.ksaDay();
-  if (!force) { const done = await C().query(`SELECT 1 FROM agent_reports WHERE kind = 'leads-brief' AND period_start = $1::date LIMIT 1`, [day]).catch(() => ({ rowCount: 1 })); if (done.rowCount) return null; }
+  if (!force) {
+    const done = await C().query(`SELECT summary FROM agent_reports WHERE kind = 'leads-brief' AND period_start = $1::date ORDER BY created_at DESC LIMIT 1`, [day]).catch(() => ({ rowCount: 1, rows: [{ summary: { pipe: { open: 1 } } }] }));
+    if (done.rowCount) {
+      /* today's brief stands — unless it was written over an empty desk (go-live day, 14:03) and the desk has leads now (alpha.170) */
+      if (S.n(((done.rows[0].summary || {}).pipe || {}).open) > 0) return null;
+      const now = await C().query(`SELECT count(*)::int AS n FROM fixed_leads WHERE status = ANY($1)`, [S.OPEN]).catch(() => ({ rows: [{ n: 0 }] }));
+      if (!S.n(now.rows[0].n)) return null;
+    }
+  }
   const f = await figures(); const y = f.yday, p = f.pipe;
   /* nothing to say → no brief (alpha.167: on go-live day it wrote "a quiet day, a fresh start" over an empty desk at 14:03) */
   if (!force && !S.n(p.open) && !S.n(y.calls) && !S.n(y.won) && !S.n(p.new_today)) return null;
@@ -304,7 +327,7 @@ async function maybeBrief(force) {
   await C().query(`INSERT INTO agent_reports (kind, period_start, period_end, summary, narrative, mailed_to) VALUES ('leads-brief', $1::date, $1::date, $3, $2, 0)`, [day, text, JSON.stringify(f)]).catch(e => log('brief insert', e.message));
   return { day, chars: text.length };
 }
-async function lastBrief() { try { const r = await C().query(`SELECT created_at, narrative FROM agent_reports WHERE kind = 'leads-brief' ORDER BY created_at DESC LIMIT 1`); return r.rows[0] || null; } catch (_) { return null; } }
+async function lastBrief() { try { const r = await C().query(`SELECT created_at, narrative, summary FROM agent_reports WHERE kind = 'leads-brief' ORDER BY created_at DESC LIMIT 1`); return r.rows[0] || null; } catch (_) { return null; } }
 
 function start() {
   if (!CFG.enabled) { log('disabled (AGENT_LEADS_ENABLED=0) — idle'); return; }
@@ -312,4 +335,4 @@ function start() {
   setTimeout(() => tick().catch(e => log(e.message)), 75000); setInterval(() => tick().catch(e => log(e.message)), CFG.intervalMin * 60000);
 }
 
-module.exports = { start, tick, adviseOne, rules, history, offerPath, maybeBrief, lastBrief, figures, CFG, sig };
+module.exports = { start, tick, adviseOne, rules, history, offerPath, maybeBrief, lastBrief, figures, CFG, sig, scoring, BANDS };

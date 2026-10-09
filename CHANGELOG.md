@@ -1,3 +1,63 @@
+## 2.0.0-alpha.170 — 2026-10-09
+
+- **Fixed › Leads — customer names from every Salam record, when the journey has none.** The website and the Salam Home app check the identity (Yakeen) only after payment (nexus `ePurchaseCustomerProfileVerification`), so a customer who stopped at payment or before left no name in the journey: the unmasked list read "Name not in the source". The name is now looked for, same person only (the national id), names only, in this order:
+  - the journey: its customer block, or the verification's stored Yakeen copy (kept even when a later step failed);
+  - the Salam Home / e-purchase account with this national id (nexus `users`);
+  - Salam Fixed BSS: the "does this id exist" answer the journey itself logged (nexus `api_logs` · `salamchecknid` · custName);
+  - Salam Mobile: the person's latest MVNO order (`onboarding_orders.customer_name`).
+  - New leads are looked up at harvest; the leads already on the desk once each, 1,000 a pass (open and nameless first). The list keeps only the mask; reveal and unmask read it live and say where it came from ("from Salam Mobile"). With no record anywhere: "No name in Salam's records", with why on hover.
+  - Reveal and unmask also show the e-mail the customer gave (on hover in the list, in full in the drawer) and the language. Every row shows **English** when the customer chose English, and **Salam Fixed customer** when BSS already knows the person (no personal data).
+  - A source that is not readable (a missing grant) is skipped and named once in the log; the harvest never stops for it.
+- **Temperature explained.** **How temperature works** above the table opens the definition: Hot 70–98 (call first), Warm 45–69 (call today), Cold below 45 (lower odds), Not scored (new — within 10 minutes). It also shows how Agent 2 builds the score: where the customer stopped (Payment 72 … Left early 30), recency, the Salam relationship, repeat journeys, calls and status, how similar leads ended. The bands and the weights come from the coach's own code, so the page and the scoring cannot drift. The chips, the Temp header and each score say the same on hover.
+- **Scoring catches up in minutes.** On top of the 150 new or changed leads a tick, Agent 2 now scores up to 850 leads that have never been scored, by the rules only (`AGENT_LEADS_BACKLOG_PER_TICK`). After the 9 Oct catch-up, 1,820 leads were waiting; the backlog clears in about two ticks.
+- **The greeting and a supervisor's view.**
+  - The greeting card used the e-mail's first letter for a super admin who is not on the OCU desk ("Y"). It now uses the person's name.
+  - A supervisor or super admin who works no queue sees the team's day: calls, reached and won today, open leads, call-backs overdue, team won today and this week, first-call SLA. They also open on **Team**, not on an empty My queue.
+  - Supervisors can reveal a pool lead from the drawer without taking it.
+- **Team brief:** a brief written over an empty desk (go-live day, 14:03: "yesterday was a quiet day…") is no longer shown once the desk has leads, and Agent 2 writes today's again on its next tick.
+- **Check:** `leads-check.cjs` adds where the names came from (journey · account · BSS · Salam Mobile · none), the language chosen, how many people BSS already knows, and the leads still waiting for a score.
+- **Code:** `fixedLeadsHarvest.js` (name look-up, backfill, language, BSS flag), `fixedLeads.js` (one contact reader for reveal and unmask, scoring definition, board), `fixedLeadsCoach.js` (bands, backlog scoring, brief), `fixed-leads.js`, `server/scripts/leads-check.cjs`, `deploy152/env.template`, `index.html` (cache key).
+
+## 2.0.0-alpha.169 — 2026-10-09
+
+- **Fixed alerts count customer journeys, and an order that went through is never a trigger.** Asked on the P1 "Epurchase · traffic collapsed (silent outage)" and journey wf_st_onnp2jwwbflv, where checkPayment failed "Invalid order state" three times, then confirmOtp and reviewOrder succeeded and the order was placed.
+  - **One unit = one journey.** In the app log that is the workflow id (`state_id`), else the request; on the error board it is the attempt, else the event. A customer retrying a failing step ten times counts once.
+  - **Order processed = errors to review.** A journey whose order was processed comes out of every failure count and is listed in the incident text as "N more journeys had errors but the order was processed — errors to review, not counted". The case export keeps those rows, flagged in a new column "Order processed", and does not count them.
+  - **How "processed" is known.** Either the read model says `order_attempts.outcome = COMPLETED` (prod and beta), or the app log shows the journey's final step succeeding: Epurchase `reviewOrder`, SDA `submitOrder` / `reviewOrder`. Epurchase `submitOrder` is not final (summary, payment and OTP follow) and is not used. `FIXED_DONE_STEPS` replaces the list.
+  - **Journeys still in progress count.** Their outcome is not known yet; when one completes, the next tick takes it out and the rule recovers on its own.
+  - **One exception, kept on purpose.** "Paid, BSS not notified" and "provision, no order" still count on a completed journey, because reaching the last screen does not prove BSS received the money. A payment failure followed by a successful payment and order is not counted.
+  - **Rules changed:**
+    - app-step failure rate per channel × class;
+    - OTP / verification and payment / checkout rates;
+    - technical and business anomaly: z on journeys per signature, excess guard 10 / 25 journeys (was 20 / 40 lines), min sample 10 / 25;
+    - new error never seen before: ≥ 3 unprocessed journeys (was 5 lines);
+    - provider and Yakeen technical rates;
+    - board technical / business rate, anomaly (hourly rollup re-built in journeys, newest day first) and paid-but-stuck;
+    - error spike (P0/P1 categories);
+    - dealer timeout wave / storm.
+  - Every rule now carries `customers` (journeys hit) and `customers_total` (journeys seen), so the incident reads "· N customers".
+- **Traffic collapse compares like with like.**
+  - **What went wrong:** the rule counted log lines against the 7-day median of the same clock hour, mixing weekdays into Fridays. At 15:00 KSA, Epurchase has 64–85 journeys on a Friday and 200–330 on a weekday, so a normal Friday afternoon fired the P1.
+  - **What it counts now:**
+    - distinct journeys for Epurchase and SDA;
+    - distinct requests for the Salam Home app, whose lines carry almost no workflow id.
+  - **Baseline:** the median of the same trailing 60 minutes on the same KSA day type (Fri/Sat or Sun–Thu) over the last 4 weeks. It needs at least 3 such days and a week of history. A past window where the collector saw nothing is a gap, not a zero.
+- **Census section 18** (`deploy152/fixed-alerts-review.cjs --only 18`) replays the rate rules per journey with processed orders left out, and shows:
+  - p50 / p95 / p99 per channel;
+  - breach hours and episodes per rule at its current threshold;
+  - the journeys "to review";
+  - board errors by journey outcome (the corrected Q7);
+  - the traffic-collapse rule replayed on the day-type baseline.
+  Thresholds stay as they were until this replay has been read.
+- **Code:**
+  - `server/src/fixedJourneyDone.js` (new: unit, processed-order check, base set and live lookup);
+  - `fixedChannelMetrics.js`;
+  - `fixedMetrics.js`;
+  - `alertCases.js` ("Order processed" column);
+  - `seedRules.js` (descriptions, anomaly samples);
+  - `fixedAppLogCollector.js` (index on `state_id`);
+  - `deploy152/fixed-alerts-review.cjs`.
+
 ## 2.0.0-alpha.168 — 2026-10-09
 
 - **Fixed › Leads — the lists are a table.** My queue, Team pool, Team and Closed show one lead per row: temperature (Agent 2's score, red hot · amber warm · blue cold, also as a bar on the row's edge), customer (masked name and number, city, Salam Mobile / ordered before / lost before / number of journeys), product, plan, plan type, channel, reason (the class as a coloured chip, what happened underneath), age, status (calls, call-back due or overdue, outcome), owner (Team and Closed) and the action (Take in the pool, Work / Open elsewhere).

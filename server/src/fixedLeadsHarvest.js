@@ -44,13 +44,70 @@ function sourceOf(channel, nexusChannel, referral) {
   if (nc === 'SDA' || c === 'sda') return 'sda';
   return 'epurchase';
 }
-/* the customer block of a journey: Yakeen's names (individuals) — other keys and a business's registered name as a fallback (alpha.168) */
-const nameOf = c => {
-  if (!c || typeof c !== 'object') return '';
-  const s = v => typeof v === 'string' ? v.trim() : '';
-  const p = [s(c.englishFirstName) || s(c.firstName) || s(c.first_name), s(c.englishLastName) || s(c.lastName) || s(c.last_name) || s(c.familyName)].filter(Boolean).join(' ');
-  return p || s(c.fullName) || s(c.englishFullName) || s(c.customerName) || s(c.name) || s(c.crName) || s(c.companyName);
-};
+/* the names in a customer block: Yakeen's (individuals; English and Arabic), else other keys and a business's registered name */
+function pickNames(c) {
+  if (!c || typeof c !== 'object') return null;
+  const s = v => typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '';
+  const en = [s(c.englishFirstName), s(c.englishLastName)].filter(Boolean).join(' ') || s(c.englishFullName) || s(c.fullName) || s(c.customerName) || s(c.name) || s(c.crName) || s(c.companyName);
+  const ar = [s(c.firstName) || s(c.first_name), s(c.lastName) || s(c.last_name) || s(c.familyName)].filter(Boolean).join(' ');
+  return en || ar ? { en: en || null, ar: ar && ar !== en ? ar : null } : null;
+}
+const nameOf = c => { const n = pickNames(c); return n ? (n.en || n.ar) : ''; };
+const byScript = (nm, from) => /[A-Za-z]/.test(nm) ? { en: nm, ar: null, from } : { en: null, ar: nm, from };
+/* alpha.170 — where a customer's name is, when the journey has none. The website and the Salam Home app check the identity
+ * (Yakeen) only AFTER payment (ePurchaseCustomerProfileVerification), so a customer who stopped before it left no name in the
+ * journey. In order, exact person only (same national id), names only — nothing else of these records is read:
+ *   1. the journey: the customer block, or the verification's stored Yakeen copy (kept even when a later step failed);
+ *   2. the Salam Home / e-purchase account with this national id (nexus users);
+ *   3. Salam Fixed BSS: the "does this id exist" answer the journey itself logged (api_logs salamchecknid · custName);
+ *   4. Salam Mobile: the person's latest MVNO order (onboarding_orders.customer_name).
+ * items: [{ key, customer, yk, nid, journey }] → Map(key → { en, ar, from: journey | account | bss | mobile }) */
+let nxUsers = true, nxLogs = true;
+async function namesFor(items) {
+  const out = new Map(); let need = [];
+  for (const it of items) { const n = pickNames(it.customer) || pickNames(it.yk); if (n) out.set(it.key, { ...n, from: 'journey' }); else need.push(it); }
+  const nidsOf = list => [...new Set(list.map(i => i.nid).filter(Boolean))];
+  if (need.length && db.nexus && nxUsers && nidsOf(need).length) {
+    try {
+      const r = await db.nexus.query(`SELECT national_id, first_name, last_name, english_first_name, english_last_name FROM users WHERE national_id = ANY($1::text[])`, [nidsOf(need)]);
+      const m = new Map(r.rows.map(u => [u.national_id, pickNames({ englishFirstName: u.english_first_name, englishLastName: u.english_last_name, firstName: u.first_name, lastName: u.last_name })]));
+      need = need.filter(it => { const n = it.nid && m.get(it.nid); if (n) { out.set(it.key, { ...n, from: 'account' }); return false; } return true; });
+    } catch (e) { if (/permission denied|does not exist/i.test(e.message)) { nxUsers = false; log('names: nexus users not readable — ' + e.message.slice(0, 80)); } else throw e; }
+  }
+  if (need.length && db.nexus && nxLogs) {
+    const js = [...new Set(need.map(i => i.journey).filter(Boolean))];
+    for (let i = 0; i < js.length && need.length; i += 200) {
+      try {
+        const r = await db.nexus.query(`SELECT DISTINCT ON (workflow_state_id) workflow_state_id AS j, response FROM api_logs WHERE workflow_state_id = ANY($1::text[])
+            AND endpoint ~* 'salamchecknid' AND status BETWEEN 200 AND 299 ORDER BY workflow_state_id, created_at DESC`, [js.slice(i, i + 200)]);
+        const m = new Map();
+        for (const x of r.rows) { let j = x.response; if (typeof j === 'string') { try { j = JSON.parse(j); } catch (_) { j = null; } }
+          const nm = j && j.isExist === 'Y' && j.cust && typeof j.cust.custName === 'string' ? j.cust.custName.replace(/\s+/g, ' ').trim() : ''; if (nm) m.set(x.j, nm); }
+        need = need.filter(it => { const nm = it.journey && m.get(it.journey); if (nm) { out.set(it.key, byScript(nm, 'bss')); return false; } return true; });
+      } catch (e) { if (/permission denied|does not exist/i.test(e.message)) { nxLogs = false; log('names: nexus api_logs not readable — ' + e.message.slice(0, 80)); break; } else throw e; }
+    }
+  }
+  if (need.length && db.source && nidsOf(need).length) {
+    try {
+      const r = await db.source.query(`SELECT DISTINCT ON (nationality_id_number) nationality_id_number AS nid, customer_name FROM onboarding_orders
+          WHERE nationality_id_number = ANY($1::text[]) AND coalesce(customer_name, '') <> '' ORDER BY nationality_id_number, created_at DESC`, [nidsOf(need)]);
+      const m = new Map(r.rows.map(x => [String(x.nid), String(x.customer_name).replace(/\s+/g, ' ').trim()]));
+      need = need.filter(it => { const nm = it.nid && m.get(it.nid); if (nm) { out.set(it.key, byScript(nm, 'mobile')); return false; } return true; });
+    } catch (e) { log('names: Salam Mobile orders not readable — ' + e.message.slice(0, 80)); }
+  }
+  return out;
+}
+/* the leads of a pass (or the backfill) that still have no name: look them up once, keep the mask and where it came from */
+async function nameFill(list, stats) {
+  if (!list.length) return 0;
+  const got = await namesFor(list.map(x => ({ key: x.id, customer: x.customer, yk: x.yk, nid: x.nid, journey: x.journey })));
+  const rows = list.map(x => { const g = got.get(x.id); return { id: x.id, mask: g ? S.maskName(g.en || g.ar) : null, nm: g ? g.from : 'none', lang: x.lang || null, bss: x.bss || (g && g.from === 'bss') ? true : null }; });
+  for (let i = 0; i < rows.length; i += 1000) {
+    await C().query(`UPDATE fixed_leads l SET customer_mask = coalesce(l.customer_mask, x.mask), facts = l.facts || jsonb_strip_nulls(jsonb_build_object('nm', x.nm, 'lang', x.lang, 'bss', x.bss))
+      FROM jsonb_to_recordset($1::jsonb) AS x(id bigint, mask text, nm text, lang text, bss boolean) WHERE l.id = x.id`, [JSON.stringify(rows.slice(i, i + 1000))]);
+  }
+  const named = rows.filter(r => r.mask).length; stats.names = (stats.names || 0) + named; return named;
+}
 const iso = v => { if (!v) return null; const d = v instanceof Date ? v : new Date(v); return isNaN(d) ? null : d.toISOString(); };
 
 /* ------------------------------------------------------------------ harvest state */
@@ -76,7 +133,8 @@ async function nexusRows(ids) {
     const r = await nxQuery(() => `SELECT id, workflow_id, channel::text AS channel, current_step, plan_id, ${ptCols()}, created_at, expires_at, updated_at,
         context->'customer' AS customer, context->'customerLocation' AS loc, context->>'referralCode' AS ref,
         coalesce(context->>'provider', context->'customer'->'address'->>'provider') AS provider, context->'invoice'->>'status' AS invoice,
-        context->'nafath'->'customer'->>'status' AS nafath, context->>'leadId' AS lead_id, context->'order'->>'orderNbr' AS order_nbr
+        context->'nafath'->'customer'->>'status' AS nafath, context->>'leadId' AS lead_id, context->'order'->>'orderNbr' AS order_nbr,
+        context->'storedYakeenCustomer' AS yk, context->>'customerCode' AS cust_code
       FROM workflow_states WHERE id = ANY($1::text[])`, [part]);
     for (const x of r.rows) out.set(x.id, x);
   }
@@ -194,14 +252,14 @@ async function fromReadModel(desk, st, stats) {
   const todo = rows.filter(x => { const k = known.get(x.id); if (k === undefined) return true; if (k) return false; return x.outcome === 'COMPLETED'; });
   if (!todo.length) return;
   const nx = await nexusRows(todo.map(x => x.id)).catch(e => { stats.errors.push('nexus: ' + e.message.slice(0, 140)); return new Map(); });
-  const fresh = [];
+  const fresh = [], noName = [];
   for (const a of todo) {
     const x = nx.get(a.id) || null;
     const wf = (x && x.workflow_id) || a.workflow, planId = (x && x.plan_id) || a.plan_id;
     const product = productOf(wf, planId, a.plan);
     const cust = (x && x.customer && typeof x.customer === 'object') ? x.customer : {};
     const nid = S.normNid(cust.id || a.customer_id), mob = S.normMobile(cust.mobilePhone);
-    const idn = S.identity({ name: nameOf(cust), mobile: mob, nid });
+    const idn = S.identity({ name: nameOf(cust) || nameOf(x && x.yk), mobile: mob, nid });
     const referral = (x && x.ref) || a.referral_code;
     const source = sourceOf(a.channel, x && x.channel, referral);
     const completed = a.outcome === 'COMPLETED' || (x && isDone(x.current_step));
@@ -239,14 +297,16 @@ async function fromReadModel(desk, st, stats) {
       dealer: source === 'sda' ? (a.dealer_code || a.staff_code || null) : referral || null, region: a.region || null, city: (cust.address && cust.address.city) || null,
       step: jr.step, step_label: stepLabel(jr.step, wf), reason: why.text, reason_class: why.cls, ...idn,
       facts: { attempts: 1, invoice: (x && x.invoice) || null, nafath: (x && x.nafath) || a.nafath_outcome || null, provider: (x && x.provider) || null, error: a.last_error_category || null,
-        journey: a.id, workflow: wf, expired_at: iso(x && x.expires_at), staff: a.staff_code || null, pt: x ? 'nexus' : (pt.src || 'none'), period: (x && x.period) ? String(x.period).slice(0, 4) : null },
+        journey: a.id, workflow: wf, expired_at: iso(x && x.expires_at), staff: a.staff_code || null, pt: x ? 'nexus' : (pt.src || 'none'), period: (x && x.period) ? String(x.period).slice(0, 4) : null,
+        lang: ['ar', 'en'].includes(cust.language) ? cust.language : null, bss: x && x.cust_code ? true : null, nm: idn.customer_mask ? 'journey' : null },
       occurred_at: a.started_at, stopped_at: (x && x.expires_at) || null };
     delete L.has_mobile; L.has_mobile = true;
     const id = await insertLead(L);
     jr.lead_id = id; await recordJourney(jr);
-    if (id) { stats.created++; fresh.push({ id, nid, mob, idn, ref: a.id }); }
+    if (id) { stats.created++; fresh.push({ id, nid, mob, idn, ref: a.id }); if (!idn.customer_mask) noName.push({ id, journey: a.id, customer: cust, yk: x && x.yk, nid }); }
   }
   await enrich(fresh, stats);
+  await nameFill(noName, stats).catch(e => stats.errors.push('names: ' + e.message.slice(0, 140)));
 }
 /* customer relationship on the new leads: MVNO lines (counts) + what the console saw of this person on the Fixed side */
 async function enrich(fresh, stats) {
@@ -268,7 +328,7 @@ async function fromPromoterLeads(desk, st, stats) {
   /* nexus `leads` (prod, 9 Oct 2026): id, customer_id, staff_id, dealer_code, status (NEW · INPROGRESS · REJECTED · COMPLETED), "leadWorkflowId",
    * created_at, updated_at, rejected_by, reason — about 53 000 rows, nearly all NEW (a promoter's capture nobody updates) */
   const SEL = () => `SELECT l.id, l.customer_id, l.dealer_code, l.status::text AS status, l.reason, l."leadWorkflowId" AS lead_workflow_id, l.created_at, l.updated_at,
-        w.plan_id, ${ptCols('w.')}, w.workflow_id, w.context->'customer' AS customer
+        w.plan_id, ${ptCols('w.')}, w.workflow_id, w.context->'customer' AS customer, w.context->'storedYakeenCustomer' AS yk, w.context->>'customerCode' AS cust_code
       FROM leads l LEFT JOIN workflow_states w ON w.id = l."leadWorkflowId"`;
   const notReadable = e => { if (/does not exist|permission denied/i.test(e.message)) { stats.notes.push('nexus leads table not readable: ' + e.message.slice(0, 80)); return true; } return false; };
   /* 1. what changed since the last pass: rejected by the dealer (a lead) or completed (an order). A pass cut short continues at its last row. */
@@ -290,12 +350,12 @@ async function fromPromoterLeads(desk, st, stats) {
       rows = rows.concat(r2);
     }
   }
-  const fresh = [];
+  const fresh = [], noName = [];
   for (const l of rows) {
     stats.promoter_scanned = (stats.promoter_scanned || 0) + 1;
     const cust = (l.customer && typeof l.customer === 'object') ? l.customer : {};
     const nid = S.normNid(cust.id || l.customer_id), mob = S.normMobile(cust.mobilePhone);
-    const idn = S.identity({ name: nameOf(cust), mobile: mob, nid });
+    const idn = S.identity({ name: nameOf(cust) || nameOf(l.yk), mobile: mob, nid });
     const product = productOf(l.workflow_id === 'promoters' ? '' : l.workflow_id, l.plan_id) || 'ftth';
     const ref = 'L' + l.id;
     if (l.status === 'COMPLETED') {
@@ -326,11 +386,13 @@ async function fromPromoterLeads(desk, st, stats) {
     const id = await insertLead({ source: 'sda_promoter', source_ref: ref, product, workflow: 'promoters', plan_id: l.plan_id, plan_label: label, svc_type: S.svcType(l.workflow_id, l.plan_id, label, product), plan_type: pt.v, channel: 'sda',
       dealer: l.dealer_code || null, step: null, step_label: l.status === 'REJECTED' ? 'Rejected by the dealer' : 'Never picked up', reason: why.text + (l.reason ? ' — ' + String(l.reason).slice(0, 160) : ''),
       reason_class: why.cls, ...idn, facts: { promoterLead: l.id, leadStatus: l.status, dealerReason: l.reason ? String(l.reason).slice(0, 300) : null, journey: l.lead_workflow_id || null,
-        pt: l.plan_type ? 'nexus' : (pt.src || 'none'), period: l.period ? String(l.period).slice(0, 4) : null },
+        pt: l.plan_type ? 'nexus' : (pt.src || 'none'), period: l.period ? String(l.period).slice(0, 4) : null,
+        lang: ['ar', 'en'].includes(cust.language) ? cust.language : null, bss: l.cust_code ? true : null, nm: idn.customer_mask ? 'journey' : null },
       occurred_at: l.created_at, stopped_at: l.updated_at });
-    if (id) { stats.created++; stats.promoter = (stats.promoter || 0) + 1; fresh.push({ id, nid, mob, idn, ref }); }
+    if (id) { stats.created++; stats.promoter = (stats.promoter || 0) + 1; fresh.push({ id, nid, mob, idn, ref }); if (!idn.customer_mask) noName.push({ id, journey: l.lead_workflow_id, customer: cust, yk: l.yk, nid }); }
   }
   await enrich(fresh, stats);
+  await nameFill(noName, stats).catch(e => stats.errors.push('names: ' + e.message.slice(0, 140)));
 }
 
 /* ------------------------------------------------------------------ 3. DashPro (optional, read-only) */
@@ -419,6 +481,32 @@ async function backfill(stats) {
   stats.backfill = { leads: out.length, typed_by_nexus: out.filter(o => o.src === 'nexus').length, not_in_nexus: out.filter(o => o.gone).length, names: out.filter(o => o.mask).length };
 }
 
+/* alpha.170: every lead already on the desk, once (facts.nm): the language the customer chose and whether Salam Fixed BSS knows them
+ * — and for those without a name, the look-up above. 1,000 a pass, open and nameless first. */
+async function backfillNames(stats) {
+  if (!db.nexus) return;
+  const r = await C().query(`SELECT id, source, source_ref, facts->>'journey' AS journey, customer_mask IS NOT NULL AS named FROM fixed_leads
+      WHERE source IN ('epurchase','salamhome','sda','qr','sda_promoter') AND coalesce(facts->>'nm','') = ''
+      ORDER BY (status = ANY($1)) DESC, (customer_mask IS NULL) DESC, id DESC LIMIT 1000`, [S.OPEN]);
+  if (!r.rowCount) return;
+  const refOf = L => L.source === 'sda_promoter' ? L.journey : L.source_ref;
+  const ids = [...new Set(r.rows.map(refOf).filter(Boolean))], nx = new Map();
+  for (let i = 0; i < ids.length; i += 200) {
+    const q = await db.nexus.query(`SELECT id, context->'customer' AS customer, context->'storedYakeenCustomer' AS yk, context->>'customerCode' AS cust_code FROM workflow_states WHERE id = ANY($1::text[])`, [ids.slice(i, i + 200)]);
+    for (const x of q.rows) nx.set(x.id, x);
+  }
+  const named = [], nameless = [];
+  for (const L of r.rows) {
+    const x = nx.get(refOf(L)) || {}; const c = x.customer && typeof x.customer === 'object' ? x.customer : {};
+    const e = { id: L.id, journey: refOf(L) || null, customer: c, yk: x.yk, nid: S.normNid(c.id), lang: ['ar', 'en'].includes(c.language) ? c.language : null, bss: !!x.cust_code };
+    (L.named ? named : nameless).push(e);
+  }
+  const got = await nameFill(nameless, stats);
+  if (named.length) await C().query(`UPDATE fixed_leads l SET facts = l.facts || jsonb_strip_nulls(jsonb_build_object('nm', 'journey', 'lang', x.lang, 'bss', x.bss))
+      FROM jsonb_to_recordset($1::jsonb) AS x(id bigint, lang text, bss boolean) WHERE l.id = x.id`, [JSON.stringify(named.map(e => ({ id: e.id, lang: e.lang, bss: e.bss || null })))]);
+  stats.backfill_names = { leads: r.rowCount, nameless: nameless.length, named_now: got };
+}
+
 /* ------------------------------------------------------------------ the pass */
 let busy = false, lastRun = null;
 async function harvest({ actor } = {}) {
@@ -439,6 +527,7 @@ async function harvest({ actor } = {}) {
     if (desk.sources.sda_promoter) await fromPromoterLeads(desk, st, stats).catch(e => stats.errors.push('promoter leads: ' + e.message.slice(0, 140)));
     if (desk.sources.dashpro && dashConfigured()) await fromDashpro(desk, st, stats).catch(e => stats.errors.push('dashpro: ' + e.message.slice(0, 140)));
     await backfill(stats).catch(e => stats.errors.push('backfill: ' + e.message.slice(0, 140)));
+    await backfillNames(stats).catch(e => stats.errors.push('names: ' + e.message.slice(0, 140)));
     await expire(desk, stats).catch(e => stats.errors.push('expire: ' + e.message.slice(0, 140)));
     /* journeys older than 400 days are no longer needed for history */
     if (Math.random() < 0.05) await C().query(`DELETE FROM fixed_lead_journeys WHERE seen_at < now() - interval '400 days'`).catch(() => {});
@@ -452,6 +541,6 @@ async function harvest({ actor } = {}) {
     return stats;
   } finally { busy = false; lastRun = { at: new Date().toISOString(), stats }; }
 }
-function status() { return { busy, lastRun, readModel: !!db.ops, beta: !!db.opsBeta, nexus: !!db.nexus, nexusPlanType: nxPlanCols, mvno: !!db.source, dashpro: dashConfigured() }; }
+function status() { return { busy, lastRun, readModel: !!db.ops, beta: !!db.opsBeta, nexus: !!db.nexus, nexusPlanType: nxPlanCols, nexusUsers: nxUsers, nexusLogs: nxLogs, mvno: !!db.source, dashpro: dashConfigured() }; }
 
-module.exports = { harvest, status, nexusRows, dashRow, dashConfigured, productOf, sourceOf, insertLead, recordJourney, openLeadOf, resolveWins, mobileRelation, fixedHistory, getState };
+module.exports = { harvest, status, nexusRows, dashRow, dashConfigured, productOf, sourceOf, insertLead, recordJourney, openLeadOf, resolveWins, mobileRelation, fixedHistory, getState, pickNames, namesFor };

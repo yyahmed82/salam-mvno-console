@@ -42,6 +42,8 @@
     x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11H3V10zM7 10l4-8a2.5 2.5 0 0 1 2.5 2.5V9h5.6a2 2 0 0 1 2 2.3l-1.3 8A2 2 0 0 1 17.8 21H7"/></svg>',
     down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V3h4v11zM17 14l-4 8a2.5 2.5 0 0 1-2.5-2.5V15H4.9a2 2 0 0 1-2-2.3l1.3-8A2 2 0 0 1 6.2 3H17"/></svg>',
+    info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+    mail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
     search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
     filter:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>',
     /* products (alpha.168): fiber · 5G, and the type of line — FTTH home, FTTB building, 5G HomeFi router, 5G FWA antenna */
@@ -282,6 +284,23 @@
 .ld-md .bd{padding:16px 20px 6px;font-size:13.5px;line-height:1.55;color:var(--ink)}
 .ld-md .bd p{margin:0 0 10px}.ld-md .bd ul{margin:0 0 6px;padding-left:18px;color:var(--ink-soft,var(--ink))}.ld-md .bd li{margin:3px 0}
 .ld-md .ft{display:flex;gap:8px;justify-content:flex-end;padding:10px 20px 18px;flex-wrap:wrap}
+/* alpha.170: name origin, e-mail, language; the temperature legend */
+.ld-cu.on .nm2.no{font-style:italic;font-weight:600;color:var(--muted);font-size:12px}
+.ld-cu.on .nm2 small.fr{display:block;font-family:inherit;font-weight:700;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-top:1px}
+.ld-mail{display:inline-flex;align-items:center;margin-left:6px;color:var(--muted);cursor:help;vertical-align:-2px}.ld-mail svg{width:13px;height:13px}
+.ld-mini.en{background:var(--tint-violet,#ede9fe);color:var(--tint-violet-fg,#5b21b6)}
+.ld-tb .r2 .lft{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:0}
+.ld-how{color:var(--muted)}.ld-how svg{width:15px;height:15px}
+.ld-how.on{color:var(--green-dark,#0a7a45);border-color:var(--green,#0e9f5a);background:var(--green-bg,#e8f7f0)}
+.ld-leg{border:1px solid var(--line);border-radius:16px;background:var(--card);padding:14px 16px;margin-bottom:10px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px}
+.ld-leg .bands{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ld-leg .b{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line-soft,var(--line));border-radius:12px;padding:10px;background:var(--card2,var(--bg))}
+.ld-leg .b b{display:block;font-size:12.5px;color:var(--ink)}.ld-leg .b p{margin:3px 0 0;font-size:12px;line-height:1.45;color:var(--ink-soft,var(--ink))}
+.ld-leg .how b{font-size:12.5px;color:var(--ink)}
+.ld-leg .base{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:8px 0;font-size:12px;color:var(--muted)}.ld-leg .base>span:first-child{margin-right:3px}
+.ld-leg ul{margin:0;padding-left:18px;font-size:12px;line-height:1.55;color:var(--ink-soft,var(--ink))}
+@media (max-width:1100px){.ld-leg{grid-template-columns:1fr}}
+@media (max-width:700px){.ld-leg .bands{grid-template-columns:1fr}.ld-how span{display:none}.ld-tb .r2 .lft{flex-wrap:nowrap}.ld-tb .r2 .lft .ld-seg{flex:1;min-width:0}}
 /* a lead as a card (phone, iPad upright) */
 .ld-cd .h{display:flex;gap:10px;align-items:flex-start}
 .ld-cd .h .w{flex:1;min-width:0}
@@ -311,7 +330,8 @@
   .ld-fx{display:none}
   .ld-fx.open{display:grid;grid-template-columns:1fr 1fr;gap:7px}
   .ld-fx .ld-sel{max-width:none;width:100%}
-  .ld-tb .r2{flex-direction:column;align-items:stretch;gap:8px}
+  .ld-tb .r2{flex-direction:column;align-items:stretch;gap:8px;flex-wrap:nowrap}
+  .ld-tb .r2>*{min-width:0;max-width:100%}
   .ld-seg{overflow-x:auto;scrollbar-width:none;max-width:100%}.ld-seg::-webkit-scrollbar{display:none}
   .ld-seg button{padding:6px 9px}
   .ld-meta{justify-content:space-between}
@@ -454,7 +474,7 @@
     for(let i=0;i<90;i++){ const p=document.createElement("i"); p.style.left=Math.random()*100+"vw"; p.style.background=cols[i%cols.length]; p.style.animationDelay=(Math.random()*0.5)+"s"; p.style.animationDuration=(1.8+Math.random()*1.4)+"s"; p.style.transform=`rotate(${Math.random()*360}deg)`; c.appendChild(p); }
     document.body.appendChild(c); setTimeout(()=>c.remove(),3600); }
   const me=()=>((window.opsSession&&window.opsSession())||{}).me||{};
-  const first=s=>String(s||"").split(/[\s@.]+/)[0].replace(/^./,c=>c.toUpperCase());
+  const first=s=>{ const w=String(s||"").split("@")[0].split(/[\s._-]+/).filter(Boolean); const x=w.find(t=>t.length>1)||w[0]||""; return x.replace(/^./,c=>c.toUpperCase()); };
   const scoreBox=L=>`<div class="sc ${L.temp||"none"}" title="${L.score!=null?"Agent 2 score "+L.score+" · "+(L.temp||""):"not scored yet"}">${L.score!=null?L.score:"–"}<small>${L.temp||"new"}</small></div>`;
   const prodChip=L=>`<span class="ld-chip ${L.product==="5g"?"g5":"f"}">${esc(PRODUCT[L.product]||L.product)} · ${esc(L.plan_label||"")}</span>`;
   const srcChip=L=>`<span class="ld-chip src">${esc((S.meta&&S.meta.sources[L.source])||L.source)}</span>`;
@@ -519,8 +539,18 @@
     const tw=n(m.targets&&m.targets.dailyWins)||2, tww=n(m.targets&&m.targets.weeklyWins)||10;
     const hour=new Date(Date.now()+3*3600e3).getUTCHours(); const hi=hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
     const ocuN=Math.max(1,(S.meta.members||[]).filter(x=>!x.notOcu).length), teamT=tww*ocuN;
-    el.innerHTML=`<div class="ld-hero">
-      <div class="ld-hi hello"><div class="l">${esc(hi)}</div><div class="v">${esc(first(m.name||m.email))}${m.rank?` · #${m.rank} this week`:""}</div><div class="s">${n(m.pts_week)} points this week · ${n(m.calls_today)} call(s) today · ${n(m.contacts_today)} reached</div></div>
+    const myName=first((me().name)||m.name||m.email);
+    const sup=!!(S.meta.me.manager&&!m.ocu);   /* a supervisor or super admin who works no queue: the team's day, not empty personal counters */
+    const twd=tw*ocuN;
+    el.innerHTML=sup?`<div class="ld-hero">
+      <div class="ld-hi hello"><div class="l">${esc(hi)}</div><div class="v">${esc(myName)}</div><div class="s">Supervisor view · team today: ${n(t.calls_today)} call(s) · ${n(t.contacts_today)} reached · ${n(t.won_today)} won</div></div>
+      <div class="ld-hi"><div class="l">Open leads · team</div><div class="v">${fmt(t.open)}</div><div class="s">${fmt(t.pool)} in the pool · ${fmt(t.hot)} hot</div></div>
+      <div class="ld-hi ${n(t.overdue)?"due":""}"><div class="l">Call-backs overdue</div><div class="v">${fmt(t.overdue)}</div><div class="s">across the team</div></div>
+      <div class="ld-hi"><div class="l">Won today · team</div><div class="v">${n(t.won_today)} <span style="font-size:13px;color:var(--muted);font-weight:700">/ ${twd}</span></div><div class="ld-bar"><i style="width:${Math.min(100,Math.round(n(t.won_today)/Math.max(1,twd)*100))}%"></i></div></div>
+      <div class="ld-hi"><div class="l">Team won · week</div><div class="v">${n(t.won_week_ocu)} <span style="font-size:13px;color:var(--muted);font-weight:700">/ ${teamT}</span></div><div class="ld-bar gold"><i style="width:${Math.min(100,Math.round(n(t.won_week_ocu)/teamT*100))}%"></i></div><div class="s">${t.conv_week!=null?t.conv_week+" % of the leads the team closed":"no lead closed yet this week"}</div></div>
+      <div class="ld-hi"><div class="l">First call · SLA</div><div class="v">${t.first_contact_within!=null?t.first_contact_within+" %":"—"}</div><div class="s">within ${n(t.sla_min)} min this week${t.first_contact_avg_min!=null?" · avg "+t.first_contact_avg_min+" min":""}</div></div>
+    </div>`:`<div class="ld-hero">
+      <div class="ld-hi hello"><div class="l">${esc(hi)}</div><div class="v">${esc(myName)}${m.rank?` · #${m.rank} this week`:""}</div><div class="s">${n(m.pts_week)} points this week · ${n(m.calls_today)} call(s) today · ${n(m.contacts_today)} reached</div></div>
       <div class="ld-hi"><div class="l">My open leads</div><div class="v">${n(m.open)}</div><div class="s">${n(m.untouched)} not called yet · ${n(m.hot)} hot</div></div>
       <div class="ld-hi ${n(m.due)?"due":""}"><div class="l">Call back now</div><div class="v">${n(m.due)}</div><div class="s">due within 15 min or overdue</div></div>
       <div class="ld-hi"><div class="l">Won today</div><div class="v">${n(m.won_today)} <span style="font-size:13px;color:var(--muted);font-weight:700">/ ${tw}</span></div><div class="ld-bar"><i style="width:${Math.min(100,Math.round(n(m.won_today)/tw*100))}%"></i></div></div>
@@ -543,6 +573,12 @@
    * plan type, channel, reason, age, status, owner; sortable headers; each filter shows its counts (the other filters applied); pages of
    * 50 / 100 / 200; the same lead becomes a card on a phone or an iPad held upright (td.c-card, shown under 980 px). */
   const TEMP_LABEL={hot:"Hot",warm:"Warm",cold:"Cold"};
+  /* where a shown name came from (alpha.170) — the journey's own is not labelled */
+  const NAME_FROM={ account:"the Salam Home account", bss:"Salam Fixed (BSS)", mobile:"Salam Mobile", import:"the imported list", dashpro:"DashPro" };
+  const NO_NAME="The website and the Salam Home app ask for the identity (Yakeen) only after payment — this customer stopped before it, and no Salam Home account, Salam Fixed or Salam Mobile record carries the name";
+  /* the temperature bands, from the coach's own code (meta.scoring) */
+  const bands=()=>((S.meta&&S.meta.scoring&&S.meta.scoring.bands)||{hot:70,warm:45});
+  const TEMP_TIP={ hot:()=>`Hot — score ${bands().hot} and above: call first`, warm:()=>`Warm — score ${bands().warm} to ${bands().hot-1}: call today`, cold:()=>`Cold — score below ${bands().warm}: lower odds`, none:()=>"Not scored yet — Agent 2 scores new and changed leads every 10 minutes" };
   /* contacts on screen (alpha.168): S.shown holds { name, mobile, tel, until, how: reveal | unmask } per lead id, in memory only */
   const shownOf=id=>{ const x=S.shown.get(String(id)); return x&&x.until>Date.now()?x:null; };
   const mmss=ms=>{ const t=Math.max(0,Math.round(ms/1000)); return Math.floor(t/60)+":"+String(t%60).padStart(2,"0"); };
@@ -561,15 +597,18 @@
   const activeFilters=()=>FILTER_KEYS.filter(k=>S.filters[k]&&(k!=="assignee"||S.tab==="team")).length+(S.batch?1:0);
   function cols(){ return [canSel()?["sel",""]:null,["score","Temp",1],["cust","Customer"],["svc","Product",1],["plan","Plan",1],["ptype","Plan type",1],
     ["source","Channel",1],["reason","Reason",1],["age","Age",1],["status","Status",1],(S.tab==="team"||S.tab==="closed")?["owner","Owner",1]:null,["act",""]].filter(Boolean); }
-  const scorePill=x=>`<span class="ld-scp ${x.temp||"none"}" title="${x.score!=null?`Agent 2 score ${x.score} / 100 · ${TEMP_LABEL[x.temp]||""}`:"Not scored yet — Agent 2 scores new leads within 10 minutes"}">${x.score!=null?x.score:"–"}<i>${esc(TEMP_LABEL[x.temp]||"new")}</i></span>`;
+  const scorePill=x=>`<span class="ld-scp ${x.temp||"none"}" title="${x.score!=null?`Agent 2 score ${x.score} / 100 · ${esc(TEMP_TIP[x.temp]?TEMP_TIP[x.temp]():"")}`:esc(TEMP_TIP.none())}">${x.score!=null?x.score:"–"}<i>${esc(TEMP_LABEL[x.temp]||"new")}</i></span>`;
   function custHtml(x){ const r=x.relation||{}; const b=[];
     if(r.mobile&&r.mobile.active) b.push(`<span class="ld-mini mob" title="${n(r.mobile.active)} active Salam Mobile line(s)">Salam Mobile</span>`);
     if(r.fixed&&r.fixed.orders) b.push(`<span class="ld-mini fx" title="Ordered Salam fiber / 5G before — not a new acquisition">Ordered before</span>`);
     if(r.fixed&&r.fixed.priorLost) b.push(`<span class="ld-mini lost" title="An earlier lead for this person was lost">Lost before</span>`);
     if(n(x.journeys)>1) b.push(`<span class="ld-mini j" title="${n(x.journeys)} journeys by this person while the lead was open">×${n(x.journeys)} journeys</span>`);
+    if(x.bss&&!(r.fixed&&r.fixed.orders)) b.push(`<span class="ld-mini fx" title="Salam Fixed (BSS) already knows this person — a current or past Salam Fixed customer">Salam Fixed customer</span>`);
+    if(x.lang==="en") b.push(`<span class="ld-mini en" title="Chose English on the journey — call in English">English</span>`);
     const ct=x.city||x.region?`<span class="ct"> · ${esc(x.city||x.region)}</span>`:""; const sh=shownOf(x.id);
-    if(sh){ const nm=sh.name||{}; return `<div class="ld-cu on" data-cu="${x.id}"><div class="nm2" title="${esc([nm.en,nm.ar].filter(Boolean).join(" · "))}">${esc(nm.en||nm.ar||"Name not in the source")}${nm.en&&nm.ar?`<small dir="rtl">${esc(nm.ar)}</small>`:""}</div>
-      <div class="mb"><a class="ld-tel" href="tel:${esc(sh.tel)}" title="Call ${esc(sh.mobile)}">${I.phone}${esc(sh.mobile)}</a>${ct}</div><div class="bd"><span class="ld-mini un" title="${sh.how==="reveal"?"Revealed":"Unmasked"} — recorded under your name; masked again when the time runs out">${I.eye}<b data-left="${x.id}">${mmss(sh.until-Date.now())}</b></span>${b.join("")}</div></div>`; }
+    if(sh){ const nm=sh.name||{}, has=nm.en||nm.ar; const fr=NAME_FROM[sh.from]||"";
+      return `<div class="ld-cu on" data-cu="${x.id}"><div class="nm2${has?"":" no"}" title="${has?esc([nm.en,nm.ar].filter(Boolean).join(" · "))+(fr?" — name from "+esc(fr):""):esc(NO_NAME)}">${has?esc(nm.en||nm.ar):"No name in Salam's records"}${nm.en&&nm.ar?`<small dir="rtl">${esc(nm.ar)}</small>`:""}${fr?`<small class="fr">from ${esc(fr)}</small>`:""}</div>
+      <div class="mb"><a class="ld-tel" href="tel:${esc(sh.tel)}" title="Call ${esc(sh.mobile)}">${I.phone}${esc(sh.mobile)}</a>${sh.email?`<span class="ld-mail" title="${esc(sh.email)}">${I.mail}</span>`:""}${ct}</div><div class="bd"><span class="ld-mini un" title="${sh.how==="reveal"?"Revealed":"Unmasked"} — recorded under your name; masked again when the time runs out">${I.eye}<b data-left="${x.id}">${mmss(sh.until-Date.now())}</b></span>${b.join("")}</div></div>`; }
     return `<div class="ld-cu" data-cu="${x.id}"><div class="nm${x.customer_mask?"":" no"}">${esc(x.customer_mask||"Name not captured")}${canRevealRow(x)?`<button class="ld-eye" data-reveal="${x.id}" title="Reveal the name and number for 90 s — recorded" aria-label="Reveal lead ${x.id}">${I.eye}</button>`:""}</div><div class="mb"><span class="mono">${esc(x.mobile_mask||"")}</span>${ct}</div>${b.length?`<div class="bd">${b.join("")}</div>`:""}</div>`; }
   const prodHtml=x=>`<span class="ld-pd p-${x.product==="5g"?"5g":"ftth"}">${x.product==="5g"?I.g5:I.fiber}${esc(PRODUCT[x.product]||x.product)}</span>`;
   const svcHtml=x=>x.svc_type?`<span class="ld-ty y-${esc(x.svc_type)}">${I[SVC_ICON[x.svc_type]]||""}${esc((S.meta.svc||{})[x.svc_type]||x.svc_type)}</span>`:`<span class="ld-dim">—</span>`;
@@ -611,7 +650,8 @@
   function tableHtml(rows){
     const cs=cols(), so=S.sort;
     const th=cs.map(([k,l,s])=>{ if(k==="sel") return `<th class="c-sel"><input type="checkbox" id="ldAll" aria-label="Select every lead on this page"></th>`;
-      const on=so.col===k; return `<th class="c-${k}${s?" s":""}${on?" on":""}"${s?` data-sort="${k}" tabindex="0" role="columnheader" aria-sort="${on?(so.dir==="asc"?"ascending":"descending"):"none"}" title="Sort by ${esc(l.toLowerCase())}"`:""}>${esc(l)}${s?`<span class="ar">${on?(so.dir==="asc"?"▲":"▼"):"↕"}</span>`:""}</th>`; }).join("");
+      const on=so.col===k; const tip=k==="score"?`Agent 2's score (5–98) of how likely the customer is to order — Hot ${bands().hot}+, Warm ${bands().warm}–${bands().hot-1}, Cold below ${bands().warm}. Click to sort.`:`Sort by ${l.toLowerCase()}`;
+      return `<th class="c-${k}${s?" s":""}${on?" on":""}"${s?` data-sort="${k}" tabindex="0" role="columnheader" aria-sort="${on?(so.dir==="asc"?"ascending":"descending"):"none"}" title="${esc(tip)}"`:""}>${esc(l)}${s?`<span class="ar">${on?(so.dir==="asc"?"▲":"▼"):"↕"}</span>`:""}</th>`; }).join("");
     return `<div class="ld-tw"><table class="ld-t"><thead><tr>${th}</tr></thead><tbody>${rows.map(x=>rowHtml(x,cs)).join("")}</tbody></table></div>`; }
 
   /* toolbar: search · filters with counts · temperature · count, sort, rows per page */
@@ -619,8 +659,8 @@
     return `<div class="ld-tb"><div class="r1"><label class="ld-qw">${I.search}<input class="ld-in q" id="ldQ" placeholder="Find: full mobile or ID (exact) · lead # · plan · city · reason · dealer" value="${esc(S.filters.q)}" autocomplete="off" spellcheck="false" aria-label="Find a lead"></label>
         <button class="ld-btn s ld-ftg" id="ldFtg" aria-expanded="false" aria-controls="ldFx">${I.filter}Filters<span class="c" id="ldFn"></span></button><span id="ldUnmB"></span></div>
       <div class="ld-fx" id="ldFx"></div>
-      <div class="r2"><div class="ld-seg" id="ldSeg" role="group" aria-label="Temperature"></div><div class="ld-meta" id="ldMeta"></div></div></div>
-      <div id="ldUnm"></div><div id="ldBulk"></div><div id="ldTblBox"><div class="ld-empty">Loading…</div></div><div id="ldPager"></div>`; }
+      <div class="r2"><div class="lft"><div class="ld-seg" id="ldSeg" role="group" aria-label="Temperature"></div><button class="ld-btn s g ld-how" id="ldHow" aria-expanded="false" aria-controls="ldLegend">${I.info}<span>How temperature works</span></button></div><div class="ld-meta" id="ldMeta"></div></div></div>
+      <div id="ldLegend"></div><div id="ldUnm"></div><div id="ldBulk"></div><div id="ldTblBox"><div class="ld-empty">Loading…</div></div><div id="ldPager"></div>`; }
   function selHtml(key,all,opts,facet){
     const cur=S.filters[key]||""; const cnt=facet?new Map(facet.map(x=>[String(x.k),x.n])):null;
     const list=cnt?opts.filter(([v])=>cnt.has(v)||v===cur):opts;
@@ -640,7 +680,20 @@
     const k=activeFilters(); const fn=document.getElementById("ldFn"); if(fn){ fn.textContent=k?String(k):""; fn.style.display=k?"":"none"; }
     const seg=document.getElementById("ldSeg"); const T=new Map((F.temp||[]).map(x=>[x.k,x.n])); const all=[...T.values()].reduce((a,b)=>a+b,0);
     if(seg) seg.innerHTML=[["","All",all],["hot","Hot",T.get("hot")],["warm","Warm",T.get("warm")],["cold","Cold",T.get("cold")],["none","Not scored",T.get("none")]]
-      .map(([v,l,c])=>`<button class="tp-${v||"all"}${(S.filters.temp||"")===v?" on":""}" data-temp="${v}" aria-pressed="${(S.filters.temp||"")===v}">${v?`<span class="d"></span>`:""}${esc(l)}<span class="k">${S.facets?fmt(c):""}</span></button>`).join(""); }
+      .map(([v,l,c])=>`<button class="tp-${v||"all"}${(S.filters.temp||"")===v?" on":""}" data-temp="${v}" aria-pressed="${(S.filters.temp||"")===v}" title="${esc(v?TEMP_TIP[v]():"Every temperature")}">${v?`<span class="d"></span>`:""}${esc(l)}<span class="k">${S.facets?fmt(c):""}</span></button>`).join(""); }
+  function legendHtml(){
+    const sc=(S.meta&&S.meta.scoring)||{}, b=bands();
+    const band=(t,pill,range,txt)=>`<div class="b"><span class="ld-scp ${t}">${esc(pill)}<i>${t==="none"?"new":TEMP_LABEL[t]}</i></span><div><b>${t==="none"?"Not scored":TEMP_LABEL[t]+" · "+esc(range)}</b><p>${esc(txt)}</p></div></div>`;
+    return `<div class="ld-leg"><div class="bands">
+        ${band("hot",`${b.hot}+`,`${b.hot}–98`,"Call first. Strong intent — they reached payment or the confirmation code, booked an appointment, or keep coming back — and it is recent.")}
+        ${band("warm",`${b.warm}+`,`${b.warm}–${b.hot-1}`,"Call today. The intent is there but something stopped them: the price, the identity check, stock or the appointment.")}
+        ${band("cold",`<${b.warm}`,`below ${b.warm}`,"Lower odds: no coverage at the address, left at the first step, more than two weeks old, or already ordered Salam fiber.")}
+        ${band("none","–","","New on the desk — Agent 2 scores new and changed leads every 10 minutes.")}</div>
+      <div class="how"><b>How Agent 2 scores a lead (5 to 98)</b>
+        <div class="base"><span>Starts from where the customer stopped:</span>${(sc.base||[]).map(x=>`<span class="ld-rs r-${esc(x.cls)}">${esc(x.label)} ${n(x.points)}</span>`).join("")}</div>
+        <ul>${(sc.adjust||[]).map(t=>`<li>${esc(t)}</li>`).join("")}</ul></div></div>`; }
+  function paintLegend(){ const box=document.getElementById("ldLegend"), b=document.getElementById("ldHow"); const on=pref("legend")==="1";
+    if(box) box.innerHTML=on?legendHtml():""; if(b){ b.classList.toggle("on",on); b.setAttribute("aria-expanded",String(on)); } }
   const SORTS=[["smart","Smart order — call-backs due first"],["score:desc","Temperature — hottest first"],["age:asc","Newest first"],["age:desc","Oldest first"],["svc:asc","Product"],["plan:asc","Plan"],["ptype:asc","Plan type"],["source:asc","Channel"],["reason:asc","Reason"],["status:asc","Status"],["owner:asc","Owner"],["journeys:desc","Most journeys"],["calls:desc","Most calls"],["next:asc","Next call-back"]];
   function renderMeta(r){
     const el=document.getElementById("ldMeta"); if(!el) return; const cur=S.sort.col==="smart"?"smart":S.sort.col+":"+S.sort.dir;
@@ -659,7 +712,8 @@
     fx.addEventListener("click",e=>{ if(e.target.closest("#ldReset")){ FILTER_KEYS.forEach(k=>S.filters[k]=""); S.batch=null; S.page=0; listView(el,true); } else if(e.target.closest("#ldNoBatch")){ S.batch=null; S.page=0; listView(el,true); } });
     document.getElementById("ldSeg").addEventListener("click",e=>{ const b=e.target.closest("[data-temp]"); if(!b) return; S.filters.temp=b.dataset.temp; S.page=0; listView(el,true); });
     document.getElementById("ldTblBox").addEventListener("click",e=>{ const rv=e.target.closest("[data-reveal]"); if(rv){ e.stopPropagation(); revealRow(rv.dataset.reveal); } });
-    paintStrip();
+    document.getElementById("ldHow").onclick=()=>{ pref("legend",pref("legend")==="1"?"0":"1"); paintLegend(); };
+    paintStrip(); paintLegend();
   }
   function bindTable(el){
     const box=document.getElementById("ldTblBox");
@@ -718,7 +772,7 @@
   async function revealRow(id){
     const bs=document.querySelectorAll(`[data-reveal="${id}"]`); bs.forEach(b=>b.disabled=true);
     let r; try{ r=await post(`/api/fixed/leads/lead/${id}/reveal`); }catch(e){ toast(e.message); bs.forEach(b=>b.disabled=false); return; }
-    S.shown.set(String(id),{ name:r.name||{}, mobile:r.mobile, tel:r.tel, until:Date.now()+(n(r.seconds)||90)*1000, how:"reveal" });
+    S.shown.set(String(id),{ name:r.name||{}, from:r.from||null, email:r.email||null, lang:r.lang||null, mobile:r.mobile, tel:r.tel, until:Date.now()+(n(r.seconds)||90)*1000, how:"reveal" });
     const u=document.getElementById("ldRevealUse"); if(u&&r.used) u.textContent=`reveals ${n(r.used.hour)} / ${n(r.used.perHour)} per hour`;
     paintCust(id); startTick(); }
   async function unmaskVisible(){
@@ -727,7 +781,7 @@
     let r; try{ r=await post("/api/fixed/leads/unmask",{ids,view:S.tab}); }catch(e){ toast(e.message); if(e.status===403||e.status===429) stopUnmask(true); return; }
     if(S.unmaskFresh){ S.unmaskFresh=false; const t=Date.parse(r.until); if(t) S.unmaskUntil=t; }
     S.unmaskUsed=n(r.used); S.unmaskPerDay=r.perDay; let k=0;
-    Object.entries(r.contacts||{}).forEach(([id,c])=>{ if(c&&c.mobile){ S.shown.set(String(id),{ name:c.name||{}, mobile:c.mobile, tel:c.tel, until:S.unmaskUntil, how:"unmask" }); k++; } });
+    Object.entries(r.contacts||{}).forEach(([id,c])=>{ if(c&&c.mobile){ S.shown.set(String(id),{ name:c.name||{}, from:c.from||null, email:c.email||null, lang:c.lang||null, mobile:c.mobile, tel:c.tel, until:S.unmaskUntil, how:"unmask" }); k++; } });
     ids.forEach(paintCust); paintStrip(); startTick();
     const miss=ids.length-k; if(miss>0) toast(`${k} unmasked · ${miss} without a readable number in their source`); }
   function stopUnmask(quiet){ const was=S.unmaskUntil>0; S.unmaskUntil=0; S.unmaskFresh=false;
@@ -795,9 +849,10 @@
     const path=(a&&a.path&&a.path.length?a.path:["STD"]).map(offerOf).filter(Boolean);
     const sh=shownOf(L.id);
     const callCard=`<div class="ld-call" id="ldCall">
-        ${sh?`<div style="flex:1;min-width:220px"><div class="nm">${esc((sh.name&&(sh.name.ar||sh.name.en))||"")}<small>${esc((sh.name&&sh.name.ar&&sh.name.en)?sh.name.en:"")}</small></div><div class="num">${esc(sh.mobile)}</div>
+        ${sh?`<div style="flex:1;min-width:220px"><div class="nm">${esc((sh.name&&(sh.name.ar||sh.name.en))||"No name in Salam's records")}<small>${esc((sh.name&&sh.name.ar&&sh.name.en)?sh.name.en:"")}${NAME_FROM[sh.from]?" · name from "+esc(NAME_FROM[sh.from]):""}</small></div><div class="num">${esc(sh.mobile)}</div>
+          ${sh.email||sh.lang?`<div class="tm">${sh.email?`${I.mail}${esc(sh.email)}`:""}${sh.email&&sh.lang?" · ":""}${sh.lang?(sh.lang==="en"?"speaks English":"speaks Arabic"):""}</div>`:""}
           <div class="tm">${I.lock}${sh.how==="unmask"?"Unmasked":"Revealed"} · recorded · hides in <b data-left="${esc(L.id)}">${mmss(sh.until-Date.now())}</b></div></div><a class="ld-btn p" href="tel:${esc(sh.tel)}">${I.phone}Call now</a>${can.take?`<button class="ld-btn" id="ldTake">Take this lead</button>`:""}`
-        :can.take?`<div style="flex:1;min-width:220px"><div class="nm">This lead is in the team pool<small>Take it to reveal the number and call — it moves to your queue.</small></div></div><button class="ld-btn p" id="ldTake">Take this lead</button>`
+        :can.take?`<div style="flex:1;min-width:220px"><div class="nm">This lead is in the team pool<small>${can.manage&&can.reveal?"Take it to work it, or reveal the number now — recorded.":"Take it to reveal the number and call — it moves to your queue."}</small></div></div>${can.manage&&can.reveal?`<button class="ld-btn r" id="ldReveal">${I.eye}Reveal & call</button>`:""}<button class="ld-btn p" id="ldTake">Take this lead</button>`
         :can.reveal?`<div style="flex:1;min-width:220px"><div class="num">${esc(L.mobile_mask||"—")}</div><div class="tm">${I.lock}Revealed for 90 s · recorded · ${esc(m.reveal.perHour)} per hour max</div></div><button class="ld-btn r" id="ldReveal">${I.eye}Reveal & call</button>`
         :`<div class="nm">${L.status==="dnc"?"The customer asked not to be called.":"This lead is in another member's queue."}</div>`}</div>`;
     const journey=`<div class="ld-card"><h4>${I.clock}Where the customer stopped</h4><div class="ld-kv">
@@ -847,9 +902,10 @@
   async function reveal(L){
     const box=document.getElementById("ldCall"); if(!box) return; const b=box.querySelector("#ldReveal"); if(b) b.disabled=true;
     let r; try{ r=await post(`/api/fixed/leads/lead/${L.id}/reveal`); }catch(e){ toast(e.message); if(b) b.disabled=false; return; }
-    S.shown.set(String(L.id),{ name:r.name||{}, mobile:r.mobile, tel:r.tel, until:Date.now()+(n(r.seconds)||90)*1000, how:"reveal" }); paintCust(L.id);
+    S.shown.set(String(L.id),{ name:r.name||{}, from:r.from||null, email:r.email||null, lang:r.lang||null, mobile:r.mobile, tel:r.tel, until:Date.now()+(n(r.seconds)||90)*1000, how:"reveal" }); paintCust(L.id);
     let left=n(r.seconds)||90; const ring=s=>{ const p=Math.max(0,s/(n(r.seconds)||90)); const c=2*Math.PI*15; return `<svg class="ld-ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--line)" stroke-width="3"/><circle cx="18" cy="18" r="15" fill="none" stroke="#b91c1c" stroke-width="3" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-p)}" transform="rotate(-90 18 18)"/><text x="18" y="22" text-anchor="middle" font-size="10" font-weight="800" fill="currentColor">${s}</text></svg>`; };
-    const paint=()=>{ box.innerHTML=`<div style="flex:1;min-width:220px"><div class="nm">${esc((r.name&&(r.name.ar||r.name.en))||"")}<small>${esc((r.name&&r.name.ar&&r.name.en)?r.name.en:"")}</small></div><div class="num">${esc(r.mobile)}</div>
+    const paint=()=>{ box.innerHTML=`<div style="flex:1;min-width:220px"><div class="nm">${esc((r.name&&(r.name.ar||r.name.en))||"No name in Salam's records")}<small>${esc((r.name&&r.name.ar&&r.name.en)?r.name.en:"")}${NAME_FROM[r.from]?" · name from "+esc(NAME_FROM[r.from]):""}</small></div><div class="num">${esc(r.mobile)}</div>
+      ${r.email||r.lang?`<div class="tm">${r.email?`${I.mail}${esc(r.email)}`:""}${r.email&&r.lang?" · ":""}${r.lang?(r.lang==="en"?"speaks English":"speaks Arabic"):""}</div>`:""}
       <div class="tm">${I.lock}Recorded · hides in ${left} s · ${n(r.used.hour)} / ${n(r.used.perHour)} reveals this hour</div></div>${ring(left)}<a class="ld-btn p" href="tel:${esc(r.tel)}" id="ldDial">${I.phone}Call now</a>`; };
     paint(); const u=document.getElementById("ldRevealUse"); if(u) u.textContent=`reveals ${n(r.used.hour)} / ${n(r.used.perHour)} per hour`;
     clearInterval(S.revealT); S.revealT=setInterval(()=>{ left--; if(left<=0||!document.getElementById("ldCall")){ clearInterval(S.revealT); if(document.getElementById("ldCall")) fillLead(L.id); return; } paint(); },1000);
@@ -1012,6 +1068,9 @@
     S.gate.acceptedAt=S.gate.acceptedAt||Date.now();
     try{ S.meta=await api("/api/fixed/leads/meta"); }catch(e){ if(e.code==="accept_required"){ S.gate.accepted=false; renderGate(host); return; } host.innerHTML=`<div class="ld-err">${esc(e.message)}</div>`; return; }
     if(!S.meta.me.manager&&TABS.find(t=>t[0]===S.tab&&t[2])) S.tab="mine";
+    /* a supervisor or super admin who works no queue opens on the Team list, not on an empty "My queue" (alpha.170) */
+    if(!S.booted&&S.meta.me.manager&&S.tab==="mine"&&!(S.meta.members||[]).some(x=>x.email===S.meta.me.email&&!x.notOcu)) S.tab="team";
+    S.booted=true;
     shell(host); hero(); body();
     const m=/(?:^|[?&])lead=(\d+)/.exec(location.hash); if(m) openLead(m[1]);
   }

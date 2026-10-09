@@ -49,6 +49,13 @@ const src = f => require(path.join(__dirname, '..', 'src', f));
   if (Array.isArray(unk)) console.log('plan ids not in the catalogue:', unk.length ? unk.map(r => `${r.plan_id} ×${r.n}`).join(' · ') : 'none');
   const nm = await q(`SELECT count(*) FILTER (WHERE customer_mask IS NOT NULL)::int AS named, count(*)::int AS n FROM fixed_leads WHERE status IN ('new','assigned','contacted','callback','interested','offer')`);
   if (Array.isArray(nm) && nm[0]) console.log('open leads with a name:', `${nm[0].named} of ${nm[0].n}`);
+  const nf = await q(`SELECT CASE WHEN customer_mask IS NOT NULL AND coalesce(facts->>'nm','') IN ('','none') THEN 'journey' ELSE coalesce(nullif(facts->>'nm',''), 'not looked up yet') END AS f, count(*)::int AS n
+      FROM fixed_leads WHERE status IN ('new','assigned','contacted','callback','interested','offer') GROUP BY 1 ORDER BY 2 DESC`);
+  if (Array.isArray(nf)) console.log('names from (alpha.170):', nf.map(r => `${r.f} ${r.n}`).join(' · '), '(journey · account = Salam Home account · bss = Salam Fixed · mobile = Salam Mobile · none = nowhere)');
+  const lg = await q(`SELECT coalesce(facts->>'lang','—') AS l, count(*) FILTER (WHERE (facts->>'bss')::boolean)::int AS bss, count(*)::int AS n FROM fixed_leads WHERE status IN ('new','assigned','contacted','callback','interested','offer') GROUP BY 1 ORDER BY 3 DESC`);
+  if (Array.isArray(lg)) console.log('language chosen (open):', lg.map(r => `${r.l} ${r.n}`).join(' · '), '· known to Salam Fixed BSS:', lg.reduce((a, r) => a + r.bss, 0));
+  const nsc = await q(`SELECT count(*)::int AS n FROM fixed_leads WHERE status IN ('new','assigned','contacted','callback','interested','offer') AND score IS NULL`);
+  if (Array.isArray(nsc) && nsc[0]) console.log('open leads not scored yet:', nsc[0].n, '(Agent 2 scores up to 1,000 a tick, every 10 min)');
   const um = await q(`SELECT kind, count(*)::int AS n, count(DISTINCT actor)::int AS people FROM fixed_lead_events WHERE kind IN ('reveal','unmask') AND at >= now() - interval '24 hours' GROUP BY 1`);
   if (Array.isArray(um)) console.log('contacts shown (24 h):', um.length ? um.map(r => `${r.kind} ${r.n} lead(s) by ${r.people} person(s)`).join(' · ') : 'none');
   if (process.argv.includes('--keys') && require(path.join(__dirname, '..', 'src', 'db')).nexus) {

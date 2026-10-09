@@ -71,6 +71,10 @@ function guarded(fn) {
 }
 
 const WIN = `started_at >= $1::timestamptz - ($2||' hours')::interval AND started_at <= $1::timestamptz`;
+/* board unit + "order not processed" (alpha.169) — see fixedJourneyDone.js; error_events e LEFT JOIN order_attempts oa */
+const JD = require('./fixedJourneyDone');
+const JUNIT = `coalesce(e.attempt_id, 'ev:' || e.id::text)`;
+const JIMPACT = `(oa.outcome IS NULL OR oa.outcome::text <> 'COMPLETED' OR e.category IN (${JD.MONEY_ALWAYS.map(x => `'${x}'`).join(',')}))`;
 
 const FIXED_METRICS = {
 
@@ -78,10 +82,12 @@ const FIXED_METRICS = {
     label: 'Fixed · open error categories at P0/P1', unit: 'count', higherIsBad: true, segment: 'fixed',
     sourceTables: 'sda_ops.error_events',
     compute: guarded(async (pool, now) => {
+      /* journeys, not events (alpha.169): an open error in a journey whose order was processed is "to review", not a spike —
+       * except paid-but-BSS-not-notified / provision-no-order (fixedJourneyDone.MONEY_ALWAYS) */
       const { rows } = await pool.query(
-        `SELECT category, count(*)::int AS c FROM error_events
-          WHERE occurred_at >= $1::timestamptz - ($2||' minutes')::interval AND occurred_at < $1::timestamptz
-            AND resolved = false GROUP BY category`, [now, FIXED_PARAMS.errorWindowMin]);
+        `SELECT e.category, count(DISTINCT ${JUNIT}) FILTER (WHERE ${JIMPACT})::int AS c FROM error_events e LEFT JOIN order_attempts oa ON oa.id = e.attempt_id
+          WHERE e.occurred_at >= $1::timestamptz - ($2||' minutes')::interval AND e.occurred_at < $1::timestamptz
+            AND e.resolved = false GROUP BY e.category`, [now, FIXED_PARAMS.errorWindowMin]);
       const firing = rows.filter(r => {
         const m = ERR_SEV[r.category] || { sev: 3, money: false };
         return effSev(m.sev, Number(r.c), m.money, FIXED_PARAMS.errorSpike) <= 1;
@@ -96,10 +102,10 @@ const FIXED_METRICS = {
     sourceTables: 'sda_ops.error_events',
     compute: guarded(async (pool, now) => {
       const { rows } = await pool.query(
-        `SELECT COALESCE(dealer_code, dealer_id, 'unknown') AS dealer, count(*)::int AS c
-           FROM error_events
-          WHERE occurred_at >= $1::timestamptz - ($2||' minutes')::interval AND occurred_at < $1::timestamptz
-            AND category IN ('TIMEOUT','NAFATH_TIMEOUT')
+        `SELECT COALESCE(e.dealer_code, e.dealer_id, 'unknown') AS dealer, count(DISTINCT ${JUNIT})::int AS c
+           FROM error_events e LEFT JOIN order_attempts oa ON oa.id = e.attempt_id
+          WHERE e.occurred_at >= $1::timestamptz - ($2||' minutes')::interval AND e.occurred_at < $1::timestamptz
+            AND e.category IN ('TIMEOUT','NAFATH_TIMEOUT') AND ${JIMPACT}
           GROUP BY 1`, [now, FIXED_PARAMS.timeoutWindowMin]);
       const events = rows.reduce((s, r) => s + Number(r.c), 0);
       return [{ dim: {}, value: rows.length, sample: events }];
@@ -304,9 +310,12 @@ async function histRows(C, now, cls) {
   const key = `hist:${cls}:${hourOf(now)}`;
   const hit = HIST.get(key); if (hit) return hit.rows;
   const h0 = hourStart(now);
-  const rows = (await C.query(`SELECT ${APPLOG_SIG} AS sig, date_trunc('hour', ts) AS h, count(*)::int AS n
-      FROM fixed_app_events WHERE ok IS NOT TRUE AND reason_class = $2 AND kind <> 'payment_loop' AND ts >= $1::timestamptz - interval '14 days' AND ts < $1::timestamptz - interval '60 minutes'
-      GROUP BY 1,2`, [h0, cls])).rows;
+  /* journeys per signature per hour, journeys whose order was processed left out (alpha.169) — the same unit as the live count */
+  const done = [...(await JD.baseSet())];
+  const rows = (await C.query(`SELECT ${APPLOG_SIG} AS sig, date_trunc('hour', ts) AS h, count(DISTINCT ${JD.UNIT_SQL})::int AS n
+      FROM fixed_app_events LEFT JOIN (SELECT DISTINCT unnest($3::text[]) AS done_id) d ON d.done_id = state_id
+      WHERE d.done_id IS NULL AND ok IS NOT TRUE AND reason_class = $2 AND kind <> 'payment_loop' AND ts >= $1::timestamptz - interval '14 days' AND ts < $1::timestamptz - interval '60 minutes'
+      GROUP BY 1,2`, [h0, cls, done])).rows;
   HIST.set(key, { at: Date.now(), rows });
   for (const k of HIST.keys()) if (HIST.get(k).at < Date.now() - 3 * 3600e3) HIST.delete(k);   // keep the map small
   return rows;
@@ -330,11 +339,28 @@ async function seenSignatures(C, now) {
 /* the hold-settlement loop (kind payment_loop) is left out (alpha.165): it re-logs the SAME stuck AUTHORIZED invoices every
  * 10-min pass on each of 3 PM2 processes — 39 stuck invoices read "651 technical failures in the last hour vs typical 0" and
  * kept this anomaly open for 45 h on 9 Oct. It is a backlog, not a spike: fixed_ep_auth_stuck counts it as one. */
+/* the failing signatures of the last 60 min counted in JOURNEYS (alpha.169): n = distinct journeys whose order was not
+ * processed, review = journeys that failed the same way but whose order went through, lines = raw failing lines */
+async function sigJourneys(C, now, cls) {
+  const raw = (await C.query(`SELECT ${APPLOG_SIG} AS sig, ${JD.UNIT_SQL} AS unit, max(state_id) AS state_id, count(*)::int AS lines, max(ts) AS at,
+        (array_agg(left(reason,90) ORDER BY ts DESC))[1] AS reason
+      FROM fixed_app_events WHERE ok IS NOT TRUE AND ($2::text IS NULL OR reason_class = $2) AND kind <> 'payment_loop' AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz
+      GROUP BY 1,2`, [now, cls])).rows;
+  const done = await JD.doneOf(raw.map(x => x.state_id));
+  const by = new Map();
+  for (const x of raw) {
+    const g = by.get(x.sig) || { sig: x.sig, n: 0, review: 0, lines: 0, at: null, reason: null }; by.set(x.sig, g);
+    g.lines += x.lines;
+    if (x.state_id && done.has(String(x.state_id))) { g.review++; continue; }
+    g.n++; if (!g.at || new Date(x.at) > new Date(g.at)) { g.at = x.at; g.reason = x.reason; }
+  }
+  return [...by.values()];
+}
+const reviewTxt = n => n > 0 ? ` · ${n} more journey${n === 1 ? '' : 's'} failed the same way but the order was processed — errors to review, not counted` : '';
 async function applogAnomaly(now, cls) {
   const C = consoleDb();
-  const cur = (await C.query(`SELECT ${APPLOG_SIG} AS sig, count(*)::int AS n, count(DISTINCT request_id)::int AS requests, (array_agg(left(reason,90) ORDER BY ts DESC))[1] AS reason
-      FROM fixed_app_events WHERE ok IS NOT TRUE AND reason_class = $2 AND kind <> 'payment_loop' AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz
-      GROUP BY 1 HAVING count(*) >= 10 ORDER BY 2 DESC LIMIT 40`, [now, cls])).rows;
+  const all = await sigJourneys(C, now, cls);
+  const cur = all.filter(c => c.n >= 5).sort((a, b) => b.n - a.n).slice(0, 40);
   if (!cur.length) return [];
   const hod = new Date(new Date(now).getTime() + 3 * 3600e3).getUTCHours();
   const want = new Set(cur.map(c => c.sig));
@@ -353,37 +379,37 @@ async function applogAnomaly(now, cls) {
     if (!b || coverageH < 3) continue;                     // under 3 h of history there is no baseline yet — the "new error" metric covers it
     /* EXCESS GUARD (alpha.162): a z on its own lets a quiet signature (median 0 at night) read 12 for 12 failures, and the
      * worst of ~40 signatures is always high — the signature must also be ≥ MIN more than usual and twice its usual count */
-    if (c.n - b.med < (cls === 'technical' ? 20 : 40) || c.n < 2 * b.med) continue;
+    /* in JOURNEYS since alpha.169 (it was ≥ 20 / 40 failing lines): ≥ 10 technical / 25 business journeys more than usual */
+    if (c.n - b.med < (cls === 'technical' ? 10 : 25) || c.n < 2 * b.med) continue;
     const scale = Math.max(1.4826 * b.mad, Math.sqrt(b.med), 1);
     const z = (c.n - b.med) / scale;
     if (!worst || z > worst.z) worst = { z, c, b };
   }
   if (!worst) return [{ dim: { note: `no ${cls} signature above its own baseline (${cur.length} failing in the last 60 min)` }, value: 0, sample: cur.reduce((a, x) => a + x.n, 0) }];
   const { z, c, b } = worst;
-  return [{ dim: { note: `${c.sig} — ${c.n} in the last 60 min vs typical ${b.med}/h${c.requests ? ` · ${c.requests} requests` : ''} · “${(c.reason || '').replace(/\s+/g, ' ')}”` }, value: Math.round(z * 10) / 10, sample: c.n }];
+  return [{ dim: { note: `${c.sig} — ${c.n} journeys (not completed) in the last 60 min vs typical ${b.med}/h · ${c.lines} failing lines · “${(c.reason || '').replace(/\s+/g, ' ')}”${reviewTxt(c.review)}` }, value: Math.round(z * 10) / 10, sample: c.n, customers: c.n }];
 }
 Object.assign(FIXED_METRICS, {
   fixed_applog_anomaly_technical: {
-    label: 'Fixed · app-log TECHNICAL failure anomaly (robust z, worst signature)', unit: 'count', higherIsBad: true, segment: 'fixed',
+    label: 'Fixed · app-log TECHNICAL failure anomaly (robust z on journeys, worst signature)', unit: 'count', higherIsBad: true, segment: 'fixed',
     sourceTables: 'unified_console.fixed_app_events',
     compute: async (_src, now) => { try { return await applogAnomaly(now, 'technical'); } catch (e) { console.error(`[fixedMetrics] applog anomaly: ${e.message}`); return []; } }
   },
   fixed_applog_anomaly_business: {
-    label: 'Fixed · app-log BUSINESS refusal anomaly (robust z, worst signature)', unit: 'count', higherIsBad: true, segment: 'fixed',
+    label: 'Fixed · app-log BUSINESS refusal anomaly (robust z on journeys, worst signature)', unit: 'count', higherIsBad: true, segment: 'fixed',
     sourceTables: 'unified_console.fixed_app_events',
     compute: async (_src, now) => { try { return await applogAnomaly(now, 'business'); } catch (e) { console.error(`[fixedMetrics] applog anomaly: ${e.message}`); return []; } }
   },
   fixed_applog_new_signature: {
-    label: 'Fixed · NEW failing signatures (never seen in 14 d, ≥5 in the last hour)', unit: 'count', higherIsBad: true, segment: 'fixed',
+    label: 'Fixed · NEW failing signatures (never seen in 14 d, ≥ 3 journeys not completed in the last hour)', unit: 'count', higherIsBad: true, segment: 'fixed',
     sourceTables: 'unified_console.fixed_app_events',
     compute: async (_src, now) => {
       try {
         const C = consoleDb();
         const cov = (await C.query(`SELECT min(ts) AS t FROM fixed_app_events`)).rows[0].t;
         if (!cov || (new Date(now) - new Date(cov)) < 24 * 3600e3) return [];   // needs a day of history before "never seen" means anything
-        const cur = (await C.query(`SELECT ${APPLOG_SIG} AS sig, count(*)::int AS n, (array_agg(left(reason,80) ORDER BY ts DESC))[1] AS reason
-              FROM fixed_app_events WHERE ok IS NOT TRUE AND kind <> 'payment_loop' AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1 HAVING count(*) >= 5
-              ORDER BY 2 DESC LIMIT 200`, [now])).rows;
+        /* ≥ 3 JOURNEYS whose order was not processed (alpha.169 — it was ≥ 5 lines: one customer retrying five times) */
+        const cur = (await sigJourneys(C, now, null)).filter(c => c.n >= 3).sort((a, b) => b.n - a.n).slice(0, 200);
         const seen = cur.length ? await seenSignatures(C, now) : new Set();
         /* novelty is the STEP (channel · step), not its class (alpha.162): when a refused step started taking the class of its
          * own error line, "web · feasibilityCheck · business" would otherwise read as a brand-new error */
@@ -391,7 +417,7 @@ Object.assign(FIXED_METRICS, {
         const seenSteps = new Set([...seen].map(stepOf));
         const rows = cur.filter(c => !seenSteps.has(stepOf(c.sig))).slice(0, 5);
         const total = rows.reduce((a, r) => a + r.n, 0);
-        return [{ dim: { note: rows.length ? rows.map(r => `${r.sig} ×${r.n} “${r.reason || ''}”`).join(' | ').slice(0, 220) : '' }, value: rows.length, sample: total }];
+        return [{ dim: { note: rows.length ? rows.map(r => `${r.sig} ×${r.n} journeys “${String(r.reason || '').slice(0, 80)}”`).join(' | ').slice(0, 220) : '' }, value: rows.length, sample: total }];
       } catch (e) { console.error(`[fixedMetrics] new signature: ${e.message}`); return []; }
     }
   },
@@ -414,11 +440,12 @@ Object.assign(FIXED_METRICS, {
     sourceTables: 'unified_console.fixed_app_events',
     compute: async (_src, now) => {
       try {
-        const r = (await consoleDb().query(`SELECT count(*)::int AS calls, count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class='technical')::int AS tech,
-              (array_agg(left(reason,80) ORDER BY ts DESC) FILTER (WHERE ok IS NOT TRUE AND reason_class='technical'))[1] AS reason
-            FROM fixed_app_events WHERE kind IN ('yakeen','yakeen_address') AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz`, [now])).rows[0];
-        if (!r || !r.calls) return [];
-        return [{ dim: { note: r.tech ? `${r.tech} of ${r.calls} Yakeen calls failed technically · “${r.reason || ''}”` : '' }, value: r.tech / r.calls, sample: r.calls }];
+        /* per journey (alpha.169) — the same counting as the provider rows in fixedChannelMetrics */
+        const FC = require('./fixedChannelMetrics');
+        const units = await FC.appUnits(now, { pred: `kind IN ('yakeen','yakeen_address')`, group: `'yakeen'`, mutationOnly: false });
+        const r = FC.journeyRates(units, { what: 'journeys calling Yakeen', groups: ['yakeen'], labelOf: () => 'Yakeen / ELM', all: false, classes: ['technical'] })[0];
+        if (!r) return [];
+        return [{ dim: { note: r.customers || /errors to review/.test(r.dim.note) ? r.dim.note : '' }, value: r.value, sample: r.sample, customers: r.customers, customers_total: r.customers_total }];
       } catch (e) { console.error(`[fixedMetrics] yakeen rate: ${e.message}`); return []; }
     }
   },

@@ -194,7 +194,11 @@ function boardSpec(a, T, W, d, { onlyMoney = false, counted } = {}) {
   const p = [T, W]; let f = ''; const c = chan(d); if (c) { p.push(c); f += ` AND ${fe().CHANNEL_EXPR} = $${p.length}`; }
   if (onlyMoney) { p.push(MONEY); f += ` AND e.category = ANY($${p.length}::text[])`; }
   const k = clsOf(d); let num = 'TRUE'; if (counted === 'cls' && k) { p.push(k); num = `${fe().CLASS_SQL()} = $${p.length}`; } else if (counted === 'open') num = 'NOT e.resolved';
-  return { from: 'error_events e', cols: EE2_COLS(), head: EE2_HEAD, pop: `${EE_WIN}${f}`, num, params: p, order: 'e.occurred_at DESC', group: 'category', groupExpr: 'e.category', reasonExpr: `left(${fe().RESP_EXPR}, 120)`, sample: 'events' };
+  /* journey (alpha.169): rows of a journey whose order was processed are flagged and not counted — the money categories that
+   * count anyway (fixedJourneyDone.MONEY_ALWAYS) stay counted */
+  const always = require('./fixedJourneyDone').MONEY_ALWAYS.map(x => `'${x}'`).join(',');
+  return { from: 'error_events e', cols: EE2_COLS(), head: EE2_HEAD, pop: `${EE_WIN}${f}`, num, params: p, order: 'e.occurred_at DESC', group: 'category', groupExpr: 'e.category', reasonExpr: `left(${fe().RESP_EXPR}, 120)`, sample: 'events',
+    journey: { col: 'e.attempt_id', keep: `e.category IN (${always})` } };
 }
 function appSpec(a, T, W, d, { pred = '', counted = 'cls', mutationOnly = true, group = 'path' } = {}) {
   const p = [T, W]; let f = mutationOnly ? ` AND kind = 'mutation'` : ''; const c = chan(d); if (c) { p.push(c); f += ` AND coalesce(channel,'other') = $${p.length}`; }
@@ -203,7 +207,26 @@ function appSpec(a, T, W, d, { pred = '', counted = 'cls', mutationOnly = true, 
   else if (counted === 'technical') num = `ok IS NOT TRUE AND reason_class = 'technical'`;
   else if (counted === 'slow') { p.push(Number(a.threshold) || 0); num = `duration_ms >= $${p.length}::numeric`; f += ' AND duration_ms IS NOT NULL'; }
   else if (counted === 'failed') num = 'ok IS NOT TRUE';
-  return { pool: db.console, from: 'fixed_app_events', cols: AE_COLS, head: AE_HEAD, pop: `${AE_WIN}${f}${pred}`, num, params: p, order: counted === 'slow' ? 'duration_ms DESC NULLS LAST' : 'ts DESC', group, groupExpr: group === 'path' ? 'path' : `coalesce(channel,'other')`, durExpr: 'duration_ms', reasonExpr: 'left(reason, 120)', sample: 'applog', slow: counted === 'slow' };
+  return { pool: db.console, from: 'fixed_app_events', cols: AE_COLS, head: AE_HEAD, pop: `${AE_WIN}${f}${pred}`, num, params: p, order: counted === 'slow' ? 'duration_ms DESC NULLS LAST' : 'ts DESC', group, groupExpr: group === 'path' ? 'path' : `coalesce(channel,'other')`, durExpr: 'duration_ms', reasonExpr: 'left(reason, 120)', sample: 'applog', slow: counted === 'slow',
+    journey: ['cls', 'technical', 'failed'].includes(counted) ? { col: 'state_id' } : { col: 'state_id', flagOnly: true } };
+}
+/* ORDER PROCESSED (alpha.169): the Fixed failure metrics count journeys and leave out the ones whose order went through.
+ * The export keeps every row and adds the column "Order processed"; those rows are not counted ("errors to review").
+ * The ids are read from the population, checked with fixedJourneyDone.doneOf, and inlined as a literal (sanitised ids) so
+ * no extra bound parameter reaches the grouped / sample queries. */
+async function applyJourney(spec) {
+  const j = spec.journey; if (!j || !spec.pool) return spec;
+  let ids = [];
+  try { ids = (await spec.pool.query(`SELECT DISTINCT ${j.col} AS id FROM ${spec.from} WHERE ${spec.pop} AND ${j.col} IS NOT NULL AND ((${spec.num}) OR TRUE) LIMIT 20000`, spec.params)).rows.map(x => String(x.id)); } catch (_) { return spec; }
+  let done = new Set(); try { done = await require('./fixedJourneyDone').doneOf(ids); } catch (_) { return spec; }
+  const safe = [...done].filter(x => /^[A-Za-z0-9_.:-]{1,80}$/.test(x));
+  const lit = safe.length ? `ARRAY[${safe.map(x => `'${x}'`).join(',')}]::text[]` : `ARRAY[]::text[]`;
+  const isDone = `coalesce(${j.col}::text = ANY(${lit}), false)`;
+  const out = { ...spec, cols: `${spec.cols}, CASE WHEN ${isDone} THEN 'yes — errors to review' ELSE '' END AS order_done`, head: spec.head.concat([['order_done', 'Order processed']]) };
+  if (!j.flagOnly && spec.num !== 'TRUE') out.num = `(${spec.num}) AND (NOT ${isDone}${j.keep ? ` OR ${j.keep}` : ''})`;
+  else if (!j.flagOnly && spec.num === 'TRUE') out.num = `(NOT ${isDone}${j.keep ? ` OR ${j.keep}` : ''})`;
+  out.note = `${spec.note || ''}${spec.note ? ' · ' : ''}${done.size} journey${done.size === 1 ? '' : 's'} in this population had the order processed — their rows are flagged "Order processed" and ${j.flagOnly ? 'shown for context' : 'not counted (errors to review)'}; the rule itself counts distinct journeys, not rows`;
+  return out;
 }
 function apiSpec(a, T, W, d, counted) {
   const p = [T, W]; let f = ''; if (d && d.host && d.host !== '(worst)' && d.host !== 'unknown') { p.push(String(d.host)); f += ` AND ${AC_HOST} = $${p.length}`; }
@@ -213,16 +236,16 @@ function apiSpec(a, T, W, d, counted) {
 const slowSteps = () => { try { return require('./fixedChannelMetrics').SLOW_STEPS || []; } catch (_) { return []; } };
 const notSlowSteps = () => { const l = slowSteps().map(x => `'${String(x).replace(/[^\w.]/g, '')}'`); return l.length ? ` AND coalesce(path,'') NOT IN (${l.join(',')})` : ''; };
 Object.assign(CASES, {
-  fixed_board_fail_rate: async (a, T, W, d) => ({ pool: await boardPool(chan(d)), ...boardSpec(a, T, W, d, { counted: 'cls' }), note: `population = every error-board event of ${chan(d) ? 'channel ' + chan(d) : 'every channel'} in the window (the rate divides the ${clsOf(d) || ''} ones by the order attempts of the same window) · counted = ${clsOf(d) || 'all'} class` }),
+  fixed_board_fail_rate: async (a, T, W, d) => ({ pool: await boardPool(chan(d)), ...boardSpec(a, T, W, d, { counted: 'cls' }), note: `population = every error-board event of ${chan(d) ? 'channel ' + chan(d) : 'every channel'} in the window (the rate divides the distinct JOURNEYS with a ${clsOf(d) || ''} error and no processed order by the order attempts of the same window) · counted = ${clsOf(d) || 'all'} class` }),
   fixed_board_fail_anomaly: async (a, T, W, d) => ({ pool: await boardPool(chan(d)), ...boardSpec(a, T, W, d, { counted: 'cls' }), note: `population = error-board events of ${chan(d) ? 'channel ' + chan(d) : 'every channel'} in the window · counted = ${clsOf(d) || 'all'} class (the z-score compares this count with the channel's own 14-day same-hour baseline)` }),
   fixed_board_money_at_risk: async (a, T, W, d) => ({ pool: await boardPool(chan(d)), ...boardSpec(a, T, W, d, { onlyMoney: true, counted: 'open' }), note: 'population = paid-but-stuck events (PAYMENT_NOT_NOTIFIED · PROVISION_NO_ORDER · PAYMENT_FAILED) in the window · counted = still open (not resolved)' }),
-  fixed_applog_fail_rate: (a, T, W, d) => ({ ...appSpec(a, T, W, d), note: `population = tRPC steps (mutation lines) of ${chan(d) || 'every channel'} in the window · counted = failed ${clsOf(d) || ''}` }),
+  fixed_applog_fail_rate: (a, T, W, d) => ({ ...appSpec(a, T, W, d), note: `population = tRPC steps (mutation lines) of ${chan(d) || 'every channel'} in the window · counted = failed ${clsOf(d) || ''} (the rule divides distinct journeys, not lines)` }),
   fixed_applog_otp_fail_rate: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { pred: ` AND path ~* '(otp|validatecode|verifycode|verifyotp|checkvalidate)'` }), note: `population = OTP / verification steps of ${chan(d) || 'every channel'} · counted = failed ${clsOf(d) || ''}` }),
   fixed_applog_payment_fail_rate: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { pred: ` AND (path ~* '(payment|invoice|checkout|\\ypay)' OR channel = 'payments')` }), note: `population = payment / checkout steps of ${chan(d) || 'every channel'} · counted = failed ${clsOf(d) || ''}` }),
   fixed_applog_latency_p95_ms: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { counted: 'slow', pred: notSlowSteps() }), note: `population = timed steps of ${chan(d) || 'every channel'} in the window, the known slow steps apart (${slowSteps().join(', ') || 'none'} — their own rule) · counted = steps at or over the rule threshold (${a.threshold} ms), slowest first` }),
   fixed_applog_slow_step_p95_ms: (a, T, W, d) => ({ ...appSpec(a, T, Math.max(Number(W) || 0, 3), d, { counted: 'slow', pred: ` AND path = '${String((d && d.path) || '').replace(/[^\w.]/g, '')}'` }), note: `population = every ${(d && d.path) || 'known slow step'} call in the last 3 h · counted = calls at or over ${a.threshold} ms, slowest first` }),
   fixed_applog_step_latency_p95_ms: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { counted: 'slow', pred: notSlowSteps() }), note: `population = every timed step in the window · counted = steps at or over ${a.threshold} ms (the metric is the p95 of the slowest step with ≥ 20 calls — see the By step table)` }),
-  fixed_applog_volume_ratio: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { counted: 'none', mutationOnly: false }), num: 'TRUE', note: `population = every app-log line of ${chan(d) || 'the channel'} in the window (the ratio compares this volume with the same-hour 7-day median)` }),
+  fixed_applog_volume_ratio: (a, T, W, d) => ({ ...appSpec(a, T, W, d, { counted: 'none', mutationOnly: false }), num: 'TRUE', note: `population = every app-log line of ${chan(d) || 'the channel'} in the window (the ratio counts distinct journeys — requests for the Salam Home app — against the median of the same hour on the same KSA day type, Fri/Sat or Sun–Thu, over 4 weeks)` }),
   fixed_applog_provider_technical_rate: (a, T, W, d) => { const p = [T, W, d && d.kind ? String(d.kind) : 'yakeen']; return { pool: db.console, from: 'fixed_app_events', cols: AE_COLS, head: AE_HEAD, pop: `${AE_WIN} AND kind = $3`, num: `ok IS NOT TRUE AND reason_class = 'technical'`, params: p, order: 'ts DESC', group: 'cls', note: `population = every ${p[2]} call in the window · counted = technical failure (timeout / 5xx / transport); business refusals are in the population but not counted` }; },
   fixed_yakeen_technical_rate: (a, T, W) => ({ pool: db.console, from: 'fixed_app_events', cols: AE_COLS, head: AE_HEAD, pop: `${AE_WIN} AND kind IN ('yakeen','yakeen_address')`, num: `ok IS NOT TRUE AND reason_class = 'technical'`, params: [T, W], order: 'ts DESC', group: 'cls', note: 'population = Yakeen / ELM calls in the window · counted = technical failure' }),
   fixed_applog_anomaly_technical: (a, T, W) => ({ ...appSpec(a, T, W, null, { counted: 'technical', mutationOnly: false }), pop: `${AE_WIN} AND ok IS NOT TRUE AND reason_class = 'technical' AND kind <> 'payment_loop'`, num: 'TRUE', note: 'every technical failure line in the window (the hold-settlement loop apart — its own rule), grouped by step — the incident text names the signature that spiked' }),
@@ -315,7 +338,8 @@ async function casesFor(alert, opts = {}) {
   if (/^dms\.flow\./.test(key)) return dmsFlowCases(base, alert, T);   // rows live in dms_flow_findings.sample, not in a table
   { const epw = require('./fixedEpWatch'); if (epw.CASE_METRICS && epw.CASE_METRICS.has(key)) return epWatchCases(base, alert, T, opts); }   // rows live in the nexus snapshot
   if (!fn) return { ...base, supported: false, reason: NO_ROWS[key] || 'this metric is computed from aggregates, not from individual rows', head: [], rows: [], total: 0, counted: 0 };
-  const spec = await fn(alert, T, W, dim);
+  let spec = await fn(alert, T, W, dim);
+  if (spec && /^fixed_/.test(key)) spec = await applyJourney(spec);
   if (!spec) return { ...base, supported: false, reason: 'the API-traffic source is the Grafana MySQL feed (no row store) — switch the collector on to get row-level cases', head: [], rows: [], total: 0, counted: 0 };
   if (!spec.pool) return { ...base, supported: false, reason: spec.error || 'data source not configured', head: spec.head || [], rows: [], total: 0, counted: 0 };
   const cap = opts.cap || CAP;

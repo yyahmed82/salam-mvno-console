@@ -27,9 +27,20 @@
  *        volume collapsed, latency ≥ 2× threshold, a provider hard down); P2 = technical degradation on any channel,
  *        provider degraded, latency over threshold, monitoring blind (ingest / collector stale); P3 = business
  *        anomalies (refusal surges, OTP, new signatures) — the platform works, customers are being told no;
- *        P4 = informational. Dealer-assisted SDA sits one notch under the consumer channels for business signals. */
+ *        P4 = informational. Dealer-assisted SDA sits one notch under the consumer channels for business signals.
+ *
+ * COUNTING UNIT = THE CUSTOMER JOURNEY (alpha.169, 9 Oct 2026 — "make sure the count is per unique flow / customer journey;
+ * in case an order is processed, just note it as errors to review, do not include it in triggering alerts").
+ *   · every failure metric counts DISTINCT journeys (app log: state_id, else the request; board: attempt_id, else the event)
+ *     — a customer retrying a failing step ten times is one journey, not ten failures;
+ *   · a journey whose order was processed (fixedJourneyDone: read-model outcome COMPLETED, or its final step succeeded in
+ *     the app log) leaves the numerator and is reported in dim.note as "errors to review" — never a trigger;
+ *   · rows carry customers = journeys hit and customers_total = journeys seen, so the incident reads "· N customers";
+ *   · traffic (volume collapse) = distinct journeys against the same trailing hour on the same KSA day type (Fri/Sat
+ *     weekend vs Sun–Thu) over 4 weeks — the 9 Oct P1 was a Friday afternoon compared with weekday medians. */
 const db = require('./db');
 const fe = require('./fixedErrors');
+const jd = require('./fixedJourneyDone');
 
 const CH = { sda: 'SDA (dealer)', qr: 'QR codes', web: 'Epurchase', salamhome: 'Salam Home app', payments: 'Payments worker', all: 'all channels' };
 const BOARD_CH = ['sda', 'qr', 'web', 'salamhome'];
@@ -72,12 +83,29 @@ const zOf = (cur, b) => (cur - b.med) / Math.max(1.4826 * b.mad, Math.sqrt(b.med
 const safe = (name, fn) => async (_src, now, w) => { try { return await fn(new Date(now).toISOString(), w); } catch (e) { console.error(`[fixedChannelMetrics] ${name}: ${e.message}`); return []; } };
 
 /* ================= board rollup (console DB) ================= */
+/* board counting unit (alpha.169): the journey (attempt) behind the event; an event with no attempt is its own unit.
+ * IMPACT = the journey's order was NOT processed — or the category is one that counts anyway (paid, BSS not notified /
+ * provision, no order: fixedJourneyDone.MONEY_ALWAYS). Needs order_attempts joined as oa. */
+const BUNIT = `coalesce(e.attempt_id, 'ev:' || e.id::text)`;
+const IMPACT = `(oa.outcome IS NULL OR oa.outcome::text <> 'COMPLETED' OR e.category IN (${jd.MONEY_ALWAYS.map(x => `'${x}'`).join(',')}))`;
+const ROLL_UNIT = 'journey-v1';      // fixed_board_hourly.n = distinct impacted journeys (was: events) — a change re-backfills
 let rollReady = null;
 async function ensureRollup() {
   if (!C()) return false;
   if (!rollReady) rollReady = C().query(`CREATE TABLE IF NOT EXISTS fixed_board_hourly (hour timestamptz NOT NULL, src text NOT NULL, channel text NOT NULL, cls text NOT NULL, category text NOT NULL, n int NOT NULL, open int NOT NULL, PRIMARY KEY (hour, src, channel, cls, category));
     CREATE TABLE IF NOT EXISTS fixed_attempts_hourly (hour timestamptz NOT NULL, src text NOT NULL, channel text NOT NULL, n int NOT NULL, PRIMARY KEY (hour, src, channel));
-    CREATE INDEX IF NOT EXISTS idx_fixed_board_hourly_hour ON fixed_board_hourly (hour);`).then(() => true).catch(e => { rollReady = null; throw e; });
+    CREATE INDEX IF NOT EXISTS idx_fixed_board_hourly_hour ON fixed_board_hourly (hour);`).then(async () => {
+      /* the rollup counted EVENTS until alpha.169; it now counts impacted JOURNEYS — an old table is emptied once and
+       * re-backfilled (newest day first), so a baseline never mixes the two units */
+      const cur = (await C().query(`SELECT value FROM console_settings WHERE key = 'fixed_board_hourly_unit'`).catch(() => ({ rows: [] }))).rows[0];
+      const v = cur ? (typeof cur.value === 'string' ? cur.value.replace(/^"|"$/g, '') : cur.value) : null;
+      if (v !== ROLL_UNIT) {
+        await C().query(`TRUNCATE fixed_board_hourly`);
+        await C().query(`INSERT INTO console_settings (key, value) VALUES ('fixed_board_hourly_unit', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [JSON.stringify(ROLL_UNIT)]);
+        console.log(`[fixedChannelMetrics] board rollup switched to ${ROLL_UNIT} — re-backfilling 14 d`);
+      }
+      return true;
+    }).catch(e => { rollReady = null; throw e; });
   return rollReady;
 }
 async function rollup(fromIso, toIso) {
@@ -85,8 +113,9 @@ async function rollup(fromIso, toIso) {
   const srcs = await fe.boardSources(); let rows = 0;
   for (const s of srcs) {
     const slice = s.slice ? ` AND ${s.slice}` : '';
-    const b = (await s.pool.query(`SELECT date_trunc('hour', e.occurred_at) AS hour, ${fe.CHANNEL_EXPR} AS channel, ${fe.CLASS_SQL()} AS cls, e.category, count(*)::int AS n, count(*) FILTER (WHERE NOT e.resolved)::int AS open
-        FROM error_events e WHERE e.occurred_at >= $1 AND e.occurred_at < $2${slice} GROUP BY 1,2,3,4`, [fromIso, toIso])).rows;
+    const b = (await s.pool.query(`SELECT date_trunc('hour', e.occurred_at) AS hour, ${fe.CHANNEL_EXPR} AS channel, ${fe.CLASS_SQL()} AS cls, e.category,
+          count(DISTINCT ${BUNIT}) FILTER (WHERE ${IMPACT})::int AS n, count(DISTINCT ${BUNIT}) FILTER (WHERE ${IMPACT} AND NOT e.resolved)::int AS open
+        FROM error_events e LEFT JOIN order_attempts oa ON oa.id = e.attempt_id WHERE e.occurred_at >= $1 AND e.occurred_at < $2${slice} GROUP BY 1,2,3,4`, [fromIso, toIso])).rows;
     const a = (await s.pool.query(`SELECT date_trunc('hour', oa.started_at) AS hour, ${ATT_CH} AS channel, count(*)::int AS n
         FROM order_attempts oa WHERE oa.started_at >= $1 AND oa.started_at < $2${slice.replace(/\be\./g, 'oa.')} GROUP BY 1,2`, [fromIso, toIso])).rows;
     const c = await C().connect();
@@ -108,9 +137,11 @@ async function rollTick() {
     const now = Date.now();
     const cov = (await C().query(`SELECT min(hour) AS lo, max(hour) AS hi FROM fixed_board_hourly`).catch(() => ({ rows: [{}] }))).rows[0] || {};
     if (!cov.lo || (now - new Date(cov.lo).getTime()) < 13 * 864e5) {         // backfill 14 days, one day at a time (never one 14-day regex statement)
+      /* NEWEST day first (alpha.169): the covered span is then always [lo, now] without holes — the baseline pads
+       * uncovered hours with zeros, so an oldest-first backfill read "typical 0" for the days not yet rolled */
       const start = now - 14 * 864e5, stop = cov.lo ? new Date(cov.lo).getTime() : now;
-      for (let t = start; t < stop; t += 864e5) {
-        try { await rollup(new Date(t).toISOString(), new Date(Math.min(t + 864e5, stop)).toISOString()); }
+      for (let t = stop; t > start; t -= 864e5) {
+        try { await rollup(new Date(Math.max(start, t - 864e5)).toISOString(), new Date(t).toISOString()); }
         catch (e) { console.error(`[fixedChannelMetrics] rollup backfill ${new Date(t).toISOString().slice(0, 10)}: ${e.message}`); }
       }
       console.log(`[fixedChannelMetrics] board rollup backfilled 14 d`);
@@ -132,10 +163,21 @@ async function boardLive(now) {
     const srcs = await fe.boardSources(); const out = {};
     for (const s of srcs) {
       const slice = s.slice ? ` AND ${s.slice}` : '';
-      const r = (await s.pool.query(`SELECT ${fe.CHANNEL_EXPR} AS channel, ${fe.CLASS_SQL()} AS cls, e.category, count(*)::int AS n, count(*) FILTER (WHERE NOT e.resolved)::int AS open,
-          (array_agg(left(${fe.RESP_EXPR}, 90) ORDER BY e.occurred_at DESC))[1] AS sample
-          FROM error_events e WHERE e.occurred_at >= $1::timestamptz - interval '60 minutes' AND e.occurred_at < $1::timestamptz${slice} GROUP BY 1,2,3`, [now])).rows;
-      for (const x of r) { const k = x.channel + '|' + x.cls; (out[k] = out[k] || { channel: x.channel, cls: x.cls, n: 0, open: 0, cats: [] }); out[k].n += x.n; out[k].open += x.open; out[k].cats.push(x); }
+      /* per category: impacted journeys (n, open), journeys whose order was processed anyway (review), raw events */
+      const r = (await s.pool.query(`SELECT ${fe.CHANNEL_EXPR} AS channel, ${fe.CLASS_SQL()} AS cls, e.category,
+          count(DISTINCT ${BUNIT}) FILTER (WHERE ${IMPACT})::int AS n, count(DISTINCT ${BUNIT}) FILTER (WHERE ${IMPACT} AND NOT e.resolved)::int AS open,
+          count(DISTINCT ${BUNIT}) FILTER (WHERE NOT ${IMPACT})::int AS review, count(*)::int AS events,
+          (array_agg(left(${fe.RESP_EXPR}, 90) ORDER BY e.occurred_at DESC) FILTER (WHERE ${IMPACT}))[1] AS sample
+          FROM error_events e LEFT JOIN order_attempts oa ON oa.id = e.attempt_id
+          WHERE e.occurred_at >= $1::timestamptz - interval '60 minutes' AND e.occurred_at < $1::timestamptz${slice} GROUP BY 1,2,3`, [now])).rows;
+      /* per channel × class: the same, distinct across categories (a journey with two error categories is ONE journey) */
+      const t = (await s.pool.query(`SELECT ${fe.CHANNEL_EXPR} AS channel, ${fe.CLASS_SQL()} AS cls,
+          count(DISTINCT ${BUNIT}) FILTER (WHERE ${IMPACT})::int AS j,
+          (count(DISTINCT ${BUNIT}) FILTER (WHERE oa.outcome::text = 'COMPLETED') - count(DISTINCT ${BUNIT}) FILTER (WHERE oa.outcome::text = 'COMPLETED' AND ${IMPACT}))::int AS jr
+          FROM error_events e LEFT JOIN order_attempts oa ON oa.id = e.attempt_id
+          WHERE e.occurred_at >= $1::timestamptz - interval '60 minutes' AND e.occurred_at < $1::timestamptz${slice} GROUP BY 1,2`, [now])).rows;
+      for (const x of r) { const k = x.channel + '|' + x.cls; (out[k] = out[k] || { channel: x.channel, cls: x.cls, n: 0, open: 0, review: 0, events: 0, j: 0, jr: 0, cats: [] }); out[k].n += x.n; out[k].open += x.open; out[k].review += x.review; out[k].events += x.events; out[k].cats.push(x); }
+      for (const x of t) { const k = x.channel + '|' + x.cls; if (out[k]) { out[k].j += x.j; out[k].jr += x.jr; } }
       const a = (await s.pool.query(`SELECT ${ATT_CH} AS channel, count(*)::int AS n FROM order_attempts oa
           WHERE oa.started_at >= $1::timestamptz - interval '60 minutes' AND oa.started_at < $1::timestamptz${slice.replace(/\be\./g, 'oa.')} GROUP BY 1`, [now])).rows;
       for (const x of a) { const k = x.channel + '|attempts'; out[k] = out[k] || { channel: x.channel, attempts: 0 }; out[k].attempts += x.n; }
@@ -143,7 +185,9 @@ async function boardLive(now) {
     return out;
   });
 }
-const topCat = cats => { const c = cats.slice().sort((a, b) => b.n - a.n)[0]; return c ? `${c.category} ×${c.n}${c.sample ? ` “${String(c.sample).replace(/\s+/g, ' ')}”` : ''}` : ''; };
+const topCat = cats => { const c = cats.filter(x => x.n > 0).sort((a, b) => b.n - a.n)[0]; return c ? `${c.category} ×${c.n} journeys${c.sample ? ` “${String(c.sample).replace(/\s+/g, ' ')}”` : ''}` : ''; };
+/* "errors to review": failures in journeys whose order went through — reported, never counted (alpha.169) */
+const reviewNote = (n, what = 'had errors') => n > 0 ? ` · ${n} more journey${n === 1 ? '' : 's'} ${what} but the order was processed — errors to review, not counted` : '';
 async function boardBaseline(now) {
   return cached('boardBase:' + String(now).slice(0, 13), 10 * 60e3, async () => {
     if (!(await ensureRollup())) return {};
@@ -171,19 +215,24 @@ function withAll(rows, keyOf, mergeInto) {
 
 const METRICS = {
   fixed_board_fail_rate: {
-    label: 'Fixed · board errors per attempt, 60 min (per channel × class)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'sda_ops.error_events, sda_ops.order_attempts',
+    label: 'Fixed · journeys with board errors and no order ÷ attempts, 60 min (per channel × class)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'sda_ops.error_events, sda_ops.order_attempts',
     compute: safe('board_fail_rate', async now => {
       const live = await boardLive(now); const rows = [];
       for (const ch of BOARD_CH) for (const cls of ['technical', 'business']) {
-        const e = live[ch + '|' + cls], a = live[ch + '|attempts']; const att = a ? a.attempts : 0; const cnt = e ? e.n : 0;
+        /* numerator = DISTINCT journeys with a ${cls} error whose order was not processed; denominator = the journeys
+         * (order attempts) of the window (alpha.169 — it was error EVENTS, so one journey retrying counted many times) */
+        const e = live[ch + '|' + cls], a = live[ch + '|attempts']; const att = a ? a.attempts : 0; const cnt = e ? e.j : 0, rev = e ? e.jr : 0;
         if (!att && !cnt) continue;
-        rows.push({ dim: { channel: ch, cls, note: e ? `${CH[ch]} · ${cnt} ${cls} errors on ${att} attempts · top ${topCat(e.cats)}` : '' }, value: rate(cnt, Math.max(att, cnt)), sample: Math.max(att, cnt) });
+        const pop = Math.max(att, cnt);
+        rows.push({ dim: { channel: ch, cls, impacted: cnt, review: rev, note: e ? `${CH[ch]} · ${cnt} of ${pop} journeys hit ${cls} errors and did not complete (${e.events} events) · top ${topCat(e.cats) || '-'}${reviewNote(rev)}` : '' },
+          value: rate(cnt, pop), sample: pop, customers: cnt, customers_total: pop });
       }
       for (const cls of ['technical', 'business']) {
         const mine = rows.filter(r => r.dim.cls === cls); if (!mine.length) continue;
-        const cnt = mine.reduce((s, r) => s + Math.round(r.value * r.sample), 0), att = mine.reduce((s, r) => s + r.sample, 0);
-        rows.push({ dim: { channel: 'all', cls, note: mine.map(r => `${CH[r.dim.channel]} ${Math.round(r.value * 100)}%`).join(' · ') }, value: rate(cnt, att), sample: att });
+        const cnt = mine.reduce((s, r) => s + r.dim.impacted, 0), att = mine.reduce((s, r) => s + r.sample, 0), rev = mine.reduce((s, r) => s + r.dim.review, 0);
+        rows.push({ dim: { channel: 'all', cls, impacted: cnt, review: rev, note: mine.map(r => `${CH[r.dim.channel]} ${Math.round(r.value * 100)}% (${r.dim.impacted})`).join(' · ') + reviewNote(rev) }, value: rate(cnt, att), sample: att, customers: cnt, customers_total: att });
       }
+      for (const r of rows) { delete r.dim.impacted; delete r.dim.review; }
       return rows;
     })
   },
@@ -202,8 +251,10 @@ const METRICS = {
         if (!b) continue;
         /* excess guard (alpha.162): SDA's technical median is 0 at night, so 4 errors read z 4 — an anomaly needs ≥ 10 (technical)
          * / 25 (business) errors more than usual this hour; below that the value is capped under any threshold */
+        /* counts are journeys per category summed over categories — the same unit the hourly rollup stores (alpha.169) */
         const zr = zOf(cnt, b), z = cnt - b.med < (cls === 'technical' ? 10 : 25) ? Math.min(zr, 1) : zr; const cats = parts.flatMap(p => p.cats);
-        rows.push({ dim: { channel: ch, cls, note: `${CH[ch]} · ${cnt} ${cls} in the last 60 min vs typical ${b.med}/h · top ${topCat(cats)}` }, value: Math.round(z * 10) / 10, sample: cnt });
+        const rev = parts.reduce((s, p) => s + (p.jr || 0), 0);
+        rows.push({ dim: { channel: ch, cls, note: `${CH[ch]} · ${cnt} journeys with ${cls} errors (not completed) in the last 60 min vs typical ${b.med}/h · top ${topCat(cats) || '-'}${reviewNote(rev)}` }, value: Math.round(z * 10) / 10, sample: cnt });
       }
       return rows;
     })
@@ -213,9 +264,11 @@ const METRICS = {
     compute: safe('board_money', async now => {
       const live = await boardLive(now); const rows = []; let all = 0; const notes = [];
       for (const ch of BOARD_CH) {
+        /* journeys, not events (alpha.169). PAYMENT_FAILED on a journey whose order went through (paid on a retry) is not
+         * money at risk; PAYMENT_NOT_NOTIFIED / PROVISION_NO_ORDER count even then (fixedJourneyDone.MONEY_ALWAYS) */
         const cats = ['technical', 'business'].flatMap(cls => (live[ch + '|' + cls] ? live[ch + '|' + cls].cats : [])).filter(c => MONEY.includes(c.category));
-        const open = cats.reduce((s, c) => s + c.open, 0); const tot = cats.reduce((s, c) => s + c.n, 0);
-        if (tot) { rows.push({ dim: { channel: ch, note: `${CH[ch]} · ${cats.map(c => `${c.category} ×${c.open}`).join(', ')}` }, value: open, sample: tot }); all += open; notes.push(`${CH[ch]} ${open}`); }
+        const open = cats.reduce((s, c) => s + c.open, 0); const tot = cats.reduce((s, c) => s + c.n, 0); const rev = cats.reduce((s, c) => s + (c.review || 0), 0);
+        if (tot || rev) { rows.push({ dim: { channel: ch, note: `${CH[ch]} · ${cats.filter(c => c.open).map(c => `${c.category} ×${c.open} journeys open`).join(', ') || 'none open'}${reviewNote(rev, 'had a failed payment')}` }, value: open, sample: tot, customers: open, customers_total: tot }); all += open; notes.push(`${CH[ch]} ${open}`); }
       }
       rows.push({ dim: { channel: 'all', note: notes.join(' · ') }, value: all, sample: rows.reduce((s, r) => s + r.sample, 0) });
       return rows;
@@ -238,21 +291,8 @@ const METRICS = {
 
   /* ================= app log (combined.log on 146 → fixed_app_events) ================= */
   fixed_applog_fail_rate: {
-    label: 'Fixed · app-log step failure rate, 60 min (per channel × class)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
-    compute: safe('applog_fail_rate', async now => cached('appFail:' + minuteKey(now), 60e3, async () => {
-      if (!C()) return [];
-      const r = (await C().query(`SELECT coalesce(channel,'other') AS channel, count(*)::int AS total,
-          count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'technical')::int AS technical, count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'business')::int AS business,
-          (array_agg(coalesce(path, kind) || ' “' || left(coalesce(reason,''), 80) || '”' ORDER BY ts DESC) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'technical'))[1] AS t_note,
-          (array_agg(coalesce(path, kind) || ' “' || left(coalesce(reason,''), 80) || '”' ORDER BY ts DESC) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'business'))[1] AS b_note
-        FROM fixed_app_events WHERE kind = 'mutation' AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1`, [now])).rows;
-      const rows = []; const tot = { technical: [0, 0], business: [0, 0] };
-      for (const x of r) { if (!APP_CH.includes(x.channel)) continue;
-        for (const cls of ['technical', 'business']) { rows.push({ dim: { channel: x.channel, cls, note: `${CH[x.channel]} · ${x[cls]} of ${x.total} steps ${cls === 'technical' ? 'failed technically' : 'refused'} · last ${(x[cls[0] + '_note'] || '').replace(/\s+/g, ' ')}` }, value: rate(x[cls], x.total), sample: x.total }); tot[cls][0] += x[cls]; tot[cls][1] += x.total; }
-      }
-      for (const cls of ['technical', 'business']) if (tot[cls][1]) rows.push({ dim: { channel: 'all', cls, note: rows.filter(q => q.dim.cls === cls && q.dim.channel !== 'all').map(q => `${CH[q.dim.channel]} ${Math.round(q.value * 100)}%`).join(' · ') }, value: rate(tot[cls][0], tot[cls][1]), sample: tot[cls][1] });
-      return rows;
-    }))
+    label: 'Fixed · app-log customer-journey failure rate, 60 min (journeys failed and not completed ÷ journeys, per channel × class)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
+    compute: safe('applog_fail_rate', async now => cached('appFail:' + minuteKey(now), 60e3, async () => journeyRates(await appUnits(now), { what: 'journeys' })))
   },
   fixed_applog_latency_p95_ms: {
     label: 'Fixed · app-log step latency p95 (ms, 60 min, per channel)', unit: 'ms', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
@@ -298,24 +338,45 @@ const METRICS = {
         value: Math.round(x.p95), sample: x.n }));
     }))
   },
+  /* TRAFFIC (alpha.169, 9 Oct 2026). It was app-log LINES in the last 60 min against the median of the same clock hour
+   * over the last 7 days — weekdays and weekend mixed. Fridays carry about a third of a weekday's traffic (Epurchase at
+   * 15:00 KSA: 64–85 journeys on the last three Fridays, 200–330 on weekdays), so a quiet but normal Friday afternoon read
+   * as "traffic collapsed (silent outage)" — the P1 of 9 Oct. Now:
+   *   unit     = distinct JOURNEYS (state_id) for Epurchase and SDA, distinct requests for the Salam Home app (its lines
+   *              carry almost no state id) — a retry storm cannot hold the number up, a chatty page cannot either;
+   *   baseline = the SAME trailing 60 minutes on each of the last 28 days of the SAME KSA day type (Fri/Sat weekend vs
+   *              Sun–Thu), median — at least 3 such days; a past window where the collector saw nothing at all is a gap,
+   *              not a zero, and is left out;
+   *   guard    = no reading while the collector is behind (20 min) or when this hour is normally quiet (< 20). */
   fixed_applog_volume_ratio: {
-    label: 'Fixed · app-log traffic vs same-hour 7-day median (1.0 = normal, per channel)', unit: 'ratio', higherIsBad: false, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
+    label: 'Fixed · customer journeys in the last 60 min vs the same hour on the same day type (median of 4 weeks; 1.0 = normal, per channel)', unit: 'ratio', higherIsBad: false, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
     compute: safe('applog_volume', async now => cached('appVol:' + minuteKey(now).slice(0, 15), 5 * 60e3, async () => {
       if (!C()) return [];
       const cv = (await C().query(`SELECT min(ts) AS t, max(ts) AS hi FROM fixed_app_events`)).rows[0], cov = cv.t;
-      if (!cov || (new Date(now) - new Date(cov)) < 3 * 864e5) return [];        // three days of history before "quiet" means anything
+      if (!cov || (new Date(now) - new Date(cov)) < 7 * 864e5) return [];        // a week of history before "quiet" means anything (both day types seen)
       /* the collector itself behind (alpha.162): silence then means "we cannot see", not "customers left" — the collector-stale
-       * rule says it; the P1 volume collapse fired at a sample of 0 on 2 % of ticks for exactly this reason */
+       * rule says it */
       if (!cv.hi || new Date(now) - new Date(cv.hi) > 20 * 60e3) return [];
-      const cur = (await C().query(`SELECT coalesce(channel,'other') AS channel, count(*)::int AS n FROM fixed_app_events WHERE ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1`, [now])).rows;
-      const hist = (await C().query(`SELECT coalesce(channel,'other') AS channel, date_trunc('hour', ts) AS h, count(*)::int AS n FROM fixed_app_events
-          WHERE ts >= $1::timestamptz - interval '7 days' AND ts < date_trunc('hour', $1::timestamptz) GROUP BY 1,2`, [now])).rows;
-      const hod = ksaHour(now); const rows = [];
+      const r = (await C().query(`WITH w AS (SELECT k, $1::timestamptz - k * interval '1 day' AS t FROM generate_series(0, 28) k)
+          SELECT w.k, w.t, count(e.id)::int AS lines,
+            count(DISTINCT e.state_id) FILTER (WHERE e.channel = 'web')::int AS web,
+            count(DISTINCT e.state_id) FILTER (WHERE e.channel = 'sda')::int AS sda,
+            count(DISTINCT coalesce(e.request_id, e.id::text)) FILTER (WHERE e.channel = 'salamhome')::int AS salamhome
+          FROM w LEFT JOIN fixed_app_events e ON e.ts >= w.t - interval '60 minutes' AND e.ts < w.t
+          GROUP BY 1,2 ORDER BY 1`, [now])).rows;
+      const ksaDay = t => new Date(new Date(t).getTime() + 3 * 3600e3).getUTCDay();          // 5 = Friday, 6 = Saturday
+      const weekend = t => { const d = ksaDay(t); return d === 5 || d === 6; };
+      const cur = r.find(x => x.k === 0); if (!cur) return [];
+      const type = weekend(now) ? 'weekend' : 'weekday';
+      const past = r.filter(x => x.k > 0 && weekend(x.t) === weekend(now) && x.lines > 0 && new Date(x.t) - 3600e3 >= new Date(cov));
+      const rows = [];
       for (const ch of ['sda', 'web', 'salamhome']) {
-        const same = hist.filter(h => h.channel === ch && ksaHour(h.h) === hod).map(h => h.n); if (same.length < 3) continue;
-        const b = robust(same); const c = cur.find(x => x.channel === ch); const cnt = c ? c.n : 0;
+        const same = past.map(x => x[ch]); if (same.length < 3) continue;
+        const b = robust(same); const cnt = cur[ch] || 0;
         if (b.med < 20) continue;                                                    // a channel that is normally quiet at this hour cannot "collapse"
-        rows.push({ dim: { channel: ch, note: `${CH[ch]} · ${cnt} log lines in the last 60 min vs typical ${b.med} at this hour (${same.length} days)` }, value: Math.round((cnt / b.med) * 100) / 100, sample: cnt });
+        const unit = ch === 'salamhome' ? 'requests' : 'journeys';
+        rows.push({ dim: { channel: ch, note: `${CH[ch]} · ${cnt} ${unit} in the last 60 min vs typical ${b.med} at this hour on a ${type} (median of ${same.length} ${type} days: ${same.slice(0, 6).join(', ')}${same.length > 6 ? ' …' : ''})` },
+          value: Math.round((cnt / b.med) * 100) / 100, sample: cnt });
       }
       return rows;
     }))
@@ -324,18 +385,18 @@ const METRICS = {
     label: 'Fixed · provider technical failure rate, 60 min (per provider: Yakeen, Absher, Nafath, Semati, Manafith, DRM, Naqeel, card capture)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
     compute: safe('applog_provider', async now => cached('appProv:' + minuteKey(now), 60e3, async () => {
       if (!C()) return [];
-      const r = (await C().query(`SELECT kind, count(*)::int AS calls, count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'technical')::int AS tech, count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'business')::int AS biz,
-          (array_agg(left(reason, 90) ORDER BY ts DESC) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'technical'))[1] AS reason
-        FROM fixed_app_events WHERE kind = ANY($2::text[]) AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1`, [now, KINDS])).rows;
-      return r.map(x => ({ dim: { kind: x.kind, note: `${x.kind} · ${x.tech} of ${x.calls} calls failed technically (${x.biz} business) · “${(x.reason || '').replace(/\s+/g, ' ')}”` }, value: rate(x.tech, x.calls), sample: x.calls }));
+      /* per journey (alpha.169): a provider down fails every journey that reaches it; one customer retrying is one journey */
+      const units = await appUnits(now, { pred: `kind IN (${KINDS.map(k => `'${k}'`).join(',')})`, group: 'kind', mutationOnly: false });
+      return journeyRates(units, { what: 'journeys calling it', groups: KINDS, labelOf: k => k, all: false, classes: ['technical'] })
+        .map(r => ({ ...r, dim: { kind: r.dim.channel, note: r.dim.note } }));
     }))
   },
   fixed_applog_otp_fail_rate: {
-    label: 'Fixed · OTP / verification step failure rate, 60 min (per channel × class)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
+    label: 'Fixed · OTP / verification failure rate per journey, 60 min (per channel × class)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
     compute: safe('applog_otp', async now => stepFamily(now, 'otp', `path ~* '(otp|validatecode|verifycode|verifyotp|checkvalidate)'`))
   },
   fixed_applog_payment_fail_rate: {
-    label: 'Fixed · payment / checkout step failure rate, 60 min (per channel × class)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
+    label: 'Fixed · payment / checkout failure rate per journey, 60 min (per channel × class)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
     compute: safe('applog_payment', async now => stepFamily(now, 'payment', `(path ~* '(payment|invoice|checkout|\\ypay)' OR channel = 'payments')`))
   },
   fixed_applog_collector_lag_min: {
@@ -362,18 +423,50 @@ const METRICS = {
 };
 
 async function stepFamily(now, name, pred) {
-  return cached(`appFam:${name}:` + minuteKey(now), 60e3, async () => {
-    if (!C()) return [];
-    const r = (await C().query(`SELECT coalesce(channel,'other') AS channel, count(*)::int AS total,
-        count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'technical')::int AS technical, count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'business')::int AS business,
-        (array_agg(coalesce(path, kind) || ' “' || left(coalesce(reason,''), 80) || '”' ORDER BY ts DESC) FILTER (WHERE ok IS NOT TRUE))[1] AS note
-      FROM fixed_app_events WHERE kind = 'mutation' AND ${pred} AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1`, [now])).rows;
-    const rows = []; const tot = { technical: [0, 0], business: [0, 0] };
-    for (const x of r) { if (!APP_CH.includes(x.channel)) continue;
-      for (const cls of ['technical', 'business']) { rows.push({ dim: { channel: x.channel, cls, note: `${CH[x.channel]} · ${x[cls]} of ${x.total} ${name} steps ${cls === 'technical' ? 'failed technically' : 'refused'} · last ${(x.note || '').replace(/\s+/g, ' ')}` }, value: rate(x[cls], x.total), sample: x.total }); tot[cls][0] += x[cls]; tot[cls][1] += x.total; } }
-    for (const cls of ['technical', 'business']) if (tot[cls][1]) rows.push({ dim: { channel: 'all', cls, note: rows.filter(q => q.dim.cls === cls && q.dim.channel !== 'all').map(q => `${CH[q.dim.channel]} ${Math.round(q.value * 100)}%`).join(' · ') }, value: rate(tot[cls][0], tot[cls][1]), sample: tot[cls][1] });
-    return rows;
-  });
+  return cached(`appFam:${name}:` + minuteKey(now), 60e3, async () => journeyRates(await appUnits(now, { pred }), { what: `${name} journeys` }));
+}
+
+/* ================= app log: the JOURNEY as the unit (alpha.169) =================
+ * appUnits = one row per (group, journey) over the last 60 min: which classes failed in it, how many failed steps, the
+ * latest failing step + reason per class, and done = the journey's order was processed (fixedJourneyDone). */
+async function appUnits(now, { pred = 'TRUE', group = `coalesce(channel,'other')`, mutationOnly = true, mins = 60 } = {}) {
+  if (!C()) return [];
+  const r = (await C().query(`SELECT ${group} AS g, ${jd.UNIT_SQL} AS unit, max(state_id) AS state_id, count(*)::int AS steps,
+      bool_or(ok IS NOT TRUE AND reason_class = 'technical') AS technical, bool_or(ok IS NOT TRUE AND reason_class = 'business') AS business,
+      count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'technical')::int AS technical_n, count(*) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'business')::int AS business_n,
+      max(ts) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'technical') AS technical_at, max(ts) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'business') AS business_at,
+      (array_agg(coalesce(path, kind) || ' “' || left(coalesce(reason,''), 80) || '”' ORDER BY ts DESC) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'technical'))[1] AS technical_note,
+      (array_agg(coalesce(path, kind) || ' “' || left(coalesce(reason,''), 80) || '”' ORDER BY ts DESC) FILTER (WHERE ok IS NOT TRUE AND reason_class = 'business'))[1] AS business_note
+    FROM fixed_app_events WHERE ${mutationOnly ? `kind = 'mutation' AND ` : ''}(${pred}) AND ts >= $1::timestamptz - ($2||' minutes')::interval AND ts < $1::timestamptz
+    GROUP BY 1,2`, [now, mins])).rows;
+  const done = await jd.doneOf(r.map(x => x.state_id));
+  for (const x of r) x.done = !!x.state_id && done.has(String(x.state_id));
+  return r;
+}
+/* per group × class: value = journeys that failed in that class AND whose order was not processed ÷ every journey seen
+ * in the window; "errors to review" = the failed ones whose order went through. groups = channels (+ an 'all' row) or
+ * any key given by groupsOf / labelOf (providers). */
+function journeyRates(units, { what = 'journeys', groups = APP_CH, labelOf = g => CH[g] || g, all = true, classes = ['technical', 'business'] } = {}) {
+  const by = {}; for (const u of units) (by[u.g] = by[u.g] || []).push(u);
+  const rows = [];
+  const one = (key, list, label) => {
+    for (const cls of classes) {
+      const hit = list.filter(u => u[cls] && !u.done), rev = list.filter(u => u[cls] && u.done);
+      const steps = hit.reduce((s, u) => s + u[cls + '_n'], 0);
+      const last = hit.slice().sort((a, b) => new Date(b[cls + '_at']) - new Date(a[cls + '_at']))[0];
+      rows.push({ dim: { ...key, cls, note: `${label} · ${hit.length} of ${list.length} ${what} ${cls === 'technical' ? 'failed technically' : 'refused'} and did not complete (${steps} failed steps)${last ? ` · last ${String(last[cls + '_note'] || '').replace(/\s+/g, ' ')}` : ''}${reviewNote(rev.length)}` },
+        value: rate(hit.length, list.length), sample: list.length, customers: hit.length, customers_total: list.length });
+    }
+  };
+  for (const g of groups) if (by[g] && by[g].length) one({ channel: g }, by[g], labelOf(g));
+  if (all) { const every = groups.flatMap(g => by[g] || []); if (every.length) one({ channel: 'all' }, every, rows.filter(r => r.dim.channel !== 'all').length ? 'all channels' : labelOf('all')); }
+  /* the 'all' note lists the channel shares, as before */
+  if (all) for (const r of rows.filter(x => x.dim.channel === 'all')) {
+    const parts = rows.filter(q => q.dim.cls === r.dim.cls && q.dim.channel !== 'all').map(q => `${labelOf(q.dim.channel)} ${Math.round(q.value * 100)}% (${q.customers}/${q.sample})`).join(' · ');
+    const rev = (r.dim.note.match(/ · (\d+) more journeys? .*$/) || [''])[0];
+    r.dim.note = parts + rev;
+  }
+  return rows;
 }
 async function apiCalls(now) {
   return cached('apiCalls:' + minuteKey(now), 60e3, async () => {
@@ -390,4 +483,4 @@ async function apiCalls(now) {
   });
 }
 
-module.exports = { METRICS, start, rollup, CH, SLOW_STEPS };
+module.exports = { METRICS, start, rollup, CH, SLOW_STEPS, appUnits, journeyRates };

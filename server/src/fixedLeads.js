@@ -33,57 +33,48 @@ const bad = (status, msg, code) => Object.assign(new Error(msg), { status, code 
 const scrub = t => String(t == null ? '' : t).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\+?\d[\d\s-]{5,}\d/g, m => { const d = m.replace(/\D/g, ''); return d.length >= 7 ? '•'.repeat(d.length - 2) + d.slice(-2) : m; }).trim();
 const iso = v => v ? new Date(v).toISOString() : null;
 
-/* ------------------------------------------------------------------ live contact (reveal) */
-async function contactOf(L) {
-  const nm = c => ({ en: [c.englishFirstName, c.englishLastName].filter(Boolean).join(' ') || null, ar: [c.firstName, c.lastName].filter(Boolean).join(' ') || null });
-  if (['epurchase', 'salamhome', 'sda', 'qr'].includes(L.source)) {
-    if (!db.nexus) throw bad(503, 'nexus is not configured — the number cannot be read');
-    const r = await db.nexus.query(`SELECT context->'customer' AS c FROM workflow_states WHERE id = $1`, [L.source_ref]);
-    const c = (r.rows[0] && r.rows[0].c) || null; if (!c) throw bad(404, 'The journey is no longer in nexus — the number cannot be read');
-    return { name: nm(c), mobile: S.normMobile(c.mobilePhone) };
-  }
-  if (L.source === 'sda_promoter') {
-    if (!db.nexus) throw bad(503, 'nexus is not configured — the number cannot be read');
-    const r = await db.nexus.query(`SELECT w.context->'customer' AS c FROM leads l LEFT JOIN workflow_states w ON w.id = l."leadWorkflowId" WHERE l.id = $1`, [String(L.source_ref).replace(/^L/, '')]);
-    const c = (r.rows[0] && r.rows[0].c) || null; if (!c) throw bad(404, 'The promoter lead has no customer block in nexus');
-    return { name: nm(c), mobile: S.normMobile(c.mobilePhone) };
-  }
-  if (L.source === 'dashpro') {
-    const d = await H.dashRow(String(L.source_ref).replace(/^D/, '')); if (!d) throw bad(404, 'The DashPro row is no longer readable');
-    return { name: { en: [d.fname, d.lname].filter(Boolean).join(' ') || null, ar: null }, mobile: S.normMobile(d.mobile_number) };
-  }
-  if (L.source === 'import') {
-    const p = S.dec(L.pii_enc); if (!p) throw bad(503, 'The imported contact cannot be decrypted (LEADS_PII_KEY changed or missing)');
-    return { name: { en: p.name || null, ar: null }, mobile: S.normMobile(p.mobile) };
-  }
-  throw bad(400, 'unknown source');
-}
-
-/* the contacts of many leads at once (unmask): nexus by primary key, the imported batches decrypted, DashPro row by row */
-const nmOf = c => {
-  if (!c || typeof c !== 'object') return { en: null, ar: null };
-  const s = v => typeof v === 'string' ? v.trim() : '';
-  const en = [s(c.englishFirstName), s(c.englishLastName)].filter(Boolean).join(' ') || s(c.englishFullName) || s(c.fullName) || s(c.customerName) || s(c.crName) || s(c.companyName) || null;
-  const ar = [s(c.firstName), s(c.lastName)].filter(Boolean).join(' ') || null;
-  return { en, ar: ar && ar !== en ? ar : null };
-};
+/* ------------------------------------------------------------------ live contacts (reveal one lead · unmask a page)
+ * Read live from each lead's source, never stored. Name: the journey's, else the same person's Salam Home account, Salam Fixed (BSS)
+ * or Salam Mobile record (fixedLeadsHarvest.namesFor — alpha.170), with where it came from; plus the e-mail and language the
+ * customer gave. → Map(lead id → { name: { en, ar }, from, mobile, email, lang } | { none: why }) */
 async function contactsOf(leads) {
-  const out = new Map(), put = (L, c, why) => { const mob = c && S.normMobile(c.mobilePhone); out.set(L.id, mob ? { name: nmOf(c), mobile: mob } : { none: c ? 'no mobile number in the source' : why }); };
+  const out = new Map(), blocks = new Map();
   const jr = leads.filter(L => ['epurchase', 'salamhome', 'sda', 'qr'].includes(L.source)), pr = leads.filter(L => L.source === 'sda_promoter');
-  if (!db.nexus) [...jr, ...pr].forEach(L => out.set(L.id, { none: 'nexus is not configured' }));
+  if (!db.nexus) [...jr, ...pr].forEach(L => out.set(L.id, { none: 'nexus is not configured — the number cannot be read' }));
   else {
-    if (jr.length) { const r = await db.nexus.query(`SELECT id, context->'customer' AS c FROM workflow_states WHERE id = ANY($1::text[])`, [jr.map(L => String(L.source_ref))]);
-      const m = new Map(r.rows.map(x => [String(x.id), x.c])); jr.forEach(L => put(L, m.get(String(L.source_ref)), 'the journey is no longer in nexus')); }
-    if (pr.length) { const ref = L => String(L.source_ref).replace(/^L/, '');
-      const r = await db.nexus.query(`SELECT l.id, w.context->'customer' AS c FROM leads l LEFT JOIN workflow_states w ON w.id = l."leadWorkflowId" WHERE l.id = ANY($1::text[])`, [pr.map(ref)]);
-      const m = new Map(r.rows.map(x => [String(x.id), x.c])); pr.forEach(L => put(L, m.get(ref(L)), 'the promoter lead has no customer block')); }
+    if (jr.length) {
+      const r = await db.nexus.query(`SELECT id, context->'customer' AS c, context->'storedYakeenCustomer' AS yk FROM workflow_states WHERE id = ANY($1::text[])`, [jr.map(L => String(L.source_ref))]);
+      const m = new Map(r.rows.map(x => [String(x.id), x]));
+      jr.forEach(L => { const x = m.get(String(L.source_ref)); if (x && x.c) blocks.set(L.id, { c: x.c, yk: x.yk, journey: String(L.source_ref) }); else out.set(L.id, { none: 'the journey is no longer in nexus' }); });
+    }
+    if (pr.length) {
+      const ref = L => String(L.source_ref).replace(/^L/, '');
+      const r = await db.nexus.query(`SELECT l.id, l."leadWorkflowId" AS j, w.context->'customer' AS c, w.context->'storedYakeenCustomer' AS yk FROM leads l LEFT JOIN workflow_states w ON w.id = l."leadWorkflowId" WHERE l.id = ANY($1::text[])`, [pr.map(ref)]);
+      const m = new Map(r.rows.map(x => [String(x.id), x]));
+      pr.forEach(L => { const x = m.get(ref(L)); if (x && x.c) blocks.set(L.id, { c: x.c, yk: x.yk, journey: x.j || null }); else out.set(L.id, { none: 'the promoter lead has no customer block' }); });
+    }
+    const names = blocks.size ? await H.namesFor([...blocks.entries()].map(([id, b]) => ({ key: id, customer: b.c, yk: b.yk, nid: S.normNid(b.c && b.c.id), journey: b.journey }))) : new Map();
+    for (const [id, b] of blocks) {
+      const c = b.c && typeof b.c === 'object' ? b.c : {}; const mob = S.normMobile(c.mobilePhone);
+      if (!mob) { out.set(id, { none: 'no mobile number in the source' }); continue; }
+      const n = names.get(id);
+      out.set(id, { name: n ? { en: n.en || null, ar: n.ar || null } : { en: null, ar: null }, from: n ? n.from : null, mobile: mob,
+        email: typeof c.email === 'string' && /@/.test(c.email) ? c.email.trim() : null, lang: ['ar', 'en'].includes(c.language) ? c.language : null });
+    }
   }
-  for (const L of leads.filter(x => x.source === 'import')) { const p = S.dec(L.pii_enc); const mob = p && S.normMobile(p.mobile); out.set(L.id, mob ? { name: { en: p.name || null, ar: null }, mobile: mob } : { none: 'cannot be decrypted (LEADS_PII_KEY)' }); }
+  for (const L of leads.filter(x => x.source === 'import')) { const p = S.dec(L.pii_enc); const mob = p && S.normMobile(p.mobile); out.set(L.id, mob ? { name: { en: p.name || null, ar: null }, from: p.name ? 'import' : null, mobile: mob, email: null, lang: null } : { none: 'the imported contact cannot be decrypted (LEADS_PII_KEY changed or missing)' }); }
   for (const L of leads.filter(x => x.source === 'dashpro')) {
-    try { const d = await H.dashRow(String(L.source_ref).replace(/^D/, '')); const mob = d && S.normMobile(d.mobile_number); out.set(L.id, mob ? { name: { en: [d.fname, d.lname].filter(Boolean).join(' ') || null, ar: null }, mobile: mob } : { none: 'the DashPro row is not readable' }); }
+    try { const d = await H.dashRow(String(L.source_ref).replace(/^D/, '')); const mob = d && S.normMobile(d.mobile_number); const nm = d ? [d.fname, d.lname].filter(Boolean).join(' ') : '';
+      out.set(L.id, mob ? { name: { en: nm || null, ar: null }, from: nm ? 'dashpro' : null, mobile: mob, email: d.email || null, lang: null } : { none: 'the DashPro row is no longer readable' }); }
     catch (e) { out.set(L.id, { none: 'DashPro: ' + e.message.slice(0, 60) }); }
   }
+  for (const L of leads) if (!out.has(L.id)) out.set(L.id, { none: 'unknown source' });
   return out;
+}
+async function contactOf(L) {
+  const x = (await contactsOf([L])).get(L.id) || { none: 'unknown source' };
+  if (!x.mobile) throw bad(404, 'No number: ' + (x.none || 'not in the source'));
+  return x;
 }
 const unmaskCfg = desk => ({ who: ['off', 'supervisors', 'members'].includes(desk.unmaskWho) ? desk.unmaskWho : 'members',
   minutes: Math.max(1, Math.min(60, S.n(desk.unmaskMinutes) || 10)), perDay: Math.max(10, Math.min(5000, S.n(desk.unmaskPerDay) || 600)) });
@@ -92,14 +83,18 @@ const unmaskCfg = desk => ({ who: ['off', 'supervisors', 'members'].includes(des
 const ROW = `l.id, l.source, l.product, l.plan_id, l.plan_label, l.svc_type, l.plan_type, l.channel, l.dealer, l.region, l.city, l.step_label, l.reason, l.reason_class, l.customer_mask, l.mobile_mask, l.nid_kind,
   l.relation, l.occurred_at, l.status, l.assignee, l.assigned_at, l.priority, l.score, l.temp, l.next_action_at, l.attempts, l.first_contact_at, l.last_contact_at,
   l.offer_code, l.offer_months, l.won_at, l.won_auto, l.won_by, l.won_ref, l.lost_reason, l.closed_at, l.batch_id, l.remark, l.created_at, l.updated_at,
-  coalesce((l.facts->>'attempts')::int, 1) AS journeys, l.facts->>'period' AS period`;
+  coalesce((l.facts->>'attempts')::int, 1) AS journeys, l.facts->>'period' AS period, l.facts->>'lang' AS lang, l.facts->>'bss' AS bss, l.facts->>'nm' AS name_from`;
 async function getLead(id) { const r = await C().query(`SELECT * FROM fixed_leads WHERE id = $1`, [id]); return r.rows[0] || null; }
 function view(L) {
   const out = {}; for (const k of ['id', 'source', 'product', 'plan_id', 'plan_label', 'svc_type', 'plan_type', 'channel', 'dealer', 'region', 'city', 'step_label', 'reason', 'reason_class', 'customer_mask', 'mobile_mask', 'nid_kind',
     'relation', 'occurred_at', 'status', 'assignee', 'assigned_at', 'priority', 'score', 'temp', 'next_action_at', 'attempts', 'first_contact_at', 'last_contact_at', 'offer_code', 'offer_months',
-    'won_at', 'won_auto', 'won_by', 'won_ref', 'lost_reason', 'closed_at', 'batch_id', 'remark', 'created_at', 'updated_at', 'journeys', 'period']) out[k] = L[k] === undefined ? null : L[k];
+    'won_at', 'won_auto', 'won_by', 'won_ref', 'lost_reason', 'closed_at', 'batch_id', 'remark', 'created_at', 'updated_at', 'journeys', 'period', 'lang', 'bss', 'name_from']) out[k] = L[k] === undefined ? null : L[k];
   if (out.journeys == null) out.journeys = S.n((L.facts || {}).attempts) || 1;
-  if (out.period == null && L.facts && L.facts.period) out.period = L.facts.period;
+  const F = L.facts || {};
+  if (out.period == null && F.period) out.period = F.period;
+  if (out.lang == null && F.lang) out.lang = F.lang;
+  if (out.name_from == null && F.nm) out.name_from = F.nm;
+  out.bss = out.bss === true || out.bss === 'true' || F.bss === true;
   if (/^\d{1,6}$/.test(String(out.plan_label || ''))) out.plan_label = S.planLabel(out.plan_label, null, out.product);
   if (!out.svc_type) out.svc_type = S.svcType(L.workflow, L.plan_id, L.plan_label, L.product);
   out.facts = L.facts ? { invoice: L.facts.invoice || null, nafath: L.facts.nafath || null, provider: L.facts.provider || null, error: L.facts.error || null, dealerReason: L.facts.dealerReason || null, leadStatus: L.facts.leadStatus || null } : {};
@@ -163,6 +158,12 @@ async function board(req, desk) {
     q(`SELECT count(*)::int AS n FROM fixed_lead_events WHERE kind = 'won' AND actor = 'system' AND at > now() - interval '7 days'`),
   ]);
   const people = await S.members(); const nameOf = e => { const m = people.find(x => x.email === e); return m ? m.name : String(e || '').split('@')[0]; };
+  /* alpha.170: a super admin who is not on the OCU desk is greeted by name (not by the e-mail's first letter) and sees the team's day */
+  let myName = (people.find(x => x.email === me) || {}).name || null;
+  if (!myName) { const r = await q(`SELECT name FROM console_users WHERE lower(email) = $1`, [me]); myName = (r[0] && r[0].name) || null; }
+  const teamDay = (await q(`SELECT count(*) FILTER (WHERE kind='call' OR (kind='won' AND NOT coalesce((detail->>'auto')::boolean, false)))::int AS calls,
+      count(*) FILTER (WHERE (kind='call' OR (kind='won' AND NOT coalesce((detail->>'auto')::boolean, false))) AND (detail->>'contact')::boolean)::int AS contacts,
+      count(*) FILTER (WHERE kind='won')::int AS won FROM fixed_lead_events WHERE at >= $1 AND actor <> 'system'`, [t0]))[0] || {};
   /* challenges: progress from the events of their period */
   const challenges = [];
   for (const c of ch) {
@@ -178,21 +179,23 @@ async function board(req, desk) {
   const m = mine[0] || {}, e = myEv[0] || {}, t = team[0] || {}, sl = slaRows[0] || {};
   const rank = lb.findIndex(x => x.actor === me);
   return {
-    me: { email: me, name: nameOf(me), manager: mgr, open: S.n(m.open), due: S.n(m.due), untouched: S.n(m.untouched), hot: S.n(m.hot), pts_week: S.n(e.pts_week), pts_today: S.n(e.pts_today),
+    me: { email: me, name: myName || nameOf(me), ocu: people.some(x => x.email === me && !x.notOcu), manager: mgr, open: S.n(m.open), due: S.n(m.due), untouched: S.n(m.untouched), hot: S.n(m.hot), pts_week: S.n(e.pts_week), pts_today: S.n(e.pts_today),
       won_today: S.n(e.won_today), won_week: S.n(e.won_week), calls_today: S.n(e.calls_today), contacts_today: S.n(e.contacts_today), calls_week: S.n(e.calls_week), contacts_week: S.n(e.contacts_week),
       rank: rank >= 0 ? rank + 1 : null, targets: desk.targets },
     team: { open: S.n(t.open), pool: S.n(t.pool), new_today: S.n(t.new_today), won_week: S.n(t.won_week), won_week_ocu: S.n(t.won_week_ocu), closed_week: S.n(t.closed_week), hot: S.n(t.hot), overdue: S.n(t.overdue),
       /* the team's own conversion: wins credited to a member over the leads the team closed (a customer who ordered before anyone
        * called is closed too, but nobody worked it) */
       conv_week: (S.n(t.closed_week) - (S.n(t.won_week) - S.n(t.won_week_ocu))) > 0 ? Math.round(S.n(t.won_week_ocu) / (S.n(t.closed_week) - (S.n(t.won_week) - S.n(t.won_week_ocu))) * 100) : null, sla_min: S.n(desk.slaFirstContactMin) || 120, first_contact_avg_min: sl.avg_min == null ? null : S.n(sl.avg_min),
-      first_contact_within: S.n(sl.n) ? Math.round(S.n(sl.within) / S.n(sl.n) * 100) : null, by_source: src },
+      first_contact_within: S.n(sl.n) ? Math.round(S.n(sl.within) / S.n(sl.n) * 100) : null, by_source: src,
+      calls_today: S.n(teamDay.calls), contacts_today: S.n(teamDay.contacts), won_today: S.n(teamDay.won) },
     leaderboard: lb.map((x, i) => ({ rank: i + 1, email: x.actor, name: nameOf(x.actor), points: x.pts, won: x.won, calls: x.calls, contacts: x.contacts, offers: x.offers, me: x.actor === me })),
     best: lastWeek[0] ? { email: lastWeek[0].actor, name: nameOf(lastWeek[0].actor), points: lastWeek[0].pts, won: lastWeek[0].won, week: S.ksaDay(lw0.getTime()) } : null,
     challenges,
     feed: feed.map(f => ({ at: f.at, who: f.actor === 'system' ? null : nameOf(f.actor), kind: f.kind, auto: !!(f.detail && f.detail.auto), product: f.product, plan: f.plan_label, source: f.source,
       offer: f.detail && (f.detail.offer || f.detail.code) || null })),
     self_won_7d: S.n((selfWon[0] || {}).n),
-    brief: brief ? { at: brief.created_at, text: brief.narrative } : null,
+    /* a brief written over an empty desk (go-live day) is not shown once the desk has leads — the coach writes today's again */
+    brief: brief && !(S.n(((brief.summary || {}).pipe || {}).open) === 0 && S.n(t.open) > 0) ? { at: brief.created_at, text: brief.narrative } : null,
     week: S.ksaDay(w0.getTime()),
   };
 }
@@ -434,7 +437,7 @@ function mount(app, deps = {}) {
   app.get(`${B}/meta`, gate, accepted, wrap(async (q, req) => {
     const desk = await S.getDesk(); const mgr = canManage(req, desk); const people = await S.members();
     return { offers: desk.offers, rules: S.OFFER_RULES, offerSource: S.OFFER_SOURCE, statuses: S.STATUS_LABEL, results: Object.fromEntries(Object.entries(S.RESULTS).map(([k, v]) => [k, v.label])),
-      lostReasons: S.LOST_REASONS, reasons: S.REASON_LABEL, sources: S.SOURCE_LABEL, sourcesShort: S.SOURCE_SHORT, svc: S.SVC_LABEL, ptypes: S.PTYPE_LABEL,
+      lostReasons: S.LOST_REASONS, reasons: S.REASON_LABEL, sources: S.SOURCE_LABEL, sourcesShort: S.SOURCE_SHORT, svc: S.SVC_LABEL, ptypes: S.PTYPE_LABEL, scoring: CO.scoring(),
       targets: desk.targets, points: desk.points, sla: desk.slaFirstContactMin,
       reveal: { perHour: desk.revealPerHour, perDay: desk.revealPerDay },
       unmask: (() => { const U = unmaskCfg(desk); return { ...U, can: !req.viewAs && (mgr || U.who === 'members') && U.who !== 'off', scope: mgr ? 'any' : 'own', capped: !(isRealSuper(req) && !req.viewAs) }; })(),
@@ -503,7 +506,7 @@ function mount(app, deps = {}) {
     const c = await contactOf(L); if (!c.mobile) throw bad(404, 'No mobile number in the source.');
     await S.event(L.id, String(req.actor).toLowerCase(), 'reveal', { source: L.source }, 0);
     await audit(req, 'leads.reveal', String(L.id), { source: L.source, product: L.product });
-    return { lead: L.id, name: c.name, mobile: S.dial(c.mobile), tel: '+966' + c.mobile, seconds: 90, used: { hour: cap.hour + 1, day: cap.day + 1, perHour: cap.ph, perDay: cap.pd } };
+    return { lead: L.id, name: c.name, from: c.from || null, email: c.email || null, lang: c.lang || null, mobile: S.dial(c.mobile), tel: '+966' + c.mobile, seconds: 90, used: { hour: cap.hour + 1, day: cap.day + 1, perHour: cap.ph, perDay: cap.pd } };
   }));
   app.post(`${B}/unmask`, gate, accepted, wrap(async (q, req) => {
     const desk = await S.getDesk(); const mgr = canManage(req, desk), me = meOf(req), sup = isRealSuper(req) && !req.viewAs; const U = unmaskCfg(desk); const b = req.body || {};
@@ -521,7 +524,7 @@ function mount(app, deps = {}) {
       throw bad(429, `Unmask limit reached — ${used} of ${U.perDay} leads today. The console owners were notified.`);
     }
     const c = await contactsOf(ok); const contacts = {}, shown = [];
-    for (const L of ok) { const x = c.get(L.id) || { none: 'not readable' }; if (x.mobile) { contacts[L.id] = { name: x.name, mobile: S.dial(x.mobile), tel: '+966' + x.mobile }; shown.push(L.id); } else contacts[L.id] = { none: x.none }; }
+    for (const L of ok) { const x = c.get(L.id) || { none: 'not readable' }; if (x.mobile) { contacts[L.id] = { name: x.name, from: x.from || null, email: x.email || null, lang: x.lang || null, mobile: S.dial(x.mobile), tel: '+966' + x.mobile }; shown.push(L.id); } else contacts[L.id] = { none: x.none }; }
     const view = ['mine', 'pool', 'team', 'closed'].includes(b.view) ? b.view : null;
     if (shown.length) {
       await C().query(`INSERT INTO fixed_lead_events (lead_id, actor, kind, detail) SELECT x, $2, 'unmask', $3::jsonb FROM unnest($1::bigint[]) AS x`, [shown, me, JSON.stringify({ view, minutes: U.minutes })]).catch(() => {});

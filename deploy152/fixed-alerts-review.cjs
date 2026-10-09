@@ -9,6 +9,7 @@
  *
  * Run ON 152 AS USER yosri (pm2/node live under yosri's nvm; sudo -i loses that PATH):
  *   cd /apps/unified/server && node /tmp/fixed-alerts-review.cjs --segment mvno --days 30
+ *   … --segment fixed --snap-days 14 --only 18     just the journey replay (alpha.169)
  *
  * Reads CONSOLE_DATABASE_URL out of /apps/unified/.env by parsing it IN NODE. Never `set -a; . .env`
  * on this box — values contain spaces and angle brackets and that pattern has broken a cron here before.
@@ -58,10 +59,103 @@ const num = (v, d = 2) => v == null ? '—' : (Math.abs(Number(v)) < 1 && Number
 const iso = d => d ? new Date(d).toISOString().replace('T', ' ').slice(0, 16) : '—';
 const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repeat(118));
 
+
+/* ---------- 18. JOURNEY replay (alpha.169) ----------
+ * The alert metrics now count customer JOURNEYS and leave out the ones whose order was processed (fixedJourneyDone.js).
+ * This section replays that, hour by hour, so the thresholds are set on the journey distribution, not on lines.
+ * Hindsight caveat: here "processed" means processed by the time this runs; live, a journey still in progress counts until
+ * it completes — the live rate can be a little higher than this replay in the minutes before a journey completes. */
+const DONE_SQL = `(ok IS TRUE AND state_id IS NOT NULL AND ((channel = 'web' AND path ~ '\\.(reviewOrder)$') OR (channel = 'sda' AND path ~ '\\.(submitOrder|reviewOrder)$')))`;   // = fixedJourneyDone.DONE_SQL
+const UNIT = `coalesce(state_id, 'rq:' || request_id, 'ln:' || id::text)`;                                                                                         // = fixedJourneyDone.UNIT_SQL
+async function opsCompleted(days) {
+  const ids = []; const notes = [];
+  for (const k of ['OPS_DATABASE_URL', 'OPS_BETA_DATABASE_URL']) {
+    const u = process.env[k] || ENV[k]; if (!u) { notes.push(`${k} not set`); continue; }
+    const o = new pg.Client({ connectionString: u }); 
+    try { await o.connect(); await o.query(`SET default_transaction_read_only = on`).catch(() => {});
+      const r = await o.query(`SELECT id FROM order_attempts WHERE outcome::text = 'COMPLETED' AND started_at >= now() - ($1||' days')::interval`, [String(Number(days) + 2)]);
+      for (const x of r.rows) ids.push(String(x.id)); notes.push(`${k}: ${r.rowCount} completed`);
+      if (k === 'OPS_DATABASE_URL') {
+        const b = await o.query(`SELECT coalesce(oa.outcome::text, '(no attempt)') AS outcome, count(*)::int AS errors, count(DISTINCT e.attempt_id)::int AS journeys
+            FROM error_events e LEFT JOIN order_attempts oa ON oa.id = e.attempt_id WHERE e.occurred_at >= now() - interval '7 days' GROUP BY 1 ORDER BY 2 DESC`);
+        notes.push('board errors (7 d, sda_ops) by journey outcome: ' + b.rows.map(x => `${x.outcome} ${x.errors} errors / ${x.journeys} journeys`).join(' · '));
+      }
+    } catch (e) { notes.push(`${k}: ${e.message}`); } finally { await o.end().catch(() => {}); }
+  }
+  return { ids, notes };
+}
+async function section18(q) {
+  hr(`18 · JOURNEYS — the app-log rate rules replayed per CUSTOMER JOURNEY, orders processed left out (${SNAPD} d) · and traffic by day type`);
+  const ops = await opsCompleted(SNAPD);
+  for (const n of ops.notes) console.log('  ' + n);
+  const hrs = await q(`
+    WITH d AS (SELECT DISTINCT done_id FROM (SELECT unnest($2::text[]) AS done_id UNION SELECT state_id FROM fixed_app_events WHERE ts >= now() - (($1::int + 2)||' days')::interval AND ${DONE_SQL}) x),
+         u AS (SELECT coalesce(channel,'other') ch, date_trunc('hour', ts) hh, ${UNIT} unit, max(state_id) sid,
+                      bool_or(ok IS NOT TRUE AND reason_class = 'technical') t, bool_or(ok IS NOT TRUE AND reason_class = 'business') b
+                 FROM fixed_app_events WHERE kind = 'mutation' AND ts >= now() - ($1||' days')::interval AND coalesce(channel,'other') IN ('sda','web','salamhome','payments') GROUP BY 1,2,3)
+    SELECT ch, hh, count(*)::int n, count(*) FILTER (WHERE t AND d.done_id IS NULL)::int tj, count(*) FILTER (WHERE t AND d.done_id IS NOT NULL)::int tr,
+           count(*) FILTER (WHERE b AND d.done_id IS NULL)::int bj, count(*) FILTER (WHERE b AND d.done_id IS NOT NULL)::int br
+      FROM u LEFT JOIN d ON d.done_id = u.sid GROUP BY 1,2`, [SNAPD, ops.ids]);
+  /* 'all' = the four channels summed, as the live metric does */
+  const allBy = {}; for (const r of hrs) { const k = String(r.hh); const a = allBy[k] = allBy[k] || { ch: 'all', hh: r.hh, n: 0, tj: 0, tr: 0, bj: 0, br: 0 }; for (const f of ['n', 'tj', 'tr', 'bj', 'br']) a[f] += r[f]; }
+  const H = hrs.concat(Object.values(allBy));
+  const pct = (arr, p) => { if (!arr.length) return null; const a = arr.slice().sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(p * (a.length - 1) + 0.5))]; };
+  const f1 = v => v == null ? '—' : (v * 100).toFixed(1) + '%';
+  console.log('\n  Hourly rate per journey (hours with ≥ 30 journeys) — P2 should sit near or above p99 of normal hours, P1 well above:');
+  console.log('  ' + pad('CHANNEL', 10) + rpad('HOURS', 6) + rpad('jrny p50', 9) + ' │ TECH p50 / p95 / p99      │ BIZ p50 / p95 / p99       │ to review (14 d): tech · biz journeys');
+  for (const ch of ['salamhome', 'web', 'sda', 'payments', 'all']) {
+    const rows = H.filter(r => r.ch === ch && r.n >= 30); if (!rows.length) { console.log('  ' + pad(ch, 10) + '  no hour with ≥ 30 journeys'); continue; }
+    const t = rows.map(r => r.tj / r.n), b = rows.map(r => r.bj / r.n);
+    const all = H.filter(r => r.ch === ch);
+    console.log('  ' + pad(ch, 10) + rpad(rows.length, 6) + rpad(pct(rows.map(r => r.n), 0.5), 9) + ` │ ${pad(`${f1(pct(t, .5))} / ${f1(pct(t, .95))} / ${f1(pct(t, .99))}`, 26)}│ ${pad(`${f1(pct(b, .5))} / ${f1(pct(b, .95))} / ${f1(pct(b, .99))}`, 26)}│ ${all.reduce((s, r) => s + r.tr, 0)} · ${all.reduce((s, r) => s + r.br, 0)}`);
+  }
+  const episodes = list => { const t = list.map(x => new Date(x).getTime()).sort((a, b) => a - b); let n = 0, last = -1e15; for (const v of t) { if (v - last > 2 * 3600e3) n++; last = v; } return n; };
+  const rules = await q(`SELECT r.key, r.severity, r.threshold, r.min_sample, r.dim, r.enabled, r.operator_edited,
+      (SELECT count(*) FROM alerts a WHERE a.rule_key = r.key AND a.fired_at >= now() - interval '30 days')::int fires30
+    FROM alert_rules r WHERE r.metric_key = 'fixed_applog_fail_rate' ORDER BY r.dim::text, r.threshold`);
+  console.log('\n  The rules at their CURRENT thresholds on the journey counts (EPISODES = runs of breaching hours ≤ 2 h apart):');
+  console.log('  ' + pad('RULE', 42) + pad('SEV', 4) + rpad('THRESH', 8) + rpad('n≥', 5) + rpad('HOURS', 7) + rpad('BREACH h', 9) + rpad('EPISODES', 9) + rpad('/WEEK', 7) + rpad('FIRES 30d', 10) + '  NOTE');
+  for (const r of rules) {
+    const d = r.dim || {}; const k = d.cls === 'business' ? 'bj' : 'tj';
+    const rows = H.filter(x => x.ch === d.channel); const hit = rows.filter(x => x.n >= r.min_sample && x[k] / x.n >= Number(r.threshold));
+    const ep = episodes(hit.map(x => x.hh));
+    console.log('  ' + pad(r.key, 42) + pad(r.severity, 4) + rpad(num(r.threshold), 8) + rpad(r.min_sample, 5) + rpad(rows.length, 7) + rpad(hit.length, 9) + rpad(ep, 9) + rpad((ep * 7 / Number(SNAPD)).toFixed(1), 7) + rpad(r.fires30, 10) + '  ' + (r.enabled ? '' : 'disabled ') + (r.operator_edited ? 'operator-edited (seed not applied)' : ''));
+    for (const h of hit.slice(-3)) console.log('  ' + ' '.repeat(42) + `↳ ${iso(h.hh)}Z  ${h[k]} of ${h.n} journeys (${f1(h[k] / h.n)}) · ${d.cls === 'business' ? h.br : h.tr} more to review`);
+  }
+
+  /* traffic: distinct journeys per clock hour vs the median of the same KSA hour on the same day type, prior 28 days */
+  const vol = await q(`SELECT date_trunc('hour', ts) hh, count(*)::int lines,
+        count(DISTINCT state_id) FILTER (WHERE channel = 'web')::int web, count(DISTINCT state_id) FILTER (WHERE channel = 'sda')::int sda,
+        count(DISTINCT coalesce(request_id, id::text)) FILTER (WHERE channel = 'salamhome')::int salamhome
+      FROM fixed_app_events WHERE ts >= now() - (($1::int + 28)||' days')::interval GROUP BY 1`, [SNAPD]);
+  const ksa = t => new Date(new Date(t).getTime() + 3 * 3600e3); const wk = t => [5, 6].includes(ksa(t).getUTCDay());
+  const byT = new Map(vol.map(v => [new Date(v.hh).getTime(), v]));
+  const vrules = await q(`SELECT r.key, r.threshold, r.dim, r.active_from, r.active_to, r.enabled,
+      (SELECT count(*) FROM alerts a WHERE a.rule_key = r.key AND a.fired_at >= now() - interval '30 days')::int fires30
+    FROM alert_rules r WHERE r.metric_key = 'fixed_applog_volume_ratio' ORDER BY r.key`);
+  console.log('\n  Traffic collapse replayed: journeys in the clock hour vs the median of the same KSA hour on the same day type (Fri/Sat | Sun–Thu), 4 weeks before:');
+  for (const r of vrules) {
+    const ch = (r.dim || {}).channel; let hours = 0; const hit = [];
+    const start = Date.now() - Number(SNAPD) * 864e5;
+    for (const v of vol) {
+      const t = new Date(v.hh).getTime(); if (t < start || t > Date.now() - 3600e3) continue;
+      const h = ksa(v.hh).getUTCHours(); if (r.active_from != null && (h < r.active_from || h >= r.active_to)) continue;
+      const same = []; for (let k = 1; k <= 28; k++) { const p = byT.get(t - k * 864e5); if (p && p.lines > 0 && wk(p.hh) === wk(v.hh)) same.push(p[ch]); }
+      if (same.length < 3) continue; const med = pct(same, 0.5); if (med < 20) continue;
+      hours++; const ratio = v[ch] / med; if (ratio <= Number(r.threshold)) hit.push({ hh: v.hh, n: v[ch], med, ratio });
+    }
+    const ep = episodes(hit.map(x => x.hh));
+    console.log(`  ${pad(r.key, 42)} floor ${r.threshold} · ${hours} hours judged · ${hit.length} under the floor · ${ep} episodes (${(ep * 7 / Number(SNAPD)).toFixed(1)}/week) · fired ${r.fires30}× in 30 d before${r.enabled ? '' : ' · disabled'}`);
+    for (const h of hit.slice(-5)) console.log(`      ↳ ${iso(h.hh)}Z (KSA ${ksa(h.hh).toISOString().slice(0, 16).replace('T', ' ')} ${wk(h.hh) ? 'weekend' : 'weekday'}) ${h.n} vs typical ${h.med} → ${h.ratio.toFixed(2)}`);
+  }
+}
+
 (async () => {
   const c = new pg.Client({ connectionString: URL });
   await c.connect();
   const q = (sql, p) => c.query(sql, p).then(r => r.rows);
+  /* --only 18: just the journey replay (alpha.169) */
+  if (argv('--only', '') === '18') { await section18(q); await c.end(); console.log('\nDone. READ-ONLY — nothing was written.'); return; }
 
   /* ---------- 0. context ---------- */
   hr(`0 · CONTEXT — ${SEG_LABEL} · unified_console on 172.31.15.121`);
@@ -481,6 +575,8 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
   }
   console.log(`\n  these ${simRules.length} rules: ${totOld} actual fires in 30 d before → about ${Math.round(totEp * 30 / Number(SNAPD))} incidents per 30 d at the current thresholds on the current classification.`);
   console.log('  Not simulated here (their metric needs its own baseline): the anomaly z-scores, the board and integration-host rules — read them in section 3 after a week.');
+
+  await section18(q);
 
   /* ---------- 7. silent rules ---------- */
   hr(`7 · SILENT — enabled ${SEG_LABEL} rules with zero fires in ${DAYS} d`);
