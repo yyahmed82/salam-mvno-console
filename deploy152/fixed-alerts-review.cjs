@@ -355,6 +355,93 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
     console.log(`\n  ${orphan.length} ungoverned source(s), ${tot} fires, ${unt} of them never acknowledged.`);
   }
 
+  /* ---------- 12. operator edits ---------- */
+  hr('12 · OPERATOR EDITS — rules changed in the console (the seed no longer applies their numbers) and disabled rules');
+  const ed = await q(`SELECT r.key, r.severity, r.enabled, r.operator_edited, r.operator, r.threshold, r.min_sample, r.window_hours
+                        FROM alert_rules r WHERE ${FIXED_R} AND (r.operator_edited OR NOT r.enabled) ORDER BY r.enabled, r.key`).catch(() => []);
+  for (const r of ed) console.log('  ' + pad(r.key, 44) + pad(r.severity, 4) + pad(r.enabled ? 'on' : 'OFF', 5) + pad(r.operator_edited ? 'edited' : '', 8) + `${r.operator} ${num(r.threshold)} · n≥${r.min_sample} · ${r.window_hours}h`);
+  if (!ed.length) console.log('  none');
+
+  /* ---------- 13. step latency ---------- */
+  hr(`13 · STEP LATENCY — app steps by p95 (${SNAPD} d, ≥ 20 calls): which steps are slow every day`);
+  console.log('A step that is slow every day is a known problem (a problem record), not an incident: it must not decide the channel latency.');
+  console.log('  ' + pad('CHANNEL', 10) + pad('STEP', 52) + rpad('CALLS', 7) + rpad('SHARE', 7) + rpad('FAIL%', 7) + rpad('p50 ms', 9) + rpad('p95 ms', 9) + rpad('p99 ms', 9) + rpad('≥10s', 6) + rpad('DAYS≥10s', 9));
+  const steps = await q(`
+    WITH s AS (SELECT coalesce(channel,'other') ch, path, ok, duration_ms, date(ts AT TIME ZONE 'Asia/Riyadh') d
+                 FROM fixed_app_events WHERE kind='mutation' AND duration_ms IS NOT NULL AND ts >= now() - ($1||' days')::interval),
+         dd AS (SELECT ch, path, d, percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) p95d FROM s GROUP BY 1,2,3 HAVING count(*) >= 5)
+    SELECT s.ch, s.path, count(*)::int n, round(100.0 * count(*) / sum(count(*)) OVER (PARTITION BY s.ch), 1) share,
+           round(100.0 * count(*) FILTER (WHERE ok IS FALSE) / count(*), 1) failp,
+           round(percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms))::int p50, round(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms))::int p95,
+           round(percentile_cont(0.99) WITHIN GROUP (ORDER BY duration_ms))::int p99, count(*) FILTER (WHERE duration_ms >= 10000)::int over10,
+           (SELECT count(*) FROM dd WHERE dd.ch = s.ch AND dd.path = s.path AND dd.p95d >= 10000)::int days10, (SELECT count(*) FROM dd WHERE dd.ch = s.ch AND dd.path = s.path)::int days
+      FROM s GROUP BY s.ch, s.path HAVING count(*) >= 20 ORDER BY p95 DESC LIMIT 30`, [SNAPD]);
+  for (const r of steps) console.log('  ' + pad(r.ch, 10) + pad(r.path, 52) + rpad(r.n, 7) + rpad(r.share + '%', 7) + rpad(r.failp + '%', 7) + rpad(r.p50, 9) + rpad(r.p95, 9) + rpad(r.p99, 9) + rpad(r.over10, 6) + rpad(`${r.days10}/${r.days}`, 9));
+
+  /* ---------- 14. classification audit ---------- */
+  hr(`14 · CLASSIFICATION — failed app steps counted TECHNICAL whose own error line says BUSINESS (${SNAPD} d)`);
+  console.log('The app log writes two lines for a refused step: "mutation <step> fail Nms" (no reason) and the error line (status + reason).');
+  console.log('The rate rules count the first one, classed technical by default. PAIRED = the error line with the same request id says business.');
+  const cls = await q(`
+    WITH m AS (SELECT id, ts, coalesce(channel,'other') ch, path, request_id, reason_class FROM fixed_app_events
+                WHERE kind='mutation' AND ok IS FALSE AND ts >= now() - ($1||' days')::interval),
+         e AS (SELECT request_id, path, ts, reason_class, status_code, left(reason, 70) reason FROM fixed_app_events
+                WHERE kind <> 'mutation' AND ok IS FALSE AND request_id IS NOT NULL AND ts >= now() - ($1||' days')::interval - interval '5 minutes'),
+         p AS (SELECT DISTINCT ON (m.id) m.id, m.ch, m.path, m.reason_class mc, e.reason_class ec, e.status_code, e.reason
+                 FROM m LEFT JOIN e ON e.request_id = m.request_id AND (e.path = m.path OR e.path IS NULL) AND e.ts BETWEEN m.ts - interval '2 minutes' AND m.ts + interval '2 minutes'
+                ORDER BY m.id, CASE e.reason_class WHEN 'technical' THEN 0 WHEN 'business' THEN 1 WHEN 'client' THEN 2 ELSE 3 END)
+    SELECT ch, path, count(*)::int fails, count(*) FILTER (WHERE mc='technical')::int tech_now,
+           count(*) FILTER (WHERE mc='technical' AND ec='business')::int to_business, count(*) FILTER (WHERE mc='technical' AND ec='client')::int to_client,
+           count(*) FILTER (WHERE mc='technical' AND ec='technical')::int stays_tech, count(*) FILTER (WHERE mc='technical' AND ec IS NULL)::int unpaired,
+           (array_agg(coalesce(status_code::text,'-') || ' ' || reason) FILTER (WHERE ec='business'))[1] sample
+      FROM p GROUP BY 1,2 HAVING count(*) FILTER (WHERE mc='technical') >= 10 ORDER BY tech_now DESC LIMIT 30`, [SNAPD]);
+  console.log('  ' + pad('CHANNEL', 10) + pad('STEP', 46) + rpad('FAILS', 7) + rpad('TECH', 7) + rpad('→BIZ', 7) + rpad('→CLI', 6) + rpad('TECH✓', 7) + rpad('UNPAIR', 8) + '  SAMPLE BUSINESS REASON');
+  let T = { tech: 0, biz: 0, cli: 0 };
+  for (const r of cls) { T.tech += r.tech_now; T.biz += r.to_business; T.cli += r.to_client;
+    console.log('  ' + pad(r.ch, 10) + pad(r.path, 46) + rpad(r.fails, 7) + rpad(r.tech_now, 7) + rpad(r.to_business, 7) + rpad(r.to_client, 6) + rpad(r.stays_tech, 7) + rpad(r.unpaired, 8) + '  ' + (r.sample || '')); }
+  console.log(`\n  listed steps: ${T.tech} technical failures today, ${T.biz} are business refusals and ${T.cli} client errors by their own error line (${T.tech ? Math.round(100 * (T.biz + T.cli) / T.tech) : 0}% misclassified).`);
+
+  /* ---------- 15. what the rates and latencies become ---------- */
+  hr(`15 · BEFORE / AFTER — hourly technical failure rate and step latency p95 per channel (${SNAPD} d, hours with ≥ 20 steps)`);
+  console.log('BEFORE = as counted today. AFTER = a failed step takes the class of its own error line; latency without the steps slow every day');
+  console.log('(p50 ≥ 8 s over the window). These are the distributions the new thresholds are set from: P2 ≈ p95, P1 ≈ p99 of AFTER.');
+  const ba = await q(`
+    WITH slow AS (SELECT path FROM fixed_app_events WHERE kind='mutation' AND duration_ms IS NOT NULL AND ts >= now() - ($1||' days')::interval
+                   GROUP BY path HAVING count(*) >= 20 AND percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms) >= 8000),
+         m AS (SELECT id, ts, coalesce(channel,'other') ch, path, request_id, ok, reason_class, duration_ms FROM fixed_app_events
+                WHERE kind='mutation' AND ts >= now() - ($1||' days')::interval AND coalesce(channel,'other') IN ('sda','web','salamhome')),
+         e AS (SELECT request_id, path, ts, reason_class FROM fixed_app_events
+                WHERE kind <> 'mutation' AND ok IS FALSE AND request_id IS NOT NULL AND ts >= now() - ($1||' days')::interval - interval '5 minutes'),
+         c AS (SELECT DISTINCT ON (m.id) m.*, CASE WHEN m.ok IS FALSE AND m.reason_class='technical' AND e.reason_class IN ('business','client') THEN e.reason_class ELSE m.reason_class END rc2
+                 FROM m LEFT JOIN e ON m.ok IS FALSE AND e.request_id = m.request_id AND (e.path = m.path OR e.path IS NULL) AND e.ts BETWEEN m.ts - interval '2 minutes' AND m.ts + interval '2 minutes'
+                ORDER BY m.id, CASE e.reason_class WHEN 'technical' THEN 0 WHEN 'business' THEN 1 WHEN 'client' THEN 2 ELSE 3 END),
+         h AS (SELECT ch, date_trunc('hour', ts) hh, count(*) n,
+                      count(*) FILTER (WHERE ok IS FALSE AND reason_class='technical')::numeric / count(*) tb,
+                      count(*) FILTER (WHERE ok IS FALSE AND rc2='technical')::numeric / count(*) ta,
+                      percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) lb,
+                      percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE path NOT IN (SELECT path FROM slow)) la,
+                      count(duration_ms) FILTER (WHERE path NOT IN (SELECT path FROM slow)) nla
+                 FROM c GROUP BY 1,2 HAVING count(*) >= 20)
+    SELECT ch, count(*)::int hours, percentile_cont(0.5) WITHIN GROUP (ORDER BY n)::int n50,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY tb) tb50, percentile_cont(0.95) WITHIN GROUP (ORDER BY tb) tb95, percentile_cont(0.99) WITHIN GROUP (ORDER BY tb) tb99,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY ta) ta50, percentile_cont(0.95) WITHIN GROUP (ORDER BY ta) ta95, percentile_cont(0.99) WITHIN GROUP (ORDER BY ta) ta99,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY lb) lb50, percentile_cont(0.95) WITHIN GROUP (ORDER BY lb) lb95, percentile_cont(0.99) WITHIN GROUP (ORDER BY lb) lb99,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY la) la50, percentile_cont(0.95) WITHIN GROUP (ORDER BY la) la95, percentile_cont(0.99) WITHIN GROUP (ORDER BY la) la99,
+           percentile_cont(0.95) WITHIN GROUP (ORDER BY la) FILTER (WHERE nla >= 60) la95n60, percentile_cont(0.99) WITHIN GROUP (ORDER BY la) FILTER (WHERE nla >= 60) la99n60,
+           (SELECT string_agg(path, ', ') FROM slow) slow
+      FROM h GROUP BY ch ORDER BY ch`, [SNAPD]);
+  console.log('  ' + pad('CHANNEL', 10) + rpad('HOURS', 6) + rpad('n p50', 7) + ' │ TECH RATE before p50/p95/p99 │ after p50/p95/p99    │ LATENCY p95 ms before p50/p95/p99 │ after p50/p95/p99 │ after n≥60 p95/p99');
+  const f = v => v == null ? '—' : (Number(v) * 100).toFixed(1) + '%', ms = v => v == null ? '—' : String(Math.round(v));
+  for (const r of ba) console.log('  ' + pad(r.ch, 10) + rpad(r.hours, 6) + rpad(r.n50, 7) + ` │ ${f(r.tb50)} / ${f(r.tb95)} / ${f(r.tb99)} │ ${f(r.ta50)} / ${f(r.ta95)} / ${f(r.ta99)} │ ${ms(r.lb50)} / ${ms(r.lb95)} / ${ms(r.lb99)} │ ${ms(r.la50)} / ${ms(r.la95)} / ${ms(r.la99)} │ ${ms(r.la95n60)} / ${ms(r.la99n60)}`);
+  if (ba[0]) console.log(`\n  steps left out of the AFTER latency (p50 ≥ 8 s): ${ba[0].slow || 'none'}`);
+
+  /* ---------- 16. open incidents ---------- */
+  hr('16 · OPEN NOW — every open Fixed incident, how long, owner');
+  const opn = await q(`SELECT a.id, a.rule_key, a.severity, a.name, round(extract(epoch from now() - a.fired_at)/3600, 1) hours, a.ack_at IS NOT NULL acked, coalesce(a.assignee, a.ack_by) owner, a.observed_value, a.sample
+                         FROM alerts a WHERE ${FIXED_A} AND a.status='open' ORDER BY a.severity, a.fired_at`).catch(e => { console.log('  ' + e.message); return []; });
+  for (const r of opn) console.log('  ' + pad(r.id, 7) + pad(r.severity, 4) + pad(r.rule_key, 44) + rpad(r.hours + ' h', 9) + pad(r.acked ? ' acked' : ' NOT acked', 11) + pad(r.owner || '', 22) + `value ${num(r.observed_value)} n=${r.sample}`);
+  if (!opn.length) console.log('  none');
+
   /* ---------- 7. silent rules ---------- */
   hr(`7 · SILENT — enabled ${SEG_LABEL} rules with zero fires in ${DAYS} d`);
   const silent = score.filter(r => r.fires === 0 && r.enabled);

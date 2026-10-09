@@ -348,11 +348,14 @@ async function applogAnomaly(now, cls) {
     const sameFilled = sameHour.slice(); const sameSpan = Math.floor(spanH / 24); while (sameFilled.length < sameSpan) sameFilled.push(0);
     const b = sameFilled.length >= 5 ? robust(sameFilled) : robust(all);
     if (!b || coverageH < 3) continue;                     // under 3 h of history there is no baseline yet — the "new error" metric covers it
+    /* EXCESS GUARD (alpha.162): a z on its own lets a quiet signature (median 0 at night) read 12 for 12 failures, and the
+     * worst of ~40 signatures is always high — the signature must also be ≥ MIN more than usual and twice its usual count */
+    if (c.n - b.med < (cls === 'technical' ? 20 : 40) || c.n < 2 * b.med) continue;
     const scale = Math.max(1.4826 * b.mad, Math.sqrt(b.med), 1);
     const z = (c.n - b.med) / scale;
     if (!worst || z > worst.z) worst = { z, c, b };
   }
-  if (!worst) return [];
+  if (!worst) return [{ dim: { note: `no ${cls} signature above its own baseline (${cur.length} failing in the last 60 min)` }, value: 0, sample: cur.reduce((a, x) => a + x.n, 0) }];
   const { z, c, b } = worst;
   return [{ dim: { note: `${c.sig} — ${c.n} in the last 60 min vs typical ${b.med}/h${c.requests ? ` · ${c.requests} requests` : ''} · “${(c.reason || '').replace(/\s+/g, ' ')}”` }, value: Math.round(z * 10) / 10, sample: c.n }];
 }
@@ -379,7 +382,11 @@ Object.assign(FIXED_METRICS, {
               FROM fixed_app_events WHERE ok IS NOT TRUE AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1 HAVING count(*) >= 5
               ORDER BY 2 DESC LIMIT 200`, [now])).rows;
         const seen = cur.length ? await seenSignatures(C, now) : new Set();
-        const rows = cur.filter(c => !seen.has(c.sig)).slice(0, 5);
+        /* novelty is the STEP (channel · step), not its class (alpha.162): when a refused step started taking the class of its
+         * own error line, "web · feasibilityCheck · business" would otherwise read as a brand-new error */
+        const stepOf = sig => String(sig).replace(/ · [^·]*$/, '');
+        const seenSteps = new Set([...seen].map(stepOf));
+        const rows = cur.filter(c => !seenSteps.has(stepOf(c.sig))).slice(0, 5);
         const total = rows.reduce((a, r) => a + r.n, 0);
         return [{ dim: { note: rows.length ? rows.map(r => `${r.sig} ×${r.n} “${r.reason || ''}”`).join(' | ').slice(0, 220) : '' }, value: rows.length, sample: total }];
       } catch (e) { console.error(`[fixedMetrics] new signature: ${e.message}`); return []; }

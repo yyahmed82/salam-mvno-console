@@ -26,8 +26,8 @@
   /* the state right now (execBrief.stateOf, alpha.152): OUTAGE only for a P1 SERVICE incident; a P1 business case and a
    * monitoring gap are said as such — same rule as the month's availability, so the two cannot disagree */
   TONE.CASE = TONE.OUTAGE; TONE.BLIND = TONE.DEGRADED;
-  const PILL = { OK: 'OK', OUTAGE: 'OUTAGE · P1 service incident', CASE: 'P1 CASE OPEN · service up', DEGRADED: 'DEGRADED · P2 open', BLIND: 'MONITORING GAP · state not known' };
-  const KIND = { service: '', business: 'business case · not downtime', monitoring: 'monitoring · not downtime' };
+  const PILL = { OK: 'OK', OUTAGE: 'OUTAGE · P1 service failure', CASE: 'P1 CASE OPEN · service up', DEGRADED: 'DEGRADED · slow or P2 open', BLIND: 'MONITORING GAP · state not known' };
+  const KIND = { service: '', business: 'business case · not downtime', monitoring: 'monitoring · not downtime', slow: 'slowness · not downtime' };
   const kindTag = k => KIND[k] ? `<span class="xb-kind xb-kind-${esc(k)}">${esc(KIND[k])}</span>` : '';
 
   /* ---------- month state ---------- */
@@ -84,7 +84,7 @@
       </a>`; }).join('')}</div>`,
 
     impact: d => none(d, 'Outage register') + cols(halvesOf(d).map(h => { const i = h.impact, p = i.prev || {};
-      const svc = i.service != null ? i.service : i.incidents, other = [(i.business ? `${num(i.business)} business case${i.business === 1 ? '' : 's'}` : ''), (i.monitoring ? `${num(i.monitoring)} monitoring` : '')].filter(Boolean).join(' · ');
+      const svc = i.service != null ? i.service : i.incidents, other = [(i.business ? `${num(i.business)} business case${i.business === 1 ? '' : 's'}` : ''), (i.slow ? `${num(i.slow)} slowness` : ''), (i.monitoring ? `${num(i.monitoring)} monitoring` : '')].filter(Boolean).join(' · ');
       const headline = (svc ? `<b style="color:${TONE.OUTAGE}">${num(svc)}</b> service incident${svc === 1 ? '' : 's'} · ${dur(i.minutes)} customer-facing` : `<b style="color:${TONE.OK}">no service incident</b> this month`) + (other ? ` · ${other} listed, not downtime` : '') + (i.incidents ? ` · ${num(i.customers)} customer contacts` : '');
       return grp(h, `
       <div class="xb-tiles">
@@ -188,7 +188,7 @@
       .xb-st:hover{transform:translateY(-1px);box-shadow:var(--shadow,0 8px 22px rgba(15,23,42,.12))}
       .xb-st.xb-s-ok{--c:${TONE.OK}} .xb-st.xb-s-degraded{--c:${TONE.DEGRADED}} .xb-st.xb-s-outage{--c:${TONE.OUTAGE}} .xb-st.xb-s-case{--c:${TONE.OUTAGE}} .xb-st.xb-s-blind{--c:${TONE.DEGRADED}}
       .xb-kind{font-size:10.5px;font-weight:800;letter-spacing:.02em;padding:1px 7px;border-radius:999px;white-space:nowrap;background:color-mix(in srgb,var(--muted) 14%,transparent);color:var(--muted)}
-      .xb-kind-business{background:color-mix(in srgb,${TONE.DEGRADED} 14%,transparent);color:${TONE.DEGRADED}}
+      .xb-kind-business,.xb-kind-slow{background:color-mix(in srgb,${TONE.DEGRADED} 14%,transparent);color:${TONE.DEGRADED}}
       .xb-sth{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
       .xb-stv{display:flex;align-items:baseline;gap:10px;margin:12px 0 4px}.xb-stv b{font-size:40px;line-height:1;font-weight:900;font-variant-numeric:tabular-nums;color:var(--c)}.xb-stv > span{color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px}.xb-stv b.xb-na{font-size:20px;font-weight:800;white-space:nowrap}
       .xb-sts{font-size:13px;margin-top:6px}

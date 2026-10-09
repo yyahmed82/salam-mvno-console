@@ -842,7 +842,7 @@ async function buildDigest(deps, opts) {
    * incident open, CASE = a P1 business case open, DEGRADED = a P2 open, BLIND = only monitoring open, OK otherwise;
    * the 24 h signal summary of the exec contract stays as the line under it */
   const SEGM = require('./segment'), EB = require('./execBrief');
-  const openOf = async seg => { try { const r = await C().query(`SELECT a.severity, a.name, a.rule_key, a.customers, a.fired_at, a.dim, COALESCE(a.opened_wall, a.fired_at) AS opened, a.assignee, a.ack_by,
+  const openOf = async seg => { try { const r = await C().query(`SELECT a.severity, a.name, a.rule_key, a.metric_key, a.customers, a.fired_at, a.dim, COALESCE(a.opened_wall, a.fired_at) AS opened, a.assignee, a.ack_by,
           r.alert_class AS rule_class FROM alerts a LEFT JOIN alert_rules r ON r.key = a.rule_key
         WHERE a.status='open' AND a.severity IN ('P1','P2') AND ${SEGM.sqlWhere('a', 'rule_key', seg)}${SEGM.appOnly('a')} ORDER BY a.severity, COALESCE(a.opened_wall, a.fired_at)`);
       const rows = r.rows.filter(x => EB.kindOf(x) !== 'business');              // technical only, like the page (alpha.155)

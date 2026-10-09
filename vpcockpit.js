@@ -571,7 +571,7 @@
 
   /* ---------- the challenge drawer ---------- */
   /* ---------- Mobile / Fixed: what is open now, and this month's P1 register (the Executive brief's own data) ---------- */
-  const P1KIND = { service: ['Service', 'counts as downtime'], business: ['Business case', 'not downtime'], monitoring: ['Monitoring', 'not downtime — the console could not see'] };
+  const P1KIND = { service: ['Service', 'counts as downtime'], slow: ['Slowness', 'not downtime — the service answered, slowly'], business: ['Business case', 'not downtime'], monitoring: ['Monitoring', 'not downtime — the console could not see'] };
   function openBiz(biz) {
     const x = bizState(biz), label = biz === 'mobile' ? 'Mobile' : 'Fixed';
     if (!x || !x.b) { location.hash = biz === 'mobile' ? '#dashboard' : '#fixed'; return; }
@@ -586,7 +586,7 @@
           <td data-l="P1 time this month">${esc(durTxt(a.minutes))}</td><td data-l="Kind"><span class="vp-kind vp-kind-${esc(a.kind || 'service')}">${esc(k[0])}</span><div class="vp-dim">${esc(k[1])}</div></td></tr>`; }).join('')}</tbody></table>${list.length > 15 ? `<div class="vp-dim">${list.length - 15} more in the Executive Dashboard.</div>` : ''}`
       : '<div class="vp-empty">No P1 incident of 5 minutes or more this month.</div>';
     const svc = imp.service != null ? imp.service : imp.incidents;
-    const other = imp.monitoring ? `${imp.monitoring} monitoring` : '';
+    const other = [imp.slow ? `${imp.slow} slowness` : '', imp.monitoring ? `${imp.monitoring} monitoring` : ''].filter(Boolean).join(' · ');
     const def = k => defs[k] ? `<p class="vp-defl"><b>${esc(defs[k].label)}</b> — ${esc(defs[k].what)}</p>` : '';
     drawer(drHead(`<b>${label}</b><span class="vp-stchip vp-st-${x.cls}"><i></i>${esc(x.label)}</span>`) + `<div class="vp-drb">
       <div class="vp-drsec"><div class="vp-drk">Open now</div>
@@ -1078,7 +1078,7 @@
 .vp-mstats div{padding:9px 11px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.vp-mstats b{display:block;font-size:17px;font-weight:800}.vp-mstats span{font-size:11px;color:var(--muted)}
 .vp-regtbl td,.vp-regtbl th{font-size:12px}.vp-regtbl tr.vp-off td{opacity:.72}.vp-hot{color:var(--bad-fg)}
 .vp-kind{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:999px;background:var(--tint-red,rgba(220,38,38,.12));color:var(--bad-fg)}
-.vp-kind-business{background:var(--tint-amber);color:var(--tint-amber-fg)}.vp-kind-monitoring{background:var(--line-soft);color:var(--muted)}
+.vp-kind-business,.vp-kind-slow{background:var(--tint-amber);color:var(--tint-amber-fg)}.vp-kind-monitoring{background:var(--line-soft);color:var(--muted)}
 .vp-defi{padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--card);margin:8px 0}.vp-defi.on{border-color:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 18%,transparent)}
 .vp-defh{display:flex;align-items:center;gap:8px}.vp-defh .vp-tw2{margin-left:auto}.vp-defi p{margin:6px 0 4px;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .vp-defl{font-size:12.5px;line-height:1.5;margin:6px 0;color:var(--ink-soft)}.vp-defl b{color:var(--ink)}

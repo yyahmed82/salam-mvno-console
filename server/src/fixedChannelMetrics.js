@@ -36,6 +36,17 @@ const BOARD_CH = ['sda', 'qr', 'web', 'salamhome'];
 const APP_CH = ['sda', 'web', 'salamhome', 'payments'];
 const ATT_CH = `CASE WHEN oa.channel = 'sda' THEN 'sda' WHEN oa.channel = 'salamhome' THEN 'salamhome' WHEN oa.referral_code IS NOT NULL THEN 'qr' ELSE 'web' END`;
 const MONEY = ['PAYMENT_NOT_NOTIFIED', 'PROVISION_NO_ORDER', 'PAYMENT_FAILED'];
+/* KNOWN SLOW STEPS (9 Oct 2026, alpha.162). App steps that are slow every day because of a known, owned problem: they get
+ * their own rule (fixed_applog_slow_step_p95_ms) and no longer decide the channel latency nor the slowest-step rule.
+ *   salamApp.user.createTicket — Remedy ticket creation from the Salam Home app: p95 13–38 s on each of the 14 days to
+ *   9 Oct (54 s that day), ~80 % of attempts refused "duplicate of INC…" because customers tap again while waiting.
+ *   With 8 of the 37 steps of 09:30 KSA it alone put "Salam Home app · step latency p95 over 22 s (P1)" open.
+ *   ePurchase.actions.confirmOtp — Epurchase OTP confirmation: p50 8.2 s, p95 22 s, p99 35 s, ≥ 10 s on every one of 15 days.
+ * FIXED_SLOW_STEPS=path1,path2 in the env replaces the list. */
+const SLOW_STEPS = (process.env.FIXED_SLOW_STEPS != null ? String(process.env.FIXED_SLOW_STEPS).split(',') : ['salamApp.user.createTicket', 'ePurchase.actions.confirmOtp']).map(x => x.trim()).filter(Boolean);
+/* the "(worst)" integration host is chosen among hosts with real traffic (alpha.162): at 10 calls the breaches came from hosts
+ * at a tenth of normal volume (sample 52 vs 421) — a host with 11 calls and 4 failures is not the provider being down */
+const API_WORST_N = 50;
 const KINDS = ['yakeen', 'yakeen_address', 'absher', 'nafath', 'semati', 'manafith', 'drm', 'naqeel', 'payment'];
 const HOST = `coalesce(substring(ac.endpoint from '^https?://([^/:]+)'), 'unknown')`;
 const C = () => db.console;
@@ -189,7 +200,9 @@ const METRICS = {
         if (ch === 'all') { const bs = BOARD_CH.map(c => base.by[c + '|' + cls]).filter(Boolean); if (!bs.length) continue; b = { med: bs.reduce((s, x) => s + x.med, 0), mad: Math.sqrt(bs.reduce((s, x) => s + x.mad * x.mad, 0)) }; }
         else b = base.by[ch + '|' + cls];
         if (!b) continue;
-        const z = zOf(cnt, b); const cats = parts.flatMap(p => p.cats);
+        /* excess guard (alpha.162): SDA's technical median is 0 at night, so 4 errors read z 4 — an anomaly needs ≥ 10 (technical)
+         * / 25 (business) errors more than usual this hour; below that the value is capped under any threshold */
+        const zr = zOf(cnt, b), z = cnt - b.med < (cls === 'technical' ? 10 : 25) ? Math.min(zr, 1) : zr; const cats = parts.flatMap(p => p.cats);
         rows.push({ dim: { channel: ch, cls, note: `${CH[ch]} · ${cnt} ${cls} in the last 60 min vs typical ${b.med}/h · top ${topCat(cats)}` }, value: Math.round(z * 10) / 10, sample: cnt });
       }
       return rows;
@@ -246,13 +259,14 @@ const METRICS = {
     compute: safe('applog_latency', async now => cached('appLat:' + minuteKey(now), 60e3, async () => {
       if (!C()) return [];
       const r = (await C().query(`WITH s AS (SELECT coalesce(channel,'other') AS channel, path, duration_ms FROM fixed_app_events
-            WHERE kind = 'mutation' AND duration_ms IS NOT NULL AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz),
+            WHERE kind = 'mutation' AND duration_ms IS NOT NULL AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz AND coalesce(path,'') <> ALL($2::text[])),
           per_step AS (SELECT channel, path, count(*)::int AS n, percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95 FROM s GROUP BY 1,2 HAVING count(*) >= 10)
         SELECT channel, count(*)::int AS n, percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95, percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms) AS p50,
           (SELECT path || ' p95 ' || round(p95) || ' ms ×' || n FROM per_step ps WHERE ps.channel = s.channel ORDER BY p95 DESC LIMIT 1) AS slowest
-        FROM s GROUP BY 1`, [now])).rows;
-      const rows = r.filter(x => APP_CH.includes(x.channel)).map(x => ({ dim: { channel: x.channel, note: `${CH[x.channel]} · p95 ${Math.round(x.p95)} ms (p50 ${Math.round(x.p50)} ms) on ${x.n} steps · slowest ${x.slowest || '-'}` }, value: Math.round(x.p95), sample: x.n }));
-      const all = (await C().query(`SELECT count(*)::int AS n, percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95 FROM fixed_app_events WHERE kind = 'mutation' AND duration_ms IS NOT NULL AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz`, [now])).rows[0];
+        FROM s GROUP BY 1`, [now, SLOW_STEPS])).rows;
+      const known = SLOW_STEPS.length ? ` · known slow steps apart (${SLOW_STEPS.map(x => x.split('.').pop()).join(', ')})` : '';
+      const rows = r.filter(x => APP_CH.includes(x.channel)).map(x => ({ dim: { channel: x.channel, note: `${CH[x.channel]} · p95 ${Math.round(x.p95)} ms (p50 ${Math.round(x.p50)} ms) on ${x.n} steps · slowest ${x.slowest || '-'}${known}` }, value: Math.round(x.p95), sample: x.n }));
+      const all = (await C().query(`SELECT count(*)::int AS n, percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95 FROM fixed_app_events WHERE kind = 'mutation' AND duration_ms IS NOT NULL AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz AND coalesce(path,'') <> ALL($2::text[])`, [now, SLOW_STEPS])).rows[0];
       if (all && all.n) rows.push({ dim: { channel: 'all', note: rows.map(q => `${CH[q.dim.channel]} ${q.value} ms`).join(' · ') }, value: Math.round(all.p95), sample: all.n });
       return rows;
     }))
@@ -262,18 +276,37 @@ const METRICS = {
     compute: safe('applog_step_latency', async now => cached('appStepLat:' + minuteKey(now), 60e3, async () => {
       if (!C()) return [];
       const r = (await C().query(`SELECT coalesce(channel,'other') AS channel, path, count(*)::int AS n, percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95
-          FROM fixed_app_events WHERE kind = 'mutation' AND duration_ms IS NOT NULL AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz
-          GROUP BY 1,2 HAVING count(*) >= 20 ORDER BY 4 DESC LIMIT 3`, [now])).rows;
+          FROM fixed_app_events WHERE kind = 'mutation' AND duration_ms IS NOT NULL AND ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz AND coalesce(path,'') <> ALL($2::text[])
+          GROUP BY 1,2 HAVING count(*) >= 20 ORDER BY 4 DESC LIMIT 3`, [now, SLOW_STEPS])).rows;
       if (!r.length) return [];
       return [{ dim: { note: r.map(x => `${CH[x.channel] || x.channel} ${x.path} p95 ${Math.round(x.p95)} ms ×${x.n}`).join(' | ').slice(0, 220) }, value: Math.round(r[0].p95), sample: r[0].n }];
+    }))
+  },
+  /* a known slow step against ITS OWN normal (alpha.162): 3 h window — createTicket runs ~5 times an hour, a p95 over 5 calls
+   * is one call. One row per step × channel; the rule names its step in dim.path. */
+  fixed_applog_slow_step_p95_ms: {
+    label: 'Fixed · known slow app step p95 (ms, 3 h, per step)', unit: 'ms', higherIsBad: true, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
+    compute: safe('applog_slow_step', async now => cached('appSlowStep:' + minuteKey(now), 60e3, async () => {
+      if (!C() || !SLOW_STEPS.length) return [];
+      const r = (await C().query(`SELECT path, coalesce(channel,'other') AS channel, count(*)::int AS n,
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95, percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms) AS p50,
+            count(*) FILTER (WHERE ok IS FALSE)::int AS failed, count(*) FILTER (WHERE ok IS FALSE AND reason_class = 'business')::int AS refused,
+            count(*) FILTER (WHERE ok IS FALSE AND reason_class = 'technical')::int AS tech
+          FROM fixed_app_events WHERE kind = 'mutation' AND duration_ms IS NOT NULL AND path = ANY($2::text[]) AND ts >= $1::timestamptz - interval '3 hours' AND ts < $1::timestamptz
+          GROUP BY 1,2`, [now, SLOW_STEPS])).rows;
+      return r.map(x => ({ dim: { path: x.path, channel: x.channel, note: `${CH[x.channel] || x.channel} · ${x.path} p95 ${Math.round(x.p95 / 1000)} s (p50 ${Math.round(x.p50 / 1000)} s) on ${x.n} calls in 3 h · ${x.failed} failed: ${x.refused} refused, ${x.tech} technical` },
+        value: Math.round(x.p95), sample: x.n }));
     }))
   },
   fixed_applog_volume_ratio: {
     label: 'Fixed · app-log traffic vs same-hour 7-day median (1.0 = normal, per channel)', unit: 'ratio', higherIsBad: false, segment: 'fixed', sourceTables: 'unified_console.fixed_app_events',
     compute: safe('applog_volume', async now => cached('appVol:' + minuteKey(now).slice(0, 15), 5 * 60e3, async () => {
       if (!C()) return [];
-      const cov = (await C().query(`SELECT min(ts) AS t FROM fixed_app_events`)).rows[0].t;
+      const cv = (await C().query(`SELECT min(ts) AS t, max(ts) AS hi FROM fixed_app_events`)).rows[0], cov = cv.t;
       if (!cov || (new Date(now) - new Date(cov)) < 3 * 864e5) return [];        // three days of history before "quiet" means anything
+      /* the collector itself behind (alpha.162): silence then means "we cannot see", not "customers left" — the collector-stale
+       * rule says it; the P1 volume collapse fired at a sample of 0 on 2 % of ticks for exactly this reason */
+      if (!cv.hi || new Date(now) - new Date(cv.hi) > 20 * 60e3) return [];
       const cur = (await C().query(`SELECT coalesce(channel,'other') AS channel, count(*)::int AS n FROM fixed_app_events WHERE ts >= $1::timestamptz - interval '60 minutes' AND ts < $1::timestamptz GROUP BY 1`, [now])).rows;
       const hist = (await C().query(`SELECT coalesce(channel,'other') AS channel, date_trunc('hour', ts) AS h, count(*)::int AS n FROM fixed_app_events
           WHERE ts >= $1::timestamptz - interval '7 days' AND ts < date_trunc('hour', $1::timestamptz) GROUP BY 1,2`, [now])).rows;
@@ -319,12 +352,12 @@ const METRICS = {
   fixed_provider_api_fail_rate: {
     label: 'Fixed · integration call technical failure rate, 60 min (per endpoint host; the (worst) host row)', unit: 'rate', higherIsBad: true, segment: 'fixed', sourceTables: 'sda_ops.api_calls',
     compute: safe('api_fail', async now => { const s = await apiCalls(now); const rows = s.filter(x => x.calls >= 10).map(x => ({ dim: { host: x.host, note: `${x.host} · ${x.failed} of ${x.calls} calls failed technically (5xx / transport) · ${x.sample || ''}` }, value: rate(x.failed, x.calls), sample: x.calls }));
-      const worst = rows.slice().sort((a, b) => b.value - a.value)[0]; if (worst) rows.push({ dim: { host: '(worst)', note: worst.dim.note }, value: worst.value, sample: worst.sample }); return rows; })
+      const worst = rows.filter(r => r.sample >= API_WORST_N).sort((a, b) => b.value - a.value)[0]; if (worst) rows.push({ dim: { host: '(worst)', note: worst.dim.note }, value: worst.value, sample: worst.sample }); return rows; })
   },
   fixed_provider_api_latency_p95_ms: {
     label: 'Fixed · integration call latency p95 (ms, 60 min, per endpoint host; the (worst) host row)', unit: 'ms', higherIsBad: true, segment: 'fixed', sourceTables: 'sda_ops.api_calls',
     compute: safe('api_latency', async now => { const s = await apiCalls(now); const rows = s.filter(x => x.calls >= 10 && x.p95 != null).map(x => ({ dim: { host: x.host, note: `${x.host} · p95 ${Math.round(x.p95)} ms (p50 ${Math.round(x.p50)} ms) on ${x.calls} calls · slowest ${x.slowest || '-'}` }, value: Math.round(x.p95), sample: x.calls }));
-      const worst = rows.slice().sort((a, b) => b.value - a.value)[0]; if (worst) rows.push({ dim: { host: '(worst)', note: worst.dim.note }, value: worst.value, sample: worst.sample }); return rows; })
+      const worst = rows.filter(r => r.sample >= API_WORST_N).sort((a, b) => b.value - a.value)[0]; if (worst) rows.push({ dim: { host: '(worst)', note: worst.dim.note }, value: worst.value, sample: worst.sample }); return rows; })
   },
 };
 
@@ -357,4 +390,4 @@ async function apiCalls(now) {
   });
 }
 
-module.exports = { METRICS, start, rollup, CH };
+module.exports = { METRICS, start, rollup, CH, SLOW_STEPS };

@@ -173,10 +173,54 @@ function parseLine(line) {
     duration_ms: duration
   };
 }
+/* PAIRING (9 Oct 2026). A refused step writes TWO lines with the same requestId: the outcome line "mutation <path> fail Nms"
+ * (no status, no reason — classed technical by default) and the tRPC error line with the real status and reason, e.g.
+ * 400 "ERROR (10000): ; This ticket is a duplicate of INC000003417535" (business). The failure-rate rules count the outcome
+ * line, so every business refusal read as a technical failure: Salam Home createTicket alone, ~80 % of its attempts
+ * refused as duplicates every day for 14 days, kept "App log · technical failure anomaly" open for 44 h. A failed outcome
+ * line now takes the status, reason and class of its own error line — technical when any paired error is technical
+ * (a real 5xx wins), then business, then client. Unpaired failures stay technical. Same rule in SQL (pairFailures) for
+ * a pair split across two collection cycles, and for the one-off backfill (server/scripts/fixed-applog-reclass.cjs). */
+const PAIR_RANK = { technical: 0, business: 1, client: 2 };
+const PAIR_MS = 120e3;
+const isBareOutcome = r => r.kind === 'mutation' && r.ok === false && /^mutation\s/i.test(String(r.reason || ''));
+function pairRows(rows) {
+  const errs = new Map();
+  for (const r of rows) if (r.kind !== 'mutation' && r.ok === false && r.request_id) { const k = r.request_id; if (!errs.has(k)) errs.set(k, []); errs.get(k).push(r); }
+  let paired = 0;
+  for (const m of rows) {
+    if (!isBareOutcome(m) || !m.request_id || !errs.has(m.request_id)) continue;
+    const t = Date.parse(m.ts);
+    const cand = errs.get(m.request_id).filter(e => (!e.path || !m.path || e.path === m.path) && Math.abs(Date.parse(e.ts) - t) <= PAIR_MS && e.reason_class)
+      .sort((a, b) => (PAIR_RANK[a.reason_class] == null ? 3 : PAIR_RANK[a.reason_class]) - (PAIR_RANK[b.reason_class] == null ? 3 : PAIR_RANK[b.reason_class]) || Math.abs(Date.parse(a.ts) - t) - Math.abs(Date.parse(b.ts) - t));
+    if (!cand.length) continue;
+    const e = cand[0];
+    m.reason_class = e.reason_class; m.reason = e.reason || m.reason; if (e.status_code != null) m.status_code = e.status_code;
+    paired++;
+  }
+  return paired;
+}
 function parseLines(text) {
   const out = []; let seen = 0;
   for (const line of String(text).split('\n')) { if (!line.trim()) continue; seen++; const r = parseLine(line); if (r) out.push(r); }
-  return { rows: out, lines: seen };
+  const paired = pairRows(out);
+  return { rows: out, lines: seen, paired };
+}
+/* the same pairing in the database: outcome lines still bare from `since` (a pair split across two cycles, or history) */
+const PAIR_INNER = `SELECT DISTINCT ON (m2.id) m2.id, m2.channel, m2.path, e2.reason, e2.reason_class, e2.status_code
+            FROM fixed_app_events m2
+            JOIN fixed_app_events e2 ON e2.request_id = m2.request_id AND e2.kind <> 'mutation' AND e2.ok IS FALSE AND e2.reason_class IS NOT NULL
+                                    AND (e2.path IS NULL OR m2.path IS NULL OR e2.path = m2.path)
+                                    AND e2.ts BETWEEN m2.ts - interval '2 minutes' AND m2.ts + interval '2 minutes'
+           WHERE m2.kind = 'mutation' AND m2.ok IS FALSE AND m2.request_id IS NOT NULL AND m2.reason ~* '^mutation\\s'
+             AND m2.ts >= $1::timestamptz AND m2.ts < $2::timestamptz
+           ORDER BY m2.id, CASE e2.reason_class WHEN 'technical' THEN 0 WHEN 'business' THEN 1 WHEN 'client' THEN 2 ELSE 3 END, abs(extract(epoch from e2.ts - m2.ts))`;
+const PAIR_SQL = `UPDATE fixed_app_events m SET reason = x.reason, reason_class = x.reason_class, status_code = coalesce(x.status_code, m.status_code)
+    FROM (${PAIR_INNER}) x WHERE m.id = x.id`;
+async function pairFailures(since, until) {
+  await ensureTable();
+  const r = await db.console.query(PAIR_SQL, [since, until || new Date(Date.now() + 3600e3).toISOString()]);
+  return r.rowCount;
 }
 function planRead({ watermark, size, backfillBytes }) {
   if (watermark == null) return { start: Math.max(0, size - backfillBytes), rotated: false, firstRun: true };
@@ -217,7 +261,8 @@ async function ensureTable() {
       ok boolean, status_code integer, reason text, reason_class text, message text,
       request_id text, state_id text, platform text, app_version text, duration_ms integer);
     CREATE INDEX IF NOT EXISTS idx_fixed_app_events_ts ON fixed_app_events (ts DESC);
-    CREATE INDEX IF NOT EXISTS idx_fixed_app_events_kind_ts ON fixed_app_events (kind, ts DESC);`);
+    CREATE INDEX IF NOT EXISTS idx_fixed_app_events_kind_ts ON fixed_app_events (kind, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_fixed_app_events_req_fail ON fixed_app_events (request_id) WHERE ok IS FALSE AND request_id IS NOT NULL;`);
   _tableOk = true;
 }
 const WM_KEY = 'fixed_applog_watermarks';
@@ -271,6 +316,7 @@ async function collectHost(host, wm) {
       newWm = lastNl >= 0 ? plan.start + lastNl + 1 : plan.start;
       const { rows, lines } = parseLines(text);
       inserted = await insertRows(host, rows);
+      if (rows.length) { try { const t0 = rows.reduce((a, r) => (r.ts < a ? r.ts : a), rows[0].ts); st.pairedSql = (st.pairedSql || 0) + await pairFailures(new Date(Date.parse(t0) - 10 * 60e3).toISOString()); } catch (e) { console.error('[FIXED-LOG] pairing: ' + e.message); } }
       st.linesSeen += lines;
       if (rows.length) st.lastTs = rows[rows.length - 1].ts;
     } else { newWm = size; }
@@ -315,7 +361,7 @@ function start() {
   return { armed: true };
 }
 
-module.exports = { start, tick, status, ping, configured, parseLine, parseLines, planRead, reasonClass, CFG };
+module.exports = { start, tick, status, ping, configured, parseLine, parseLines, pairRows, pairFailures, PAIR_SQL, PAIR_INNER, planRead, reasonClass, CFG };
 
 // CLI: node src/fixedAppLogCollector.js --once   |   --parse <file> (offline parser check, no ssh, no DB)
 if (require.main === module) {

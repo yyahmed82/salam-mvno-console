@@ -77,7 +77,7 @@ const ENDED_SQL = `CASE WHEN a.status <> 'open' AND a.resolved_at IS NULL THEN C
 async function alertsIn(seg, from, to) {
   const W = SEG.sqlWhere('a', 'rule_key', seg) + SEG.appOnly('a');   // infra incidents never drive the executive status
   const r = await db.console.query(
-    `SELECT a.id, a.rule_key, a.name, a.severity, a.team, a.status, a.customers, a.services, a.observed_value, a.peak_value, a.dim, a.source,
+    `SELECT a.id, a.rule_key, a.metric_key, a.name, a.severity, a.team, a.status, a.customers, a.services, a.observed_value, a.peak_value, a.dim, a.source,
             a.fired_at, ${OPENED_SQL} AS opened, ${ENDED_SQL} AS resolved_at, a.ack_at, a.ack_by, a.assignee, a.sn_number, a.resolve_reason,
             t.probable_cause, t.impact AS triage_impact, r.alert_class AS rule_class
        FROM alerts a
@@ -113,25 +113,31 @@ const MONITORING_RX = /(^|_)(ingest|collector)_stale|read model stale|board blin
  * tickets (refund_batch) have no rule row at all */
 const dimOf = a => { const d = a && a.dim; if (!d) return {}; if (typeof d === 'object') return d; try { return JSON.parse(d); } catch (e) { return {}; } };
 const isBusiness = a => a.rule_class === 'business' || ['money', 'regulator'].includes(dimOf(a).family) || (!a.rule_class && /refund/i.test(a.rule_key || ''));
-const kindOf = a => (MONITORING_RX.test(a.rule_key || '') || MONITORING_RX.test(a.name || '')) ? 'monitoring' : isBusiness(a) ? 'business' : 'service';
+/* slowness (alpha.162): a latency rule says customers WAIT — the service answers. Fixed read "Outage" on 9 Oct 2026 for one
+ * slow step (Salam Home createTicket, 8 calls) and every latency P1 counted as downtime. A latency incident is now listed
+ * as slowness (state Degraded, not downtime); when steps time out they fail, and the failure rules — service — count. */
+const SLOW_RX = /latency|slow_step|_slow_/i;
+const kindOf = a => (MONITORING_RX.test(a.rule_key || '') || MONITORING_RX.test(a.name || '')) ? 'monitoring' : isBusiness(a) ? 'business'
+  : (SLOW_RX.test(a.rule_key || '') || SLOW_RX.test(a.metric_key || '')) ? 'slow' : 'service';
 
 /* ---------------------------------------------------------------- the state right now (alpha.152)
  * Read from the open P1 / P2 incidents with the same three kinds, so the state and the month's availability cannot
  * disagree ("Outage" while 99.9 % available). Real customer impact first, blindness last:
  *   OUTAGE    a P1 service incident is open — the platform or a partner is failing (this is what counts as downtime)
  *   CASE      a P1 business case is open — charged-but-failed, refunds missing, decline storms… the service is up
- *   DEGRADED  a P2 is open (service or business)
+ *   DEGRADED  a P1 slowness incident (latency) is open, or a P2 (service, slowness or business) — the service answers
  *   BLIND     only monitoring incidents are open — the console cannot read a feed, so the state is not known
  *   OK        nothing open at P1 / P2
  * Before alpha.152 any open P1 read OUTAGE, a business case or a stale read model included. */
-const STATE_ORDER = [['P1', 'service', 'OUTAGE'], ['P1', 'business', 'CASE'], ['P2', 'service', 'DEGRADED'], ['P2', 'business', 'DEGRADED'], ['P1', 'monitoring', 'BLIND'], ['P2', 'monitoring', 'BLIND']];
+const STATE_ORDER = [['P1', 'service', 'OUTAGE'], ['P1', 'business', 'CASE'], ['P1', 'slow', 'DEGRADED'], ['P2', 'service', 'DEGRADED'], ['P2', 'slow', 'DEGRADED'], ['P2', 'business', 'DEGRADED'], ['P1', 'monitoring', 'BLIND'], ['P2', 'monitoring', 'BLIND']];
+const SLOW_NOTE = 'a slowness incident is open — the service answers, slowly (not downtime)';
 const STATE_NOTE = { OUTAGE: 'a P1 service incident is open', CASE: 'a P1 business case is open — the service is up', DEGRADED: 'a P2 incident is open',
   BLIND: 'only a monitoring incident is open — the console cannot read one of its feeds, so the state is not known', OK: 'no P1 / P2 incident open' };
 function stateOf(open) {
   for (const [sev, kind, state] of STATE_ORDER) {
     const hit = open.filter(a => a.severity === sev && kindOf(a) === kind);
     if (hit.length) { const top = hit.slice().sort((a, b) => n(b.customers) - n(a.customers) || new Date(a.opened || a.fired_at) - new Date(b.opened || b.fired_at))[0];
-      return { state, kind, top, note: STATE_NOTE[state] }; }
+      return { state, kind, top, note: kind === 'slow' ? SLOW_NOTE : STATE_NOTE[state] }; }
   }
   return { state: 'OK', kind: null, top: null, note: STATE_NOTE.OK };
 }
@@ -202,7 +208,7 @@ function register(rows, win, now, vend, moves) {
   });
   const service = outages.filter(({ a }) => kindOf(a) === 'service');
   return { list, incidents: list.length, minutes: unionSpanMinutes(service.flatMap(x => x.spans), F, T), allMinutes: unionSpanMinutes(outages.flatMap(x => x.spans), F, T),
-    service: service.length, business: list.filter(x => x.kind === 'business').length, monitoring: list.filter(x => x.kind === 'monitoring').length,
+    service: service.length, business: list.filter(x => x.kind === 'business').length, monitoring: list.filter(x => x.kind === 'monitoring').length, slow: list.filter(x => x.kind === 'slow').length,
     customers: list.reduce((s, x) => s + n(x.customers), 0), money: Math.round(list.reduce((s, x) => s + n(x.money), 0)), open: list.filter(x => x.status === 'open').length };
 }
 
@@ -269,7 +275,7 @@ async function business(seg, win, now, cfg, deps, q) {
   const openP1 = open.filter(a => a.severity === 'P1'), openP2 = open.filter(a => a.severity === 'P2');
   const since = open.length ? open.map(a => a.opened).sort()[0] : null;
   const st = stateOf(open);
-  const kinds = { service: 0, business: 0, monitoring: 0 }; open.forEach(a => { kinds[kindOf(a)]++; });
+  const kinds = { service: 0, business: 0, monitoring: 0, slow: 0 }; open.forEach(a => { kinds[kindOf(a)]++; });
   /* the VP page reads the technical incidents only (alpha.155): the platform, a partner, or the console's own feeds —
    * business-rule incidents (refunds, decline storms, money / regulator findings) stay on the Executive Dashboard */
   const openTech = open.filter(a => kindOf(a) !== 'business'), stT = stateOf(openTech);
@@ -315,9 +321,9 @@ function mount(app, deps) {
       const one = seg => business(seg, win, now, cfg, deps).catch(e => { console.error(`[execBrief] ${seg} failed:`, e.message); return { configured: false, biz: BIZ[seg].biz, label: BIZ[seg].label, reason: e.message }; });
       const [mobile, fixed] = await Promise.all([wantM ? one('mvno') : null, wantF ? one('fixed') : null]);
       res.json({ generatedAt: now.toISOString(), month: { key: win.key, from: win.from, to: win.to, current: win.current, prevKey: win.prev.key, elapsedMin: win.elapsedMin },
-        rules: { outage: `P1 incident open ≥ ${MIN_OUTAGE_MIN} min or still open`, kinds: 'service = technical rule (counts as downtime) · business = business rule (listed, not downtime) · monitoring = a console feed unread (listed, not downtime)',
+        rules: { outage: `P1 incident open ≥ ${MIN_OUTAGE_MIN} min or still open`, kinds: 'service = technical failure rule (counts as downtime) · slow = latency rule, the service answered slowly (listed, not downtime) · business = business rule (listed, not downtime) · monitoring = a console feed unread (listed, not downtime)',
           minutes: 'union of the periods SERVICE incidents spent at P1 (from the severity moves), per business, clipped to the month', customers: 'sum of distinct customers per incident (contacts, not de-duplicated across incidents)', money: 'SAR from money-at-risk rules only',
-          availability: '1 − service P1 minutes ÷ elapsed month minutes', state: 'OUTAGE = P1 service open · CASE = P1 business case open · DEGRADED = P2 open · BLIND = only monitoring open · OK' },
+          availability: '1 − service P1 minutes ÷ elapsed month minutes', state: 'OUTAGE = P1 service failure open · CASE = P1 business case open · DEGRADED = P1 slowness or P2 open · BLIND = only monitoring open · OK' },
         mobile, fixed });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });

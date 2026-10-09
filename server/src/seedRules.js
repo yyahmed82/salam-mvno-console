@@ -554,7 +554,7 @@ const FIXED_RULES = [
     description: 'Government dealer-validation (Manafith) DENIED above the normal rate.',
     runbook: '1) Fixed → Overview → Manafith denied by region / dealer. 2) Concentrated on a few dealers = licence/registration lapsed — Sales Ops to follow up. 3) Broad = Manafith service change — engage the integration owner.' },
   { key: 'fixed_workhours_drop', name: 'Working-hours activity drop (SDA)', severity: 'P2', team: 'Sales Ops', segment: 'fixed', alert_class: 'business', channel: 'sda',
-    metric_key: 'fixed_workhours_activity_ratio', operator: 'lte', threshold: 0.5, window_hours: 3, min_sample: 10, active_from: 15, active_to: 22, params: { baselineDays: 7 },
+    metric_key: 'fixed_workhours_activity_ratio', operator: 'lte', threshold: 0.35, window_hours: 3, min_sample: 10, active_from: 15, active_to: 22, params: { baselineDays: 7 },
     description: 'Hourly SDA volume collapsed vs the same-hour baseline during dealer hours.',
     runbook: '1) Confirm the ingest is fresh (Fixed → Overview freshness strip) — a stalled watcher looks like a volume drop. 2) If data is fresh, check the SDA app / login path with a dealer. 3) Inform Sales Ops if it is a field-side cause (holiday, event).' },
   { key: 'fixed_offhours_activity', name: 'Off-hours unusual activity (SDA)', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'business', channel: 'sda',
@@ -598,12 +598,12 @@ const FIXED_RULES = [
    * seen before is its own alert, a worker looping on the same failure is its own alert, and Yakeen/ELM has both
    * a passive rate and the synthetic probe. Incident text carries the signature (dim.note). ---- */
   { key: 'fixed_applog_anomaly_technical', name: 'App log · technical failure anomaly', severity: 'P2', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
-    metric_key: 'fixed_applog_anomaly_technical', operator: 'gte', threshold: 150, window_hours: 1, min_sample: 10,
-    description: 'The worst TECHNICAL failing signature in the Fixed app log (SDA · Salam Home app · Epurchase) is ≥ 150 robust z above its own 14-day baseline for this hour of day. STOPGAP THRESHOLD (18 Sep 2026): measured over 14 days this z-score has a MEDIAN of 5.6, where a robust z should sit near 0 — the baseline is systematically under-estimating, so the designed 3.5 fired on 55 % of ticks. 150 is p99 of the broken series and holds some detection until the baseline is fixed; it is not a considered value. Fix the baseline, then put this back to 3.5.',
+    metric_key: 'fixed_applog_anomaly_technical', operator: 'gte', threshold: 8, window_hours: 1, min_sample: 20,
+    description: 'The worst TECHNICAL failing signature (channel · step) in the Fixed app log is ≥ 8 robust z above its own 14-day baseline for this hour of day AND at least 20 failures more and twice its usual count (≥ 20 in the hour). Since 9 Oct 2026 a refused step takes the class of its own error line — before, 82 % of these "technical" failures were refusals and the z sat at 13 on a normal hour (stopgap 150). The excess guard keeps a quiet signature going from 0 to 12 from reading as an anomaly; the max over ~40 signatures is why the bar is 8, not 3.5.',
     runbook: '1) Fixed → Troubleshoot → From the app log: the signature is in the incident text; open the channel card for the step and reason. 2) Impact check with the reason text: ongoing / recovering, since when, how many customers. 3) Provider named (Yakeen, Absher, Nafath, Semati)? Run the probe / check with the provider. 4) 5xx or timeout on an app step → platform team with the request ids from the lane.' },
   { key: 'fixed_applog_anomaly_business', name: 'App log · business refusal anomaly', severity: 'P3', team: 'Digital Ops', segment: 'fixed', alert_class: 'business',
-    metric_key: 'fixed_applog_anomaly_business', operator: 'gte', threshold: 120, window_hours: 1, min_sample: 20,
-    description: 'The worst BUSINESS refusal signature (no coverage, NIC mismatch, blacklist, wrong OTP…) is ≥ 120 robust z above its own baseline — a refusal that suddenly multiplies is usually a data or configuration problem, not customers. STOPGAP THRESHOLD (18 Sep 2026): the measured median of this z-score is 9.4, so the baseline is wrong and the designed 3.5 fired on 38 % of ticks. Same treatment as the technical twin: fix the baseline, then restore 3.5.',
+    metric_key: 'fixed_applog_anomaly_business', operator: 'gte', threshold: 10, window_hours: 1, min_sample: 40,
+    description: 'The worst BUSINESS refusal signature (no coverage, NIC mismatch, blacklist, wrong OTP…) is ≥ 10 robust z above its own baseline AND at least 40 more and twice its usual count — a refusal that suddenly multiplies is usually a data, plan or provider-rule change, not customers.',
     runbook: '1) Troubleshoot → From the app log: which step and reason. 2) A refusal spike on one step = check what changed (plan, ODB data, provider rules) with Sales Ops / OSS. 3) If it is one dealer or one region, it is behaviour, not a fault.' },
   { key: 'fixed_applog_new_signature', name: 'App log · new error never seen before', severity: 'P3', team: 'Digital Ops', segment: 'fixed', alert_class: 'technical',
     metric_key: 'fixed_applog_new_signature', operator: 'gte', threshold: 3, window_hours: 1, min_sample: 0,
@@ -651,13 +651,30 @@ const bizTeam = ch => (ch === 'sda' || ch === 'qr' ? 'Sales Ops' : 'Digital Ops'
  * so a P2 is true on roughly 5 % of ticks and a P1 on 1 %. The absolute, customer-facing numbers
  * these used to stand in for now live as Fixed SLO definitions (#slo-settings), which is the honest
  * split: an SLO says what we owe the customer, an alert says something changed. */
+/* RE-ANCHORED 9 Oct 2026 (alpha.162) on the 14-day census of deploy152/fixed-alerts-review.cjs (sections 13–15) — see
+ * claude/FIXED-ALERTS-TUNING.md. Two measurement faults were removed first, then the thresholds put on the corrected series:
+ *   1. 82 % of the app steps counted TECHNICAL were business refusals by their own error line (a refused step logs a bare
+ *      "mutation … fail" line, classed technical, beside the 400 error line). The collector now pairs them
+ *      (fixedAppLogCollector.pairRows). Hourly technical rate, before → after, p50 / p95 / p99:
+ *        Salam Home 19.0 / 34.6 / 43.2 %  →  0.0 / 1.9 / 5.2 %     SDA 21.7 / 41.5 / 62.3 %  →  1.2 / 5.6 / 15.3 %
+ *        Epurchase  23.7 / 37.9 / 48.0 %  →  4.9 / 13.4 / 21.4 %
+ *      The old 40–75 % thresholds sat ABOVE p99 of a series that was mostly refusals; on the corrected series they would
+ *      never fire on a real outage. Now P2 ≈ 2× p99, P1 = a channel failing wide; ≥ 50 steps so a quiet hour cannot trip it.
+ *   2. Steps slow EVERY day (createTicket, Epurchase confirmOtp — fixedChannelMetrics.SLOW_STEPS) decided the channel
+ *      latency at low traffic. They have their own rule; the channel p95 without them, ≥ 60 steps, p95 / p99 of hours:
+ *        Salam Home 7.9 / 12.5 s · SDA 10.4 / 15.1 s · Epurchase 11.8 / 14.3 s. P2 just above p99, P1 at 25 s.
+ *      Latency is slowness, not downtime (execBrief.kindOf 'slow'): the P1 twin is kept for paging, it never reads Outage. */
 const TUNED = {
-  applog_tech:    { salamhome: [0.40, 0.50], web: [0.65, 0.75], sda: [0.65, 0.90], all: [0.60, 0.70] },
-  applog_latency: { salamhome: [14000, 22000], web: [12000, 15000], sda: [11000, 14000], all: [11500, 13000] },
+  applog_tech:    { salamhome: [0.10, 0.25], web: [0.25, 0.45], sda: [0.20, 0.40], all: [0.20, 0.40] },
+  applog_tech_n:  50,
+  applog_latency: { salamhome: [13000, 25000], web: [15000, 25000], sda: [15000, 25000], all: [15000, 25000] },
+  applog_latency_n: 60,
   applog_otp:     { salamhome: 0.70, web: 0.35, sda: 0.45, all: 0.35 },
   applog_payment: { salamhome: 0.40, web: 0.40, sda: 0.40, all: 0.40 },
-  board_tech:     { sda: [0.45, 0.90] },
-  volume_floor:   { salamhome: 0.15, web: 0.15 },      // sda's ratio has a median of 0.11 — its baseline is wrong, rule seeded OFF below
+  board_tech:     { sda: [0.45, 0.90], all: [0.30, 0.50], web: [0.30, 0.50], qr: [0.40, 0.70] },   // p99 of 14 d: all 0.34 · web 0.31 · qr 0.67 (20 attempts an hour)
+  board_tech_n:   30,
+  board_surge:    { web: 85, qr: 110, salamhome: 85 },   // p99 of the business z — the board baseline under-reads (median z 8 / 5): STOPGAP, see the doc
+  volume_floor:   { salamhome: 0.15, web: 0.15 },      // sda's ratio has a median of 0.11 — its baseline is wrong: the SDA rule is retired below
 };
 const CH_RULES = [];
 for (const ch of BOARD_CH) {
@@ -665,21 +682,20 @@ for (const ch of BOARD_CH) {
   const [p2, p1] = TUNED.board_tech[ch] || [c.consumer ? 0.15 : 0.20, c.consumer ? 0.40 : 0.50];
   CH_RULES.push(
     R({ key: `fixed_board_tech_rate_${ch}`, name: `${c.label} · technical error rate (P2)`, severity: 'P2', alert_class: 'technical', channel: ch,
-      metric_key: 'fixed_board_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p2, min_sample: 20,
-      description: `${c.label}: TECHNICAL errors on the error board (timeouts, OSS/BSS exceptions, 5xx, "[CC-…]" CRM codes, provider transport) ≥ ${Math.round(p2 * 100)} % of attempts in the last 60 min (≥ 20 attempts). Board classification = catalogue overrides + the business/technical CASE, so reclassifying an error on the board moves it here too.`,
+      metric_key: 'fixed_board_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p2, min_sample: TUNED.board_tech_n,
+      description: `${c.label}: TECHNICAL errors on the error board (timeouts, OSS/BSS exceptions, 5xx, "[CC-…]" CRM codes, provider transport) ≥ ${Math.round(p2 * 100)} % of attempts in the last 60 min (≥ ${TUNED.board_tech_n} attempts). Board classification = catalogue overrides + the business/technical CASE, so reclassifying an error on the board moves it here too.`,
       runbook: `1) Fixed → Troubleshoot → Channel ${c.page} · Class Technical: the incident text names the top category and response. 2) Impact check with that response text: ongoing / recovering, since when, how many customers. 3) Provider named (TLS / DAWIYAT / STC / Yakeen…)? Check the provider rows and the probe; else the app team with request ids from the app-log lane. 4) Clears when the rate drops under ${Math.round(p2 * 100)} %.` }),
     R({ key: `fixed_board_tech_storm_${ch}`, name: `${c.label} · technical error storm (P1)`, severity: 'P1', alert_class: 'technical', channel: ch,
-      metric_key: 'fixed_board_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p1, min_sample: 20,
+      metric_key: 'fixed_board_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p1, min_sample: TUNED.board_tech_n,
       description: `${c.label}: ≥ ${Math.round(p1 * 100)} % of attempts in the last 60 min end in a TECHNICAL error — the channel is effectively down for customers${c.consumer ? '' : ' / dealers'}.`,
       runbook: `1) Page Digital Ops L2; open Troubleshoot → ${c.page} · Technical for the dominant category. 2) One category dominating = its dependency (OSS, BSS, provider) — page that on-call; many categories = platform / gateway / DB. 3) Sales / CX announcement while it lasts. 4) Downgrades to the P2 twin as the rate falls.` }),
     R({ key: `fixed_board_tech_anomaly_${ch}`, name: `${c.label} · technical errors above own baseline`, severity: 'P2', alert_class: 'technical', channel: ch,
       metric_key: 'fixed_board_fail_anomaly', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: 3.5, min_sample: 10,
-      description: `${c.label}: TECHNICAL board errors in the last 60 min are ≥ 3.5 robust z above this channel's own 14-day baseline for this hour of day (≥ 10 errors). Catches a rise the static rate rules miss on a busy channel.`,
+      description: `${c.label}: TECHNICAL board errors in the last 60 min are ≥ 3.5 robust z above this channel's own 14-day baseline for this hour of day, and at least 10 errors more than usual (a quiet hour going from 0 to 4 is not an anomaly — alpha.162). Catches a rise the static rate rules miss on a busy channel.`,
       runbook: `1) The incident text says the count vs typical and the top category. 2) Troubleshoot → ${c.page} · Technical → error message select: which response multiplied. 3) Same steps as the technical-rate rule.` }),
-    R({ key: `fixed_board_biz_anomaly_${ch}`, name: `${c.label} · business refusals above own baseline`, severity: 'P3', team: bizTeam(ch), alert_class: 'business', channel: ch,
-      metric_key: 'fixed_board_fail_anomaly', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 3.5, min_sample: 20,
-      description: `${c.label}: BUSINESS refusals (no coverage / no ports, NIC mismatch, blacklist, appointment refused, outstanding due…) are ≥ 3.5 z above this channel's own baseline — the platform works, customers are being told no far more than usual: usually data, plan or rule changes.`,
-      runbook: `1) Troubleshoot → ${c.page} · Business: which category and response multiplied. 2) Feasibility / ODB refusals → OSS data; identity refusals → Sales Ops (dealer behaviour) or the provider; plan / eligibility → product config. 3) One dealer or region = behaviour, not a fault.` }),
+    /* fixed_board_biz_anomaly_<channel> (P3) RETIRED 9 Oct 2026: 149 of the 782 Fixed fires in 30 days, true on 27–48 % of ticks —
+     * the board business baseline under-reads (median z 14 on 'all'), and a business refusal rising is not a service fault.
+     * The P2 business surge below stays as the one business signal on the board. init.js disables a retired key. */
     R({ key: `fixed_board_money_${ch}`, name: `${c.label} · paid but stuck (P2)`, severity: 'P2', team: 'BSS Ops', alert_class: 'technical', channel: ch,
       metric_key: 'fixed_board_money_at_risk', dim: { channel: ch }, operator: 'gte', threshold: 1,
       description: `${c.label}: at least one OPEN "paid — BSS not notified / order not created / payment failure" error in the last 60 min — a customer paid and got nothing.`,
@@ -691,8 +707,8 @@ for (const ch of BOARD_CH) {
   );
   if (c.consumer && ch !== 'all') CH_RULES.push(
     R({ key: `fixed_board_biz_surge_${ch}`, name: `${c.label} · business refusal surge (P2)`, severity: 'P2', alert_class: 'business', channel: ch,
-      metric_key: 'fixed_board_fail_anomaly', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 8, min_sample: 40,
-      description: `${c.label}: business refusals ≥ 8 z above baseline with ≥ 40 in the hour — on a consumer channel a refusal wall this size is a configuration / data fault (wrong plan rules, ODB data, provider rule change), not customers.`,
+      metric_key: 'fixed_board_fail_anomaly', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: TUNED.board_surge[ch] || 85, min_sample: 40,
+      description: `${c.label}: business refusals ≥ ${TUNED.board_surge[ch] || 85} z above baseline (p99 of 14 days — the board business baseline under-reads, so the z is high every hour: a stopgap until it is fixed) with ≥ 40 in the hour — on a consumer channel a refusal wall this size is a configuration / data fault (wrong plan rules, ODB data, provider rule change), not customers.`,
       runbook: `1) Troubleshoot → ${c.page} · Business → error message select: one response dominating? 2) Roll back / fix the change with product / OSS. 3) CX heads-up while it lasts.` }),
   );
 }
@@ -712,40 +728,40 @@ for (const ch of APP_CH) {
   const lat = TUNED.applog_latency[ch] || [6000, 12000];
   CH_RULES.push(
     R({ key: `fixed_applog_tech_rate_${ch}`, name: `${c.label} · app steps failing technically (P2)`, severity: 'P2', alert_class: 'technical', channel: ch,
-      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p2, min_sample: 20,
-      description: `${c.label}: ≥ ${Math.round(p2 * 100)} % of tRPC steps in the app log (combined.log) failed TECHNICALLY in the last 60 min (5xx, timeouts, exceptions, unknown error) — earlier and finer than the board: every step, not only journeys that reached an error event.`,
+      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p2, min_sample: TUNED.applog_tech_n,
+      description: `${c.label}: ≥ ${Math.round(p2 * 100)} % of tRPC steps in the app log (combined.log) failed TECHNICALLY in the last 60 min on ≥ ${TUNED.applog_tech_n} steps (5xx, timeouts, exceptions, unknown error — a refused step takes the class of its own error line, so "wrong password" or "no coverage" is business) — earlier and finer than the board: every step, not only journeys that reached an error event.`,
       runbook: `1) Troubleshoot → From the app log → ${c.page} card: the failing step and reason (incident text has the last one). 2) Impact check with the reason text. 3) A single step failing for everyone (e.g. user.subscriptions "missing customerCode") = app team with request ids; many steps = platform. 4) Classify a wrongly-labelled reason in "Classify errors…" — the rule follows the catalogue.` }),
     R({ key: `fixed_applog_tech_storm_${ch}`, name: `${c.label} · app steps failing technically — storm (P1)`, severity: 'P1', alert_class: 'technical', channel: ch,
-      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p1, min_sample: 20,
+      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: p1, min_sample: TUNED.applog_tech_n,
       description: `${c.label}: ≥ ${Math.round(p1 * 100)} % of app steps fail technically — the channel is down or a core step (auth, subscriptions, feasibility, payment) is broken for everyone.`,
       runbook: `1) Page Digital Ops L2 and the app team. 2) From the app log → ${c.page}: the dominant step; auth / me / subscriptions failing = login broken for all customers. 3) CX + Sales announcement. 4) Downgrades to the P2 twin as it recovers.` }),
     R({ key: `fixed_applog_biz_rate_${ch}`, name: `${c.label} · app steps refused (business)`, severity: 'P3', team: bizTeam(ch), alert_class: 'business', channel: ch,
-      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 0.5, min_sample: 30,
-      description: `${c.label}: ≥ 50 % of app steps in the last 60 min ended in a BUSINESS refusal (wrong OTP, NIC mismatch, no coverage, plate not found, rate limit…) on ≥ 30 steps — the platform answers, customers are being turned away.`,
+      metric_key: 'fixed_applog_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 0.65, min_sample: 50,
+      description: `${c.label}: ≥ 65 % of app steps in the last 60 min ended in a BUSINESS refusal (wrong OTP, NIC mismatch, no coverage, plate not found, rate limit…) on ≥ 50 steps (65 % since refused steps are counted as business — alpha.162) — the platform answers, customers are being turned away.`,
       runbook: `1) From the app log → ${c.page}: the refusing step. 2) OTP / identity refusals en masse = a provider rule or data change; feasibility = ODB / coverage data. 3) Sales Ops if it is dealer behaviour.` }),
     R({ key: `fixed_applog_latency_${ch}`, name: `${c.label} · step latency p95 over ${lat[0] / 1000} s (P2)`, severity: 'P2', alert_class: 'technical', channel: ch,
-      metric_key: 'fixed_applog_latency_p95_ms', dim: { channel: ch }, operator: 'gte', threshold: lat[0], min_sample: 30,
-      description: `${c.label}: p95 duration of tRPC steps (from the "mutation … ms" lines in combined.log) ≥ ${lat[0]} ms over the last 60 min on ≥ 30 steps. Latency climbs before timeouts — this is the early warning. Threshold PROVISIONAL.`,
+      metric_key: 'fixed_applog_latency_p95_ms', dim: { channel: ch }, operator: 'gte', threshold: lat[0], min_sample: TUNED.applog_latency_n,
+      description: `${c.label}: p95 duration of tRPC steps (from the "mutation … ms" lines in combined.log) ≥ ${lat[0]} ms over the last 60 min on ≥ ${TUNED.applog_latency_n} steps, the steps slow every day apart (their own rule). Latency climbs before timeouts — the early warning. Slowness, not downtime: the state reads Degraded.`,
       runbook: `1) The incident text names the slowest step and its p95. 2) One step slow = its dependency (provider, OSS/BSS call, DB) — check the matching provider row / api_calls host latency alert; every step slow = platform / DB / gateway on 146. 3) Tune the ms threshold here once a week of series exists. 4) Escalates to the ×2 P1 twin.` }),
     R({ key: `fixed_applog_latency_storm_${ch}`, name: `${c.label} · step latency p95 over ${lat[1] / 1000} s (P1)`, severity: 'P1', alert_class: 'technical', channel: ch,
-      metric_key: 'fixed_applog_latency_p95_ms', dim: { channel: ch }, operator: 'gte', threshold: lat[1], min_sample: 30,
-      description: `${c.label}: p95 step duration ≥ ${lat[1]} ms — customers are timing out in the app, not just waiting.`,
+      metric_key: 'fixed_applog_latency_p95_ms', dim: { channel: ch }, operator: 'gte', threshold: lat[1], min_sample: TUNED.applog_latency_n,
+      description: `${c.label}: p95 step duration ≥ ${lat[1]} ms on ≥ ${TUNED.applog_latency_n} steps (known slow steps apart) — customers wait long enough to give up. Pages as P1; counts as slowness, not downtime (the technical-failure storm rule is what counts when steps time out).`,
       runbook: `1) Page Digital Ops L2 + the app team (146 / DB). 2) Slowest step in the incident text → its dependency first. 3) Watch the technical-rate rule for the same channel: timeouts follow latency.` }),
     R({ key: `fixed_applog_otp_tech_${ch}`, name: `${c.label} · OTP / verification failing technically`, severity: 'P2', alert_class: 'technical', channel: ch,
       metric_key: 'fixed_applog_otp_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: TUNED.applog_otp[ch] || 0.3, min_sample: 10,
       description: `${c.label}: OTP / verification steps (sendOTP, validateCode, verifyOtp, Absher checkValidateCode) failing TECHNICALLY ≥ 30 % in the last 60 min — SMS gateway, Absher or DRM not answering; nobody can log in or confirm.`,
       runbook: `1) From the app log → providers: Absher / DRM rows and the reason. 2) SMS gateway (Unifonic) balance / connectivity; Absher = provider. 3) Announce to CX: OTP delivery affected.` }),
     R({ key: `fixed_applog_otp_biz_${ch}`, name: `${c.label} · OTP / verification refused`, severity: 'P3', team: bizTeam(ch), alert_class: 'business', channel: ch,
-      metric_key: 'fixed_applog_otp_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 0.5, min_sample: 20,
-      description: `${c.label}: ≥ 50 % of OTP / verification steps refused (wrong code, expired, "too many requests", no mobile registered) — rate limiting or a broken retry loop in the app, or an attack pattern.`,
+      metric_key: 'fixed_applog_otp_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 0.65, min_sample: 30,
+      description: `${c.label}: ≥ 65 % of OTP / verification steps refused on ≥ 30 steps (wrong code, expired, "too many requests", no mobile registered) — rate limiting or a broken retry loop in the app, or an attack pattern.`,
       runbook: `1) From the app log: the reason ("Too many requests…" = the app's own rate limit — check for a retry loop in the client). 2) Many refusals from one number / dealer = abuse → Fraud. 3) Otherwise informational.` }),
     R({ key: `fixed_applog_payment_tech_${ch}`, name: `${c.label} · payment / checkout failing technically (P1)`, severity: 'P1', team: 'BSS Ops', alert_class: 'technical', channel: ch,
-      metric_key: 'fixed_applog_payment_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: TUNED.applog_payment[ch] || 0.2, min_sample: 10,
-      description: `${c.label}: payment / checkout / invoice steps failing TECHNICALLY ≥ 20 % in the last 60 min (≥ 10 steps) — money path broken: gateway, payment service or BSS invoice call.`,
+      metric_key: 'fixed_applog_payment_fail_rate', dim: { channel: ch, cls: 'technical' }, operator: 'gte', threshold: TUNED.applog_payment[ch] || 0.2, min_sample: 20,
+      description: `${c.label}: payment / checkout / invoice steps failing TECHNICALLY ≥ ${Math.round((TUNED.applog_payment[ch] || 0.2) * 100)} % in the last 60 min (≥ 20 steps — both P1 fires of 14 days came from 17 steps) — money path broken: gateway, payment service or BSS invoice call.`,
       runbook: `1) From the app log → ${c.page}: checkPayment / payment steps and reason. 2) Payment gateway status; BSS invoice API; the payments worker lane (voidInvoice loop?). 3) Cross-check the "paid but stuck" board rule for the same channel — customers may have paid.` }),
     R({ key: `fixed_applog_payment_biz_${ch}`, name: `${c.label} · payment / checkout refused`, severity: 'P3', team: 'BSS Ops', alert_class: 'business', channel: ch,
-      metric_key: 'fixed_applog_payment_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 0.5, min_sample: 20,
-      description: `${c.label}: ≥ 50 % of payment steps refused (invalid order state, declined, outstanding due) — usually a workflow-state or eligibility rule, sometimes a gateway declining en masse.`,
+      metric_key: 'fixed_applog_payment_fail_rate', dim: { channel: ch, cls: 'business' }, operator: 'gte', threshold: 0.65, min_sample: 20,
+      description: `${c.label}: ≥ 65 % of payment steps refused (invalid order state, declined, outstanding due) — usually a workflow-state or eligibility rule, sometimes a gateway declining en masse.`,
       runbook: `1) From the app log: the reason ("Invalid order state … expectedStep" = workflow desync → app team). 2) Declines en masse = gateway / bank side. 3) Informational otherwise.` }),
   );
 }
@@ -754,16 +770,27 @@ CH_RULES.push(
     metric_key: 'fixed_applog_fail_rate', dim: { channel: 'payments', cls: 'technical' }, operator: 'gte', threshold: 0.5, min_sample: 10,
     description: 'The payments service worker lines in combined.log (invoices.voidInvoice, notifications…) are failing ≥ 50 % in the last 60 min — a background job that will not succeed on its own (see also the retry-loop rule).',
     runbook: '1) From the app log → Payments worker card: the job and reason. 2) One ticket to the payments / app team with the invoice ids. 3) Not customer-facing by itself; check the paid-but-stuck rules for the customer impact.' }),
-  R({ key: 'fixed_applog_step_latency_worst', name: 'Slowest app step p95 over 32 s', severity: 'P2', alert_class: 'technical',
-    metric_key: 'fixed_applog_step_latency_p95_ms', operator: 'gte', threshold: 32000, min_sample: 20,
-    description: 'The single slowest tRPC step (≥ 20 calls in the last 60 min) has a p95 ≥ 10 s — one dependency is crawling even if the channel average looks fine (feasibility to a provider, Yakeen, an OSS call).',
+  R({ key: 'fixed_applog_step_latency_worst', name: 'Slowest app step p95 over 45 s', severity: 'P3', alert_class: 'technical',
+    metric_key: 'fixed_applog_step_latency_p95_ms', operator: 'gte', threshold: 45000, min_sample: 20,
+    description: 'The single slowest tRPC step (≥ 20 calls in the last 60 min, the known slow steps apart) has a p95 ≥ 45 s — one dependency is crawling even if the channel looks fine (feasibility to a provider, Yakeen, an OSS call). P3 since 9 Oct 2026: it was true on 5 % of ticks at 32 s (feasibility p99 35 s every day) — the channel latency rules carry the customer impact.',
     runbook: '1) The incident text names the step, channel and p95. 2) Map the step to its dependency: validateIndividualCustomer → Yakeen; feasibility → TLS / DAWIYAT / STC; checkPayment → gateway / BSS. 3) Check that provider\'s own latency / failure alert; raise with the provider or the app team.' }),
+  /* the known slow steps, each against ITS OWN normal (alpha.162) — 3 h window, P3: a problem record, not a page */
+  R({ key: 'fixed_applog_slow_createticket', name: 'Salam Home app · ticket creation p95 over 60 s', severity: 'P3', alert_class: 'technical', channel: 'salamhome', window_hours: 3,
+    metric_key: 'fixed_applog_slow_step_p95_ms', dim: { path: 'salamApp.user.createTicket' }, operator: 'gte', threshold: 60000, min_sample: 5,
+    description: 'salamApp.user.createTicket (Remedy ticket creation from the app) p95 ≥ 60 s over the last 3 h on ≥ 5 calls. Its normal is already slow — p95 30 s, p99 59 s over 14 days, ≥ 10 s on every day — and ~80 % of attempts are refused "duplicate of INC…" because customers tap again while waiting. Fires when it is worse than its own bad normal.',
+    runbook: '1) The incident text gives p95, calls and refused / technical counts. 2) Remedy (ARSystem) response time with the Remedy owner; request ids from Troubleshoot → From the app log → Salam Home. 3) Problem record with the app team: a "creating your ticket" state, block the second tap, show the existing INC number on "duplicate".' }),
+  R({ key: 'fixed_applog_slow_confirmotp_web', name: 'Epurchase · OTP confirmation p95 over 40 s', severity: 'P3', alert_class: 'technical', channel: 'web', window_hours: 3,
+    metric_key: 'fixed_applog_slow_step_p95_ms', dim: { path: 'ePurchase.actions.confirmOtp' }, operator: 'gte', threshold: 40000, min_sample: 20,
+    description: 'ePurchase.actions.confirmOtp p95 ≥ 40 s over the last 3 h on ≥ 20 calls. Its normal: p50 8.2 s, p95 22 s, p99 35 s over 14 days, ≥ 10 s every day — the OTP confirmation itself is slow (a problem record); this fires when it is worse than that.',
+    runbook: '1) The incident text gives p95 and calls. 2) The OTP confirmation dependency (DRM / SMS / BSS customer lookup) — app team with request ids. 3) Watch Epurchase OTP technical failures: timeouts follow.' }),
   R({ key: 'fixed_applog_collector_stale', name: 'App-log collector stale (lane + app-log alerts blind)', severity: 'P2', alert_class: 'technical', window_hours: 24,
     metric_key: 'fixed_applog_collector_lag_min', operator: 'gte', threshold: 30,
     description: 'No new line from combined.log on 146 for ≥ 30 min while FIXED_LOG_HOSTS is configured — the ssh tail died, the key / user (console_ro) broke, or the app is silent. Every app-log alert (rates, latency, providers, OTP, payments) is blind meanwhile.',
     runbook: '1) On 152: pm2 logs salam-unified | grep APPLOG — ssh error? 2) ssh -i /root/.ssh/api_log_ed25519 console_ro@172.31.38.146 tail -1 /app/log/sda/combined.log — if the file moves, the collector is at fault (restart salam-unified); if not, the app is silent → app team. 3) Clears on the next line.' }),
 );
-for (const ch of ['salamhome', 'web', 'sda']) {
+/* fixed_applog_volume_collapse_sda RETIRED 9 Oct 2026: seeded OFF since 18 Sep but init.js never re-applies `enabled`, so it
+ * kept firing (21 fires, true on 8 % of ticks, median ratio 0.11 on a broken baseline). Leaving the list disables it. */
+for (const ch of ['salamhome', 'web']) {
   const c = FXCH[ch];
   CH_RULES.push(R({ key: `fixed_applog_volume_collapse_${ch}`, name: `${c.label} · traffic collapsed (silent outage)`, severity: c.consumer ? 'P1' : 'P2', alert_class: 'technical', channel: ch,
     metric_key: 'fixed_applog_volume_ratio', dim: { channel: ch }, operator: 'lte', threshold: TUNED.volume_floor[ch] || 0.25, enabled: ch !== 'sda', active_from: c.consumer ? 9 : 10, active_to: c.consumer ? 23 : 22,
@@ -783,19 +810,19 @@ for (const [kind, label] of Object.entries(KIND_LABEL)) {
 }
 CH_RULES.push(
   R({ key: 'fixed_api_host_tech_rate', name: 'Integration endpoint · technical failure rate (P2)', severity: 'P2', team: 'OSS Ops', alert_class: 'technical',
-    metric_key: 'fixed_provider_api_fail_rate', dim: { host: '(worst)' }, operator: 'gte', threshold: 0.3, min_sample: 10,
-    description: 'The worst outbound integration host in sda_ops.api_calls (feasibility / appointment / order calls to TLS, DAWIYAT, STC, SALAM, ACES, MOBILY…) has ≥ 30 % of its calls in the last 60 min ending in 5xx or a transport error (≥ 10 calls). The incident text names the host.',
+    metric_key: 'fixed_provider_api_fail_rate', dim: { host: '(worst)' }, operator: 'gte', threshold: 0.3, min_sample: 50,
+    description: 'The worst outbound integration host in sda_ops.api_calls (feasibility / appointment / order calls to TLS, DAWIYAT, STC, SALAM, ACES, MOBILY…) has ≥ 30 % of its calls in the last 60 min ending in 5xx or a transport error (≥ 50 calls — at 10 the breaches came from hosts with a tenth of normal traffic). The incident text names the host.',
     runbook: '1) Fixed → Channel → Integrations: the host and endpoint family, p95 and failures. 2) 5xx from the provider = provider ticket; transport / timeouts from our side = network / gateway. 3) Board impact: the matching feasibility / appointment technical errors per channel.' }),
   R({ key: 'fixed_api_host_down', name: 'Integration endpoint · hard down (P1)', severity: 'P1', team: 'OSS Ops', alert_class: 'technical',
-    metric_key: 'fixed_provider_api_fail_rate', dim: { host: '(worst)' }, operator: 'gte', threshold: 0.6, min_sample: 20,
+    metric_key: 'fixed_provider_api_fail_rate', dim: { host: '(worst)' }, operator: 'gte', threshold: 0.6, min_sample: 50,
     description: 'The worst integration host has ≥ 60 % technical failures on ≥ 20 calls in the last 60 min — feasibility / appointment / order creation is blocked for the journeys that depend on it.',
     runbook: '1) Page OSS Ops; provider escalation with the host and timestamps. 2) Sales announcement for the affected provider footprint (regions). 3) Downgrades to the P2 twin as it recovers.' }),
-  R({ key: 'fixed_api_host_latency', name: 'Integration endpoint · p95 latency over 8 s (P2)', severity: 'P2', team: 'OSS Ops', alert_class: 'technical',
-    metric_key: 'fixed_provider_api_latency_p95_ms', dim: { host: '(worst)' }, operator: 'gte', threshold: 8000, min_sample: 10,
-    description: 'The slowest outbound integration host has a p95 ≥ 8 s over the last 60 min (≥ 10 calls). Provider latency is what turns into feasibility timeouts and dealer timeout waves. Threshold PROVISIONAL.',
+  R({ key: 'fixed_api_host_latency', name: 'Integration endpoint · p95 latency over 10 s (P2)', severity: 'P2', team: 'OSS Ops', alert_class: 'technical',
+    metric_key: 'fixed_provider_api_latency_p95_ms', dim: { host: '(worst)' }, operator: 'gte', threshold: 10000, min_sample: 50,
+    description: 'The slowest outbound integration host has a p95 ≥ 10 s over the last 60 min (≥ 50 calls; p99 of 14 days is 9.3 s). Provider latency is what turns into feasibility timeouts and dealer timeout waves. Threshold PROVISIONAL.',
     runbook: '1) Fixed → Channel → Integrations: host, family, p95 / max. 2) Provider capacity ticket if it persists; check the dealer-timeout rules. 3) Tune the ms once a week of series exists.' }),
   R({ key: 'fixed_api_host_latency_storm', name: 'Integration endpoint · p95 latency over 15 s (P1)', severity: 'P1', team: 'OSS Ops', alert_class: 'technical',
-    metric_key: 'fixed_provider_api_latency_p95_ms', dim: { host: '(worst)' }, operator: 'gte', threshold: 15000, min_sample: 10,
+    metric_key: 'fixed_provider_api_latency_p95_ms', dim: { host: '(worst)' }, operator: 'gte', threshold: 15000, min_sample: 50,
     description: 'The slowest integration host has a p95 ≥ 15 s — calls are hitting the app timeouts; journeys through this provider fail.',
     runbook: '1) Page OSS Ops + provider. 2) Expect the technical-rate rules for the same provider footprint to follow. 3) Downgrades to the P2 twin as it recovers.' }),
 );
