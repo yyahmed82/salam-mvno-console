@@ -134,9 +134,25 @@ async function nexusRows(ids) {
         context->'customer' AS customer, context->'customerLocation' AS loc, context->>'referralCode' AS ref,
         coalesce(context->>'provider', context->'customer'->'address'->>'provider') AS provider, context->'invoice'->>'status' AS invoice,
         context->'nafath'->'customer'->>'status' AS nafath, context->>'leadId' AS lead_id, context->'order'->>'orderNbr' AS order_nbr,
-        context->'storedYakeenCustomer' AS yk, context->>'customerCode' AS cust_code
+        context->'storedYakeenCustomer' AS yk, context->>'customerCode' AS cust_code, user_id
       FROM workflow_states WHERE id = ANY($1::text[])`, [part]);
     for (const x of r.rows) out.set(x.id, x);
+  }
+  /* THE ACCOUNT BEHIND THE JOURNEY (alpha.173). Web and Salam Home app journeys are opened by a logged-in account
+   * (workflow_states.user_id → nexus users): 5G HomeFi on the web stops at its FIRST step — location / stock lock, the BSS
+   * number-pool issue — before the customer types a number, so 446 of 484 such journeys in 14 days had no contact (9 Oct)
+   * while every one carried a user_id. The account's own phone and national id are read for journeys whose customer block
+   * has no mobile; whether they may make a lead is per product (desk.accountContact). Never stored: hashes and masks only. */
+  const need = [...out.values()].filter(x => x.user_id && !(x.customer && typeof x.customer === 'object' && x.customer.mobilePhone));
+  if (need.length && nxUsers) {
+    const uids = [...new Set(need.map(x => String(x.user_id)))];
+    try {
+      for (let i = 0; i < uids.length; i += 500) {
+        const r = await db.nexus.query(`SELECT id, phone_number, national_id, first_name, last_name, english_first_name, english_last_name FROM users WHERE id = ANY($1::text[])`, [uids.slice(i, i + 500)]);
+        const m = new Map(r.rows.map(u => [String(u.id), u]));
+        for (const x of need) { const u = m.get(String(x.user_id)); if (u) x.account = u; }
+      }
+    } catch (e) { if (/permission denied|does not exist/i.test(e.message)) { nxUsers = false; log('accounts: nexus users not readable — ' + e.message.slice(0, 80)); } else throw e; }
   }
   return out;
 }
@@ -229,11 +245,12 @@ async function fromReadModel(desk, st, stats) {
   const to = now - minAge, LIMIT = Math.max(200, Number(process.env.LEADS_HARVEST_ROWS) || 5000);
   const leadAge = Math.max(1, S.n(desk.leadMaxAgeDays) || 14) * 864e5;   // older journeys: the person's history only, no new lead
   const byId = new Map(); let hitAt = null;
+  const ATT = `SELECT a.id, a.workflow::text AS workflow, a.plan, a.plan_id, a.channel::text AS channel, a.referral_code, a.outcome::text AS outcome, a.step_reached,
+          a.last_error_category, a.started_at, a.completed_at, a.region, a.customer_id, a.nafath_outcome, a.dealer_validation, a.order_number, d.staff_code, d.dealer_code
+        FROM order_attempts a LEFT JOIN dealers d ON d.id = a.dealer_id`;
   for (const [name, pool] of pools) {
     try {
-      const r = await pool.query(`SELECT a.id, a.workflow::text AS workflow, a.plan, a.plan_id, a.channel::text AS channel, a.referral_code, a.outcome::text AS outcome, a.step_reached,
-          a.last_error_category, a.started_at, a.completed_at, a.region, a.customer_id, a.nafath_outcome, a.dealer_validation, a.order_number, d.staff_code, d.dealer_code
-        FROM order_attempts a LEFT JOIN dealers d ON d.id = a.dealer_id
+      const r = await pool.query(`${ATT}
         WHERE a.started_at >= $1 AND a.started_at < $2 ORDER BY a.started_at LIMIT $3`, [new Date(from), new Date(to), LIMIT]);
       let last = null;
       for (const x of r.rows) { if (!byId.has(x.id)) byId.set(x.id, x); const t = Date.parse(x.started_at); if (!last || t > last) last = t; }
@@ -242,6 +259,25 @@ async function fromReadModel(desk, st, stats) {
   }
   st.behind = hitAt != null; st.cursor = new Date(st.behind ? hitAt : to).toISOString();
   if (st.behind) stats.behind = true;
+  /* RE-CHECK (alpha.173): journeys recorded earlier with no contact, for a product whose logged-in account may give one
+   * (desk.accountContact), are read again — 1,500 a pass, each at most every 6 h, inside the lead window — so the accounts
+   * behind the 5G journeys that stopped at the location step become leads too. seen_at marks the last re-check. */
+  const recheck = new Set();
+  const accProds = Object.keys(desk.accountContact || {}).filter(k => desk.accountContact[k] && desk.products[k]);
+  if (accProds.length && db.nexus) {
+    try {
+      const rr = (await C().query(`SELECT ref FROM fixed_lead_journeys WHERE lead_id IS NULL AND mobile_hash IS NULL AND NOT completed AND product = ANY($1::text[])
+          AND started_at >= $2 AND started_at < $3 AND seen_at < now() - interval '6 hours' ORDER BY started_at DESC LIMIT 1500`, [accProds, new Date(now - leadAge), new Date(to)])).rows.map(r => r.ref).filter(id => !byId.has(id));
+      if (rr.length) {
+        for (const [name, pool] of pools) {
+          try { const r = await pool.query(`${ATT} WHERE a.id = ANY($1::text[])`, [rr]); for (const x of r.rows) if (!byId.has(x.id)) { byId.set(x.id, x); recheck.add(x.id); } }
+          catch (e) { stats.errors.push(`${name} recheck: ${e.message.slice(0, 140)}`); }
+        }
+        await C().query(`UPDATE fixed_lead_journeys SET seen_at = now() WHERE ref = ANY($1::text[])`, [rr]);
+        stats.rechecked = recheck.size;
+      }
+    } catch (e) { stats.errors.push('recheck: ' + e.message.slice(0, 140)); }
+  }
   const rows = [...byId.values()]; stats.scanned += rows.length; if (!rows.length) return;
   /* journeys already handled are skipped — except one that has completed since */
   const known = new Map();
@@ -249,7 +285,7 @@ async function fromReadModel(desk, st, stats) {
     const r = await C().query(`SELECT ref, completed FROM fixed_lead_journeys WHERE ref = ANY($1::text[])`, [rows.slice(i, i + 1000).map(x => x.id)]);
     for (const k of r.rows) known.set(k.ref, k.completed);
   }
-  const todo = rows.filter(x => { const k = known.get(x.id); if (k === undefined) return true; if (k) return false; return x.outcome === 'COMPLETED'; });
+  const todo = rows.filter(x => { if (recheck.has(x.id)) return true; const k = known.get(x.id); if (k === undefined) return true; if (k) return false; return x.outcome === 'COMPLETED'; });
   if (!todo.length) return;
   const nx = await nexusRows(todo.map(x => x.id)).catch(e => { stats.errors.push('nexus: ' + e.message.slice(0, 140)); return new Map(); });
   const fresh = [], noName = [];
@@ -258,8 +294,12 @@ async function fromReadModel(desk, st, stats) {
     const wf = (x && x.workflow_id) || a.workflow, planId = (x && x.plan_id) || a.plan_id;
     const product = productOf(wf, planId, a.plan);
     const cust = (x && x.customer && typeof x.customer === 'object') ? x.customer : {};
-    const nid = S.normNid(cust.id || a.customer_id), mob = S.normMobile(cust.mobilePhone);
-    const idn = S.identity({ name: nameOf(cust) || nameOf(x && x.yk), mobile: mob, nid });
+    /* the logged-in account when the journey itself has no number (alpha.173) — only for the products the desk allows */
+    const acct = x && x.account && product && (desk.accountContact || {})[product] ? x.account : null;
+    const accMob = acct && !S.normMobile(cust.mobilePhone) ? S.normMobile(acct.phone_number) : null;
+    const nid = S.normNid(cust.id || a.customer_id || (acct && acct.national_id)), mob = S.normMobile(cust.mobilePhone) || accMob;
+    const accName = acct ? nameOf({ englishFirstName: acct.english_first_name, englishLastName: acct.english_last_name, firstName: acct.first_name, lastName: acct.last_name }) : '';
+    const idn = S.identity({ name: nameOf(cust) || nameOf(x && x.yk) || accName, mobile: mob, nid });
     const referral = (x && x.ref) || a.referral_code;
     const source = sourceOf(a.channel, x && x.channel, referral);
     const completed = a.outcome === 'COMPLETED' || (x && isDone(x.current_step));
@@ -296,9 +336,9 @@ async function fromReadModel(desk, st, stats) {
     const L = { source, source_ref: a.id, product, workflow: wf, plan_id: planId, plan_label: label, svc_type: S.svcType(wf, planId, label, product), plan_type: pt.v, channel: source,
       dealer: source === 'sda' ? (a.dealer_code || a.staff_code || null) : referral || null, region: a.region || null, city: (cust.address && cust.address.city) || null,
       step: jr.step, step_label: stepLabel(jr.step, wf), reason: why.text, reason_class: why.cls, ...idn,
-      facts: { attempts: 1, invoice: (x && x.invoice) || null, nafath: (x && x.nafath) || a.nafath_outcome || null, provider: (x && x.provider) || null, error: a.last_error_category || null,
+      facts: { attempts: 1, ...(accMob ? { contact: 'account' } : {}), invoice: (x && x.invoice) || null, nafath: (x && x.nafath) || a.nafath_outcome || null, provider: (x && x.provider) || null, error: a.last_error_category || null,
         journey: a.id, workflow: wf, expired_at: iso(x && x.expires_at), staff: a.staff_code || null, pt: x ? 'nexus' : (pt.src || 'none'), period: (x && x.period) ? String(x.period).slice(0, 4) : null,
-        lang: ['ar', 'en'].includes(cust.language) ? cust.language : null, bss: x && x.cust_code ? true : null, nm: idn.customer_mask ? 'journey' : null },
+        lang: ['ar', 'en'].includes(cust.language) ? cust.language : null, bss: x && x.cust_code ? true : null, nm: idn.customer_mask ? (nameOf(cust) || nameOf(x && x.yk) ? 'journey' : 'account') : null },
       occurred_at: a.started_at, stopped_at: (x && x.expires_at) || null };
     delete L.has_mobile; L.has_mobile = true;
     const id = await insertLead(L);

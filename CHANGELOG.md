@@ -1,3 +1,12 @@
+## 2.0.0-alpha.173 — 2026-10-09
+
+- **Fixed › Leads — 5G web and app journeys that stopped before the customer typed a number become leads, from the account that opened them.**
+  - **Why they were missing:** 5G HomeFi on the web and in the Salam Home app stops at its first step (location / stock lock — the BSS number-pool issue). Over 14 days to 9 Oct, 446 of 484 such journeys had no number of their own: 364 Epurchase and 82 app journeys at that step. So the harvest skipped them as "no contact", and the desk saw only the 18 that got further.
+  - **What is used now:** every one of those journeys is opened by a logged-in account (nexus `workflow_states.user_id` → `users`): 371 web journeys from 309 accounts, 82 app journeys from 44. When a journey has no number, the harvest takes the account's phone and national id, and its name when the journey has none. Reveal and Unmask read the number live the same way, and it is never stored.
+  - **Per product:** desk setting `accountContact`, on for 5G and off for FTTH. About 9,000 FTTH journeys in 14 days have no number of their own; switching FTTH on would add them to the desk.
+  - **Re-check:** journeys already recorded with no contact, still inside the lead window, are read again, 1,500 a pass and each at most every 6 h. The leads they create carry `facts.contact = account`.
+- **Code:** `server/src/fixedLeadsHarvest.js`, `fixedLeads.js`, `fixedLeadsStore.js`.
+
 ## 2.0.0-alpha.172 — 2026-10-09
 
 - **Traffic collapse compares the same weekday.**

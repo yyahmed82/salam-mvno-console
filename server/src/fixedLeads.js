@@ -43,9 +43,16 @@ async function contactsOf(leads) {
   if (!db.nexus) [...jr, ...pr].forEach(L => out.set(L.id, { none: 'nexus is not configured — the number cannot be read' }));
   else {
     if (jr.length) {
-      const r = await db.nexus.query(`SELECT id, context->'customer' AS c, context->'storedYakeenCustomer' AS yk FROM workflow_states WHERE id = ANY($1::text[])`, [jr.map(L => String(L.source_ref))]);
+      /* the logged-in account behind the journey (alpha.173): its phone / national id stand in when the journey has no number
+       * of its own — the 5G journeys that stopped at the location step (fixedLeadsHarvest, desk.accountContact) */
+      const ids = jr.map(L => String(L.source_ref)); let r;
+      try { r = await db.nexus.query(`SELECT w.id, w.context->'customer' AS c, w.context->'storedYakeenCustomer' AS yk, u.phone_number AS acct_phone, u.national_id AS acct_nid
+          FROM workflow_states w LEFT JOIN users u ON u.id = w.user_id WHERE w.id = ANY($1::text[])`, [ids]); }
+      catch (_) { r = await db.nexus.query(`SELECT id, context->'customer' AS c, context->'storedYakeenCustomer' AS yk, NULL::text AS acct_phone, NULL::text AS acct_nid FROM workflow_states WHERE id = ANY($1::text[])`, [ids]); }
       const m = new Map(r.rows.map(x => [String(x.id), x]));
-      jr.forEach(L => { const x = m.get(String(L.source_ref)); if (x && x.c) blocks.set(L.id, { c: x.c, yk: x.yk, journey: String(L.source_ref) }); else out.set(L.id, { none: 'the journey is no longer in nexus' }); });
+      jr.forEach(L => { const x = m.get(String(L.source_ref));
+        if (x && (x.c || x.acct_phone)) blocks.set(L.id, { c: x.c || {}, yk: x.yk, journey: String(L.source_ref), acct: x.c && x.c.mobilePhone ? null : { phone: x.acct_phone, nid: x.acct_nid } });
+        else out.set(L.id, { none: 'the journey is no longer in nexus' }); });
     }
     if (pr.length) {
       const ref = L => String(L.source_ref).replace(/^L/, '');
@@ -53,9 +60,9 @@ async function contactsOf(leads) {
       const m = new Map(r.rows.map(x => [String(x.id), x]));
       pr.forEach(L => { const x = m.get(ref(L)); if (x && x.c) blocks.set(L.id, { c: x.c, yk: x.yk, journey: x.j || null }); else out.set(L.id, { none: 'the promoter lead has no customer block' }); });
     }
-    const names = blocks.size ? await H.namesFor([...blocks.entries()].map(([id, b]) => ({ key: id, customer: b.c, yk: b.yk, nid: S.normNid(b.c && b.c.id), journey: b.journey }))) : new Map();
+    const names = blocks.size ? await H.namesFor([...blocks.entries()].map(([id, b]) => ({ key: id, customer: b.c, yk: b.yk, nid: S.normNid(b.c && b.c.id) || (b.acct && S.normNid(b.acct.nid)) || null, journey: b.journey }))) : new Map();
     for (const [id, b] of blocks) {
-      const c = b.c && typeof b.c === 'object' ? b.c : {}; const mob = S.normMobile(c.mobilePhone);
+      const c = b.c && typeof b.c === 'object' ? b.c : {}; const mob = S.normMobile(c.mobilePhone) || (b.acct && b.acct.phone ? S.normMobile(b.acct.phone) : null);
       if (!mob) { out.set(id, { none: 'no mobile number in the source' }); continue; }
       const n = names.get(id);
       out.set(id, { name: n ? { en: n.en || null, ar: n.ar || null } : { en: null, ar: null }, from: n ? n.from : null, mobile: mob,

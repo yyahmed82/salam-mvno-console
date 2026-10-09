@@ -96,6 +96,10 @@ const DESK_DEFAULT = {
   staffCodes: {},                        // member e-mail → SDA account (OCU_001 …): an SDA order by that account credits the member
   sources: { epurchase: true, salamhome: true, sda: true, sda_promoter: true, dashpro: true, qr: false },
   products: { ftth: true, '5g': true },
+  /* a journey with no number of its own takes the logged-in account's (nexus users.phone_number via workflow_states.user_id) —
+   * per product (alpha.173): on for 5G (most web / app 5G journeys stop at the location step before the customer types a
+   * number), off for FTTH until the desk wants the extra volume (≈ 9,000 FTTH journeys in 14 days have no number of their own) */
+  accountContact: { '5g': true, ftth: false },
   minAgeHours: 3, lookbackDays: 30, staleLeadDays: 3,
   promoterNew: false,                     // promoter leads still NEW after staleLeadDays — off: tens of thousands of captures nobody updates (alpha.167)
   leadMaxAgeDays: 14,                     // a journey older than this feeds the person's history (30 days back) but is not a new lead
@@ -115,7 +119,7 @@ let deskCache = { at: 0, v: null };
 async function getDesk(force) {
   if (!force && deskCache.v && Date.now() - deskCache.at < 30e3) return deskCache.v;
   let s = {}; try { const r = await C().query(`SELECT value FROM console_settings WHERE key='leads_desk'`); if (r.rowCount && r.rows[0].value) s = r.rows[0].value; } catch (_) {}
-  const v = { ...DESK_DEFAULT, ...s, sources: { ...DESK_DEFAULT.sources, ...(s.sources || {}) }, products: { ...DESK_DEFAULT.products, ...(s.products || {}) },
+  const v = { ...DESK_DEFAULT, ...s, sources: { ...DESK_DEFAULT.sources, ...(s.sources || {}) }, products: { ...DESK_DEFAULT.products, ...(s.products || {}) }, accountContact: { ...DESK_DEFAULT.accountContact, ...(s.accountContact || {}) },
     digest: { ...DESK_DEFAULT.digest, ...(s.digest || {}) }, targets: { ...DESK_DEFAULT.targets, ...(s.targets || {}) }, points: { ...DESK_DEFAULT.points, ...(s.points || {}) } };
   v.supervisors = (Array.isArray(v.supervisors) ? v.supervisors : []).map(e => String(e).toLowerCase().trim()).filter(Boolean);
   v.offers = Array.isArray(s.offers) && s.offers.length ? s.offers : OFFERS_DEFAULT;
