@@ -442,6 +442,46 @@ const hr = t => console.log('\n' + '='.repeat(118) + '\n' + t + '\n' + '='.repea
   for (const r of opn) console.log('  ' + pad(r.id, 7) + pad(r.severity, 4) + pad(r.rule_key, 44) + rpad(r.hours + ' h', 9) + pad(r.acked ? ' acked' : ' NOT acked', 11) + pad(r.owner || '', 22) + `value ${num(r.observed_value)} n=${r.sample}`);
   if (!opn.length) console.log('  none');
 
+  /* ---------- 17. simulation of the CURRENT rules on the raw events ---------- */
+  hr(`17 · SIMULATION — the rules as they are NOW, replayed hour by hour on the raw app log (${SNAPD} d, current classification)`);
+  console.log('Hourly buckets stand in for the rolling 60-min tick. EPISODES = runs of breaching hours, two runs ≤ 1 h apart counted once');
+  console.log('(the 60-min re-open stitches them into one incident) — the closest thing to "incidents it would have opened".');
+  console.log('FIRES 30d = what the rule actually fired in the last 30 days (old thresholds / old classification until this release).');
+  const SLOW = ['salamApp.user.createTicket', 'ePurchase.actions.confirmOtp'];       // = fixedChannelMetrics.SLOW_STEPS
+  const simRules = await q(`SELECT r.key, r.severity, r.metric_key, r.threshold, r.min_sample, r.dim, r.enabled,
+        (SELECT count(*) FROM alerts a WHERE a.rule_key = r.key AND a.fired_at >= now() - interval '30 days')::int fires30
+      FROM alert_rules r WHERE ${FIXED_R} AND r.metric_key IN ('fixed_applog_fail_rate','fixed_applog_latency_p95_ms','fixed_applog_slow_step_p95_ms') ORDER BY r.metric_key, r.dim::text, r.threshold`);
+  const hrs = await q(`SELECT coalesce(channel,'other') ch, date_trunc('hour', ts) hh, count(*)::int n,
+        count(*) FILTER (WHERE ok IS FALSE AND reason_class='technical')::int tech, count(*) FILTER (WHERE ok IS FALSE AND reason_class='business')::int biz,
+        count(duration_ms) FILTER (WHERE coalesce(path,'') <> ALL($2::text[]))::int nl,
+        percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE coalesce(path,'') <> ALL($2::text[])) p95
+      FROM fixed_app_events WHERE kind='mutation' AND ts >= now() - ($1||' days')::interval AND coalesce(channel,'other') IN ('sda','web','salamhome')
+      GROUP BY 1,2
+      UNION ALL
+      SELECT 'all', date_trunc('hour', ts), count(*)::int, count(*) FILTER (WHERE ok IS FALSE AND reason_class='technical')::int, count(*) FILTER (WHERE ok IS FALSE AND reason_class='business')::int,
+        count(duration_ms) FILTER (WHERE coalesce(path,'') <> ALL($2::text[]))::int,
+        percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE coalesce(path,'') <> ALL($2::text[]))
+      FROM fixed_app_events WHERE kind='mutation' AND ts >= now() - ($1||' days')::interval AND coalesce(channel,'other') IN ('sda','web','salamhome') GROUP BY 2`, [SNAPD, SLOW]);
+  const slowH = await q(`WITH g AS (SELECT generate_series(date_trunc('hour', now() - ($1||' days')::interval), date_trunc('hour', now()), interval '1 hour') hh)
+      SELECT p.path, g.hh, count(e.*)::int n, percentile_cont(0.95) WITHIN GROUP (ORDER BY e.duration_ms) p95
+        FROM g CROSS JOIN unnest($2::text[]) AS p(path)
+        LEFT JOIN fixed_app_events e ON e.kind='mutation' AND e.path = p.path AND e.duration_ms IS NOT NULL AND e.ts >= g.hh - interval '2 hours' AND e.ts < g.hh + interval '1 hour'
+       GROUP BY 1,2`, [SNAPD, SLOW]);
+  const episodes = list => { const t = list.map(x => new Date(x).getTime()).sort((a, b) => a - b); let n = 0, last = -1e15; for (const v of t) { if (v - last > 2 * 3600e3) n++; last = v; } return n; };
+  console.log('  ' + pad('RULE', 42) + pad('SEV', 4) + rpad('THRESH', 9) + rpad('n≥', 5) + rpad('HOURS', 7) + rpad('BREACH h', 9) + rpad('%', 7) + rpad('EPISODES', 9) + rpad('/WEEK', 7) + rpad('FIRES 30d', 10) + '  STATE');
+  let totEp = 0, totOld = 0;
+  for (const r of simRules) {
+    const d = r.dim || {}; let rows = [], hit = [];
+    if (r.metric_key === 'fixed_applog_slow_step_p95_ms') { rows = slowH.filter(x => x.path === d.path); hit = rows.filter(x => x.n >= r.min_sample && x.p95 >= Number(r.threshold)); }
+    else if (r.metric_key === 'fixed_applog_latency_p95_ms') { rows = hrs.filter(x => x.ch === d.channel); hit = rows.filter(x => x.nl >= r.min_sample && x.p95 != null && x.p95 >= Number(r.threshold)); }
+    else { rows = hrs.filter(x => x.ch === d.channel); const k = d.cls === 'business' ? 'biz' : 'tech'; hit = rows.filter(x => x.n >= r.min_sample && x[k] / x.n >= Number(r.threshold)); }
+    const ep = episodes(hit.map(x => x.hh)); if (r.enabled) totEp += ep; totOld += r.fires30;
+    console.log('  ' + pad(r.key, 42) + pad(r.severity, 4) + rpad(num(r.threshold), 9) + rpad(r.min_sample, 5) + rpad(rows.length, 7) + rpad(hit.length, 9) + rpad(rows.length ? (100 * hit.length / rows.length).toFixed(1) : '—', 7) +
+      rpad(ep, 9) + rpad((ep * 7 / Number(SNAPD)).toFixed(1), 7) + rpad(r.fires30, 10) + '  ' + (r.enabled ? '' : 'disabled'));
+  }
+  console.log(`\n  these ${simRules.length} rules: ${totOld} actual fires in 30 d before → about ${Math.round(totEp * 30 / Number(SNAPD))} incidents per 30 d at the current thresholds on the current classification.`);
+  console.log('  Not simulated here (their metric needs its own baseline): the anomaly z-scores, the board and integration-host rules — read them in section 3 after a week.');
+
   /* ---------- 7. silent rules ---------- */
   hr(`7 · SILENT — enabled ${SEG_LABEL} rules with zero fires in ${DAYS} d`);
   const silent = score.filter(r => r.fires === 0 && r.enabled);

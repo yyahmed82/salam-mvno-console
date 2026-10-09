@@ -1,3 +1,8 @@
+## 2.0.0-alpha.163 — 2026-10-09
+
+- **An incident of a switched-off rule is closed** (`alertRunner.js`): the runner walks the enabled rules only, so an incident left open by a rule disabled in the console or retired by init.js stayed open for ever — `fixed_applog_volume_collapse_sda`, retired in alpha.162, fired once more during that deploy. It is now resolved on the next tick with reason `rule_disabled` and a comment saying why.
+- **Fixed alerts census — section 17, simulation** (`deploy152/fixed-alerts-review.cjs`): the app-log technical-rate, refusal-rate, latency and known-slow-step rules as they are now, replayed hour by hour on the raw events with the corrected classification — breaching hours, episodes (≈ incidents) per week, against what each rule really fired in 30 days.
+
 ## 2.0.0-alpha.162 — 2026-10-09
 
 - **Fixed read "Outage" for one slow step — fixed at the measurement, the state and the thresholds.** On 9 Oct the VP page showed Fixed · Outage because "Salam Home app · step latency p95 over 22 s (P1)" opened at 09:30 KSA: 8 of the hour's 37 steps were `salamApp.user.createTicket` (Remedy ticket creation, 62–79 s, ~80 % of attempts refused "duplicate of INC…" as customers tap again). Census: `deploy152/fixed-alerts-review.cjs` (new sections 12–16), see claude/FIXED-ALERTS-TUNING.md.

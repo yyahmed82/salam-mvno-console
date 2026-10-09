@@ -160,6 +160,17 @@ async function runAlerts(simNow) {
         [d.held_alert_id, `Hold expired — ${d.key} is being evaluated again. If the condition is still breaching, the next tick opens a NEW incident.`]).catch(() => {});
     }
   } catch (e) { console.error('[ALERTS] hold sweep:', e.message); }
+  /* RULE SWITCHED OFF (9 Oct 2026, alpha.163): this loop only walks the enabled rules, so an incident left open by a rule
+   * that was disabled in the console or retired by init.js stayed open for ever (fixed_applog_volume_collapse_sda, retired
+   * in alpha.162, fired once more during the deploy). Nothing watches that signal any more — close it and say why. */
+  try {
+    const off = (await c.query(
+      `UPDATE alerts a SET status='resolved', resolved_at=$1, resolve_reason='rule_disabled', resolved_by=COALESCE(a.resolved_by,'system')
+         FROM alert_rules r WHERE r.key = a.rule_key AND r.enabled = false AND a.status = 'open' RETURNING a.id, a.rule_key`, [now])).rows;
+    for (const x of off) await c.query(`INSERT INTO incident_comments (alert_id, author, body) VALUES ($1,'system',$2)`,
+      [x.id, `Closed: the rule ${x.rule_key} is switched off — nothing watches this signal any more. Switch the rule back on in Alert rules to watch it again.`]).catch(() => {});
+    if (off.length) console.log(`[ALERTS] closed ${off.length} incident(s) of switched-off rules: ${off.map(x => x.rule_key).join(', ')}`);
+  } catch (e) { console.error('[ALERTS] switched-off sweep:', e.message); }
   // need the full rule rows for persistence details (rule_id, dim)
   const rules = (await c.query(`SELECT * FROM alert_rules WHERE enabled=true`)).rows;
   const grouped = groupRules(rules);
