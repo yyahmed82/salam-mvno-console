@@ -127,6 +127,7 @@ async function userRow(email) {
 const forgetUserRows = () => USER_ROWS.clear();
 const opsReports = require('./opsReports');   // Operations reports (8 Oct 2026) — membership check in the session middleware below
 const cockpit = require('./opsCockpit');   // VP Operations cockpit — membership check in the session middleware below, routes mounted with the exec pages
+const opsProjects = require('./opsProjects');   // Operations Projects (10 Oct 2026) — VP Operations ▾ › Operations Projects; membership check below
 app.use(async (req, _res, next) => {
   // identity comes from the session token, never from a client-supplied header.
   // EXCEPTION — GET /api/stream only: EventSource cannot send headers at all, so the live SSE
@@ -210,6 +211,9 @@ app.use(async (req, _res, next) => {
   try { if (!req.views.includes('vp') && cockpit.isMember(req.viewAs ? req.viewAs.email : email)) req.views = [...req.views, 'vp']; } catch (e) {}
   /* Operations reports (8 Oct 2026): ITSM editors, management recipients, team owners and uploaders get the 'opsreports' view the same way */
   try { if (!req.views.includes('opsreports') && opsReports.isMember(req.viewAs ? req.viewAs.email : email)) req.views = [...req.views, 'opsreports']; } catch (e) {}
+  /* Operations Projects (10 Oct 2026): part of the VP Operations menu — every session holding 'vp' reads it, and so do the
+   * people named on the page (portfolio editors / viewers, each project's editors). Follows the view-as account like above. */
+  try { if (!req.views.includes('projects') && (req.views.includes('vp') || opsProjects.isMember(req.viewAs ? req.viewAs.email : email))) req.views = [...req.views, 'projects']; } catch (e) {}
   next();
 });
 /* VIEW-AS IS READ-ONLY. A super admin looking through someone else's account may read whatever that
@@ -231,7 +235,7 @@ app.use('/api/', (req, res, next) => {
 // (session, tickets, Yusr, settings, users, audit, live stream); Mobile-only sessions lose /api/fixed/*
 // through the stripped views (every Fixed route is requireView-gated). Kept as an allow-list so a new
 // Mobile endpoint is closed for the Fixed team by default.
-const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents|semati|salesops|cockpit|opsreports)/;   // salesops: the Sales Operations wall (its own view) · alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
+const FIXED_TEAM_ALLOW = /^\/api\/(fixed\/|me(\/|$)|auth\/|version$|health|ready$|cache-stats$|stream|tickets|settings\/features|settings\/assist|users|roles|assist|audit|ui-nav|config-changes|error-codes|health\/selfcheck|alerts|incidents|rules|metrics\/series|ack-sla|alert-flap|llm|agents|semati|salesops|cockpit|opsreports|projects)/;   // salesops: the Sales Operations wall (its own view) · alerts/rules/incidents: shared engine, answers are segment-scoped (segment.forRequest) and per-id routes check the alert's segment
 app.use('/api/', (req, res, next) => {
   if (req.business === 'fixed' && !FIXED_TEAM_ALLOW.test(req.originalUrl.split('?')[0]))
     return res.status(403).json({ error: 'Not available for the Fixed team — this endpoint belongs to the Mobile side.', business: 'fixed' });
@@ -3519,7 +3523,8 @@ require('./cst').mount(app, { requireSuper, audit });                   // CST s
   require('./execRadar').mount(app, execDeps);     // the case file behind one radar contact
   require('./execBrief').mount(app, { ...execDeps, execDeps, mvnoExec: require('./mvnoExec'), fixedExec: require('./fixedExec') });   // CEO / CIO brief: /api/exec/brief (outages, vendor SLAs, RCAs)
   try { cockpit.mount(app, { requireView, audit, execDeps }); } catch (e) { console.error('[cockpit] mount failed:', e.message); }
-  try { opsReports.mount(app, { requireView, audit }); } catch (e) { console.error('[opsreports] mount failed:', e.message); } }   // Operations reports: /api/opsreports/* (8 Oct 2026)   // VP Operations cockpit: /api/cockpit/* (8 Oct 2026)
+  try { opsReports.mount(app, { requireView, audit }); } catch (e) { console.error('[opsreports] mount failed:', e.message); }
+  try { opsProjects.mount(app, { requireView, audit }); } catch (e) { console.error('[projects] mount failed:', e.message); } }   // Operations reports: /api/opsreports/* (8 Oct 2026)   // VP Operations cockpit: /api/cockpit/* (8 Oct 2026)
   /* Fixed app-log collector (combined.log → fixed_app_events): status + freshness for the Fixed pages / agents */
   app.get('/api/fixed/applog/status', requireView('fixed'), async (req, res) => {
     try { const col = require('./fixedAppLogCollector'); res.json({ ...col.status(), db: await col.ping() }); }
@@ -7240,6 +7245,7 @@ app.listen(PORT, async () => {
   try { require('./lookupCache').startWarm(); } catch (e) { console.error('lookup cache:', e.message); }
   try { require('./prodHealth').start(); } catch (e) { console.error('prod-safety healthcheck:', e.message); }
   try { cockpit.start(); } catch (e) { console.error('VP cockpit:', e.message); }
+  try { opsProjects.start(); } catch (e) { console.error('Operations projects:', e.message); }   // tables + first content (Instana, R5/R6)
   try { opsReports.start(); } catch (e) { console.error('Operations reports:', e.message); }   // tables + first teams + reminder / late / consolidated mails   // tables + first content + the 08:00 KSA morning brief
   try { respCache.startKeepWarm(); } catch (e) { /* keep-warm is best-effort */ }
 });

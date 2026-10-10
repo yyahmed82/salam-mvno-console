@@ -251,7 +251,7 @@ window.API_BASE = API;   // one source of truth for files that fetch outside the
   window.opsSession = () => SES;   // { email, role, me:{name,mobile,dashboard,...} }
   /* 2 Sep 2026 view split: home→'dashboard', dms→'dms' (own view), every Explore-menu entry
    * (topology/apigw/docs/journeys/integrations/sub360) → the single 'explore' view. */
-  const NAV_VIEW = { landing:"dashboard", execops:"exec", vpcockpit:"vp", opsreports:"opsreports", nocwall:"noc", salesops:"salesops", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
+  const NAV_VIEW = { landing:"dashboard", execops:"exec", vpcockpit:"vp", opsprojects:"projects", opsreports:"opsreports", nocwall:"noc", salesops:"salesops", home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", dmshld:"explore", mvnohld:"explore",
     explorer:"explore", integrations:"explore", monitoring:"monitoring", dms:"dms", fixed:"fixed", otodocs:"explore", salamdocs:"explore", dmsdocs:"explore", dmsflows:"explore", tapdocs:"explore", alertjourney:"explore", alerts:"alerts", errors:"errors", refunds:"errors", flowguard:"errors", infra:"noc", analytics:"analytics", sub360:"explore", settings:"settings" };
 
   /* VIEW AS USER — the persistent "you are not yourself" bar. Fixed to the bottom so it can never

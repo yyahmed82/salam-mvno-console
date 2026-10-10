@@ -39,3 +39,6 @@ server/jdbc/*.class
 
 # local exports (mail dumps, reviews, workbooks) - never in git
 Claude outputs/
+
+# vendor project documents and downloads kept beside the repo (VP Operations › Operations Projects source material)
+R5:R6/

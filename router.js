@@ -23,6 +23,7 @@
     exec:{view:"execops"}, "executive":{view:"execops"},
     vp:{view:"vpcockpit"}, "vp-operations":{view:"vpcockpit"}, cockpit:{view:"vpcockpit"},   // VP Operations cockpit (8 Oct 2026): #vp?tab=… · #vp?chg=CHG… · #vp?challenge=12 · #vp?settings=1
     noc:{view:"nocwall"},                       // NOC walls (16 Sep 2026): #noc = alert radar, #noc?w=kpi = key indicators
+    projects:{view:"opsprojects"}, "ops-projects":{view:"opsprojects"},   // Operations Projects (10 Oct 2026): #projects?p=<slug>&s=<section>&i=<item>
     opsreports:{view:"opsreports"}, "ops-reports":{view:"opsreports"}, "itsm-reports":{view:"opsreports"},   // Operations reports (8 Oct 2026): #opsreports?week=…&team=…&tab=actions|itsm|library|teams|settings
     salesops:{view:"salesops"}, "sales-ops":{view:"salesops"}, "sales-wall":{view:"salesops"},   // Sales Operations wall (5 Oct 2026): #salesops?ch=dms|selfact|qr|sda&kiosk=1&rotate=30
     /* merged 12 Sep 2026 — old entry points keep working, they just land on the page that absorbed them */
@@ -31,7 +32,7 @@
     /* CST section (16 Sep 2026, super admin): #arqami · #cst-escalations (cstpage.js) */
     arqami:{cst:"arqami"}, "cst-escalations":{cst:"escalations"}, cst:{cst:"escalations"}
   };
-  const VIEW_HASH={landing:"home",execops:"exec",vpcockpit:"vp",opsreports:"opsreports",nocwall:"noc",salesops:"salesops",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",dmsdocs:"dmsdocs",dmsflows:"dms-journeys",alertjourney:"alert-journey",errors:"troubleshoot",refunds:"refunds",flowguard:"flowguard",infra:"infra",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
+  const VIEW_HASH={landing:"home",execops:"exec",vpcockpit:"vp",opsprojects:"projects",opsreports:"opsreports",nocwall:"noc",salesops:"salesops",monitoring:"monitoring",analytics:"analytics",dms:"dms",fixed:"fixed",otodocs:"otodocs",tapdocs:"tapdocs",salamdocs:"salamdocs",dmsdocs:"dmsdocs",dmsflows:"dms-journeys",alertjourney:"alert-journey",errors:"troubleshoot",refunds:"refunds",flowguard:"flowguard",infra:"infra",alerts:"alerts",topology:"topology",apigw:"apigw",explorer:"journeys",integrations:"integrations",sub360:"subscriber",home:"dashboard"};
   let _cur=null;
 
   /* ---- ROLE GUARD (2 Sep 2026) ---------------------------------------------------------------
@@ -39,12 +40,12 @@
    * view (page permission) it needs under the v2 model; a role without it gets a full
    * ACCESS DENIED panel — same message the API would 403 with — instead of a half-broken page.
    * The server gates the data regardless; this makes the denial clear instead of confusing. */
-  const VIEW_REQ={ landing:"dashboard", execops:"exec", vpcockpit:"vp", opsreports:"opsreports", nocwall:"noc", salesops:"salesops", monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts", flowguard:"errors", infra:"noc",
+  const VIEW_REQ={ landing:"dashboard", execops:"exec", vpcockpit:"vp", opsprojects:"projects", opsreports:"opsreports", nocwall:"noc", salesops:"salesops", monitoring:"monitoring", analytics:"analytics", dms:"dms", fixed:"fixed", errors:"errors", alerts:"alerts", flowguard:"errors", infra:"noc",
     home:"dashboard", topology:"explore", topology2:"explore", apigw:"explore", mvnohld:"explore", otodocs:"explore",
     tapdocs:"explore", salamdocs:"explore", dmsdocs:"explore", dmsflows:"explore", alertjourney:"explore", explorer:"explore", integrations:"explore", sub360:"explore" };
   const PAGE_NAME={ dashboard:"Dashboard", monitoring:"Monitoring", dms:"DMS", fixed:"Fixed", errors:"Troubleshoot", alerts:"Alerts", fixed_alerts:"Fixed › Alerts",
     analytics:"Reports", explore:"Explore & Customer 360", workbench:"L2 Workbench", settings:"Settings",
-    exec:"Executive Dashboard", vp:"VP Operations cockpit",
+    exec:"Executive Dashboard", vp:"VP Operations cockpit", projects:"Operations Projects",
     fixed_epurchase:"Fixed › Epurchase", fixed_salamhome:"Fixed › Salam Home", fixed_maps:"Fixed › SDA map & QR codes", fixed_reports:"Fixed › Reports",
     fixed_errors:"Fixed › Troubleshoot", fixed_explore:"Fixed › Playbook & Diagrams", fixed_leads:"Fixed › Leads (restricted · OCU and Super Admins)", opsreports:"Operations reports", noc:"NOC wall", salesops:"Sales Operations wall", governance:"IT Governance", cst:"CST", audit:"Audit log", tickets:"Tickets & feedback", users:"User management" };
   /* WHERE A ROLE STARTS (19 Sep 2026) — #'' and #home resolve to the landing page, which needs 'dashboard'.
@@ -223,7 +224,7 @@
 	      /* clickNav is a no-op when the tab is already active, so any view that only renders on a
 	       * navtab click stays blank on a deep link / reload / back-button. Call its opener too —
        * the openers are all idempotent. */
-      const OPENER={ vpcockpit:"openVpCockpit", opsreports:"openOpsReports", salesops:"openSalesOps", explorer:"openJourneys", dmsflows:"openDmsFlows", dmsdocs:"openDmsDocs", refunds:"openRefunds", flowguard:"openFlowGuard", infra:"openInfra", landing:"openLanding", execops:"openExecOps", nocwall:"openNocWall", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2", alertjourney:"openAlertJourney" };
+      const OPENER={ vpcockpit:"openVpCockpit", opsprojects:"openOpsProjects", opsreports:"openOpsReports", salesops:"openSalesOps", explorer:"openJourneys", dmsflows:"openDmsFlows", dmsdocs:"openDmsDocs", refunds:"openRefunds", flowguard:"openFlowGuard", infra:"openInfra", landing:"openLanding", execops:"openExecOps", nocwall:"openNocWall", alerts:"openAlerts", monitoring:"openMonitoring", dms:"openDms", fixed:"openFixed", analytics:"openAnalytics", topology2:"openTopology2", alertjourney:"openAlertJourney" };
       const fn=OPENER[r.view]; if(fn && typeof window[fn]==="function") { try{
         if(r.view==="fixed"){ const m=/(?:^|&)tab=([a-z]+)/.exec(qs||""); let t=m?m[1]:"overview";
           if(t==="exec"||t==="ops") t="overview";   // merged into the Operations Dashboard
@@ -234,7 +235,7 @@
         else if(r.view==="infra"){ window[fn](qs?"infra?"+qs:""); }   // #infra?tab=map&diagram=fixed · #infra?host=12   // #flowguard?tab=plans&status=activated&q=… (same pattern)
         else if(r.view==="dmsflows"||r.view==="dmsdocs"){ window[fn](qs||""); }
         else if(r.view==="explorer"){ window[fn](qs||""); }
-        else if(r.view==="salesops"||r.view==="vpcockpit"||r.view==="opsreports"){ window[fn](qs||""); }   // #salesops?ch=qr&kiosk=1&rotate=30 — the navtab click above reset the hash   // #journeys?q=/orders · #journeys?j=onb-esim&s=3 — Mobile › Journeys search by endpoint / deep link   // #dms-journeys?j=activation&s=7 · #dmsdocs?s=…|j=…|q=… — the navtab click above reset the hash
+        else if(r.view==="salesops"||r.view==="vpcockpit"||r.view==="opsreports"||r.view==="opsprojects"){ window[fn](qs||""); }   // #salesops?ch=qr&kiosk=1&rotate=30 — the navtab click above reset the hash   // #journeys?q=/orders · #journeys?j=onb-esim&s=3 — Mobile › Journeys search by endpoint / deep link   // #dms-journeys?j=activation&s=7 · #dmsdocs?s=…|j=…|q=… — the navtab click above reset the hash
         else if(r.view==="topology2"){ const m=/(?:^|&)t=([a-z]+)/.exec(qs||""); window[fn](r.t2||(m?m[1]:"map")); }   // #mvnohld / #topology2?t=hld
         else window[fn](); }catch(e){} }
       // Subscriber 360 deep link: #subscriber?key=966...

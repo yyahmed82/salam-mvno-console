@@ -1986,12 +1986,13 @@
   <nav>
     <button class="navtab active" data-view="landing"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 12 4 20 11"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></svg></span><span>Home<small>Mobile &amp; Fixed · global KPIs &amp; operations</small></span></button>
     <button class="navtab" data-view="execops" data-hash="exec"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></span><span>Executive Dashboard<small>both businesses · KPIs · SLOs · alert radar · brief</small></span></button>
-    <!-- VP Operations (9 Oct 2026, alpha.160): a menu — VP dashboard (the cockpit, #vp) and Weekly Report (Operations reports › This week,
+    <!-- VP Operations (9 Oct 2026, alpha.160; Operations Projects added 10 Oct, alpha.175): a menu — VP dashboard (the cockpit, #vp), Operations Projects (#projects) and Weekly Report (Operations reports › This week,
          where the weekly executive and complete decks are). Menus are managed in Settings › Navigation (navmenu.js); this markup is the default. -->
     <div class="navdrop" data-drop="vp">
-      <button class="navdrop-btn" type="button"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.2 4.8-4.8 2.2 2.2-4.8z"/></svg></span><span>VP Operations<small>VP dashboard · weekly report</small></span><i class="chev">▾</i></button>
+      <button class="navdrop-btn" type="button"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.2 4.8-4.8 2.2 2.2-4.8z"/></svg></span><span>VP Operations<small>VP dashboard · projects · weekly report</small></span><i class="chev">▾</i></button>
       <div class="navdrop-panel">
         <button class="navtab" data-view="vpcockpit" data-hash="vp"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2.2 4.8-4.8 2.2 2.2-4.8z"/></svg></span><span>VP dashboard<small>cockpit · last updates · CAB changes · tower challenges</small></span></button>
+        <button class="navtab" data-view="opsprojects" data-hash="projects"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></span><span>Operations Projects<small>portfolio · milestones · bottlenecks · budget · escalations</small></span></button>
         <button class="navtab" data-view="opsreports" data-hash="opsreports?tab=week" data-navkey="v:opsreports-week"><span class="num"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 17v-3M12 17v-5M16 17v-2"/></svg></span><span>Weekly Report<small>this week · every team's report · the executive deck for management</small></span></button>
       </div>
     </div>
@@ -2264,6 +2265,7 @@
        two separate nav items so there is one "Topology" to look for. -->
   <section id="view-execops" class="view"></section>
   <section id="view-vpcockpit" class="view"></section>
+  <section id="view-opsprojects" class="view"></section>
   <section id="view-opsreports" class="view"></section>
   <section id="view-nocwall" class="view"></section>
   <section id="view-salesops" class="view"></section>
@@ -2521,7 +2523,7 @@
 <script src="latencycfg.js?v=20260910c"></script>
 <script src="alertsview.js?v=20261002c"></script>
 <script src="metricdefs.js?v=20260916c"></script>
-<script src="ops.js?v=20261009d"></script>
+<script src="ops.js?v=20261010-175a"></script>
 <script src="opsbar.js?v=20260910c"></script>
 <script src="analytics.js?v=20260912d"></script>
 <script src="topo2data.js?v=20260910c"></script>
@@ -2559,6 +2561,7 @@
 <script src="execbrief.js?v=20261009c"></script>
 <script src="vpcockpit.js?v=20261009c"></script>
 <script src="opsreports.js?v=20261008a"></script>
+<script src="opsprojects.js?v=20261010-175a"></script>
 <script src="cst-remedy.js?v=20260918f"></script>
 <script src="cst-api.js?v=20260918f"></script>
 <script src="arqami-api.js?v=20260918f"></script>
@@ -2600,7 +2603,7 @@
 <script src="navmenucfg.js?v=20261009b"></script>
 <script src="tickets.js?v=20261008a"></script>
 <script src="theme.js?v=20260911v"></script>
-<script src="router.js?v=20261009d"></script>
+<script src="router.js?v=20261010-175a"></script>
 <script src="live.js?v=20260910c"></script>
 <script src="oncall.js?v=20260910c"></script>
 </body>
